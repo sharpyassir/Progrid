@@ -8,11 +8,15 @@ name: deploy
 #   DEPLOY_HOST   management host address        DEPLOY_USER  ssh user (the Ansible user)
 #   DEPLOY_SSH_KEY  private key for that user    NEXT_PUBLIC_API_URL  https://api.<domain>
 # Set the `production` environment to require a reviewer if you want a manual gate.
+# Images are only built after the ci workflow succeeded for the same commit, so a failing
+# commit never reaches the host.
 on:
-  push:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
     branches: [main]
+  push:
     tags: ["v*"]
-    paths-ignore: ["docs/**", "**/*.md", "cli/**"]
   workflow_dispatch:
 
 permissions:
@@ -24,12 +28,15 @@ env:
 
 jobs:
   images:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
         app: [api, console, www]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
@@ -56,12 +63,16 @@ jobs:
     needs: images
     runs-on: ubuntu-latest
     environment: production
-    if: ${{ secrets.DEPLOY_HOST != '' }}
+    # The secrets context is not allowed in a job condition, so the check happens in a step.
     steps:
+      - id: gate
+        run: |
+          if [ -n "${{ secrets.DEPLOY_HOST }}" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "DEPLOY_HOST is not set; skipping the roll"; fi
       - name: Roll the management host
+        if: steps.gate.outputs.ok == 'true'
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: sudo /opt/pgcloud/deploy.sh ${{ github.ref_type == 'tag' && github.ref_name || format('{0}', github.sha) }}
+          script: sudo /opt/pgcloud/deploy.sh ${{ github.ref_type == 'tag' && github.ref_name || format('{0}', github.event.workflow_run.head_sha || github.sha) }}

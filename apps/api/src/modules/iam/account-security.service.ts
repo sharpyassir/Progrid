@@ -1,3 +1,4 @@
+import { open, seal } from '../../common/crypto/secretbox';
 import { Injectable, Logger } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { createHash, randomBytes } from 'node:crypto';
@@ -73,7 +74,7 @@ export class AccountSecurityService {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } });
     if (user.totpEnabled) throw ApiError.conflict('totp_enabled', 'Two factor sign in is already enabled. Disable it first to set up a new device.');
     const secret = generateSecret();
-    await this.prisma.user.update({ where: { id: user.id }, data: { totpSecret: secret } });
+    await this.prisma.user.update({ where: { id: user.id }, data: { totpSecret: seal(secret) } });
     return { secret, otpauthUrl: otpauthUrl(secret, user.email) };
   }
 
@@ -81,7 +82,7 @@ export class AccountSecurityService {
   async totpEnable(actor: Actor, code: string) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } });
     if (!user.totpSecret) throw ApiError.invalid('Run setup first');
-    if (!verifyTotp(user.totpSecret, code)) throw new ApiError(401, 'totp_invalid', 'That code is not valid. Check the time on your device and try again.');
+    if (!verifyTotp(open(user.totpSecret), code)) throw new ApiError(401, 'totp_invalid', 'That code is not valid. Check the time on your device and try again.');
     const codes = generateRecoveryCodes();
     await this.prisma.user.update({ where: { id: user.id }, data: { totpEnabled: true, totpRecoveryHashes: codes.map(hash) } });
     await this.events.emit('user.totp_enabled', { userId: user.id }, { actor });
@@ -99,7 +100,7 @@ export class AccountSecurityService {
 
   /** TOTP code or an unused recovery code. Recovery codes burn on use. */
   checkSecondFactor(user: { id: string; totpSecret: string | null; totpRecoveryHashes: string[] }, code: string): boolean {
-    if (user.totpSecret && verifyTotp(user.totpSecret, code)) return true;
+    if (user.totpSecret && verifyTotp(open(user.totpSecret), code)) return true;
     const h = hash(code.trim().toLowerCase());
     if (user.totpRecoveryHashes.includes(h)) {
       void this.prisma.user.update({ where: { id: user.id }, data: { totpRecoveryHashes: user.totpRecoveryHashes.filter((x) => x !== h) } }).catch(() => undefined);

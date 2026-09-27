@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NativeConnection, Worker } from '@temporalio/worker';
+import { createServer } from 'node:http';
 import { WorkerModule } from './worker.module';
 import { createActivities } from './workflows/activities';
 import { loadConfig } from './config/config';
@@ -32,8 +33,18 @@ async function main() {
     maxConcurrentActivityTaskExecutions: 50,
   });
 
-  log.log(`worker up — driver=${cfg.HYPERVISOR_DRIVER} queue=${cfg.TEMPORAL_TASK_QUEUE}`);
+  // Health for Docker and uptime checks: 200 while the worker polls Temporal, 503 once it stops.
+  let healthy = true;
+  createServer((req, res) => {
+    if (req.url !== '/healthz') { res.statusCode = 404; return res.end(); }
+    res.statusCode = healthy ? 200 : 503;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ status: healthy ? 'ok' : 'stopping', queue: cfg.TEMPORAL_TASK_QUEUE }));
+  }).listen(cfg.WORKER_HEALTH_PORT, '0.0.0.0');
+
+  log.log(`worker up, driver=${cfg.HYPERVISOR_DRIVER} queue=${cfg.TEMPORAL_TASK_QUEUE}`);
   const shutdown = async () => {
+    healthy = false;
     worker.shutdown();
     await app.close();
   };

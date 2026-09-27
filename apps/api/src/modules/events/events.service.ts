@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHmac } from 'node:crypto';
+import { assertSafeUrl } from '../../common/net/safe-url';
+import { open } from '../../common/crypto/secretbox';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { NatsService, Subjects } from '../../common/nats/nats.service';
@@ -81,12 +83,17 @@ export class EventsService {
     });
     for (const d of due) {
       const body = JSON.stringify({ id: d.id, event: d.event, created_at: d.createdAt, data: d.payload });
-      const signature = createHmac('sha256', d.webhook.secret).update(body).digest('hex');
+      // The signature covers a timestamp so a captured delivery cannot be replayed later.
+      const timestamp = Math.floor(Date.now() / 1000).toString();
+      const signature = createHmac('sha256', open(d.webhook.secret)).update(`${timestamp}.${body}`).digest('hex');
       let status: number | undefined;
       try {
+        // Re-check the destination on every delivery; DNS can change after registration.
+        await assertSafeUrl(d.webhook.url);
         const res = await fetch(d.webhook.url, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-pgcloud-signature': `sha256=${signature}`, 'x-pgcloud-event': d.event },
+          redirect: 'manual',
+          headers: { 'content-type': 'application/json', 'x-pgcloud-signature': `t=${timestamp},v1=${signature}`, 'x-pgcloud-timestamp': timestamp, 'x-pgcloud-event': d.event },
           body,
           signal: AbortSignal.timeout(10_000),
         });

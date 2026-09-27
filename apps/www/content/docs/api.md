@@ -61,4 +61,4 @@ Webhook events for monitoring are `alert.triggered` and `alert.resolved`; see th
 
 ## Webhooks
 
-Register a URL under **Projects, Webhooks** with the events you want, such as `server.active`, `invoice.issued` or `approval.requested`. Every delivery is signed with the webhook secret in `X-Pgcloud-Signature`, retried with backoff for a day, and listed with its response in the console.
+Register a URL under **Projects, Webhooks** with the events you want, such as `server.active`, `invoice.issued` or `approval.requested`. Every delivery carries `X-Pgcloud-Signature: t=<unix seconds>,v1=<hex>` where the hex is HMAC SHA256 of `<t>.<body>` with the webhook secret; reject deliveries whose `t` is older than five minutes so a captured request cannot be replayed. Only https URLs on public hosts are accepted. Deliveries are retried with backoff for a day and listed with their response in the console.

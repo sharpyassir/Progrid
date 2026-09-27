@@ -7,9 +7,11 @@ import { CurrentActor, RequireScopes } from '../../common/auth/decorators';
 import type { Actor } from '../../common/auth/actor';
 import { ApiError } from '../../common/errors/api-error';
 import { CUSTOMER_EVENTS } from './events.service';
+import { assertSafeUrl } from '../../common/net/safe-url';
+import { seal } from '../../common/crypto/secretbox';
 
 class CreateWebhookDto {
-  @IsUrl({ require_tld: false, protocols: ['https', 'http'] }) url: string;
+  @IsUrl({ protocols: ['https'], require_protocol: true }) url: string;
   @IsArray() @ArrayNotEmpty() @IsIn(CUSTOMER_EVENTS, { each: true }) events: string[];
 }
 
@@ -31,8 +33,9 @@ export class WebhooksController {
 
   @Post()
   async create(@CurrentActor() actor: Actor, @Body() dto: CreateWebhookDto) {
+    await assertSafeUrl(dto.url).catch((e: Error) => { throw ApiError.invalid(`Webhook URL rejected: ${e.message}`); });
     const secret = 'whsec_' + randomBytes(24).toString('base64url');
-    const hook = await this.prisma.webhook.create({ data: { teamId: actor.teamId, url: dto.url, events: dto.events, secret } });
+    const hook = await this.prisma.webhook.create({ data: { teamId: actor.teamId, url: dto.url, events: dto.events, secret: seal(secret) } });
     return { ...hook, secret }; // secret shown once
   }
 

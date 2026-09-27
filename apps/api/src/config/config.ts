@@ -3,6 +3,7 @@ import { z } from 'zod';
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
+  WORKER_HEALTH_PORT: z.coerce.number().default(4001),
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().default('redis://localhost:6379'),
   NATS_URL: z.string().default('nats://localhost:4222'),
@@ -15,6 +16,8 @@ const schema = z.object({
   PROXMOX_CEPH_POOL: z.string().default('vm-disks'),
   PROXMOX_VXLAN_ZONE: z.string().default('customers'),
   JWT_SECRET: z.string().min(16).default('dev-only-secret-change-me'),
+  /** Key for secrets encrypted at rest (TOTP seeds, webhook secrets). Falls back to JWT_SECRET when unset. */
+  SECRETS_KEY: z.string().min(16).optional(),
   SESSION_TTL_SECONDS: z.coerce.number().default(86400),
   BILLING_HOURS_PER_MONTH: z.coerce.number().default(672),
   DEFAULT_CURRENCY: z.enum(['USD', 'SAR']).default('USD'),
@@ -75,6 +78,11 @@ let cached: AppConfig | undefined;
 
 /** Parsed, validated environment. Fails fast at boot on a bad config. */
 export function loadConfig(): AppConfig {
-  if (!cached) cached = schema.parse(process.env);
+  if (!cached) {
+    cached = schema.parse(process.env);
+    if (cached.NODE_ENV === 'production' && cached.JWT_SECRET === 'dev-only-secret-change-me') {
+      throw new Error('JWT_SECRET still has the development default; set a real secret before running in production');
+    }
+  }
   return cached;
 }
