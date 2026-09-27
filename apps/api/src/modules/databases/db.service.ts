@@ -385,6 +385,7 @@ export class DatabasesService {
       }
       const previousPrimary = c.nodeServers.find((n) => n.role === 'primary')?.index;
       let newPrimary: number | undefined;
+      const reportedPrimary: number[] = [];
       for (const n of c.nodeServers) {
         const ip = agentHost(n.server);
         if (!ip || n.server.status !== 'active') continue;
@@ -396,7 +397,10 @@ export class DatabasesService {
           await this.prisma.dbNode.update({ where: { id: n.id }, data: { role: r.role, lagBytes: r.lagBytes ?? null, lastSeenAt: new Date(), appliedVersion: r.version } });
           await recordDiskUsage(this.prisma, n.serverId, r.diskUsedPercent);
           if (this.unreachable.delete(n.id)) await this.emit('database.node_recovered', c, { node: n.index, serverId: n.serverId });
-          if (r.role === 'primary') newPrimary = n.index;
+          if (r.role === 'primary') {
+            newPrimary = n.index;
+            reportedPrimary.push(n.index);
+          }
           for (const b of r.backups ?? []) {
             if (b.status === 'running') continue;
             const row = await this.prisma.dbBackup.findUnique({ where: { id: b.id } });
@@ -413,6 +417,9 @@ export class DatabasesService {
           }
         }
       }
+      // A primary that did not answer this pass is not the primary any more once another node is:
+      // keep only the ones that said so, or connection details and backups keep going to the old one.
+      if (reportedPrimary.length) await this.prisma.dbNode.updateMany({ where: { clusterId: c.id, role: 'primary', index: { notIn: reportedPrimary } }, data: { role: 'unknown' } });
       if (newPrimary !== undefined && previousPrimary !== undefined && newPrimary !== previousPrimary) await this.emit('database.failover', c, { from: previousPrimary, to: newPrimary });
       if (c.status === 'updating' && c.nodeServers.every((n) => n.appliedVersion >= c.configVersion)) await this.prisma.dbCluster.update({ where: { id: c.id }, data: { status: 'active' } });
       // Backups that never reported within six hours count as failed.
