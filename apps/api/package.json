@@ -9,13 +9,14 @@
     "build": "nest build",
     "start": "node dist/main.js",
     "start:worker": "node dist/worker.js",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p test/integration",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
-    "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts"
+    "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts",
+    "test:integration": "vitest run --config test/integration/vitest.config.mts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.15",
