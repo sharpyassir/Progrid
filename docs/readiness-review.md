@@ -83,8 +83,8 @@ what blocks money first. Items marked "fixed" were corrected in the same commit 
     `ipfilter` so customers cannot spoof addresses.
 12. **Resize corrupts the VM config.** Fixed: resize sends only cores and memory and grows the
     disk, and rebuild attaches every volume the database shows attached to the new VM.
-13. **Bandwidth billing is wrong.** Cumulative since boot counters are summed and priced per
-    minute rather than per GB, with no included transfer. Meter deltas and bill overage per GB.
+13. **Bandwidth billing is wrong.** Fixed: the agent sends outbound bytes since the previous
+    tick, and rating charges per GB above the size's included transfer in each calendar month.
 14. **Backups are same cluster snapshots** with no restore path and a fake size, and they die
     with the VM. Add a restore workflow and an off host copy (Proxmox Backup Server or the Hetzner
     Storage Box) before advertising backups.

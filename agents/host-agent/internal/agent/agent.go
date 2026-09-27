@@ -39,6 +39,10 @@ type Agent struct {
 
 	jobs   map[string]*jobEntry // job de-dup by id
 	jobsMu sync.Mutex
+
+	// netOut is the last outbound byte counter seen per vmid, so bandwidth usage is sent as
+	// the delta per tick. Only the tick loop touches it.
+	netOut map[int]int64
 }
 
 // jobEntry tracks one job id. done closes when the job finishes; res is valid after that.
@@ -69,7 +73,7 @@ func New(cfg *config.Config, pve *proxmox.Client, version string, log *slog.Logg
 	if err != nil {
 		return nil, fmt.Errorf("nats: %w", err)
 	}
-	return &Agent{cfg: cfg, pve: pve, nc: nc, log: log.With("node", cfg.Proxmox.Node), version: version, jobs: map[string]*jobEntry{}}, nil
+	return &Agent{cfg: cfg, pve: pve, nc: nc, log: log.With("node", cfg.Proxmox.Node), version: version, jobs: map[string]*jobEntry{}, netOut: map[int]int64{}}, nil
 }
 
 func (a *Agent) Run(ctx context.Context) error {
@@ -120,10 +124,12 @@ func (a *Agent) tick(ctx context.Context) {
 		hb.TotalDiskGb = st.Total >> 30
 		hb.UsedDiskGb = st.Used >> 30
 	}
+	seen := map[int]bool{}
 	for _, vm := range vms {
 		if vm.Template == 1 {
 			continue
 		}
+		seen[vm.VMID] = true
 		ref := refFromTags(vm.VMID, a.cfg.Proxmox.Node, vm.Tags)
 		refJSON, _ := json.Marshal(ref)
 		hb.Vms = append(hb.Vms, protocol.VmBrief{VmRef: string(refJSON), Power: vm.Status})
@@ -141,15 +147,36 @@ func (a *Agent) tick(ctx context.Context) {
 				CpuPercent: vm.CPU * 100, MemoryUsedMb: vm.Mem >> 20, MemoryTotalMb: vm.MaxMem >> 20,
 				NetInBytes: vm.NetIn, NetOutBytes: vm.NetOut, DiskReadBytes: vm.DiskRead, DiskWriteBytes: vm.DiskWrite,
 			})
-			if vm.NetOut > 0 {
+			if delta := a.netOutDelta(vm.VMID, vm.NetOut); delta > 0 {
 				a.publish("pgcloud.usage", protocol.UsageEvent{
 					V: 1, At: now.Format(time.RFC3339), ResourceType: "bandwidth", ResourceID: ref.ServerID, ProjectID: ref.ProjectID,
-					HostID: a.cfg.HostID, Quantity: float64(vm.NetOut), Unit: "byte", Meta: map[string]interface{}{"cumulative": true},
+					HostID: a.cfg.HostID, Quantity: float64(delta), Unit: "byte", Meta: map[string]interface{}{"delta": true},
 				})
 			}
 		}
 	}
+	for vmid := range a.netOut {
+		if !seen[vmid] {
+			delete(a.netOut, vmid)
+		}
+	}
 	a.publish("pgcloud.host."+a.cfg.HostID+".heartbeat", hb)
+}
+
+// netOutDelta returns the outbound bytes since the previous tick. The counter restarts at
+// zero when the VM boots again, so a smaller value than last time is all new traffic. The
+// first reading only sets the baseline, so an agent restart never bills since boot bytes twice.
+func (a *Agent) netOutDelta(vmid int, counter int64) int64 {
+	last, known := a.netOut[vmid]
+	a.netOut[vmid] = counter
+	switch {
+	case !known:
+		return 0
+	case counter < last:
+		return counter
+	default:
+		return counter - last
+	}
 }
 
 func (a *Agent) publish(subject string, v interface{}) {

@@ -57,7 +57,8 @@ async function main() {
     ['volume_gb', 'volume', 40, 'hour'],
     ['lb_node', 'load_balancer', 4500, 'hour'],
     ['storage_gb', 'object_storage', 8, 'hour'],
-    ['bandwidth_gb', 'bandwidth', 4, 'hour'],
+    // Outbound transfer above the size's monthly allowance, per GB.
+    ['bandwidth_gb', 'bandwidth', 4, 'gb'],
     // Backups: 20% of the server's monthly price. Stored as percent with unit "percent"; RatingService applies it per server hour.
     ['backups_pct', 'backup', 20, 'percent'],
     // Support plans: flat monthly, billed against the team's default project.

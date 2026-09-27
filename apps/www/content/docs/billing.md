@@ -47,6 +47,6 @@ Each project can have a monthly limit, and each agent token can have its own cap
 | Snapshot | per GB per month |
 | Backups | 20 percent of the server price, when enabled |
 | One click app | the server price plus the app's price, if any |
-| Bandwidth | included allowance per size, then per TB |
+| Bandwidth | outbound transfer up to the size's monthly allowance is included; beyond it, per GB in the calendar month |
 
 The live price list is at `GET /v1/pricing` and in `pgcloud sizes`.

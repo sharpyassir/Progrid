@@ -28,6 +28,7 @@ type VM struct {
 	MemoryMb  int
 	DiskGb    int
 	Tags      string
+	NetOut    int64             // outbound byte counter since boot
 	Config    map[string]string // last /config form, for assertions
 	Snaps     []string
 	FWRules   []map[string]string
@@ -97,6 +98,15 @@ func (s *Sim) VM(vmid int) *VM {
 		return &c
 	}
 	return nil
+}
+
+// SetNetOut sets a VM's outbound byte counter (a smaller value models a reboot).
+func (s *Sim) SetNetOut(vmid int, bytes int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if v, ok := s.vms[vmid]; ok {
+		v.NetOut = bytes
+	}
 }
 
 // Calls returns the request log ("POST /nodes/pve1/qemu/100/clone" ...).
@@ -204,7 +214,7 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 			if v.Template {
 				t = 1
 			}
-			out = append(out, map[string]interface{}{"vmid": v.VMID, "name": v.Name, "status": v.Status, "cpus": v.Cores, "maxmem": int64(v.MemoryMb) << 20, "mem": int64(v.MemoryMb) << 19, "tags": v.Tags, "cpu": 0.03, "netin": 1000, "netout": 2000, "diskread": 4096, "diskwrite": 8192, "template": t})
+			out = append(out, map[string]interface{}{"vmid": v.VMID, "name": v.Name, "status": v.Status, "cpus": v.Cores, "maxmem": int64(v.MemoryMb) << 20, "mem": int64(v.MemoryMb) << 19, "tags": v.Tags, "cpu": 0.03, "netin": 1000, "netout": v.NetOut, "diskread": 4096, "diskwrite": 8192, "template": t})
 		}
 		ok(out)
 		return
@@ -254,7 +264,7 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		newid, _ := strconv.Atoi(r.Form.Get("newid"))
-		s.vms[newid] = &VM{VMID: newid, Name: r.Form.Get("name"), Status: "stopped", Cores: vm.Cores, MemoryMb: vm.MemoryMb, DiskGb: vm.DiskGb, Config: map[string]string{}, FWOpts: map[string]string{}}
+		s.vms[newid] = &VM{VMID: newid, Name: r.Form.Get("name"), Status: "stopped", NetOut: 2000, Cores: vm.Cores, MemoryMb: vm.MemoryMb, DiskGb: vm.DiskGb, Config: map[string]string{}, FWOpts: map[string]string{}}
 		ok(s.newTask("OK"))
 		return
 	case sub == "/config" && r.Method == http.MethodGet:
@@ -378,7 +388,7 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 		if vm.Status == "running" {
 			up = int64(time.Since(vm.StartedAt).Seconds())
 		}
-		ok(map[string]interface{}{"status": vm.Status, "cpu": 0.12, "mem": int64(vm.MemoryMb) << 19, "uptime": up, "netin": 1000, "netout": 2000})
+		ok(map[string]interface{}{"status": vm.Status, "cpu": 0.12, "mem": int64(vm.MemoryMb) << 19, "uptime": up, "netin": 1000, "netout": vm.NetOut})
 		return
 	case sub == "/agent/ping" && r.Method == http.MethodPost:
 		if vm == nil {

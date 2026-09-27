@@ -52,7 +52,6 @@ export interface Heartbeat {
   agentVersion: string;
 }
 
-/** usage.v1 — one per resource per minute. */
 /** metrics.v1: raw counters per VM per minute; network and disk are cumulative bytes. */
 export interface MetricSampleV1 {
   v: 1;
@@ -69,6 +68,7 @@ export interface MetricSampleV1 {
   diskWriteBytes: number;
 }
 
+/** usage.v1: one per resource per minute. Bandwidth carries the outbound bytes since the previous tick. */
 export interface UsageEventV1 {
   v: 1;
   at: string; // minute-aligned ISO timestamp

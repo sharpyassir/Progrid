@@ -467,6 +467,74 @@ haveHeartbeat:
 	}
 }
 
+func TestBandwidthIsSentAsDelta(t *testing.T) {
+	h := newHarness(t)
+	hb := make(chan *nats.Msg, 256)
+	usage := make(chan *nats.Msg, 1024)
+	sub1, _ := h.nc.ChanSubscribe("pgcloud.host.host_test.heartbeat", hb)
+	sub2, _ := h.nc.ChanSubscribe("pgcloud.usage", usage)
+	defer sub1.Unsubscribe()
+	defer sub2.Unsubscribe()
+
+	vmid, _ := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_bw")})))
+	// Wait for a heartbeat that lists the VM: the agent has its baseline counter then.
+	deadline := time.After(3 * time.Second)
+	for listed := false; !listed; {
+		select {
+		case m := <-hb:
+			listed = strings.Contains(string(m.Data), `\"serverId\":\"srv_bw\"`)
+		case <-deadline:
+			t.Fatal("no heartbeat listing the vm")
+		}
+	}
+	// The baseline reading itself is never billed.
+	drain := func() {
+		for {
+			select {
+			case m := <-usage:
+				var u protocol.UsageEvent
+				_ = json.Unmarshal(m.Data, &u)
+				if u.ResourceType == "bandwidth" && u.ResourceID == "srv_bw" {
+					t.Fatalf("baseline billed as bandwidth: %+v", u)
+				}
+			default:
+				return
+			}
+		}
+	}
+	drain()
+
+	next := func() protocol.UsageEvent {
+		t.Helper()
+		deadline := time.After(3 * time.Second)
+		for {
+			select {
+			case m := <-usage:
+				var u protocol.UsageEvent
+				_ = json.Unmarshal(m.Data, &u)
+				if u.ResourceType == "bandwidth" && u.ResourceID == "srv_bw" {
+					return u
+				}
+			case <-deadline:
+				t.Fatal("no bandwidth event")
+			}
+		}
+	}
+	h.sim.SetNetOut(vmid, 5000)
+	if u := next(); u.Quantity != 3000 || u.Unit != "byte" || u.ProjectID != "proj_1" {
+		t.Fatalf("expected a 3000 byte delta, got %+v", u)
+	}
+	// A smaller counter means the VM rebooted: the new value is all new traffic.
+	h.sim.SetNetOut(vmid, 700)
+	if u := next(); u.Quantity != 700 {
+		t.Fatalf("expected 700 bytes after the reboot, got %+v", u)
+	}
+	h.sim.SetNetOut(vmid, 1700)
+	if u := next(); u.Quantity != 1000 {
+		t.Fatalf("expected a 1000 byte delta, got %+v", u)
+	}
+}
+
 func TestVolumeLifecycle(t *testing.T) {
 	h := newHarness(t)
 	r := h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_7")}))

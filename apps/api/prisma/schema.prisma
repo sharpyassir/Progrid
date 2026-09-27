@@ -606,7 +606,7 @@ model UsageEvent {
   resourceId   String
   projectId    String
   hostId       String?
-  quantity     Float // 1 for server-minute, GB for snapshots, bytes for bandwidth
+  quantity     Float // 1 for server-minute, GB for snapshots, bytes since the previous minute for bandwidth
   unit         String // "minute" | "gb_minute" | "byte"
   meta         Json         @default("{}")
 

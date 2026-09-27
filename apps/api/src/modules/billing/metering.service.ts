@@ -19,6 +19,8 @@ export class MeteringService {
   }
 
   async ingest(events: UsageEventV1[]) {
+    // Agents before the delta change sent cumulative since boot counters; summing those would overbill.
+    events = events.filter((e) => !(e.resourceType === 'bandwidth' && e.meta?.cumulative));
     if (!events.length) return;
     await this.prisma.usageEvent.createMany({
       data: events.map((e) => ({
