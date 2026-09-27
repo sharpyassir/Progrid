@@ -3,6 +3,7 @@ package agent_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -64,6 +65,8 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	t.Cleanup(nc.Close)
+	old := agent.SetRbdDu(sim.RbdDu)
+	t.Cleanup(func() { agent.SetRbdDu(old) })
 	h := &harness{t: t, nc: nc, sim: sim, cfg: cfg, subj: "pgcloud.host.host_test.jobs"}
 	// Wait until the agent's subscription is live.
 	deadline := time.Now().Add(3 * time.Second)
@@ -185,6 +188,17 @@ func TestPowerSnapshotFirewallResizeDelete(t *testing.T) {
 	if !strings.Contains(res["snapshotRef"].(string), `"name":"pgsnap1"`) || len(h.sim.VM(vmid).Snaps) != 1 {
 		t.Fatalf("snapshot not taken: %v / %v", res, h.sim.VM(vmid).Snaps)
 	}
+	if res["sizeGb"] != float64(pvesim.SnapshotBytes)/(1<<30) {
+		t.Fatalf("snapshot size not read from rbd du: %v", res["sizeGb"])
+	}
+	// Without the Ceph CLI the size falls back to the estimate (used memory in GB plus one).
+	old := agent.SetRbdDu(func(context.Context, string, string, string) (int64, error) { return 0, errors.New("rbd: not found") })
+	r = h.mustOK(h.job(protocol.JobSnapshot, map[string]interface{}{"vmRef": ref, "snapshotId": "SNAP2"}))
+	agent.SetRbdDu(old)
+	if got := r.Result.(map[string]interface{})["sizeGb"]; got != float64(3) {
+		t.Fatalf("fallback size wrong: %v", got)
+	}
+	h.mustOK(h.job(protocol.JobSnapshotDel, map[string]interface{}{"snapshotRef": r.Result.(map[string]interface{})["snapshotRef"]}))
 	h.mustOK(h.job(protocol.JobSnapshotDel, map[string]interface{}{"snapshotRef": res["snapshotRef"]}))
 	if len(h.sim.VM(vmid).Snaps) != 0 {
 		t.Fatal("snapshot not deleted")

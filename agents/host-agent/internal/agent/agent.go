@@ -375,12 +375,7 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 			return nil, err
 		}
 		sref, _ := json.Marshal(protocol.SnapshotRef{VMID: ref.VMID, Node: ref.Node, Name: name})
-		st, _ := a.pve.Status(ctx, ref.VMID)
-		var sizeGb float64
-		if st != nil {
-			sizeGb = float64(st.Mem>>30) + 1 // TODO: read actual RBD snapshot size via `rbd du`
-		}
-		return map[string]interface{}{"snapshotRef": string(sref), "sizeGb": sizeGb}, nil
+		return map[string]interface{}{"snapshotRef": string(sref), "sizeGb": a.snapshotSizeGb(ctx, ref.VMID, name, log)}, nil
 
 	case protocol.JobRollback:
 		var p struct {
@@ -628,6 +623,69 @@ func (a *Agent) status(ctx context.Context, vmid int) (interface{}, error) {
 		return nil, err
 	}
 	return protocol.VmStatus{Power: st.Status, CpuPercent: st.CPU * 100, MemoryUsedMb: st.Mem >> 20, UptimeSec: st.Uptime}, nil
+}
+
+// snapshotSizeGb is the space the snapshot uses on Ceph, from `rbd du` on the boot disk image.
+// When that fails (no Ceph CLI, a non RBD disk) it falls back to the old estimate of the used
+// memory in GB plus one, so the snapshot is still billed.
+func (a *Agent) snapshotSizeGb(ctx context.Context, vmid int, snap string, log *slog.Logger) float64 {
+	cfg, err := a.pve.Config(ctx, vmid)
+	if err == nil {
+		volid := strings.SplitN(cfg["scsi0"], ",", 2)[0]
+		image := volid
+		if i := strings.Index(volid, ":"); i >= 0 {
+			image = volid[i+1:]
+		}
+		pool := a.cfg.Proxmox.CephPool
+		if pool == "" {
+			pool = a.cfg.Proxmox.Storage
+		}
+		var bytes int64
+		if bytes, err = rbdDu(ctx, pool, image, snap); err == nil {
+			return float64(bytes) / (1 << 30)
+		}
+	}
+	log.Warn("snapshot size from rbd du failed, using the estimate", "err", err)
+	st, _ := a.pve.Status(ctx, vmid)
+	if st == nil {
+		return 0
+	}
+	return float64(st.Mem>>30) + 1
+}
+
+// rbdDu returns the bytes a snapshot of an RBD image uses. Replaced in tests.
+var rbdDu = func(ctx context.Context, pool, image, snap string) (int64, error) {
+	if pool == "" {
+		pool = "vm-disks"
+	}
+	out, err := exec.CommandContext(ctx, "rbd", "du", "--format", "json", "--pool", pool, image+"@"+snap).Output()
+	if err != nil {
+		return 0, fmt.Errorf("rbd du: %w", err)
+	}
+	var du struct {
+		Images []struct {
+			Name     string `json:"name"`
+			Snapshot string `json:"snapshot"`
+			UsedSize int64  `json:"used_size"`
+		} `json:"images"`
+		TotalUsedSize int64 `json:"total_used_size"`
+	}
+	if err := json.Unmarshal(out, &du); err != nil {
+		return 0, fmt.Errorf("rbd du: %w", err)
+	}
+	for _, im := range du.Images {
+		if im.Name == image && im.Snapshot == snap {
+			return im.UsedSize, nil
+		}
+	}
+	return du.TotalUsedSize, nil
+}
+
+// SetRbdDu swaps the snapshot size implementation (tests). Returns the previous one.
+func SetRbdDu(f func(ctx context.Context, pool, image, snap string) (int64, error)) func(ctx context.Context, pool, image, snap string) (int64, error) {
+	old := rbdDu
+	rbdDu = f
+	return old
 }
 
 // rbdResize grows a detached image with the Ceph CLI on the node. Replaced in tests.

@@ -7,6 +7,7 @@
 package pvesim
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -111,6 +112,24 @@ func (s *Sim) SetNetOut(vmid int, bytes int64) {
 	if v, ok := s.vms[vmid]; ok {
 		v.NetOut = bytes
 	}
+}
+
+// SnapshotBytes is what RbdDu reports for every snapshot.
+const SnapshotBytes int64 = 3 << 30
+
+// RbdDu stands in for `rbd du` on the node: a fixed size for a snapshot that exists on the
+// VM that owns the image (vm-<vmid>-disk-0), an error otherwise. Install it with agent.SetRbdDu.
+func (s *Sim) RbdDu(_ context.Context, pool, image, snap string) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var vmid int
+	if _, err := fmt.Sscanf(image, "vm-%d-disk-0", &vmid); err != nil || pool != s.Storage {
+		return 0, fmt.Errorf("rbd: error opening image %s/%s", pool, image)
+	}
+	if vm := s.vms[vmid]; vm == nil || !contains(vm.Snaps, snap) {
+		return 0, fmt.Errorf("rbd: snapshot %s@%s does not exist", image, snap)
+	}
+	return SnapshotBytes, nil
 }
 
 // Calls returns the request log ("POST /nodes/pve1/qemu/100/clone" ...).
