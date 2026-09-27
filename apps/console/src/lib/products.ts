@@ -21,6 +21,7 @@ export const GROUPS: Group[] = ['Projects', 'Managed Agents', 'Inference Engine'
 export const PRODUCTS: Product[] = [
   // Projects
   { slug: 'projects', name: 'Projects', group: 'Projects', href: '/projects', blurb: 'Group resources, set quotas and a monthly spend limit per project.' },
+  { slug: 'team', name: 'Team', group: 'Projects', href: '/team', blurb: 'Members and roles, invitations, the billing profile printed on invoices, and closing the account.' },
 
   // Managed Agents: our headline
   { slug: 'agents', name: 'Agent Access', group: 'Managed Agents', href: '/agents', blurb: 'Agent-safe API tokens: scopes, monthly spend caps, human approval for destructive actions.' },

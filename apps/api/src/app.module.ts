@@ -31,6 +31,7 @@ import { DatabasesModule } from './modules/databases/db.module';
 import { SupportModule } from './modules/support/support.module';
 import { KubernetesModule } from './modules/kubernetes/k8s.module';
 import { AppPlatformModule } from './modules/app-platform/app.module';
+import { TeamModule } from './modules/team/team.module';
 import { JobsModule } from './jobs/jobs.module';
 import { HealthController } from './health.controller';
 
@@ -42,7 +43,7 @@ import { HealthController } from './health.controller';
     // domain
     IamModule,
     ApprovalsModule, EventsModule, ComputeModule, SchedulerModule, NetworkModule, StorageModule, MarketplaceModule, BillingModule, TrustModule, AdminModule, DeployModule, GithubModule, MonitoringModule, LbModule, DnsModule, ObjectsModule, DatabasesModule,
-    SupportModule, KubernetesModule, AppPlatformModule,
+    SupportModule, KubernetesModule, AppPlatformModule, TeamModule,
     // background
     JobsModule,
   ],

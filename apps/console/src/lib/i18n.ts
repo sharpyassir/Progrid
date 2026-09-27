@@ -73,6 +73,21 @@ const en = {
   voidConfirm: (number: string) => `Void invoice ${number}? Use this only for an invoice issued in error. Any credit it used goes back to the team.`,
   recordPaymentConfirm: (amount: string, number: string) => `Record ${amount} received for invoice ${number} and mark it paid?`,
   uncollectibleConfirm: (number: string) => `Mark invoice ${number} as uncollectible? It stays on record and can still be paid later.`,
+  // team
+  teamNav: 'Team', members: 'Members', role: 'Role', you: 'you', removeMember: 'Remove', leaveTeam: 'Leave team',
+  role_owner: 'Owner', role_admin: 'Admin', role_member: 'Member', role_billing: 'Billing', role_readonly: 'Read only',
+  removeConfirm: (name: string) => `Remove ${name} from the team? The API tokens they created for this team are revoked.`,
+  leaveConfirm: 'Leave this team? You lose access right away and your API tokens for it are revoked.',
+  roleConfirm: (name: string, role: string) => `Change the role of ${name} to ${role}?`, roleChanged: 'Role changed.',
+  inviteTitle: 'Invite a member', inviteSend: 'Send invitation', invitationSent: (email: string) => `Invitation sent to ${email}. The link is valid for 7 days.`,
+  pendingInvitations: 'Pending invitations', revokeInviteConfirm: (email: string) => `Revoke the invitation for ${email}?`,
+  teamProfile: 'Team profile', teamProfileLead: 'Printed on every invoice. Saudi businesses should enter their 15 digit VAT number and full address.',
+  billingEmailLabel: 'Billing email (invoices and reminders also go here)', taxIdLabel: 'VAT number', billingAddressLabel: 'Billing address', countryLabel: 'Country', profileSaved: 'Saved.',
+  closeAccount: 'Close account', closeLead: 'Closing deletes every server, database, cluster, app, load balancer, volume, bucket, snapshot and DNS zone, revokes every API token and signs everyone out. Pay any unpaid invoice first. Usage up to today is invoiced at the end of the month. This cannot be undone.',
+  closeType: (slug: string) => `Type ${slug} to confirm`, closeButton: 'Close the account for good', closeConfirm: 'Last check: close this account and delete everything in it?',
+  inviteAcceptTitle: 'Team invitation', inviteLead: (team: string, role: string) => `You are invited to join ${team} as ${role}.`, inviteFor: (email: string) => `This invitation is for ${email}.`,
+  acceptInvite: 'Accept invitation', signInToAccept: 'Sign in with this address to accept.', createToAccept: 'Choose your name and a password to create your account and join.',
+  inviteInvalid: 'This invitation link is no longer valid. Ask the team for a new one.', inviteWrongUser: (email: string) => `You are signed in with another address. Sign out, open this link again and sign in as ${email}.`,
 };
 
 type Dict = { [K in keyof typeof en]: (typeof en)[K] };
@@ -136,6 +151,20 @@ const tr: Dict = {
   voidConfirm: (number) => `${number} numaralı fatura iptal edilsin mi? Yalnızca hatayla kesilen faturalar için kullanın. Kullandığı bakiye ekibe geri döner.`,
   recordPaymentConfirm: (amount, number) => `${number} numaralı fatura için ${amount} tahsil edildi olarak kaydedilip ödendi işaretlensin mi?`,
   uncollectibleConfirm: (number) => `${number} numaralı fatura tahsil edilemez olarak işaretlensin mi? Kayıtta kalır ve daha sonra yine ödenebilir.`,
+  teamNav: 'Ekip', members: 'Üyeler', role: 'Rol', you: 'siz', removeMember: 'Çıkar', leaveTeam: 'Ekipten ayrıl',
+  role_owner: 'Sahip', role_admin: 'Yönetici', role_member: 'Üye', role_billing: 'Faturalama', role_readonly: 'Salt okunur',
+  removeConfirm: (name) => `${name} ekipten çıkarılsın mı? Bu ekip için oluşturduğu API anahtarları iptal edilir.`,
+  leaveConfirm: 'Bu ekipten ayrılmak istiyor musunuz? Erişiminiz hemen kalkar ve bu ekipteki API anahtarlarınız iptal edilir.',
+  roleConfirm: (name, role) => `${name} kullanıcısının rolü ${role} olarak değiştirilsin mi?`, roleChanged: 'Rol değiştirildi.',
+  inviteTitle: 'Üye davet et', inviteSend: 'Davet gönder', invitationSent: (email) => `Davet ${email} adresine gönderildi. Bağlantı 7 gün geçerli.`,
+  pendingInvitations: 'Bekleyen davetler', revokeInviteConfirm: (email) => `${email} için davet iptal edilsin mi?`,
+  teamProfile: 'Ekip profili', teamProfileLead: 'Her faturada yer alır. Suudi şirketler 15 haneli KDV numarasını ve tam adresini girmelidir.',
+  billingEmailLabel: 'Fatura e-postası (faturalar ve hatırlatmalar buraya da gider)', taxIdLabel: 'Vergi numarası', billingAddressLabel: 'Fatura adresi', countryLabel: 'Ülke', profileSaved: 'Kaydedildi.',
+  closeAccount: 'Hesabı kapat', closeLead: 'Kapatmak tüm sunucuları, veritabanlarını, kümeleri, uygulamaları, yük dengeleyicileri, diskleri, kovaları, anlık görüntüleri ve DNS bölgelerini siler, tüm API anahtarlarını iptal eder ve herkesin oturumunu kapatır. Önce ödenmemiş faturaları ödeyin. Bugüne kadarki kullanım ay sonunda faturalanır. Geri alınamaz.',
+  closeType: (slug) => `Onaylamak için ${slug} yazın`, closeButton: 'Hesabı kalıcı olarak kapat', closeConfirm: 'Son kontrol: bu hesap kapatılsın ve içindeki her şey silinsin mi?',
+  inviteAcceptTitle: 'Ekip daveti', inviteLead: (team, role) => `${team} ekibine ${role} olarak katılmaya davet edildiniz.`, inviteFor: (email) => `Bu davet ${email} içindir.`,
+  acceptInvite: 'Daveti kabul et', signInToAccept: 'Kabul etmek için bu adresle giriş yapın.', createToAccept: 'Hesabınızı oluşturup katılmak için adınızı ve bir parola seçin.',
+  inviteInvalid: 'Bu davet bağlantısı artık geçerli değil. Ekipten yeni bir davet isteyin.', inviteWrongUser: (email) => `Başka bir adresle giriş yaptınız. Çıkış yapın, bu bağlantıyı yeniden açın ve ${email} ile giriş yapın.`,
 };
 
 const ar: Dict = {
@@ -197,6 +226,20 @@ const ar: Dict = {
   voidConfirm: (number) => `تبغى تلغي الفاتورة ${number}؟ استخدمها بس للفاتورة اللي طلعت بالغلط. أي رصيد انخصم عليها يرجع للفريق.`,
   recordPaymentConfirm: (amount, number) => `تسجّل إن ${amount} وصلت عن الفاتورة ${number} وتعتبرها مسدّدة؟`,
   uncollectibleConfirm: (number) => `تعتبر الفاتورة ${number} ما تنحصّل؟ تظل محفوظة وممكن تنسدّ بعدين.`,
+  teamNav: 'الفريق', members: 'الأعضاء', role: 'الدور', you: 'أنت', removeMember: 'شيل', leaveTeam: 'اطلع من الفريق',
+  role_owner: 'مالك', role_admin: 'مشرف', role_member: 'عضو', role_billing: 'الفوترة', role_readonly: 'قراءة بس',
+  removeConfirm: (name) => `تبغى تشيل ${name} من الفريق؟ مفاتيح API اللي سواها لهالفريق تنلغي.`,
+  leaveConfirm: 'تبغى تطلع من هالفريق؟ بتفقد الوصول على طول ومفاتيح API حقتك فيه تنلغي.',
+  roleConfirm: (name, role) => `تغيّر دور ${name} إلى ${role}؟`, roleChanged: 'تغيّر الدور.',
+  inviteTitle: 'ادعُ عضو', inviteSend: 'أرسل الدعوة', invitationSent: (email) => `وصلت الدعوة لـ ${email}. الرابط شغّال ٧ أيام.`,
+  pendingInvitations: 'دعوات ما انقبلت للحين', revokeInviteConfirm: (email) => `تلغي الدعوة حقت ${email}؟`,
+  teamProfile: 'بيانات الفريق', teamProfileLead: 'تنطبع على كل فاتورة. إذا شركتك سعودية حط الرقم الضريبي (١٥ رقم) والعنوان كامل.',
+  billingEmailLabel: 'إيميل الفوترة (الفواتير والتذكيرات توصل له بعد)', taxIdLabel: 'الرقم الضريبي', billingAddressLabel: 'عنوان الفوترة', countryLabel: 'الدولة', profileSaved: 'انحفظ.',
+  closeAccount: 'قفل الحساب', closeLead: 'قفل الحساب يحذف كل الخوادم وقواعد البيانات والكلسترات والتطبيقات وموزعات الحمل والأقراص والحاويات واللقطات ونطاقات DNS، ويلغي كل مفاتيح API ويطلّع الكل. سدّد أي فاتورة باقية أول. الاستخدام لين اليوم يتفوتر آخر الشهر. ما تقدر تتراجع بعدها.',
+  closeType: (slug) => `اكتب ${slug} عشان تأكد`, closeButton: 'اقفل الحساب نهائيًا', closeConfirm: 'آخر تأكيد: تقفل الحساب وتحذف كل اللي فيه؟',
+  inviteAcceptTitle: 'دعوة للفريق', inviteLead: (team, role) => `انت مدعو تنضم لفريق ${team} بدور ${role}.`, inviteFor: (email) => `هالدعوة لـ ${email}.`,
+  acceptInvite: 'اقبل الدعوة', signInToAccept: 'سجّل دخول بهالإيميل عشان تقبل.', createToAccept: 'اختر اسمك وكلمة مرور عشان نسوي حسابك وتنضم.',
+  inviteInvalid: 'رابط الدعوة هذا ما عاد يشتغل. اطلب من الفريق دعوة جديدة.', inviteWrongUser: (email) => `انت داخل بإيميل ثاني. اطلع، وافتح الرابط مرة ثانية، وادخل بـ ${email}.`,
 };
 
 const dict: Record<Locale, Dict> = { en, tr, ar };

@@ -43,9 +43,13 @@ export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageReco
     doc.moveDown(2);
     const y0 = 140;
     doc.font(bold).fontSize(10).text('Bill to', 50, y0);
-    doc.font(regular).text(inv.team.name, 50, y0 + 14);
-    if (inv.team.taxId) doc.text(`Tax ID: ${inv.team.taxId}`);
-    doc.text(`Country: ${inv.team.country}`);
+    // Buyer details from the team profile (Team page in the console).
+    doc.font(regular).text(inv.team.name, 50, y0 + 14, { width: 260 });
+    if (inv.team.billingAddress) doc.text(inv.team.billingAddress, { width: 260 });
+    doc.text(`Country: ${inv.team.country}`, { width: 260 });
+    if (inv.team.taxId) doc.text(`${inv.team.country === 'SA' ? 'VAT number' : 'Tax ID'}: ${inv.team.taxId}`, { width: 260 });
+    if (inv.team.billingEmail) doc.text(inv.team.billingEmail, { width: 260 });
+    const billToEnd = doc.y;
     doc.font(bold).text('Period', 350, y0, { align: 'right' });
     doc.font(regular).text(`${date(inv.periodStart)} to ${date(new Date(inv.periodEnd.getTime() - 1))}`, 350, y0 + 14, { align: 'right' });
 
@@ -55,7 +59,7 @@ export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageReco
       const g = groups.get(r.resourceType) ?? { qty: 0, amount: 0, unit: r.unit };
       g.qty += r.quantity; g.amount += r.amountMinor; groups.set(r.resourceType, g);
     }
-    let y = 220;
+    let y = Math.max(220, billToEnd + 24);
     const col = { desc: 50, qty: 330, amount: 545 };
     doc.rect(50, y - 6, 495, 20).fill('#f1f5f9').fillColor('#000');
     doc.font(bold).fontSize(9).text('Description', col.desc + 6, y).text('Usage', col.qty, y, { width: 120, align: 'right' }).text('Amount', 400, y, { width: 145, align: 'right' });
@@ -77,7 +81,13 @@ export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageReco
     total('Subtotal', money(inv.subtotalMinor));
     if (inv.taxMinor) total(inv.currency === 'SAR' ? 'VAT (15%)' : 'Tax', money(inv.taxMinor));
     if (inv.creditMinor) total('Credit applied', `-${money(inv.creditMinor)}`);
-    total('Total due', money(inv.totalMinor), true);
+    if (inv.creditedMinor) {
+      total('Total', money(inv.totalMinor));
+      total('Credit notes', `-${money(inv.creditedMinor)}`);
+      total('Total due', money(inv.totalMinor - inv.creditedMinor), true);
+    } else {
+      total('Total due', money(inv.totalMinor), true);
+    }
 
     // Footer
     doc.fontSize(8).fillColor('#555').font(regular);

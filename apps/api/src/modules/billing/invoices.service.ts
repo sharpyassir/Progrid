@@ -25,7 +25,8 @@ export class InvoicesService {
   async issueForPreviousMonth(now = new Date()) {
     const periodEnd = startOfMonth(now);
     const periodStart = startOfMonth(new Date(periodEnd.getTime() - 1));
-    const teams = await this.prisma.team.findMany({ where: { status: { not: 'closed' } }, include: { projects: { select: { id: true } } } });
+    // Teams closed during the period still get their final invoice.
+    const teams = await this.prisma.team.findMany({ where: { OR: [{ status: { not: 'closed' } }, { closedAt: { gte: periodStart } }] }, include: { projects: { select: { id: true } } } });
     let issued = 0;
     let failed = 0;
     for (const team of teams) {
@@ -124,6 +125,8 @@ export class InvoicesService {
 
   private async notify(teamId: string, number: string, totalMinor: number, currency: string, paid: boolean) {
     const owners = await this.prisma.teamMember.findMany({ where: { teamId, role: { in: ['owner', 'billing'] } }, include: { user: { select: { email: true, name: true } } } });
+    const team = await this.prisma.team.findUnique({ where: { id: teamId }, select: { billingEmail: true } });
+    if (team?.billingEmail && !owners.some((m) => m.user.email === team.billingEmail)) owners.push({ user: { email: team.billingEmail, name: 'there' } } as (typeof owners)[number]);
     const amount = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(totalMinor / 100);
     const url = `${loadConfig().CONSOLE_URL}/billing`;
     await Promise.all(owners.map((m) => this.mail.send({

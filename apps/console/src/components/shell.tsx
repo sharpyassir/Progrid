@@ -18,7 +18,7 @@ const ShellCtx = createContext<Ctx>({ locale: 'en', setLocale: () => {}, authed:
 export const useShell = () => useContext(ShellCtx);
 
 /** Pages reachable without a session (links sent by email land here). */
-const PUBLIC_PATHS = ['/login', '/forgot-password', '/reset-password', '/verify', '/github/callback'];
+const PUBLIC_PATHS = ['/login', '/forgot-password', '/reset-password', '/verify', '/github/callback', '/invite'];
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>('en');
@@ -64,6 +64,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       {isStaff && <Link href="/admin" className={pathname.startsWith('/admin') ? 'font-medium text-amber-700' : 'text-amber-700 hover:text-amber-900'}>Back office</Link>}
       <Link href="/support" className={pathname.startsWith('/support') ? 'font-medium' : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100'}>{t(locale, 'support')}</Link>
       <Link href="/billing" className={pathname.startsWith('/billing') ? 'font-medium' : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100'}>{t(locale, 'billing')}</Link>
+      <Link href="/team" className={pathname.startsWith('/team') ? 'font-medium' : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100'}>{t(locale, 'teamNav')}</Link>
       <select className="input w-auto py-1" value={locale} onChange={(e) => setLocale(e.target.value as Locale)} aria-label="Language">
         <option value="en">EN</option>
         <option value="tr">TR</option>

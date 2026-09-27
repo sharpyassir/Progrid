@@ -19,6 +19,7 @@ import { BackupsService } from '../modules/storage/backups.service';
 import { DatabasesService } from '../modules/databases/db.service';
 import { KubernetesService } from '../modules/kubernetes/k8s.service';
 import { AppPlatformService } from '../modules/app-platform/app.service';
+import { TeamService } from '../modules/team/team.service';
 
 /**
  * Periodic jobs. Each takes a Redis lock so only one API replica runs it.
@@ -48,6 +49,7 @@ export class JobsService {
     private readonly databases: DatabasesService,
     private readonly kubernetes: KubernetesService,
     private readonly appPlatform: AppPlatformService,
+    private readonly team: TeamService,
   ) {}
 
   @Cron('50 * * * * *') // every minute at :50: database roles, lag, backup results, config retries
@@ -111,6 +113,11 @@ export class JobsService {
   @Cron('0 15 6 * * *') // 06:15 UTC daily (09:15 in Riyadh): overdue reminders at 3, 7 and 14 days, suspension at 14
   dunningRun() {
     return this.locked('dunning', 30 * 60_000, () => this.dunning.run());
+  }
+
+  @Cron('0 20 * * * *') // twenty past every hour: finish deleting what closed accounts still have
+  closedAccounts() {
+    return this.locked('closed-accounts', 30 * 60_000, () => this.team.sweepClosed());
   }
 
   @Cron('7 * * * *') // hourly: refresh the USD→SAR rate

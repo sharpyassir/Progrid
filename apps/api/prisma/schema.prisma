@@ -82,7 +82,11 @@ model Team {
   /// Why the team is suspended. "billing: ..." is lifted automatically once the overdue invoices are settled.
   suspensionReason String?
   suspendedAt      DateTime?
-  taxId    String? // Vergi No / VAT
+  taxId    String? // buyer VAT number, printed on invoices
+  /// Invoices and payment reminders also go here. Printed on invoices with the address.
+  billingEmail   String?
+  billingAddress String?
+  closedAt       DateTime?
   // Trust & safety
   kycLevel   Int      @default(0) // 0 none, 1 phone, 2 ID, 3 business
   riskScore  Int      @default(0)
@@ -93,6 +97,7 @@ model Team {
   updatedAt  DateTime @updatedAt
 
   members   TeamMember[]
+  invitations Invitation[]
   projects  Project[]
   apiTokens ApiToken[]
   approvals Approval[]
@@ -114,6 +119,25 @@ model TeamMember {
   user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([teamId, userId])
+}
+
+/// An emailed invitation to join a team. The link carries a random token; only its hash is stored.
+model Invitation {
+  id         String    @id @default(cuid())
+  teamId     String
+  email      String
+  role       TeamRole  @default(member)
+  tokenHash  String    @unique
+  invitedBy  String // userId
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  acceptedBy String? // userId
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, email])
 }
 
 model Project {

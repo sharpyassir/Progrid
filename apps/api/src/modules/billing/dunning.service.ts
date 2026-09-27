@@ -74,7 +74,9 @@ export class DunningService {
     const body = suspend
       ? `Your invoice ${number} for ${amount} is ${days} days past its due date, so your account is now suspended. Your servers have been powered off and your data is kept. API tokens and the console only work for billing until the invoice is paid.\nPay it here and everything powers back on automatically:\n${url}`
       : `Your invoice ${number} for ${amount} is ${days} days past its due date. Please pay it by card here:\n${url}\n\nIf it is still unpaid ${SUSPEND_AT} days after the due date, the account is suspended and its servers are powered off.`;
+    const team = await this.prisma.team.findUnique({ where: { id: teamId }, select: { billingEmail: true } });
     const to = new Set(people.map((m) => m.user.email));
+    if (team?.billingEmail) to.add(team.billingEmail);
     const names = new Map(people.map((m) => [m.user.email, m.user.name]));
     await Promise.all([...to].map((email) => this.mail.send({ to: email, subject, text: `Hi ${names.get(email) ?? 'there'},\n\n${body}\n\nIf you already paid, thank you, and please ignore this message.` })));
   }
