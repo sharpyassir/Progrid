@@ -72,6 +72,62 @@ Postgres password, NATS token). `infra/prod/pgcloud.env.example` shows the shape
 Production values to set deliberately: `REQUIRE_TOTP_FOR_OWNERS=true`, a real `MAIL_PROVIDER` with its key,
 `CONSOLE_URL` for the links in emails, and `HYPERVISOR_DRIVER=proxmox` with the control plane token.
 
+## Private networks and Proxmox SDN
+
+Every project gets a private network per region, a /24 carved from a pool, and every server a static
+address from it on net0 (no gateway; the default route stays on the public NIC net1). The settings:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `PRIVATE_NETWORK_POOL` | `10.96.0.0/12` | Pool the project networks come from. One CIDR, or per region: `sa1=10.96.0.0/12,sa2=10.112.0.0/12` |
+| `PRIVATE_NETWORK_PREFIX` | `24` | Size of each project network |
+| `PRIVATE_NETWORK_MODE` | `shared_bridge` | `shared_bridge` or `sdn_vnet`, one value or per region: `sa1=sdn_vnet` (unlisted regions use `shared_bridge`) |
+| `PROXMOX_VXLAN_ZONE` | `customers` | SDN zone the project VNets are created in (`sdn_vnet` only) |
+| `PRIVATE_NETWORK_VXLAN_BASE` | `100000` | VXLAN tag of the first pool network; a network's tag is this plus its index in the pool |
+
+The pool must not overlap the management network, a DHCP range on the shared bridge or any other routed
+range. `CONTROL_PLANE_CIDR` (who may call the platform agents on port 9009) should name the management
+addresses only; the old default `10.0.0.0/8` also covers the tenant pool.
+
+**shared_bridge** puts every net0 on the agent's `proxmox.bridge` (`customers`). Projects are on
+different subnets and the IP filter stops a guest from sending from an address it was not given, but they
+share one layer 2 segment. Fine for development and a single tenant; not isolation.
+
+**sdn_vnet** gives each project network its own VNet. The first server of a project in a region asks the
+agent of its host to create the VNet (id `pn<tag in base 36>`, tag from the network) in
+`PROXMOX_VXLAN_ZONE` and to apply the SDN config (`PUT /cluster/sdn`); the VM's net0 then sits on that
+VNet. Prerequisites, done once per cluster before switching a region:
+
+1. SDN installed on every node (`libpve-network-perl` and `ifupdown2`, which Proxmox VE 8 ships, and
+   `source /etc/network/interfaces.d/*` at the end of `/etc/network/interfaces`).
+2. The VXLAN zone, listing every node's underlay address as a peer and not restricted to a subset of
+   nodes, so it exists on every node. A VNet bridge exists only on nodes the zone covers; a VM placed
+   on any other node fails to start.
+
+   ```sh
+   pvesh create /cluster/sdn/zones --type vxlan --zone customers --peers 10.0.0.11,10.0.0.12,10.0.0.13 --mtu 1450
+   pvesh set /cluster/sdn
+   ```
+3. UDP 4789 open between the nodes' underlay addresses.
+4. MTU: VXLAN adds 50 bytes, so with a 1500 byte underlay the guests get 1450. The agent sets `mtu=1` on
+   net0 so virtio hands the VNet's MTU to the guest, and cloud images honor it. Alternatively raise the
+   underlay MTU to 1550 or more (jumbo frames on the switch) and give the zone 1500.
+5. The agent's API token needs the `PVESDNAdmin` role on `/sdn` (create VNets, apply, and use them in a
+   VM config) in addition to its VM and storage roles.
+6. The datacenter firewall enabled (`/cluster/firewall/options enable=1`), or the per VM firewall, and
+   with it the IP filter, is not enforced.
+7. A path from the control plane into the tenant VNets. A VXLAN zone does not route, so platform agents
+   on private addresses are unreachable from the management VMs until one exists (an EVPN zone with a VRF
+   per project and an exit node, or a management NIC on platform VMs). Until then keep `shared_bridge`.
+
+Switch a region with `PRIVATE_NETWORK_MODE=<region>=sdn_vnet` only when all of the above holds on every
+node of that region. Servers created before the switch stay on the shared bridge until they are rebuilt,
+so a region is best switched before it has customers.
+
+The IP filter works in both modes: on each firewall push the agent writes the allowed addresses into the
+VM's `ipfilter-net0` and `ipfilter-net1` IP sets and sets `ipfilter: 1`, but only for NICs whose
+cloud-init address matches the allocation, so servers still on DHCP are not cut off.
+
 ## Backups and restore
 
 The backup container dumps Postgres every night at 02:15 UTC to `/var/backups/pgcloud`, keeps

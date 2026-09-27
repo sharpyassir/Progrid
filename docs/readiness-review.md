@@ -20,7 +20,7 @@ what blocks money first. Items marked "fixed" were corrected in the same commit 
 | ZATCA e-invoicing | Not built, only a flag on the invoice | Must build or contract before the first SAR invoice |
 | Support tickets and email intake | Complete, tested | Ship |
 | Compute on Proxmox (host agent, workflows) | Written, tested against a simulator only | First real node test will find bugs; list below |
-| Networking (public IPs, firewall, private network) | Public IP and firewall written; private network and IPv6 missing | Build |
+| Networking (public IPs, firewall, private network) | Public IP, firewall and per project private networks written (static addresses, SDN VNets, IP filter), tested against the simulator; IPv6 missing | Test SDN on a real cluster |
 | Volumes, object storage, DNS | Written against Ceph RBD, RGW and PowerDNS; never run on real ones | Test on real cluster |
 | Managed databases, Kubernetes, App Platform | Written end to end; agents never booted on a real VM | Expect a hardening pass of one to two weeks each |
 | Control plane hosting (compose, Ansible) | Single host, working for a demo | Not fit for paying customers as is |
@@ -77,10 +77,23 @@ what blocks money first. Items marked "fixed" were corrected in the same commit 
     the SSH keys, hostname and default user into it (merged into a cloud-config, or as an extra
     part of a multipart document), and `sshkeys` is encoded with %20 and %0A. Still needs a
     real node test.
-11. **Private network and tenant isolation.** Every VM sits on one shared bridge with DHCP and no
-    per tenant VNet, VXLAN or address assignment, so the private IP is never filled and tenants
-    can see each other. Build per project VNets with the Proxmox SDN and IPAM, and enable
-    `ipfilter` so customers cannot spoof addresses.
+11. **Private network and tenant isolation.** Fixed in code, still needs a real cluster. Each
+    project has a private network per region (a /24 from `PRIVATE_NETWORK_POOL`, default
+    `10.96.0.0/12`) and every server gets a static address from it before its VM is created: the
+    agent writes `ipconfig0 ip=<addr>/<prefix>` without a gateway and the control plane records it
+    on `Server.privateIp`, so platform agents are reached on the private address from the first
+    boot. The agent reads the guest's addresses through the QEMU guest agent after boot and in
+    heartbeats, and the control plane warns on a mismatch without overwriting the allocation.
+    `PRIVATE_NETWORK_MODE=sdn_vnet` (per region) gives each project network its own VNet in the
+    `PROXMOX_VXLAN_ZONE` zone, created and applied by the agent; `shared_bridge` (the default)
+    keeps every net0 on the `customers` bridge, separated only by subnet and the IP filter. The
+    firewall turns on `ipfilter` with an `ipfilter-net<N>` IP set per NIC holding the allocated
+    addresses (and the cluster VIP on managed nodes). Open: in `sdn_vnet` mode the control plane
+    is not on the tenant VNets, so it cannot reach platform agents on their private addresses
+    until a management path exists (an EVPN zone with a VRF per project and an exit node, or a
+    management NIC on platform VMs); servers created before the switch stay on the shared bridge
+    until they are rebuilt, and those created before static addresses keep DHCP (unfiltered on
+    net0) until their next rebuild.
 12. **Resize corrupts the VM config.** Fixed: resize sends only cores and memory and grows the
     disk, and rebuild attaches every volume the database shows attached to the new VM.
 13. **Bandwidth billing is wrong.** Fixed: the agent sends outbound bytes since the previous
@@ -101,7 +114,10 @@ what blocks money first. Items marked "fixed" were corrected in the same commit 
 17. **Agent channel is plaintext on public IPs.** Every platform agent on port 9009 speaks HTTP
     over the public address with a shared header secret, carrying database passwords, S3 keys and
     the Kubernetes join token. `CONTROL_PLANE_CIDR` was never set (fixed in the Ansible template)
-    and `/status` needs no secret. Move agents to the private network and add TLS.
+    and `/status` needs no secret. Agents now listen on the private address, which the control
+    plane allocates and records at create time (item 11), so it no longer falls back to the
+    public address for new nodes. Still to do: TLS, and a `CONTROL_PLANE_CIDR` narrower than
+    `10.0.0.0/8`, which also covers the tenant pool `10.96.0.0/12`.
 18. **Managed Postgres bootstrap.** The Ubuntu package creates a default cluster in the same data
     directory Patroni expects, the postgres password is never set, three node clusters skip user
     creation, the pgBackRest endpoint is passed as a URL, WAL archiving is on before a repository

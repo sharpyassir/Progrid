@@ -15,7 +15,7 @@ type Proxmox struct {
 	TokenSecret  string `yaml:"token_secret"`  // from Vault / env PVE_TOKEN_SECRET
 	Storage      string `yaml:"storage"`       // Ceph RBD pool storage id, e.g. "vm-disks"
 	CephPool     string `yaml:"ceph_pool"`     // Ceph pool behind that storage, used by rbd resize for detached volumes
-	Bridge       string `yaml:"bridge"`        // SDN vnet for the default tenant overlay, e.g. "customers"
+	Bridge       string `yaml:"bridge"`        // shared private bridge for net0 when the control plane names no project VNet, e.g. "customers"
 	PublicBridge string `yaml:"public_bridge"` // bridge carrying our public IP blocks, e.g. "vmbr0"
 	Insecure     bool   `yaml:"insecure"`      // skip TLS verify for the local PVE cert
 }
