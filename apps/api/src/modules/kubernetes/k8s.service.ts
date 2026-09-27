@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -13,6 +13,7 @@ import { FirewallsService } from '../network/firewalls.service';
 import { IpsService } from '../network/ips.service';
 import { LoadBalancersService } from '../lb/lb.service';
 import { VolumesService } from '../storage/volumes.service';
+import { OBJECT_STORAGE_PROVIDER, ObjectStorageProvider, emptyAndDeleteBucket } from '../storage/objects/objects.provider';
 import { renderKubeCloudInit } from './cloud-init';
 import { loadConfig } from '../../config/config';
 import { agentHost, vipNetworkFor, vrrpPass } from '../../common/platform-agent';
@@ -21,6 +22,8 @@ import { CreateClusterDto, DEFAULT_CONTROL_SIZE, KUBE_VERSIONS, MAX_POOLS, NodeP
 const NODE_IMAGE = 'ubuntu-24-04';
 const PRIVATE_NET = '10.0.0.0/8';
 const API_PORT = 6443;
+/** Owner of platform buckets: not a customer project, so they are neither listed nor billed. */
+const PLATFORM_PROJECT = 'platform';
 
 const kubeInclude = {
   region: { select: { id: true, name: true } },
@@ -74,6 +77,7 @@ export class KubernetesService {
     private readonly ips: IpsService,
     private readonly lbs: LoadBalancersService,
     private readonly volumes: VolumesService,
+    @Inject(OBJECT_STORAGE_PROVIDER) private readonly storage: ObjectStorageProvider,
   ) {}
 
   versions() {
@@ -131,6 +135,16 @@ export class KubernetesService {
       },
       include: { pools: true },
     });
+    // Daily etcd snapshots go to a platform owned bucket; without one they stay on the nodes.
+    try {
+      await this.storage.ensureUser(PLATFORM_PROJECT);
+      const bucket = `pgcloud-k8s-${cluster.id.toLowerCase()}`;
+      await this.storage.createBucket(PLATFORM_PROJECT, bucket);
+      const key = await this.storage.createKey(PLATFORM_PROJECT);
+      await this.prisma.kubeCluster.update({ where: { id: cluster.id }, data: { backupBucket: bucket, backupAccessKey: key.accessKey, backupSecretKey: key.secretKey } });
+    } catch (err) {
+      this.log.warn(`etcd snapshot bucket for ${cluster.id} not ready: ${(err as Error).message}`);
+    }
     try {
       for (let i = 0; i < control; i++) await this.addNode(actor, cluster.id, { name: `k8s-${dto.name}-cp-${i}`, role: 'control', index: i, sizeId: controlSize.id, projectId: project.id, regionId: region.id, firewallId: fw.id, version, vmSecret: cluster.vmSecret });
       for (const pool of cluster.pools) for (let i = 0; i < pool.count; i++) await this.addNode(actor, cluster.id, { name: `k8s-${dto.name}-${pool.name}-${i}`, role: 'worker', index: i, poolId: pool.id, sizeId: pool.sizeId, projectId: project.id, regionId: region.id, firewallId: fw.id, version, vmSecret: cluster.vmSecret });
@@ -170,6 +184,7 @@ export class KubernetesService {
     await this.checkQuota(c.projectId, [{ count: dto.count, size: sizes.get(dto.size)! }]);
     const team = await this.prisma.team.findUniqueOrThrow({ where: { id: actor.teamId } });
     await this.spend.assertCanSpend(actor, c.projectId, (await this.spend.monthlyPriceMinor('server', dto.size, team.currency)) * dto.count);
+    await this.freshJoinToken(c);
     const pool = await this.prisma.kubeNodePool.create({ data: { clusterId: id, name: dto.name, sizeId: dto.size, count: dto.count, labels: dto.labels ?? {}, taints: (dto.taints ?? []) as object[] } });
     for (let i = 0; i < dto.count; i++) await this.addNode(actor, id, { name: `k8s-${c.name}-${pool.name}-${i}`, role: 'worker', index: i, poolId: pool.id, sizeId: pool.sizeId, projectId: c.projectId, regionId: c.regionId, firewallId: c.firewallId!, version: c.version, vmSecret: c.vmSecret });
     await this.bump(id, actor, 'kubernetes.pool_added', { pool: dto.name, count: dto.count });
@@ -187,6 +202,7 @@ export class KubernetesService {
       await this.checkQuota(c.projectId, [{ count: extra, size: pool.size }]);
       const team = await this.prisma.team.findUniqueOrThrow({ where: { id: actor.teamId } });
       await this.spend.assertCanSpend(actor, c.projectId, (await this.spend.monthlyPriceMinor('server', pool.sizeId, team.currency)) * extra);
+      await this.freshJoinToken(c);
       const used = new Set(current.map((n) => n.index));
       let index = 0;
       for (let k = 0; k < extra; k++) {
@@ -405,6 +421,7 @@ export class KubernetesService {
       taints: x.poolId ? ((poolOf.get(x.poolId)?.taints as object[]) ?? []) : undefined,
     }));
     const vip = c.publicIp?.address ?? '';
+    const cfg = loadConfig();
     const volumesHere = Object.values(state.volumes ?? {}).filter((v) => v.node === n.server.name).map((v) => ({ id: v.volumeId, serial: serial(v.volumeId) }));
     return {
       version: c.configVersion,
@@ -416,6 +433,7 @@ export class KubernetesService {
       pvs: Object.entries(state.volumes ?? {}).filter(([, v]) => v.mounted).map(([key, v]) => ({ name: v.pvName, volumeId: v.volumeId, pvcNamespace: key.split('/')[0], pvcName: key.split('/')[1], node: v.node, sizeGb: v.sizeGb, path: `/var/lib/pgcloud/volumes/${v.volumeId}` })),
       deletePvs: state.deletePvs ?? [],
       removeNodes: state.removeNodes ?? [],
+      backup: c.backupBucket ? { endpoint: cfg.S3_ENDPOINT, region: cfg.S3_REGION, bucket: c.backupBucket, accessKey: c.backupAccessKey, secretKey: c.backupSecretKey } : null,
     };
   }
 
@@ -425,6 +443,28 @@ export class KubernetesService {
     const r = await fetch(`http://${ip}:9009/status`, { headers: { 'X-Pgcloud-Secret': c.vmSecret }, signal: AbortSignal.timeout(8000) });
     if (!r.ok) return null;
     return (await r.json()) as NodeStatus;
+  }
+
+  /** Bootstrap tokens live 24 hours: nodes added later join with a fresh one from node 0. */
+  private async freshJoinToken(c: KubeRow) {
+    if (!c.caHash) return; // still bootstrapping: the token from creation is valid
+    const node0 = c.nodes.find((n) => n.role === 'control' && n.index === 0);
+    const ip = node0 && node0.server.status === 'active' ? agentHost(node0.server) : null;
+    if (!ip) throw ApiError.invalidState('The first control plane node is not reachable; try again in a minute');
+    const r = await fetch(`http://${ip}:9009/join-token`, { method: 'POST', headers: { 'X-Pgcloud-Secret': c.vmSecret }, signal: AbortSignal.timeout(30_000) }).catch(() => null);
+    const token = r?.ok ? ((await r.json()) as { token?: string }).token : undefined;
+    if (!token || !/^[a-z0-9]{6}\.[a-z0-9]{16}$/.test(token)) throw ApiError.invalidState('The control plane could not issue a join token; try again in a minute');
+    await this.prisma.kubeCluster.update({ where: { id: c.id }, data: { joinToken: token } });
+  }
+
+  /** On delete: remove the etcd snapshot bucket and its key. */
+  async purgeBackups(clusterId: string) {
+    const c = await this.prisma.kubeCluster.findUnique({ where: { id: clusterId } });
+    if (!c?.backupBucket) return 0;
+    const removed = await emptyAndDeleteBucket(this.storage, PLATFORM_PROJECT, c.backupBucket);
+    if (c.backupAccessKey) await this.storage.deleteKey(PLATFORM_PROJECT, c.backupAccessKey).catch(() => undefined);
+    await this.prisma.kubeCluster.update({ where: { id: clusterId }, data: { backupBucket: null, backupAccessKey: null, backupSecretKey: null } });
+    return removed;
   }
 
   // ---- helpers ----
@@ -526,11 +566,12 @@ function firewallRules(ha: boolean) {
   return [
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '22', cidrs: [cp], description: 'platform ssh' },
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: String(API_PORT), cidrs: ['0.0.0.0/0', '::/0'], description: 'kubernetes api' },
+    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: String(API_PORT), cidrs: [PRIVATE_NET], description: 'kubernetes api between nodes' },
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '30000-32767', cidrs: ['0.0.0.0/0', '::/0'], description: 'node ports' },
     { direction: 'inbound' as const, protocol: 'udp' as const, ports: '30000-32767', cidrs: ['0.0.0.0/0', '::/0'], description: 'node ports' },
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '2379-2380', cidrs: [PRIVATE_NET], description: 'etcd' },
-    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '10250-10260', cidrs: [PRIVATE_NET], description: 'kubelet and controllers' },
-    { direction: 'inbound' as const, protocol: 'udp' as const, ports: '8472', cidrs: [PRIVATE_NET], description: 'flannel vxlan' },
+    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '10250-10260', cidrs: [PRIVATE_NET], description: 'kubelet (10250) and controllers between nodes' },
+    { direction: 'inbound' as const, protocol: 'udp' as const, ports: '8472', cidrs: [PRIVATE_NET], description: 'flannel vxlan between nodes' },
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '9009', cidrs: [cp], description: 'pgcloud node agent' },
     ...(ha ? [{ direction: 'inbound' as const, protocol: 'vrrp' as const, cidrs: [PRIVATE_NET], description: 'keepalived between control plane nodes' }] : []),
     { direction: 'outbound' as const, protocol: 'any' as const, cidrs: ['0.0.0.0/0'] },

@@ -1493,6 +1493,10 @@ model KubeCluster {
   configVersion Int               @default(1)
   /// Cloud controller state: load balancers and volumes created for Services and PVCs.
   cloudState    Json              @default("{}")
+  /// Platform owned bucket for daily etcd snapshots; null keeps snapshots on the control plane nodes.
+  backupBucket    String?
+  backupAccessKey String?
+  backupSecretKey String?
   meteredSince  DateTime?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt

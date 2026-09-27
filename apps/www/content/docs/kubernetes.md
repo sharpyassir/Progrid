@@ -67,4 +67,6 @@ Worker nodes cost the same as servers of that size. A single control plane node 
 
 ## Limits
 
+The control plane certificates are renewed every month, one control plane node a day apart, and etcd is snapshotted daily to a platform bucket kept with the cluster. Nodes talk to each other, and the kubelet registers, on the private network.
+
 One region per cluster. Up to ten pools and fifty nodes per pool. The API server is reachable from the internet and protected by client certificates; there is no allow list yet. Cluster upgrades between minor versions are not automated: create a new cluster and move workloads over.

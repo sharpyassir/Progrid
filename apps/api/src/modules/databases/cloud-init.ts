@@ -1,4 +1,4 @@
-import { AGENT_NET_PY } from '../../common/platform-agent';
+import { AGENT_NET_PY, AGENT_S3_PY } from '../../common/platform-agent';
 
 /**
  * cloud-init for a managed database node. Installs the engine, its HA tooling and
@@ -114,27 +114,7 @@ def disk_used(path):
     st = os.statvfs(path)
     return round(100 * (1 - st.f_bavail / st.f_blocks), 1)
 
-# ---- platform backup bucket: SigV4, path style ----
-def s3_request(b, method, key, body=b'', out=None):
-    import hashlib, hmac, datetime
-    u = urllib.parse.urlparse(b['endpoint']); host = u.netloc; base = u.path.rstrip('/')
-    now = datetime.datetime.utcnow(); amz = now.strftime('%Y%m%dT%H%M%SZ'); day = now.strftime('%Y%m%d')
-    ph = hashlib.sha256(body).hexdigest(); canonical_uri = f"{base}/{b['bucket']}/{urllib.parse.quote(key)}"
-    headers = {'host': host, 'x-amz-content-sha256': ph, 'x-amz-date': amz}
-    signed = ';'.join(sorted(headers)); ch = ''.join(f"{k}:{headers[k]}\n" for k in sorted(headers))
-    creq = '\n'.join([method, canonical_uri, '', ch, signed, ph]); scope = f"{day}/{b['region']}/s3/aws4_request"
-    sts = '\n'.join(['AWS4-HMAC-SHA256', amz, scope, hashlib.sha256(creq.encode()).hexdigest()])
-    def h(k, m): return hmac.new(k, m.encode(), hashlib.sha256).digest()
-    sig = hmac.new(h(h(h(h(('AWS4' + b['secretKey']).encode(), day), b['region']), 's3'), 'aws4_request'), sts.encode(), hashlib.sha256).hexdigest()
-    headers['Authorization'] = f"AWS4-HMAC-SHA256 Credential={b['accessKey']}/{scope}, SignedHeaders={signed}, Signature={sig}"
-    req = urllib.request.Request(f"{u.scheme}://{host}{canonical_uri}", data=body if method == 'PUT' else None, method=method, headers=headers)
-    with urllib.request.urlopen(req, timeout=600) as r:
-        if out:
-            with open(out, 'wb') as f: shutil.copyfileobj(r, f)
-        else: r.read()
-def s3_put(b, key, path):
-    body = open(path, 'rb').read(); s3_request(b, 'PUT', key, body); return len(body)
-def s3_get(b, key, path): s3_request(b, 'GET', key, out=path)
+@@S3@@
 def s3_host(b):
     # pgBackRest wants a bare host name: no scheme, port or path.
     u = urllib.parse.urlparse(b['endpoint']); return u.hostname, u.port
@@ -623,7 +603,7 @@ if ENGINE == 'mysql': threading.Thread(target=mysql_monitor, daemon=True).start(
 http.server.ThreadingHTTPServer((bind_address(), 9009), H).serve_forever()`;
 
 export function renderDbCloudInit(d: DbNodeInit): string {
-  const agent = DBD_PY.replace('@@NET@@', AGENT_NET_PY);
+  const agent = DBD_PY.replace('@@NET@@', AGENT_NET_PY).replace('@@S3@@', AGENT_S3_PY);
   return `#cloud-config
 package_update: true
 packages: ${PACKAGES[d.engine]}

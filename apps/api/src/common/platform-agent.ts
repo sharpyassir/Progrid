@@ -43,9 +43,41 @@ def bind_address():
     open('/var/log/pgcloud-agent.log', 'a').write('no private address after five minutes; listening on all addresses\n')
     return '0.0.0.0'`;
 
+/**
+ * SigV4 GET and PUT against a platform owned bucket (path style), standard library only.
+ * `b` is {endpoint, region, bucket, accessKey, secretKey}. Needs `shutil`, `urllib.request`
+ * and `urllib.parse` imported.
+ */
+export const AGENT_S3_PY = String.raw`# ---- platform backup bucket: SigV4, path style ----
+def s3_request(b, method, key, body=b'', out=None):
+    import hashlib, hmac, datetime
+    u = urllib.parse.urlparse(b['endpoint']); host = u.netloc; base = u.path.rstrip('/')
+    now = datetime.datetime.utcnow(); amz = now.strftime('%Y%m%dT%H%M%SZ'); day = now.strftime('%Y%m%d')
+    ph = hashlib.sha256(body).hexdigest(); canonical_uri = f"{base}/{b['bucket']}/{urllib.parse.quote(key)}"
+    headers = {'host': host, 'x-amz-content-sha256': ph, 'x-amz-date': amz}
+    signed = ';'.join(sorted(headers)); ch = ''.join(f"{k}:{headers[k]}\n" for k in sorted(headers))
+    creq = '\n'.join([method, canonical_uri, '', ch, signed, ph]); scope = f"{day}/{b['region']}/s3/aws4_request"
+    sts = '\n'.join(['AWS4-HMAC-SHA256', amz, scope, hashlib.sha256(creq.encode()).hexdigest()])
+    def h(k, m): return hmac.new(k, m.encode(), hashlib.sha256).digest()
+    sig = hmac.new(h(h(h(h(('AWS4' + b['secretKey']).encode(), day), b['region']), 's3'), 'aws4_request'), sts.encode(), hashlib.sha256).hexdigest()
+    headers['Authorization'] = f"AWS4-HMAC-SHA256 Credential={b['accessKey']}/{scope}, SignedHeaders={signed}, Signature={sig}"
+    req = urllib.request.Request(f"{u.scheme}://{host}{canonical_uri}", data=body if method == 'PUT' else None, method=method, headers=headers)
+    with urllib.request.urlopen(req, timeout=600) as r:
+        if out:
+            with open(out, 'wb') as f: shutil.copyfileobj(r, f)
+        else: r.read()
+def s3_put(b, key, path):
+    body = open(path, 'rb').read(); s3_request(b, 'PUT', key, body); return len(body)
+def s3_get(b, key, path): s3_request(b, 'GET', key, out=path)`;
+
 /** AGENT_NET_PY indented for a YAML block scalar. */
 export function agentNetPy(indent = 6): string {
-  return AGENT_NET_PY.split('\n').map((l) => (l ? ' '.repeat(indent) + l : '')).join('\n');
+  return indentBlock(AGENT_NET_PY, indent);
+}
+
+/** Indents every non empty line, for pasting Python into a YAML block scalar. */
+export function indentBlock(text: string, indent: number): string {
+  return text.split('\n').map((l) => (l ? ' '.repeat(indent) + l : '')).join('\n');
 }
 
 /**

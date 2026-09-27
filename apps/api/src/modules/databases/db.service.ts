@@ -13,7 +13,7 @@ import { SpendService } from '../billing/spend.service';
 import { ServersService } from '../compute/servers.service';
 import { FirewallsService } from '../network/firewalls.service';
 import { IpsService } from '../network/ips.service';
-import { OBJECT_STORAGE_PROVIDER, ObjectStorageProvider } from '../storage/objects/objects.provider';
+import { OBJECT_STORAGE_PROVIDER, ObjectStorageProvider, emptyAndDeleteBucket } from '../storage/objects/objects.provider';
 import { renderDbCloudInit } from './cloud-init';
 import { agentHost, vipNetworkFor, vrrpPass } from '../../common/platform-agent';
 import { CreateDatabaseDto, DbNameDto, ENGINE_PORTS, ENGINE_VERSIONS, RestoreDatabaseDto, UpdateDatabaseDto } from './db.dto';
@@ -293,21 +293,7 @@ export class DatabasesService {
   async purgeBackups(clusterId: string) {
     const c = await this.prisma.dbCluster.findUnique({ where: { id: clusterId } });
     if (!c?.backupBucket) return 0;
-    let removed = 0;
-    const walk = async (prefix: string): Promise<void> => {
-      let token: string | undefined;
-      do {
-        const page = await this.storage.listObjects(PLATFORM_PROJECT, c.backupBucket!, prefix, token);
-        for (const o of page.objects) {
-          await this.storage.deleteObject(PLATFORM_PROJECT, c.backupBucket!, o.key);
-          removed++;
-        }
-        for (const p of page.prefixes) await walk(p);
-        token = page.nextToken;
-      } while (token);
-    };
-    await walk('');
-    await this.storage.deleteBucket(PLATFORM_PROJECT, c.backupBucket);
+    const removed = await emptyAndDeleteBucket(this.storage, PLATFORM_PROJECT, c.backupBucket);
     if (c.backupAccessKey) await this.storage.deleteKey(PLATFORM_PROJECT, c.backupAccessKey).catch(() => undefined);
     return removed;
   }

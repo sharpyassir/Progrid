@@ -32,6 +32,26 @@ export interface ObjectStorageProvider {
 
 export const OBJECT_STORAGE_PROVIDER = Symbol('OBJECT_STORAGE_PROVIDER');
 
+/** Deletes every object in a bucket, then the bucket. Returns how many objects went. */
+export async function emptyAndDeleteBucket(storage: ObjectStorageProvider, projectId: string, bucket: string): Promise<number> {
+  let removed = 0;
+  const walk = async (prefix: string): Promise<void> => {
+    let token: string | undefined;
+    do {
+      const page = await storage.listObjects(projectId, bucket, prefix, token);
+      for (const o of page.objects) {
+        await storage.deleteObject(projectId, bucket, o.key);
+        removed++;
+      }
+      for (const p of page.prefixes) await walk(p);
+      token = page.nextToken;
+    } while (token);
+  };
+  await walk('');
+  await storage.deleteBucket(projectId, bucket);
+  return removed;
+}
+
 /** In memory S3 for development. Objects are served by FakeS3Controller at /_fake-s3. */
 export class FakeObjectStorage implements ObjectStorageProvider {
   readonly name = 'fake';

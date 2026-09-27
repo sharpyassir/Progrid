@@ -583,6 +583,7 @@ export function createActivities(app: INestApplicationContext): Activities {
       }
       if (c.publicIpId) await ips.release(c.publicIpId).catch(() => undefined);
       if (c.firewallId) await prisma.firewall.delete({ where: { id: c.firewallId } }).catch(() => undefined);
+      await k8s.purgeBackups(clusterId).catch((e) => log.warn(`etcd snapshot bucket for ${clusterId}: ${(e as Error).message}`));
       await prisma.kubeCluster.update({ where: { id: clusterId }, data: { status: 'deleted', deletedAt: new Date(), publicIpId: null, firewallId: null, meteredSince: null, kubeconfig: null, certKey: '', joinToken: '' } });
     },
 
