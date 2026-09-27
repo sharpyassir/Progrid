@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState } from 'react';
+import { HeroGrid } from './hero-grid';
 import { COPY, LANGS, type Copy, type Lang } from '@/lib/copy';
 
 const LangCtx = createContext<Lang>('en');
@@ -61,8 +62,8 @@ export function Hero() {
   const c = useCopy();
   return (
     <section className="hero-bg relative overflow-hidden text-white">
-      <div className="grid-bg absolute inset-0" aria-hidden />
-      <div className="container-x relative grid items-center gap-12 py-20 sm:py-28 lg:grid-cols-2">
+      <HeroGrid />
+      <div className="container-x relative grid items-center gap-12 py-20 pb-72 sm:py-28 sm:pb-80 lg:grid-cols-2">
         <div>
           <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-slate-200">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> {c.hero.badge}
