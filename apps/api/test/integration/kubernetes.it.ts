@@ -97,3 +97,77 @@ describe('managed Kubernetes', () => {
     for (const n of gone.nodes) expect(n.server.status).toBe('deleted');
   });
 });
+
+describe('Kubernetes cloud controller', () => {
+  it('turns a LoadBalancer Service into a platform load balancer and a claim into a mounted volume', async () => {
+    const c = (await readyTeam(s)).client;
+    const created = await c.ok('POST', '/v1/kubernetes/clusters', { name: 'k2', pools: [{ name: 'pool', size: 's-2vcpu-4gb', count: 2 }] }, 202);
+    await waitStatus(c, `/v1/kubernetes/clusters/${created.id}`, 'active', 120_000);
+    const k8s = s.get(KubernetesService);
+    const rows = await s.prisma.kubeNode.findMany({ where: { clusterId: created.id }, include: { server: true }, orderBy: [{ role: 'asc' }, { index: 'asc' }] });
+    const workers = rows.filter((n) => n.role === 'worker');
+    const clusterName = (await s.agents.inspect(rows[0].serverId))!.last!.cluster.name as string;
+    /** One pass of the minute job, then whatever push it caused. */
+    const settle = async () => {
+      await k8s.refreshAll();
+      return waitStatus<any>(c, `/v1/kubernetes/clusters/${created.id}`, 'active', 60_000);
+    };
+
+    // kubectl expose ... --type=LoadBalancer
+    await s.agents.kubectlApply(clusterName, { kind: 'Service', namespace: 'web', name: 'front', ports: [{ port: 80, nodePort: 30080 }] });
+    let cluster = await settle();
+    expect(cluster.cloud.loadBalancers).toHaveLength(1);
+    const lbId = cluster.cloud.loadBalancers[0].loadBalancerId;
+    const lb = await waitStatus<any>(c, `/v1/load-balancers/${lbId}`, 'active', 120_000);
+    expect(lb.tag).toBe(`k8s-${created.id}`);
+    expect(lb.forwardingRules).toEqual([{ entryProtocol: 'tcp', entryPort: 80, targetProtocol: 'tcp', targetPort: 30080 }]);
+    // The address goes back into the cluster, where node 0 writes it into the Service status.
+    cluster = await settle();
+    expect(cluster.cloud.loadBalancers[0].ip).toBe(lb.ip);
+    const node0 = await s.agents.inspect(rows[0].serverId);
+    expect(node0!.last!.services['web/front'].ip).toBe(lb.ip);
+    // The load balancer sends traffic to the workers' node port over the private network.
+    const lbNode = await s.prisma.loadBalancerNode.findFirstOrThrow({ where: { loadBalancerId: lbId } });
+    const lbAgent = await s.agents.inspect(lbNode.serverId);
+    for (const w of workers) expect(lbAgent!.last!.haproxyCfg).toContain(`${w.server.privateIp}:30080`);
+
+    // A pgcloud-block claim the scheduler put on the first worker.
+    await s.agents.kubectlApply(clusterName, { kind: 'PersistentVolumeClaim', namespace: 'web', name: 'data', sizeGb: 20, node: workers[0].server.name });
+    cluster = await settle();
+    expect(cluster.cloud.volumes).toHaveLength(1);
+    const volumeId = cluster.cloud.volumes[0].volumeId;
+    const vol = await waitStatus<any>(c, `/v1/volumes/${volumeId}`, 'attached', 60_000);
+    expect(vol.serverId).toBe(workers[0].serverId);
+    expect(vol.sizeGb).toBe(20);
+    // The worker mounts it, then node 0 gets the PersistentVolume and the claim binds.
+    await waitFor(async () => {
+      await settle();
+      const now = await c.ok('GET', `/v1/kubernetes/clusters/${created.id}`);
+      return now.cloud.volumes[0].mounted ? now : null;
+    }, { what: 'the volume to be mounted', timeoutMs: 60_000 });
+    const w0 = await s.agents.inspect(workers[0].serverId);
+    expect(w0!.st.mounted).toEqual([volumeId]);
+    await settle();
+    const bound = await s.agents.inspect(rows[0].serverId);
+    expect(bound!.last!.pvs).toEqual([expect.objectContaining({ volumeId, pvcNamespace: 'web', pvcName: 'data', node: workers[0].server.name, sizeGb: 20 })]);
+    const st = await s.prisma.kubeCluster.findUniqueOrThrow({ where: { id: created.id } });
+    expect((st.cloudState as { volumes: Record<string, { pvCreated?: boolean }> }).volumes['web/data'].pvCreated).toBe(true);
+
+    // kubectl delete pvc: the PV goes, the volume is unmounted, detached and deleted.
+    await s.agents.kubectlDelete(clusterName, 'PersistentVolumeClaim', 'web', 'data');
+    await waitFor(async () => {
+      await settle();
+      const v = await c.get(`/v1/volumes/${volumeId}`);
+      return v.status === 404 ? true : null;
+    }, { what: 'the volume of the deleted claim to be deleted', timeoutMs: 90_000 });
+    expect((await s.agents.inspect(workers[0].serverId))!.st.mounted).toEqual([]);
+    // The next pass forgets the volume.
+    await settle();
+    expect((await c.ok('GET', `/v1/kubernetes/clusters/${created.id}`)).cloud.volumes).toEqual([]);
+
+    // Deleting the cluster takes its load balancer with it.
+    await c.ok('DELETE', `/v1/kubernetes/clusters/${created.id}`, undefined, 202);
+    await waitFor(async () => (await c.get(`/v1/load-balancers/${lbId}`)).status === 404, { what: 'the load balancer to be deleted', timeoutMs: 120_000 });
+    await waitFor(async () => (await c.get(`/v1/kubernetes/clusters/${created.id}`)).status === 404, { what: 'cluster to be deleted', timeoutMs: 120_000 });
+  });
+});

@@ -19,7 +19,7 @@ import type { AgentRequest } from '../common/platform-agent';
 
 type Kind = 'lb' | 'db' | 'k8s' | 'app' | 'deploy';
 type Engine = 'postgres' | 'valkey' | 'mysql';
-type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+type Json = Record<string, any>;
 
 interface FakeNode {
   serverId: string;
@@ -175,6 +175,32 @@ export class FakePlatformAgents {
       const cl = await this.get<Json>(`cluster:k8s:${clusterName}`);
       if (!cl) return;
       for (const t of Object.keys(cl.tokens ?? {})) cl.tokens[t] = 0;
+      await this.put(`cluster:k8s:${clusterName}`, cl);
+    });
+  }
+
+  /**
+   * What a customer does with kubectl: a Service of type LoadBalancer, or a pgcloud-block
+   * claim the scheduler placed on `node`. Node 0 reports them in its status like the real one.
+   */
+  async kubectlApply(clusterName: string, obj: { kind: 'Service'; namespace: string; name: string; ports: { port: number; nodePort: number; protocol?: string }[] } | { kind: 'PersistentVolumeClaim'; namespace: string; name: string; sizeGb: number; node: string }) {
+    await this.locked(`k8s:${clusterName}`, async () => {
+      const cl = await this.get<Json>(`cluster:k8s:${clusterName}`);
+      if (!cl) throw new Error(`no cluster ${clusterName}`);
+      const key = `${obj.namespace}/${obj.name}`;
+      const uid = randomBytes(8).toString('hex');
+      if (obj.kind === 'Service') (cl.services ??= {})[key] = { namespace: obj.namespace, name: obj.name, uid, ports: obj.ports.map((p) => ({ protocol: 'TCP', ...p })), ip: null };
+      else (cl.pvcs ??= {})[key] = { namespace: obj.namespace, name: obj.name, uid, phase: 'Pending', sizeGb: obj.sizeGb, node: obj.node };
+      await this.put(`cluster:k8s:${clusterName}`, cl);
+    });
+  }
+
+  /** kubectl delete of an object made with kubectlApply. */
+  async kubectlDelete(clusterName: string, kind: 'Service' | 'PersistentVolumeClaim', namespace: string, name: string) {
+    await this.locked(`k8s:${clusterName}`, async () => {
+      const cl = await this.get<Json>(`cluster:k8s:${clusterName}`);
+      if (!cl) return;
+      delete cl[kind === 'Service' ? 'services' : 'pvcs']?.[`${namespace}/${name}`];
       await this.put(`cluster:k8s:${clusterName}`, cl);
     });
   }
@@ -461,6 +487,14 @@ export class FakePlatformAgents {
           cl!.nodes[m.name] = { ready: true, version: kubelet };
         }
         if (m.index === 0 && cl) {
+          // reconcile_control: LoadBalancer Services get the platform's address, claims bind to the PVs made for them.
+          for (const [key, svc] of Object.entries((c.services ?? {}) as Record<string, Json>)) {
+            if (svc.ip && cl.services?.[key]) cl.services[key].ip = svc.ip;
+          }
+          for (const pv of (c.pvs ?? []) as Json[]) {
+            const claim = cl.pvcs?.[`${pv.pvcNamespace}/${pv.pvcName}`];
+            if (claim) Object.assign(claim, { phase: 'Bound', volume: pv.name });
+          }
           for (const name of (c.removeNodes ?? []) as string[]) delete cl.nodes[name];
         }
       } else {
@@ -497,8 +531,8 @@ export class FakePlatformAgents {
         out.caHash = cl.caHash;
         out.kubeconfig = Buffer.from(cl.kubeconfig).toString('base64');
         out.nodes = Object.entries(cl.nodes as Record<string, Json>).map(([name, n]) => ({ name, ready: n.ready, version: n.version }));
-        out.services = [];
-        out.pvcs = [];
+        out.services = Object.values((cl.services ?? {}) as Record<string, Json>).map((x) => ({ namespace: x.namespace, name: x.name, uid: x.uid, ports: x.ports, ip: x.ip ?? null }));
+        out.pvcs = Object.values((cl.pvcs ?? {}) as Record<string, Json>).map((x) => ({ namespace: x.namespace, name: x.name, uid: x.uid, phase: x.phase, sizeGb: x.sizeGb, node: x.node }));
         out.apiHealthy = true;
       }
     }

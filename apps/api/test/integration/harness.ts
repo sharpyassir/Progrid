@@ -13,6 +13,10 @@ import { MailService, type Mail } from '../../src/common/mail/mail.service';
 import { PrismaService } from '../../src/common/prisma/prisma.service';
 import { FakePlatformAgents } from '../../src/drivers/fake-platform-agents';
 import { totpCode } from '../../src/common/auth/totp';
+import { SchedulerService } from '../../src/modules/scheduler/scheduler.service';
+import { MeteringService } from '../../src/modules/billing/metering.service';
+import { MetricsService } from '../../src/modules/monitoring/metrics.service';
+import { AlertsService } from '../../src/modules/monitoring/alerts.service';
 
 /**
  * The system under test, booted once per suite run: the Nest API on a random port and a
@@ -51,6 +55,11 @@ async function boot(): Promise<Sut> {
   const port = (api.getHttpServer().address() as AddressInfo).port;
 
   const worker = await NestFactory.createApplicationContext(WorkerModule, { logger });
+  // The NATS consumers the worker process runs (no-ops when NATS is not reachable).
+  worker.get(SchedulerService).listenHeartbeats();
+  worker.get(MeteringService).listen();
+  worker.get(MetricsService).listen();
+  worker.get(AlertsService).listen();
   Runtime.install({ logger: new DefaultLogger(process.env.IT_LOG ? 'INFO' : 'WARN') });
   const connection = await NativeConnection.connect({ address: cfg.TEMPORAL_ADDRESS });
   const temporalWorker = await Worker.create({
