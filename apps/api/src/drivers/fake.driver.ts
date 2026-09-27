@@ -51,7 +51,7 @@ export class FakeDriver implements HypervisorDriver {
   async createVm(hostRef: string, spec: VmSpec): Promise<VmHandle> {
     await sleep(300);
     const vmRef = JSON.stringify({ fake: true, vmid: this.nextId++, host: JSON.parse(hostRef).node ?? 'fake1' });
-    const privateIp = `10.10.${Math.floor(this.nextId / 250)}.${this.nextId % 250}`;
+    const privateIp = spec.privateIp?.address ?? `10.10.${Math.floor(this.nextId / 250)}.${this.nextId % 250}`;
     this.vms.set(vmRef, { spec, power: 'running', bootedAt: Date.now(), ips: [], rules: [] });
     this.log.debug(`created ${spec.name} → ${vmRef}`);
     return { vmRef, privateIp };
@@ -115,6 +115,9 @@ export class FakeDriver implements HypervisorDriver {
     const vm = this.vms.get(vmRef);
     if (vm) vm.rules = rules;
   }
+
+  /** The fake hypervisor has no SDN; every private network already exists. */
+  async ensurePrivateNetwork() {}
 
   private mustGet(vmRef: string): FakeVm {
     const vm = this.vms.get(vmRef);

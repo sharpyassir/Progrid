@@ -113,6 +113,7 @@ func spec(serverID string) protocol.VmSpec {
 		ServerID: serverID, Name: "web-1", Hostname: "web-1", Vcpu: 2, MemoryMb: 4096, DiskGb: 80,
 		ImageRef: `{"template":9000}`, SshKeys: []string{"ssh-ed25519 AAAA test"}, UserData: "#cloud-config\nhostname: web-1\n",
 		NetworkRef: "vpc-proj_1", PublicIP: &protocol.PublicIP{Address: "203.0.113.10", Gateway: "203.0.113.1", Prefix: 24},
+		PrivateIP: &protocol.PrivateIP{Address: "10.96.0.2", Prefix: 24},
 	}
 }
 
@@ -146,6 +147,12 @@ func TestCreateConfiguresCloneAndBoots(t *testing.T) {
 	if !strings.HasPrefix(vm.Config["net1"], "virtio=BC:24:11:") || !strings.HasSuffix(vm.Config["net1"], ",bridge=vmbr0,firewall=1") || !strings.HasPrefix(vm.Config["ipconfig1"], "ip=203.0.113.10/24,gw=203.0.113.1") {
 		t.Fatalf("public network not configured: %v", vm.Config)
 	}
+	if vm.Config["ipconfig0"] != "ip=10.96.0.2/24" || !strings.HasSuffix(vm.Config["net0"], ",bridge=customers,firewall=1") {
+		t.Fatalf("private NIC not static without a gateway: %v", vm.Config)
+	}
+	if h := handleOf(t, r); h.PrivateIP != "10.96.0.2" {
+		t.Fatalf("create result lacks the private address: %+v", h)
+	}
 	if !strings.HasPrefix(vm.Config["cicustom"], "user=local:snippets/pgcloud-") {
 		t.Fatalf("cloud-init snippet not referenced: %v", vm.Config)
 	}
@@ -166,6 +173,27 @@ func TestCreateConfiguresCloneAndBoots(t *testing.T) {
 	if st.Power != "running" {
 		t.Fatalf("expected running after boot, got %+v", st)
 	}
+}
+
+// A control plane that sends no private address keeps the old DHCP behavior on net0.
+func TestCreateWithoutPrivateIPUsesDHCP(t *testing.T) {
+	h := newHarness(t)
+	sp := spec("srv_dhcp")
+	sp.PrivateIP = nil
+	vmid, _ := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": sp})))
+	if got := h.sim.VM(vmid).Config["ipconfig0"]; got != "ip=dhcp" {
+		t.Fatalf("expected DHCP on net0, got %q", got)
+	}
+}
+
+func handleOf(t *testing.T, r protocol.JobResult) protocol.VmHandle {
+	t.Helper()
+	b, _ := json.Marshal(r.Result)
+	var h protocol.VmHandle
+	if err := json.Unmarshal(b, &h); err != nil {
+		t.Fatalf("bad create result %s", b)
+	}
+	return h
 }
 
 func TestPowerSnapshotFirewallResizeDelete(t *testing.T) {
@@ -485,6 +513,55 @@ func TestFindByTag(t *testing.T) {
 	}
 }
 
+// The guest agent's view of the network reaches the control plane after boot and in heartbeats.
+func TestGuestAddressesAfterBootAndInHeartbeat(t *testing.T) {
+	h := newHarness(t)
+	hb := make(chan *nats.Msg, 256)
+	sub, _ := h.nc.ChanSubscribe("pgcloud.host.host_test.heartbeat", hb)
+	defer sub.Unsubscribe()
+
+	vmid, ref := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_ga")})))
+	r := h.mustOK(h.job(protocol.JobWaitBoot, map[string]interface{}{"vmRef": ref, "timeoutMs": 5000}))
+	b, _ := json.Marshal(r.Result)
+	var st protocol.VmStatus
+	_ = json.Unmarshal(b, &st)
+	if strings.Join(st.GuestAddresses, ",") != "10.96.0.2,203.0.113.10" {
+		t.Fatalf("wait_boot guest addresses wrong (loopback and link local must be left out): %v", st.GuestAddresses)
+	}
+
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case m := <-hb:
+			var got protocol.Heartbeat
+			_ = json.Unmarshal(m.Data, &got)
+			for _, v := range got.Vms {
+				if v.ServerID == "srv_ga" && strings.Join(v.Addresses, ",") == "10.96.0.2,203.0.113.10" {
+					goto seen
+				}
+			}
+		case <-deadline:
+			t.Fatal("no heartbeat with the guest addresses of srv_ga")
+		}
+	}
+seen:
+	// A guest that changed its own address shows it on the next wait_boot; the control plane
+	// compares and warns.
+	h.sim.SetGuestAddresses(vmid, []string{"10.96.0.77"})
+	r = h.mustOK(h.job(protocol.JobWaitBoot, map[string]interface{}{"vmRef": ref, "timeoutMs": 5000}))
+	b, _ = json.Marshal(r.Result)
+	_ = json.Unmarshal(b, &st)
+	if len(st.GuestAddresses) != 1 || st.GuestAddresses[0] != "10.96.0.77" {
+		t.Fatalf("expected the guest's own address, got %v", st.GuestAddresses)
+	}
+	// Without an answering guest agent the boot result simply carries no addresses.
+	h.sim.FailNext("guest", 1)
+	r = h.mustOK(h.job(protocol.JobWaitBoot, map[string]interface{}{"vmRef": ref, "timeoutMs": 5000}))
+	if b, _ := json.Marshal(r.Result); strings.Contains(string(b), "guestAddresses") {
+		t.Fatalf("expected no addresses when the guest agent fails: %s", b)
+	}
+}
+
 func TestHeartbeatAndUsage(t *testing.T) {
 	h := newHarness(t)
 	hb := make(chan *nats.Msg, 256)
@@ -709,3 +786,104 @@ func TestRejectsWrongToken(t *testing.T) {
 
 func mustJSON(v interface{}) []byte { b, _ := json.Marshal(v); return b }
 func itoa(i int) string             { return strings.TrimSpace(strings.Replace(string(mustJSON(i)), "\"", "", -1)) }
+
+// A project's VNet is created in the VXLAN zone once, applied, and its servers' net0 sits on it.
+func TestEnsureVNetAndServerOnIt(t *testing.T) {
+	h := newHarness(t)
+	vnet := map[string]interface{}{"vnet": "pn255s", "zone": "tenants", "tag": 100000, "alias": "project proj_1"}
+
+	if r := h.job(protocol.JobEnsureVNet, vnet); r.OK || r.Error.Code != "sdn_zone_missing" || r.Error.Retryable {
+		t.Fatalf("expected a permanent sdn_zone_missing without the zone, got %+v", r)
+	}
+	h.sim.AddZone("tenants", "vxlan")
+	r := h.mustOK(h.job(protocol.JobEnsureVNet, vnet))
+	if res := r.Result.(map[string]interface{}); res["created"] != true || res["applied"] != true {
+		t.Fatalf("vnet not created and applied: %v", res)
+	}
+	if v := h.sim.GetVNet("pn255s"); v == nil || v.Zone != "tenants" || v.Tag != 100000 || v.Pending || h.sim.SDNApplyCount() != 1 {
+		t.Fatalf("vnet state wrong: %+v, applies %d", v, h.sim.SDNApplyCount())
+	}
+	// Idempotent: nothing to create or apply the second time.
+	r = h.mustOK(h.job(protocol.JobEnsureVNet, vnet))
+	if res := r.Result.(map[string]interface{}); res["created"] != false || res["applied"] != false || h.sim.SDNApplyCount() != 1 {
+		t.Fatalf("second ensure changed something: %v, applies %d", res, h.sim.SDNApplyCount())
+	}
+	// The same id with another tag is a conflict, not something to paper over.
+	if r := h.job(protocol.JobEnsureVNet, map[string]interface{}{"vnet": "pn255s", "zone": "tenants", "tag": 100001}); r.OK || r.Error.Code != "sdn_vnet_conflict" {
+		t.Fatalf("expected sdn_vnet_conflict, got %+v", r)
+	}
+	h.sim.AddZone("plain", "simple")
+	if r := h.job(protocol.JobEnsureVNet, map[string]interface{}{"vnet": "pn255t", "zone": "plain", "tag": 100001}); r.OK || r.Error.Code != "sdn_zone_type" {
+		t.Fatalf("expected sdn_zone_type for a simple zone, got %+v", r)
+	}
+
+	sp := spec("srv_vnet")
+	sp.PrivateBridge = "pn255s"
+	vmid, _ := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": sp})))
+	vm := h.sim.VM(vmid)
+	if !strings.HasSuffix(vm.Config["net0"], ",bridge=pn255s,firewall=1,mtu=1") || vm.Config["ipconfig0"] != "ip=10.96.0.2/24" || vm.Status != "running" {
+		t.Fatalf("net0 not on the project's vnet: %v (%s)", vm.Config, vm.Status)
+	}
+	// A VNet that was never applied has no bridge on the node: the VM cannot start and is removed.
+	sp = spec("srv_novnet")
+	sp.PrivateBridge = "pnmissing"
+	if r := h.job(protocol.JobCreate, map[string]interface{}{"spec": sp}); r.OK || !strings.Contains(r.Error.Message, "bridge 'pnmissing' does not exist") {
+		t.Fatalf("expected the start to fail on a missing bridge, got %+v", r)
+	}
+}
+
+// The IP filter only lets each NIC send from its allocated addresses, and never cuts off a NIC
+// whose static address the control plane does not confirm.
+func TestIPFilter(t *testing.T) {
+	h := newHarness(t)
+	vmid, ref := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_ipf")})))
+	rules := []protocol.FirewallRule{{Direction: "inbound", Protocol: "tcp", Ports: "22", Cidrs: []string{"0.0.0.0/0"}}}
+	apply := func(addrs map[string][]string) *pvesim.VM {
+		t.Helper()
+		params := map[string]interface{}{"vmRef": ref, "rules": rules}
+		if addrs != nil {
+			params["addresses"] = addrs
+		}
+		h.mustOK(h.job(protocol.JobApplyFirewall, params))
+		return h.sim.VM(vmid)
+	}
+
+	// A load balancer node: its own public address plus the VIP keepalived may move onto it.
+	vm := apply(map[string][]string{"net0": {"10.96.0.2"}, "net1": {"203.0.113.10", "203.0.113.50"}})
+	if vm.FWOpts["ipfilter"] != "1" || strings.Join(vm.IPSets["ipfilter-net0"], ",") != "10.96.0.2" || strings.Join(vm.IPSets["ipfilter-net1"], ",") != "203.0.113.10,203.0.113.50" {
+		t.Fatalf("ip filter not set: opts %v sets %v", vm.FWOpts, vm.IPSets)
+	}
+	vm = apply(map[string][]string{"net0": {"10.96.0.2"}, "net1": {"203.0.113.10"}})
+	if strings.Join(vm.IPSets["ipfilter-net1"], ",") != "203.0.113.10" {
+		t.Fatalf("stale address kept in the set: %v", vm.IPSets)
+	}
+	// An address the VM is not configured with (a restore to an older config): that NIC stays
+	// unfiltered and the filter goes off, so nothing is cut off.
+	vm = apply(map[string][]string{"net0": {"10.96.0.9"}, "net1": {"203.0.113.10"}})
+	if _, has := vm.IPSets["ipfilter-net0"]; has || vm.FWOpts["ipfilter"] != "0" || len(vm.IPSets["ipfilter-net1"]) != 1 {
+		t.Fatalf("unconfirmed nic filtered: opts %v sets %v", vm.FWOpts, vm.IPSets)
+	}
+	// Floating addresses keep the net1 set in step while the filter is on.
+	apply(map[string][]string{"net0": {"10.96.0.2"}, "net1": {"203.0.113.10"}})
+	h.mustOK(h.job(protocol.JobDetachIP, map[string]interface{}{"vmRef": ref, "address": "203.0.113.10"}))
+	if _, has := h.sim.VM(vmid).IPSets["ipfilter-net1"]; has {
+		t.Fatal("net1 set left behind after detach")
+	}
+	h.mustOK(h.job(protocol.JobAttachIP, map[string]interface{}{"vmRef": ref, "ip": protocol.PublicIP{Address: "198.51.100.7", Gateway: "198.51.100.1", Prefix: 24}}))
+	if got := h.sim.VM(vmid).IPSets["ipfilter-net1"]; strings.Join(got, ",") != "198.51.100.7" {
+		t.Fatalf("attached address not allowed on net1: %v", got)
+	}
+	// An older control plane sends no addresses: the filter goes off.
+	if vm := apply(nil); vm.FWOpts["ipfilter"] != "0" {
+		t.Fatalf("ip filter left on without addresses: %v", vm.FWOpts)
+	}
+
+	// A server still on DHCP is never filtered on net0.
+	sp := spec("srv_ipf_dhcp")
+	sp.PrivateIP = nil
+	dvmid, dref := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": sp})))
+	h.mustOK(h.job(protocol.JobApplyFirewall, map[string]interface{}{"vmRef": dref, "rules": rules, "addresses": map[string][]string{"net1": {"203.0.113.10"}}}))
+	if d := h.sim.VM(dvmid); d.FWOpts["ipfilter"] != "0" || d.IPSets["ipfilter-net0"] != nil {
+		t.Fatalf("dhcp nic filtered: opts %v sets %v", d.FWOpts, d.IPSets)
+	}
+}

@@ -19,6 +19,7 @@ export type JobKind =
   | 'net.attach_ip'
   | 'net.detach_ip'
   | 'net.apply_firewall'
+  | 'net.ensure_vnet'
   | 'volume.create'
   | 'volume.attach'
   | 'volume.detach'
@@ -49,7 +50,8 @@ export interface Heartbeat {
   usedVcpu: number;
   usedMemoryMb: number;
   usedDiskGb: number;
-  vms: Array<{ vmRef: string; power: 'running' | 'stopped' }>;
+  /** serverId comes from the VM's tags; addresses from the guest agent of a running VM, when it answers. */
+  vms: Array<{ vmRef: string; power: 'running' | 'stopped'; serverId?: string; addresses?: string[] }>;
   agentVersion: string;
 }
 

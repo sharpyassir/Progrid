@@ -19,6 +19,7 @@ const (
 	JobAttachIP      = "net.attach_ip"
 	JobDetachIP      = "net.detach_ip"
 	JobApplyFirewall = "net.apply_firewall"
+	JobEnsureVNet    = "net.ensure_vnet"
 	JobVolumeCreate  = "volume.create"
 	JobVolumeAttach  = "volume.attach"
 	JobVolumeDetach  = "volume.detach"
@@ -52,6 +53,13 @@ type PublicIP struct {
 	Prefix  int    `json:"prefix"`
 }
 
+// PrivateIP is the static address of the private NIC (net0), allocated by the control plane.
+// There is no gateway: the default route belongs to the public NIC.
+type PrivateIP struct {
+	Address string `json:"address"`
+	Prefix  int    `json:"prefix"`
+}
+
 type VmSpec struct {
 	ServerID string `json:"serverId"`
 	Name     string `json:"name"`
@@ -66,6 +74,19 @@ type VmSpec struct {
 	UserData   string    `json:"userData"`
 	NetworkRef string    `json:"networkRef"`
 	PublicIP   *PublicIP `json:"publicIp,omitempty"`
+	// PrivateIP is nil for control planes that predate allocation; net0 then uses DHCP.
+	PrivateIP *PrivateIP `json:"privateIp,omitempty"`
+	// PrivateBridge is the project's SDN VNet for net0 (PRIVATE_NETWORK_MODE=sdn_vnet). Empty
+	// means the agent's shared bridge.
+	PrivateBridge string `json:"privateBridge,omitempty"`
+}
+
+// VNetSpec asks for a project's VNet in the VXLAN zone (net.ensure_vnet).
+type VNetSpec struct {
+	VNet  string `json:"vnet"`
+	Zone  string `json:"zone"`
+	Tag   int    `json:"tag"`
+	Alias string `json:"alias,omitempty"`
 }
 
 type VmHandle struct {
@@ -78,6 +99,9 @@ type VmStatus struct {
 	CpuPercent   float64 `json:"cpuPercent,omitempty"`
 	MemoryUsedMb int64   `json:"memoryUsedMb,omitempty"`
 	UptimeSec    int64   `json:"uptimeSec,omitempty"`
+	// GuestAddresses are the addresses the guest reports through the QEMU guest agent
+	// (loopback and link local left out). Only wait_boot fills them.
+	GuestAddresses []string `json:"guestAddresses,omitempty"`
 }
 
 type FirewallRule struct {
@@ -104,6 +128,10 @@ type Heartbeat struct {
 type VmBrief struct {
 	VmRef string `json:"vmRef"`
 	Power string `json:"power"`
+	// ServerID comes from the VM's tags, so the control plane can match the VM without parsing vmRef.
+	ServerID string `json:"serverId,omitempty"`
+	// Addresses the guest agent reports for a running VM, refreshed every few minutes.
+	Addresses []string `json:"addresses,omitempty"`
 }
 
 // SnapshotRef is the opaque handle stored in Snapshot.driverRef for the Proxmox driver.

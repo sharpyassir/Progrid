@@ -17,7 +17,22 @@ From the terminal, `pgcloud firewalls` lists them; creating and attaching is don
 
 ## Addresses
 
-Every server gets one public IPv4 address and one private address on your team's private network. Traffic between your servers over private addresses is free and never leaves the data center.
+Every server gets one public IPv4 address and one private address on its project's private network. Traffic between your servers over private addresses is free and never leaves the data center.
+
+## Private networks
+
+Each project has its own private network in every region it uses, created with the first server there. It is a /24 such as `10.96.3.0/24`; list yours with `GET /v1/private-networks`. Servers get addresses from `.2` upward, and `.1` is kept free.
+
+- **Static and known in advance.** The address is assigned when the server is created and written into the server's network configuration, so it is on the first boot's interface and shown in the console and API before the server finishes booting. It stays with the server through reboots, resizes and rebuilds, and returns to the network when the server is deleted.
+- **No gateway on the private interface.** The default route stays on the public interface. The private interface only reaches the other servers of the project in that region.
+- **Managed products use it.** Databases, Kubernetes nodes, load balancers and App Platform hosts talk to each other and to your servers over their private addresses, and the platform manages them there.
+- **Keep the address the platform assigned.** Changing it inside the server breaks private traffic (see below), and the platform flags the mismatch.
+
+### Isolation
+
+Private traffic of one project cannot reach another project's servers. In regions with network isolation, each project network is its own virtual network (a VXLAN segment) on the hypervisors, so other customers' servers are not on the same network at all. The private interface there has an MTU of 1450 bytes, which the server learns automatically; if you run your own overlay or containers across servers, size their MTU from that.
+
+On top of that, the hypervisor only lets each network interface send from the addresses assigned to it: the private address on the private interface, the public address (and a reserved IP while it is attached) on the public one. A server that tries to use another address, including another customer's, has that traffic dropped before it leaves the host. Managed database, Kubernetes and load balancer nodes are also allowed their cluster's virtual IP, which moves between nodes on failover.
 
 ## Reserved IPs
 

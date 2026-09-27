@@ -10,6 +10,6 @@ proxmox:
   # token_secret: from env PVE_TOKEN_SECRET (Vault agent template), never in this file
   storage: "vm-disks"                  # Ceph RBD
   ceph_pool: "vm-disks"                # Ceph pool behind that storage; rbd resize of detached volumes runs on it
-  bridge: "customers"                  # SDN VXLAN/EVPN vnet for tenant private networks
+  bridge: "customers"                  # shared private bridge; per project VNets come from the control plane
   public_bridge: "vmbr0"               # carries our public IP blocks
   insecure: true                       # local self-signed PVE cert

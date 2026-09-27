@@ -6,11 +6,11 @@ import { isIP } from 'node:net';
  * Shared pieces of the platform agents (load balancer, database, Kubernetes, app host and
  * Git Deploy agents on :9009).
  *
- * Network layout of every platform VM: net0 is the private bridge (the project network) and
- * net1 the public one. Interface names differ between images, so the agents detect them at
- * run time: the public interface carries the default route, the private interface is the
- * other one. Agents listen on the private address only and the control plane calls them
- * there.
+ * Network layout of every platform VM: net0 is the private NIC (the project network, with a
+ * static address from the project's private network and no gateway) and net1 the public one.
+ * Interface names differ between images, so the agents detect them at run time: the public
+ * interface carries the default route, the private interface is the other one. Agents listen
+ * on the private address only and the control plane calls them there.
  */
 
 /** Python helpers pasted into every agent. Needs `os`, `subprocess` and `time` imported. */
@@ -35,7 +35,8 @@ def vip_iface():
     which = open('/opt/pgcloud/vip.network').read().strip() if os.path.exists('/opt/pgcloud/vip.network') else 'public'
     return (private_iface() if which == 'private' else public_iface()) or public_iface() or 'eth0'
 def bind_address():
-    # Listen on the private address only. DHCP on the private network may still be running at boot.
+    # Listen on the private address only. cloud-init sets the static private address before the
+    # agent starts; the wait covers older servers that still get it from DHCP.
     for _ in range(150):
         a = private_ipv4()
         if a: return a

@@ -20,6 +20,14 @@ export interface VmSpec {
   /** Tenant overlay network id (VPC). MVP: one default overlay per project. */
   networkRef: string;
   publicIp?: { address: string; gateway: string; prefix: number };
+  /**
+   * Static address on the private NIC (net0), allocated by the control plane from the
+   * project's private network. No gateway: the default route stays on the public NIC.
+   * Without it the agent falls back to DHCP on net0.
+   */
+  privateIp?: { address: string; prefix: number };
+  /** The project's SDN VNet for net0 (PRIVATE_NETWORK_MODE=sdn_vnet); the host's shared bridge when absent. */
+  privateBridge?: string;
   hostname: string;
   /**
    * Stable key for this create attempt (the workflow id). Retries of the same attempt reuse
@@ -40,6 +48,8 @@ export interface VmStatus {
   cpuPercent?: number;
   memoryUsedMb?: number;
   uptimeSec?: number;
+  /** Addresses the guest reports through the QEMU guest agent (waitForBoot only, when it answers). */
+  guestAddresses?: string[];
 }
 
 export interface FirewallRuleSpec {
@@ -48,6 +58,20 @@ export interface FirewallRuleSpec {
   ports?: string;
   cidrs: string[];
 }
+
+/** A project's VNet in the Proxmox SDN VXLAN zone. */
+export interface PrivateNetworkSpec {
+  vnet: string;
+  zone: string;
+  tag: number;
+  alias?: string;
+}
+
+/**
+ * Addresses each NIC may send from, for the hypervisor's IP filter: "net0" (private) and
+ * "net1" (public, plus a cluster VIP the node may hold).
+ */
+export type NicAddresses = Record<string, string[]>;
 
 export interface VolumeHandle {
   volumeRef: string;
@@ -84,7 +108,13 @@ export interface HypervisorDriver {
 
   attachPublicIp(hostRef: string, vmRef: string, ip: { address: string; gateway: string; prefix: number }): Promise<void>;
   detachPublicIp(hostRef: string, vmRef: string, address: string): Promise<void>;
-  applyFirewall(hostRef: string, vmRef: string, rules: FirewallRuleSpec[]): Promise<void>;
+  /** Replaces the VM's rules; with `addresses`, also turns on the IP filter for the NICs they confirm. */
+  applyFirewall(hostRef: string, vmRef: string, rules: FirewallRuleSpec[], addresses?: NicAddresses): Promise<void>;
+  /**
+   * Creates the project's VNet in the SDN zone if missing and applies the SDN config. The SDN
+   * is cluster wide, so asking the agent of any one host of the region is enough.
+   */
+  ensurePrivateNetwork(hostRef: string, net: PrivateNetworkSpec): Promise<void>;
 }
 
 export const HYPERVISOR_DRIVER = Symbol('HYPERVISOR_DRIVER');
