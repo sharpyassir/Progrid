@@ -13,6 +13,8 @@ export interface Actor {
   /** Granted scopes, e.g. "servers:write". Sessions get every scope for their role. */
   scopes: Set<string>;
   tokenId?: string;
+  /** Console session row id, when the actor signed in through the console. */
+  sessionId?: string;
   isAgent: boolean;
   /** Actions that need a human to approve before they run (phase 2 enforcement). */
   requireApprovalFor: Set<string>;
@@ -48,3 +50,14 @@ export function scopesForRole(role: TeamRole): Set<string> {
       return new Set(ALL_SCOPES.filter((s) => s.endsWith(':read')));
   }
 }
+
+export const STAFF_ROLES = ['support', 'finance', 'ops'] as const;
+
+/** Back office scopes for a staff user: `admin` for full staff, `admin:<area>` for limited staff. */
+export function staffScopes(user: { isStaff: boolean; staffRoles: string[] }): string[] {
+  if (!user.isStaff) return [];
+  const roles = user.staffRoles.filter((r) => (STAFF_ROLES as readonly string[]).includes(r));
+  return roles.length ? roles.map((r) => `admin:${r}`) : ['admin'];
+}
+
+export const hasStaffScope = (scopes: Set<string>) => [...scopes].some((s) => s === 'admin' || s.startsWith('admin:'));

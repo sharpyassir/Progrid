@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { CurrentActor, RequireScopes } from '../../common/auth/decorators';
+import { CurrentActor, RequireScopes, StaffAreas } from '../../common/auth/decorators';
 import type { Actor } from '../../common/auth/actor';
 import { AppPlatformService } from './app.service';
 import { CreateAppDto, DomainDto, LogsQuery, ProvisionHostDto, UpdateAppDto } from './app.dto';
@@ -84,11 +84,13 @@ export class AppPlatformController {
 export class AdminAppPlatformController {
   constructor(private readonly apps: AppPlatformService) {}
 
+  @StaffAreas('ops')
   @Get('hosts') @RequireScopes('admin')
   hosts() {
     return this.apps.adminHosts();
   }
 
+  @StaffAreas('ops')
   @Post('hosts') @RequireScopes('admin') @HttpCode(202)
   provision(@Body() dto: ProvisionHostDto) {
     return this.apps.provisionHost(dto.region ?? 'sa1', dto.size).then((h) => ({ id: h.id, status: h.status, region: h.regionId }));

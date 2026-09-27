@@ -62,6 +62,8 @@ const schema = z.object({
   ACME_EMAIL: z.string().default('hostmaster@progrid.sa'),
   MAIL_API_KEY: z.string().optional(),
   /** When true, team owners must enable two factor sign in before using the console. */
+  /** Staff must have two factor sign in before any back office call. */
+  REQUIRE_TOTP_FOR_STAFF: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
   REQUIRE_TOTP_FOR_OWNERS: z.coerce.boolean().default(false),
   OBJECT_STORAGE_PROVIDER: z.enum(['fake', 'rgw']).default('fake'),
   /** Public S3 endpoint customers use, e.g. https://s3.sa1.progrid.sa */

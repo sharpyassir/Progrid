@@ -63,6 +63,8 @@ export class AccountSecurityService {
     await this.prisma.user.update({ where: { id: row.userId }, data: { passwordHash: await argon2.hash(password) } });
     // Every other reset link for this user is now useless.
     await this.prisma.emailToken.updateMany({ where: { userId: row.userId, kind: 'reset', usedAt: null }, data: { usedAt: new Date() } });
+    // A reset usually means the password leaked: sign the user out everywhere.
+    await this.prisma.session.updateMany({ where: { userId: row.userId, revokedAt: null }, data: { revokedAt: new Date() } });
     await this.events.emit('user.password_reset', { userId: row.userId });
     return { reset: true };
   }

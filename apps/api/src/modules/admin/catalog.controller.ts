@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } fr
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { IsBoolean, IsInt, IsOptional, IsString, Length, Matches, Max, Min } from 'class-validator';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { CurrentActor, RequireScopes } from '../../common/auth/decorators';
+import { CurrentActor, RequireScopes, StaffAreas } from '../../common/auth/decorators';
 import type { Actor } from '../../common/auth/actor';
 import { EventsService } from '../events/events.service';
 import { ApiError } from '../../common/errors/api-error';
@@ -56,6 +56,7 @@ export class AdminCatalogController {
 
   // ---- IP blocks ----
 
+  @StaffAreas('ops')
   @Get('ip-blocks')
   async ipBlocks(@Query('region') region?: string) {
     const blocks = await this.prisma.ipBlock.findMany({ where: region ? { regionId: region } : {}, orderBy: { cidr: 'asc' } });
@@ -71,6 +72,7 @@ export class AdminCatalogController {
   }
 
   /** Registers a block and expands it into one free PublicIp per usable address. */
+  @StaffAreas('ops')
   @Post('ip-blocks')
   async createIpBlock(@CurrentActor() actor: Actor, @Body() dto: CreateIpBlockDto) {
     const [base, prefix] = parseCidr(dto.cidr);
@@ -104,6 +106,7 @@ export class AdminCatalogController {
   }
 
   /** Removes a block and its addresses. Refused while any address is reserved or assigned. */
+  @StaffAreas('ops')
   @Delete('ip-blocks/:id') @HttpCode(204)
   async deleteIpBlock(@CurrentActor() actor: Actor, @Param('id') id: string) {
     const block = await this.prisma.ipBlock.findUnique({ where: { id } });
@@ -116,12 +119,14 @@ export class AdminCatalogController {
 
   // ---- images ----
 
+  @StaffAreas('ops')
   @Get('images')
   async images() {
     const rows = await this.prisma.image.findMany({ include: { _count: { select: { servers: true } } }, orderBy: [{ kind: 'asc' }, { id: 'asc' }] });
     return { data: rows.map(presentImage) };
   }
 
+  @StaffAreas('ops')
   @Post('images')
   async createImage(@CurrentActor() actor: Actor, @Body() dto: CreateImageDto) {
     if (await this.prisma.image.findUnique({ where: { id: dto.slug } })) throw ApiError.conflict('image_exists', `An image with slug "${dto.slug}" already exists`);
@@ -145,6 +150,7 @@ export class AdminCatalogController {
     return presentImage(image);
   }
 
+  @StaffAreas('ops')
   @Patch('images/:id')
   async updateImage(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: UpdateImageDto) {
     if (!(await this.prisma.image.findUnique({ where: { id } }))) throw ApiError.notFound('image', id);

@@ -13,3 +13,12 @@ export const Public = () => SetMetadata(PUBLIC_KEY, true);
 export const CurrentActor = createParamDecorator((_: unknown, ctx: ExecutionContext): Actor => {
   return ctx.switchToHttp().getRequest().actor;
 });
+
+export const STAFF_AREA_KEY = 'staffArea';
+export type StaffArea = 'support' | 'finance' | 'ops' | 'any';
+/**
+ * Marks a back office route with the staff areas that may use it. Full staff (the `admin`
+ * scope) can use every route; staff limited to some areas get `admin:<area>` scopes instead.
+ * Routes without an area stay full staff only.
+ */
+export const StaffAreas = (...areas: StaffArea[]) => SetMetadata(STAFF_AREA_KEY, areas);

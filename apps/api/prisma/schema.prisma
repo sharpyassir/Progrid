@@ -45,6 +45,9 @@ model User {
   totpRecoveryHashes String[] @default([])
   /// Staff members may hold the `admin` scope (back-office). Never settable via the API.
   isStaff       Boolean   @default(false)
+  /// Empty means full back office access. Otherwise a subset of support, finance, ops.
+  staffRoles    String[]  @default([])
+  sessions      Session[]
   emailVerified DateTime?
   phoneVerified DateTime?
   createdAt     DateTime  @default(now())
@@ -1714,4 +1717,20 @@ model AppDeploy {
   app PlatformApp @relation(fields: [appId], references: [id], onDelete: Cascade)
 
   @@index([appId, startedAt])
+}
+
+/// A console sign in. The session JWT carries this id; revoking the row ends the session at once.
+model Session {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teamId     String
+  userAgent  String?
+  ip         String?
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+
+  @@index([userId, revokedAt])
 }

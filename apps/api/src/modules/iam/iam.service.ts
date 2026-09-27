@@ -20,7 +20,7 @@ export class IamService {
     private readonly security: AccountSecurityService,
   ) {}
 
-  async signup(dto: SignupDto) {
+  async signup(dto: SignupDto, meta: { ip?: string; userAgent?: string } = {}) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } });
     if (existing) throw ApiError.conflict('email_taken', 'An account with this email already exists');
 
@@ -52,10 +52,10 @@ export class IamService {
     const team = user.memberships[0].team;
     await this.events.emit('team.created', { teamId: team.id, userId: user.id }, { teamId: team.id });
     this.security.sendVerification(user.id).catch((e) => this.log.warn(`verification mail failed: ${e.message}`));
-    return { user: publicUser(user), team, session: await this.tokens.issueSession(user.id, team.id) };
+    return { user: publicUser(user), team, session: await this.tokens.issueSession(user.id, team.id, meta) };
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, meta: { ip?: string; userAgent?: string } = {}) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
       include: { memberships: { include: { team: true }, orderBy: { teamId: 'asc' } } },
@@ -71,7 +71,7 @@ export class IamService {
       user: publicUser(user),
       team: membership.team,
       teams: user.memberships.map((m) => ({ id: m.team.id, slug: m.team.slug, name: m.team.name, role: m.role })),
-      session: await this.tokens.issueSession(user.id, membership.teamId),
+      session: await this.tokens.issueSession(user.id, membership.teamId, meta),
     };
   }
 
@@ -80,7 +80,7 @@ export class IamService {
       this.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } }),
       this.prisma.team.findUniqueOrThrow({ where: { id: actor.teamId }, include: { projects: true } }),
     ]);
-    return { user: publicUser(user), team, role: actor.role, scopes: [...actor.scopes], isAgent: actor.isAgent, isStaff: user.isStaff };
+    return { user: publicUser(user), team, role: actor.role, scopes: [...actor.scopes], isAgent: actor.isAgent, isStaff: user.isStaff, staffRoles: user.isStaff ? user.staffRoles : [] };
   }
 
   // ---- Projects ----

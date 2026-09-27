@@ -3,8 +3,8 @@ import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { ApiError } from '../errors/api-error';
 import { TokenService } from '../../modules/iam/token.service';
-import { PUBLIC_KEY, SCOPES_KEY } from './decorators';
-import type { Actor } from './actor';
+import { PUBLIC_KEY, SCOPES_KEY, STAFF_AREA_KEY, type StaffArea } from './decorators';
+import { hasStaffScope, type Actor } from './actor';
 import { loadConfig } from '../../config/config';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -35,9 +35,23 @@ export class AuthGuard implements CanActivate {
       if (!u?.totpEnabled) throw new ApiError(403, 'totp_setup_required', 'Team owners must enable two factor sign in. Go to Security to set it up.');
     }
 
-    const required = this.reflector.getAllAndOverride<string[]>(SCOPES_KEY, [ctx.getHandler(), ctx.getClass()]) ?? [];
+    let required = this.reflector.getAllAndOverride<string[]>(SCOPES_KEY, [ctx.getHandler(), ctx.getClass()]) ?? [];
+    const staffRoute = required.includes('admin');
+    if (staffRoute) {
+      // Full staff hold `admin`. Limited staff pass when the route is tagged with one of their areas.
+      if (!actor.scopes.has('admin')) {
+        const areas = this.reflector.getAllAndOverride<StaffArea[]>(STAFF_AREA_KEY, [ctx.getHandler(), ctx.getClass()]) ?? [];
+        const allowed = areas.some((a) => (a === 'any' ? hasStaffScope(actor.scopes) : actor.scopes.has(`admin:${a}`)));
+        if (!allowed) throw ApiError.forbidden(hasStaffScope(actor.scopes) ? 'Your staff role does not cover this part of the back office' : 'Token is missing required scope(s): admin');
+      }
+      required = required.filter((s) => s !== 'admin');
+      if (loadConfig().REQUIRE_TOTP_FOR_STAFF) {
+        const u = await this.prisma.user.findUnique({ where: { id: actor.userId }, select: { totpEnabled: true } });
+        if (!u?.totpEnabled) throw new ApiError(403, 'totp_setup_required', 'Staff must enable two factor sign in before using the back office. Go to Security to set it up.');
+      }
+    }
     // Staff keep the back office even if their own team is suspended.
-    const staffCall = req.path.startsWith('/admin/') && actor.scopes.has('admin');
+    const staffCall = req.path.startsWith('/admin/') && hasStaffScope(actor.scopes);
     if (actor.teamStatus === 'suspended' && !staffCall && !allowedWhileSuspended(req.method, req.path, required)) {
       throw new ApiError(403, 'account_suspended', `This account is suspended. Only billing is available: pay any overdue invoice at ${loadConfig().CONSOLE_URL}/billing, or contact support.`);
     }

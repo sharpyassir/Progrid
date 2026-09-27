@@ -8,6 +8,8 @@ import { useShell } from '@/components/shell';
 
 interface Me { user: { email: string; totpEnabled: boolean; emailVerified: boolean }; role: string }
 
+type SessionRow = { id: string; createdAt: string; lastSeenAt: string; ip: string | null; userAgent: string | null; current: boolean };
+
 function SecurityPage() {
   const { locale } = useShell();
   const welcome = useSearchParams().get('welcome') === '1';
@@ -16,7 +18,11 @@ function SecurityPage() {
   const [recovery, setRecovery] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const load = useCallback(() => api<Me>('/v1/account').then(setMe), []);
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const load = useCallback(() => {
+    api<Me>('/v1/account').then(setMe);
+    api<{ data: SessionRow[] }>('/v1/account/sessions').then((r) => setSessions(r.data)).catch(() => setSessions([]));
+  }, []);
   useEffect(() => { load(); }, [load]);
 
   async function call<T>(fn: () => Promise<T>) {
@@ -96,6 +102,27 @@ function SecurityPage() {
             <pre className="grid grid-cols-2 gap-x-6 font-mono text-xs">{recovery.join('\n')}</pre>
           </div>
         )}
+      </section>
+
+      <section className="card space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="font-medium">{t(locale, 'sessions')}</h2>
+          {sessions.length > 1 && (
+            <button className="btn-ghost ms-auto" onClick={() => call(() => api('/v1/account/sessions/revoke-others', { method: 'POST' })).then(() => { setNotice(t(locale, 'otherSessionsEnded')); load(); })}>{t(locale, 'endOtherSessions')}</button>
+          )}
+        </div>
+        <p className="text-sm text-neutral-600 dark:text-neutral-300">{t(locale, 'sessionsNote')}</p>
+        <ul className="divide-y divide-neutral-200 text-sm dark:divide-neutral-800">
+          {sessions.map((s) => (
+            <li key={s.id} className="flex flex-wrap items-center gap-3 py-2">
+              <div className="min-w-0 flex-1">
+                <p className="truncate">{s.userAgent || t(locale, 'unknownDevice')}{s.current && <span className="ms-2 rounded bg-green-100 px-2 py-0.5 text-xs text-green-800">{t(locale, 'thisDevice')}</span>}</p>
+                <p className="text-xs text-neutral-500">{s.ip ?? ''} · {t(locale, 'lastActive')} {new Date(s.lastSeenAt).toLocaleString(locale)}</p>
+              </div>
+              {!s.current && <button className="btn-ghost" onClick={() => call(() => api(`/v1/account/sessions/${s.id}`, { method: 'DELETE' })).then(load)}>{t(locale, 'endSession')}</button>}
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section className="card space-y-2">

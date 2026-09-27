@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { loadConfig } from '../../config/config';
 import { ApiError } from '../../common/errors/api-error';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { CurrentActor, Public, RequireScopes } from '../../common/auth/decorators';
+import { CurrentActor, Public, RequireScopes, StaffAreas } from '../../common/auth/decorators';
 import type { Actor } from '../../common/auth/actor';
 import { SupportService } from './support.service';
 import { AdminListTicketsQuery, CreateTicketDto, ListTicketsQuery, SetPlanDto, TicketMessageDto } from './support.dto';
@@ -79,21 +79,25 @@ export class SupportController {
 export class AdminSupportController {
   constructor(private readonly support: SupportService) {}
 
+  @StaffAreas('support')
   @Get('tickets') @RequireScopes('admin')
   list(@Query() q: AdminListTicketsQuery) {
     return this.support.adminList(q);
   }
 
+  @StaffAreas('support')
   @Get('tickets/:id') @RequireScopes('admin')
   get(@Param('id') id: string) {
     return this.support.adminGet(id);
   }
 
+  @StaffAreas('support')
   @Post('tickets/:id/reply') @RequireScopes('admin') @HttpCode(201)
   reply(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: TicketMessageDto & { close?: boolean }) {
     return this.support.adminReply(actor, id, dto, !!dto.close);
   }
 
+  @StaffAreas('support')
   @Post('tickets/:id/close') @RequireScopes('admin') @HttpCode(200)
   close(@CurrentActor() actor: Actor, @Param('id') id: string) {
     return this.support.adminClose(actor, id);

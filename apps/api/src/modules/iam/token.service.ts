@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
 import { SignJWT, jwtVerify } from 'jose';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { Actor, scopesForRole } from '../../common/auth/actor';
+import { Actor, scopesForRole, staffScopes } from '../../common/auth/actor';
 import { loadConfig } from '../../config/config';
 
 const TOKEN_PREFIX = 'pgc_';
@@ -59,14 +59,33 @@ export class TokenService {
 
   // ---- Console sessions ----
 
-  async issueSession(userId: string, teamId: string): Promise<string> {
+  /** Issues a console session backed by a Session row, so it can be listed and revoked. */
+  async issueSession(userId: string, teamId: string, meta: { ip?: string; userAgent?: string } = {}): Promise<string> {
     const { SESSION_TTL_SECONDS } = loadConfig();
+    const row = await this.prisma.session.create({
+      data: { userId, teamId, ip: meta.ip?.slice(0, 64), userAgent: meta.userAgent?.slice(0, 300), expiresAt: new Date(Date.now() + SESSION_TTL_SECONDS * 1000) },
+    });
     return new SignJWT({ tid: teamId })
       .setProtectedHeader({ alg: 'HS256' })
       .setSubject(userId)
+      .setJti(row.id)
       .setIssuedAt()
       .setExpirationTime(`${SESSION_TTL_SECONDS}s`)
       .sign(this.jwtKey);
+  }
+
+  async listSessions(userId: string, currentId?: string) {
+    const rows = await this.prisma.session.findMany({ where: { userId, revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: { lastSeenAt: 'desc' } });
+    return { data: rows.map((r) => ({ id: r.id, createdAt: r.createdAt, lastSeenAt: r.lastSeenAt, expiresAt: r.expiresAt, ip: r.ip, userAgent: r.userAgent, current: r.id === currentId })) };
+  }
+
+  async revokeSession(userId: string, id: string) {
+    await this.prisma.session.updateMany({ where: { id, userId, revokedAt: null }, data: { revokedAt: new Date() } });
+  }
+
+  /** Ends every session of a user, optionally keeping one (the caller's own). */
+  async revokeAllSessions(userId: string, exceptId?: string) {
+    await this.prisma.session.updateMany({ where: { userId, revokedAt: null, ...(exceptId ? { id: { not: exceptId } } : {}) }, data: { revokedAt: new Date() } });
   }
 
   // ---- Resolution ----
@@ -78,7 +97,7 @@ export class TokenService {
   private async resolveApiToken(raw: string): Promise<Actor | null> {
     const token = await this.prisma.apiToken.findUnique({
       where: { hash: hash(raw) },
-      include: { user: { select: { locale: true, isStaff: true } }, team: { select: { status: true, members: true } } },
+      include: { user: { select: { locale: true, isStaff: true, staffRoles: true } }, team: { select: { status: true, members: true } } },
     });
     if (!token || token.revokedAt) return null;
     if (token.expiresAt && token.expiresAt < new Date()) return null;
@@ -90,7 +109,7 @@ export class TokenService {
 
     // A token can never exceed what its owner is allowed to do; `admin` needs a staff user.
     const roleScopes = scopesForRole(membership.role);
-    if (token.user.isStaff) roleScopes.add('admin');
+    for (const sc of staffScopes(token.user)) roleScopes.add(sc);
     return {
       userId: token.userId,
       teamId: token.teamId,
@@ -108,26 +127,35 @@ export class TokenService {
   private async resolveSession(jwt: string): Promise<Actor | null> {
     let sub: string | undefined;
     let tid: string | undefined;
+    let jti: string | undefined;
     try {
       const { payload } = await jwtVerify(jwt, this.jwtKey);
       sub = payload.sub;
       tid = payload.tid as string;
+      jti = payload.jti;
     } catch {
       return null;
     }
-    if (!sub || !tid) return null;
+    if (!sub || !tid || !jti) return null;
+    // The row is the source of truth: a revoked or expired row ends the session even if the JWT is valid.
+    const session = await this.prisma.session.findUnique({ where: { id: jti } });
+    if (!session || session.revokedAt || session.expiresAt < new Date() || session.userId !== sub) return null;
+    if (Date.now() - session.lastSeenAt.getTime() > 5 * 60_000) {
+      void this.prisma.session.update({ where: { id: jti }, data: { lastSeenAt: new Date() } }).catch(() => undefined);
+    }
     const membership = await this.prisma.teamMember.findUnique({
       where: { teamId_userId: { teamId: tid, userId: sub } },
-      include: { user: { select: { locale: true, isStaff: true } }, team: { select: { status: true } } },
+      include: { user: { select: { locale: true, isStaff: true, staffRoles: true } }, team: { select: { status: true } } },
     });
     if (!membership || membership.team.status === 'closed') return null;
     const scopes = scopesForRole(membership.role);
-    if (membership.user.isStaff) scopes.add('admin'); // back office pages in the console
+    for (const sc of staffScopes(membership.user)) scopes.add(sc); // back office pages in the console
     return {
       userId: sub,
       teamId: tid,
       role: membership.role,
       scopes,
+      sessionId: jti,
       isAgent: false,
       requireApprovalFor: new Set(),
       locale: membership.user.locale,

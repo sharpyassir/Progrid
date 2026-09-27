@@ -54,6 +54,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
     setLocaleState(l);
   };
   const signOut = () => {
+    // End the session on the server too; clear locally whatever the answer.
+    api('/v1/auth/logout', { method: 'POST' }).catch(() => undefined);
     setToken(null);
     setAuthed(false);
     router.replace('/login');

@@ -1,4 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req } from '@nestjs/common';
+import type { Request } from 'express';
+import { TokenService } from './token.service';
 import { IsOptional, IsString, Length, Matches } from 'class-validator';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
@@ -10,17 +12,29 @@ import { CreateProjectDto, CreateSshKeyDto, CreateTokenDto, LoginDto, SignupDto 
 @ApiTags('auth')
 @Controller('v1/auth')
 export class AuthController {
-  constructor(private readonly iam: IamService) {}
+  constructor(private readonly iam: IamService, private readonly tokens: TokenService) {}
 
   @Public() @Post('signup')
-  signup(@Body() dto: SignupDto) {
-    return this.iam.signup(dto);
+  signup(@Body() dto: SignupDto, @Req() req: Request) {
+    return this.iam.signup(dto, clientMeta(req));
   }
 
   @Public() @Post('login') @HttpCode(200)
-  login(@Body() dto: LoginDto) {
-    return this.iam.login(dto);
+  login(@Body() dto: LoginDto, @Req() req: Request) {
+    return this.iam.login(dto, clientMeta(req));
   }
+
+  /** Ends the current console session on the server, not only in the browser. */
+  @ApiBearerAuth() @Post('logout') @HttpCode(204)
+  async logout(@CurrentActor() actor: Actor) {
+    if (actor.sessionId) await this.tokens.revokeSession(actor.userId, actor.sessionId);
+  }
+}
+
+/** Where a sign in came from, for the sessions list. Caddy sets X-Forwarded-For. */
+export function clientMeta(req: Request) {
+  const fwd = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
+  return { ip: fwd || req.ip, userAgent: String(req.headers['user-agent'] ?? '') };
 }
 
 class InterestDto {
@@ -32,7 +46,7 @@ class InterestDto {
 @ApiBearerAuth()
 @Controller('v1')
 export class AccountController {
-  constructor(private readonly iam: IamService, private readonly prisma: PrismaService) {}
+  constructor(private readonly iam: IamService, private readonly prisma: PrismaService, private readonly tokenService: TokenService) {}
 
   /** "Notify me when this launches" for roadmap products shown in the console. */
   @Post('interest') @HttpCode(204)
@@ -59,6 +73,23 @@ export class AccountController {
   @Get('account')
   me(@CurrentActor() actor: Actor) {
     return this.iam.me(actor);
+  }
+
+  /** Console sessions of the signed in user, newest activity first. */
+  @Get('account/sessions')
+  sessions(@CurrentActor() actor: Actor) {
+    return this.tokenService.listSessions(actor.userId, actor.sessionId);
+  }
+
+  @Delete('account/sessions/:id') @HttpCode(204)
+  revokeSession(@CurrentActor() actor: Actor, @Param('id') id: string) {
+    return this.tokenService.revokeSession(actor.userId, id);
+  }
+
+  /** Signs out every other device and browser. */
+  @Post('account/sessions/revoke-others') @HttpCode(204)
+  revokeOthers(@CurrentActor() actor: Actor) {
+    return this.tokenService.revokeAllSessions(actor.userId, actor.sessionId);
   }
 
   @Get('projects')
