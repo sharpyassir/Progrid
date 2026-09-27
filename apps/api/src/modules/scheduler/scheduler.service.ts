@@ -4,6 +4,7 @@ import { RedisService } from '../../common/redis/redis.service';
 import { NatsService, Subjects } from '../../common/nats/nats.service';
 import { ApiError } from '../../common/errors/api-error';
 import type { Heartbeat } from '../../drivers/agent-protocol';
+import { guestAddressMismatch } from '../network/private-networks.service';
 
 export interface PlacementRequest {
   regionId: string;
@@ -32,6 +33,8 @@ export interface PlacementRequest {
 @Injectable()
 export class SchedulerService {
   private readonly log = new Logger(SchedulerService.name);
+  /** Last mismatch warned per server, so a lasting one is logged once and not every minute. */
+  private readonly addressWarned = new Map<string, string>();
 
   constructor(private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly nats: NatsService) {}
 
@@ -109,7 +112,31 @@ export class SchedulerService {
         },
       }).catch((e) => this.log.warn(`heartbeat for unknown host ${hb.hostId}: ${e.message}`));
       await this.prisma.host.updateMany({ where: { id: hb.hostId, status: 'down' }, data: { status: 'active' } });
+      await this.checkGuestAddresses(hb).catch((e) => this.log.warn(`guest address check for ${hb.hostId}: ${e.message}`));
     });
+  }
+
+  /**
+   * Compares what each guest reports with its allocated private address and warns on a
+   * mismatch. The allocation is never overwritten: a guest that moved off it is misconfigured.
+   */
+  private async checkGuestAddresses(hb: Heartbeat) {
+    const reported = (hb.vms ?? []).filter((v) => v.serverId && v.addresses?.length);
+    if (!reported.length) return;
+    const servers = await this.prisma.server.findMany({ where: { id: { in: reported.map((v) => v.serverId!) }, deletedAt: null }, select: { id: true, name: true, privateIp: true } });
+    const byId = new Map(servers.map((s) => [s.id, s]));
+    for (const v of reported) {
+      const s = byId.get(v.serverId!);
+      if (!s) continue;
+      if (!guestAddressMismatch(s.privateIp, v.addresses)) {
+        this.addressWarned.delete(s.id);
+        continue;
+      }
+      const seen = v.addresses!.join(', ');
+      if (this.addressWarned.get(s.id) === seen) continue;
+      this.addressWarned.set(s.id, seen);
+      this.log.warn(`server ${s.name} (${s.id}) on ${hb.node} reports ${seen} but was allocated the private address ${s.privateIp}`);
+    }
   }
 
   private async waitLock(key: string, ttlMs: number) {

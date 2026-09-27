@@ -292,6 +292,30 @@ func (c *Client) AgentPing(ctx context.Context, vmid int) error {
 	return c.do(ctx, http.MethodPost, c.vmPath(vmid, "/agent/ping"), url.Values{}, nil)
 }
 
+// GuestInterface is one entry of the guest agent's network-get-interfaces answer.
+type GuestInterface struct {
+	Name        string `json:"name"`
+	MAC         string `json:"hardware-address"`
+	IPAddresses []struct {
+		Address string `json:"ip-address"`
+		Type    string `json:"ip-address-type"` // ipv4 | ipv6
+		Prefix  int    `json:"prefix"`
+	} `json:"ip-addresses"`
+}
+
+// GuestInterfaces asks the QEMU guest agent for the guest's interfaces and addresses:
+// GET /nodes/{node}/qemu/{vmid}/agent/network-get-interfaces. It fails while the guest
+// agent is not running.
+func (c *Client) GuestInterfaces(ctx context.Context, vmid int) ([]GuestInterface, error) {
+	var out struct {
+		Result []GuestInterface `json:"result"`
+	}
+	if err := c.do(ctx, http.MethodGet, c.vmPath(vmid, "/agent/network-get-interfaces"), nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Result, nil
+}
+
 func (c *Client) Snapshot(ctx context.Context, vmid int, name string) error {
 	return c.post(ctx, c.vmPath(vmid, "/snapshot"), url.Values{"snapname": {name}, "vmstate": {"0"}}, 10*time.Minute)
 }
@@ -527,6 +551,7 @@ type VMListEntry struct {
 	NetIn     int64   `json:"netin"`
 	NetOut    int64   `json:"netout"`
 	Template  int     `json:"template"`
+	Uptime    int64   `json:"uptime"`
 }
 
 func (c *Client) ListVMs(ctx context.Context) ([]VMListEntry, error) {

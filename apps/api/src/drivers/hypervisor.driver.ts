@@ -46,6 +46,8 @@ export interface VmStatus {
   cpuPercent?: number;
   memoryUsedMb?: number;
   uptimeSec?: number;
+  /** Addresses the guest reports through the QEMU guest agent (waitForBoot only, when it answers). */
+  guestAddresses?: string[];
 }
 
 export interface FirewallRuleSpec {

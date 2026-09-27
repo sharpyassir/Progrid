@@ -206,6 +206,7 @@ export function createActivities(app: INestApplicationContext): Activities {
       try {
         const status = await wrap(driver.waitForBoot(hostRef(s), s.driverRef, 10 * 60_000));
         if (status.power !== 'running') throw new Error(`VM is ${status.power} after boot`);
+        privateNetworks.checkGuestAddresses(s, status.guestAddresses);
       } finally {
         clearInterval(heartbeat);
       }

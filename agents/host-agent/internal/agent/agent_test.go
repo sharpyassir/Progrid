@@ -513,6 +513,55 @@ func TestFindByTag(t *testing.T) {
 	}
 }
 
+// The guest agent's view of the network reaches the control plane after boot and in heartbeats.
+func TestGuestAddressesAfterBootAndInHeartbeat(t *testing.T) {
+	h := newHarness(t)
+	hb := make(chan *nats.Msg, 256)
+	sub, _ := h.nc.ChanSubscribe("pgcloud.host.host_test.heartbeat", hb)
+	defer sub.Unsubscribe()
+
+	vmid, ref := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_ga")})))
+	r := h.mustOK(h.job(protocol.JobWaitBoot, map[string]interface{}{"vmRef": ref, "timeoutMs": 5000}))
+	b, _ := json.Marshal(r.Result)
+	var st protocol.VmStatus
+	_ = json.Unmarshal(b, &st)
+	if strings.Join(st.GuestAddresses, ",") != "10.96.0.2,203.0.113.10" {
+		t.Fatalf("wait_boot guest addresses wrong (loopback and link local must be left out): %v", st.GuestAddresses)
+	}
+
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case m := <-hb:
+			var got protocol.Heartbeat
+			_ = json.Unmarshal(m.Data, &got)
+			for _, v := range got.Vms {
+				if v.ServerID == "srv_ga" && strings.Join(v.Addresses, ",") == "10.96.0.2,203.0.113.10" {
+					goto seen
+				}
+			}
+		case <-deadline:
+			t.Fatal("no heartbeat with the guest addresses of srv_ga")
+		}
+	}
+seen:
+	// A guest that changed its own address shows it on the next wait_boot; the control plane
+	// compares and warns.
+	h.sim.SetGuestAddresses(vmid, []string{"10.96.0.77"})
+	r = h.mustOK(h.job(protocol.JobWaitBoot, map[string]interface{}{"vmRef": ref, "timeoutMs": 5000}))
+	b, _ = json.Marshal(r.Result)
+	_ = json.Unmarshal(b, &st)
+	if len(st.GuestAddresses) != 1 || st.GuestAddresses[0] != "10.96.0.77" {
+		t.Fatalf("expected the guest's own address, got %v", st.GuestAddresses)
+	}
+	// Without an answering guest agent the boot result simply carries no addresses.
+	h.sim.FailNext("guest", 1)
+	r = h.mustOK(h.job(protocol.JobWaitBoot, map[string]interface{}{"vmRef": ref, "timeoutMs": 5000}))
+	if b, _ := json.Marshal(r.Result); strings.Contains(string(b), "guestAddresses") {
+		t.Fatalf("expected no addresses when the guest agent fails: %s", b)
+	}
+}
+
 func TestHeartbeatAndUsage(t *testing.T) {
 	h := newHarness(t)
 	hb := make(chan *nats.Msg, 256)

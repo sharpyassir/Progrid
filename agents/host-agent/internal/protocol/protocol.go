@@ -87,6 +87,9 @@ type VmStatus struct {
 	CpuPercent   float64 `json:"cpuPercent,omitempty"`
 	MemoryUsedMb int64   `json:"memoryUsedMb,omitempty"`
 	UptimeSec    int64   `json:"uptimeSec,omitempty"`
+	// GuestAddresses are the addresses the guest reports through the QEMU guest agent
+	// (loopback and link local left out). Only wait_boot fills them.
+	GuestAddresses []string `json:"guestAddresses,omitempty"`
 }
 
 type FirewallRule struct {
@@ -113,6 +116,10 @@ type Heartbeat struct {
 type VmBrief struct {
 	VmRef string `json:"vmRef"`
 	Power string `json:"power"`
+	// ServerID comes from the VM's tags, so the control plane can match the VM without parsing vmRef.
+	ServerID string `json:"serverId,omitempty"`
+	// Addresses the guest agent reports for a running VM, refreshed every few minutes.
+	Addresses []string `json:"addresses,omitempty"`
 }
 
 // SnapshotRef is the opaque handle stored in Snapshot.driverRef for the Proxmox driver.

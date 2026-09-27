@@ -90,17 +90,24 @@ export class PrivateNetworksService {
     return this.prisma.privateNetwork.findMany({ where: { projectId }, orderBy: { createdAt: 'asc' }, include: { _count: { select: { ips: true } } } });
   }
 
-  /** Warns when the guest does not carry the address the control plane allocated to it. */
+  /**
+   * Warns when the guest does not carry the address the control plane allocated to it. The
+   * allocation stays authoritative: the guest is expected to come back to it (cloud-init).
+   */
   checkGuestAddresses(server: { id: string; name?: string; privateIp: string | null }, guest: string[] | undefined) {
-    if (!server.privateIp || !guest?.length) return true;
-    if (guest.includes(server.privateIp)) return true;
-    this.log.warn(`server ${server.name ?? server.id} reports ${guest.join(', ')} but was allocated the private address ${server.privateIp}`);
+    if (!guestAddressMismatch(server.privateIp, guest)) return true;
+    this.log.warn(`server ${server.name ?? server.id} reports ${guest!.join(', ')} but was allocated the private address ${server.privateIp}`);
     return false;
   }
 
   static mode(regionId: string): PrivateNetworkMode {
     return (perRegion(loadConfig().PRIVATE_NETWORK_MODE, regionId) as PrivateNetworkMode | undefined) ?? 'shared_bridge';
   }
+}
+
+/** True when the guest reported addresses and the allocated private address is not among them. */
+export function guestAddressMismatch(allocated: string | null | undefined, guest: string[] | undefined): boolean {
+  return !!allocated && !!guest?.length && !guest.includes(allocated);
 }
 
 /**

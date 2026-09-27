@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -44,7 +45,25 @@ type Agent struct {
 	// netOut is the last outbound byte counter seen per vmid, so bandwidth usage is sent as
 	// the delta per tick. Only the tick loop touches it.
 	netOut map[int]int64
+
+	// guest caches the addresses the guest agent reported per vmid for the heartbeat, so a
+	// tick does not ask every guest every minute. Only the tick loop touches it.
+	guest map[int]guestAddrs
 }
+
+type guestAddrs struct {
+	addrs []string
+	until time.Time
+}
+
+// How long heartbeat address readings are reused. A guest that does not answer after
+// guestBootGrace has no guest agent, so it is asked less often; one that is still booting is
+// asked again on the next tick.
+const (
+	guestAddrsTTL     = 5 * time.Minute
+	guestAddrsFailTTL = 2 * time.Minute
+	guestBootGrace    = 10 * time.Minute
+)
 
 // jobEntry tracks one job id. done closes when the job finishes; res is valid after that.
 // Successful results are kept for jobRetention so a retried request with the same id gets
@@ -74,7 +93,7 @@ func New(cfg *config.Config, pve *proxmox.Client, version string, log *slog.Logg
 	if err != nil {
 		return nil, fmt.Errorf("nats: %w", err)
 	}
-	return &Agent{cfg: cfg, pve: pve, nc: nc, log: log.With("node", cfg.Proxmox.Node), version: version, jobs: map[string]*jobEntry{}, netOut: map[int]int64{}}, nil
+	return &Agent{cfg: cfg, pve: pve, nc: nc, log: log.With("node", cfg.Proxmox.Node), version: version, jobs: map[string]*jobEntry{}, netOut: map[int]int64{}, guest: map[int]guestAddrs{}}, nil
 }
 
 func (a *Agent) Run(ctx context.Context) error {
@@ -133,7 +152,11 @@ func (a *Agent) tick(ctx context.Context) {
 		seen[vm.VMID] = true
 		ref := refFromTags(vm.VMID, a.cfg.Proxmox.Node, vm.Tags)
 		refJSON, _ := json.Marshal(ref)
-		hb.Vms = append(hb.Vms, protocol.VmBrief{VmRef: string(refJSON), Power: vm.Status})
+		brief := protocol.VmBrief{VmRef: string(refJSON), Power: vm.Status, ServerID: ref.ServerID}
+		if vm.Status == "running" && ref.ServerID != "" {
+			brief.Addresses = a.cachedGuestAddresses(ctx, vm.VMID, vm.Uptime)
+		}
+		hb.Vms = append(hb.Vms, brief)
 		hb.UsedVcpu += vm.Cpus
 		hb.UsedMemoryMb += vm.MaxMem >> 20
 
@@ -159,6 +182,11 @@ func (a *Agent) tick(ctx context.Context) {
 	for vmid := range a.netOut {
 		if !seen[vmid] {
 			delete(a.netOut, vmid)
+		}
+	}
+	for vmid := range a.guest {
+		if !seen[vmid] {
+			delete(a.guest, vmid)
 		}
 	}
 	a.publish("pgcloud.host."+a.cfg.HostID+".heartbeat", hb)
@@ -666,7 +694,13 @@ func (a *Agent) waitBoot(ctx context.Context, vmid int, timeout time.Duration) (
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if err := a.pve.AgentPing(ctx, vmid); err == nil {
-			return a.status(ctx, vmid)
+			res, err := a.status(ctx, vmid)
+			if st, ok := res.(protocol.VmStatus); ok && err == nil {
+				// The control plane compares these with the address it allocated.
+				st.GuestAddresses, _ = a.guestAddresses(ctx, vmid)
+				return st, nil
+			}
+			return res, err
 		}
 		select {
 		case <-ctx.Done():
@@ -687,6 +721,45 @@ func (a *Agent) status(ctx context.Context, vmid int) (interface{}, error) {
 		return nil, err
 	}
 	return protocol.VmStatus{Power: st.Status, CpuPercent: st.CPU * 100, MemoryUsedMb: st.Mem >> 20, UptimeSec: st.Uptime}, nil
+}
+
+// guestAddresses returns the guest's addresses from the QEMU guest agent, leaving out
+// loopback and link local ones.
+func (a *Agent) guestAddresses(ctx context.Context, vmid int) ([]string, error) {
+	ifaces, err := a.pve.GuestInterfaces(ctx, vmid)
+	if err != nil {
+		return nil, err
+	}
+	out := []string{}
+	for _, ifc := range ifaces {
+		for _, ip := range ifc.IPAddresses {
+			parsed := net.ParseIP(ip.Address)
+			if parsed == nil || parsed.IsLoopback() || parsed.IsLinkLocalUnicast() {
+				continue
+			}
+			out = append(out, parsed.String())
+		}
+	}
+	return out, nil
+}
+
+// cachedGuestAddresses is guestAddresses for the heartbeat, reusing a recent reading.
+func (a *Agent) cachedGuestAddresses(ctx context.Context, vmid int, uptimeSec int64) []string {
+	if c, ok := a.guest[vmid]; ok && time.Now().Before(c.until) {
+		return c.addrs
+	}
+	// A guest agent that does not answer must not hold up the heartbeat.
+	gctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	addrs, err := a.guestAddresses(gctx, vmid)
+	if err != nil {
+		if time.Duration(uptimeSec)*time.Second >= guestBootGrace {
+			a.guest[vmid] = guestAddrs{until: time.Now().Add(guestAddrsFailTTL)}
+		}
+		return nil
+	}
+	a.guest[vmid] = guestAddrs{addrs: addrs, until: time.Now().Add(guestAddrsTTL)}
+	return addrs
 }
 
 // snapshotSizeGb is the space the snapshot uses on Ceph, from `rbd du` on the boot disk image.

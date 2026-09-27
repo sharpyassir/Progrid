@@ -41,6 +41,9 @@ type VM struct {
 	FWRules         []map[string]string
 	FWOpts          map[string]string
 	StartedAt       time.Time
+	// GuestAddrs, when set, is what the guest agent reports instead of the addresses from
+	// ipconfig0 and ipconfig1 (a guest that changed its own network config).
+	GuestAddrs []string
 }
 
 type task struct {
@@ -89,7 +92,7 @@ func (s *Sim) URL() string { return s.srv.URL }
 func (s *Sim) Close()      { s.srv.Close() }
 
 // FailNext makes the next n calls of an operation fail with a 500 task or response.
-// Operations: clone, config, resize, start, stop, shutdown, reboot, delete, snapshot, rollback, status, ping.
+// Operations: clone, config, resize, start, stop, shutdown, reboot, delete, snapshot, rollback, status, ping, guest.
 func (s *Sim) FailNext(op string, n int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -113,6 +116,15 @@ func (s *Sim) SetNetOut(vmid int, bytes int64) {
 	defer s.mu.Unlock()
 	if v, ok := s.vms[vmid]; ok {
 		v.NetOut = bytes
+	}
+}
+
+// SetGuestAddresses overrides the addresses the VM's guest agent reports.
+func (s *Sim) SetGuestAddresses(vmid int, addrs []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if v, ok := s.vms[vmid]; ok {
+		v.GuestAddrs = addrs
 	}
 }
 
@@ -239,7 +251,11 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 			if v.Template {
 				t = 1
 			}
-			out = append(out, map[string]interface{}{"vmid": v.VMID, "name": v.Name, "status": v.Status, "cpus": v.Cores, "maxmem": int64(v.MemoryMb) << 20, "mem": int64(v.MemoryMb) << 19, "tags": v.Tags, "cpu": 0.03, "netin": 1000, "netout": v.NetOut, "diskread": 4096, "diskwrite": 8192, "template": t})
+			up := int64(0)
+			if v.Status == "running" {
+				up = int64(time.Since(v.StartedAt).Seconds())
+			}
+			out = append(out, map[string]interface{}{"uptime": up, "vmid": v.VMID, "name": v.Name, "status": v.Status, "cpus": v.Cores, "maxmem": int64(v.MemoryMb) << 20, "mem": int64(v.MemoryMb) << 19, "tags": v.Tags, "cpu": 0.03, "netin": 1000, "netout": v.NetOut, "diskread": 4096, "diskwrite": 8192, "template": t})
 		}
 		ok(out)
 		return
@@ -440,6 +456,17 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		ok(map[string]interface{}{})
 		return
+	case sub == "/agent/network-get-interfaces" && r.Method == http.MethodGet:
+		if vm == nil {
+			notExist()
+			return
+		}
+		if vm.Status != "running" || time.Since(vm.StartedAt) < s.BootDelay || s.shouldFail("guest") {
+			fail(500, "QEMU guest agent is not running")
+			return
+		}
+		ok(map[string]interface{}{"result": guestInterfaces(vm)})
+		return
 	case sub == "/snapshot" && r.Method == http.MethodPost:
 		if vm == nil {
 			notExist()
@@ -545,6 +572,45 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fail(501, "pvesim: unhandled "+r.Method+" "+path)
+}
+
+// guestInterfaces answers network-get-interfaces like qemu-guest-agent: lo, then one
+// interface per NIC with the address cloud-init configured (DHCP leases come from 10.10.0.0/16).
+func guestInterfaces(vm *VM) []map[string]interface{} {
+	addr := func(ip, typ string, prefix int) map[string]interface{} {
+		return map[string]interface{}{"ip-address": ip, "ip-address-type": typ, "prefix": prefix}
+	}
+	out := []map[string]interface{}{{"name": "lo", "hardware-address": "00:00:00:00:00:00", "ip-addresses": []interface{}{addr("127.0.0.1", "ipv4", 8), addr("::1", "ipv6", 128)}}}
+	if vm.GuestAddrs != nil {
+		ips := []interface{}{}
+		for _, a := range vm.GuestAddrs {
+			ips = append(ips, addr(a, "ipv4", 24))
+		}
+		return append(out, map[string]interface{}{"name": "eth0", "hardware-address": "bc:24:11:00:00:01", "ip-addresses": ips})
+	}
+	for i := 0; i < 8; i++ {
+		nic, ok := vm.Config["net"+strconv.Itoa(i)]
+		if !ok {
+			continue
+		}
+		mac := ""
+		if model, _, _ := strings.Cut(nic, ","); strings.Contains(model, "=") {
+			mac = strings.ToLower(strings.SplitN(model, "=", 2)[1])
+		}
+		ips := []interface{}{addr("fe80::be24:11ff:fe00:"+strconv.Itoa(i+1), "ipv6", 64)}
+		ipcfg := vm.Config["ipconfig"+strconv.Itoa(i)]
+		if v, found := strings.CutPrefix(ipcfg, "ip="); found {
+			v = strings.SplitN(v, ",", 2)[0]
+			if v == "dhcp" {
+				ips = append(ips, addr(fmt.Sprintf("10.10.%d.%d", vm.VMID/250%256, vm.VMID%250+2), "ipv4", 16))
+			} else if ip, bits, cut := strings.Cut(v, "/"); cut {
+				p, _ := strconv.Atoi(bits)
+				ips = append(ips, addr(ip, "ipv4", p))
+			}
+		}
+		out = append(out, map[string]interface{}{"name": "eth" + strconv.Itoa(i), "hardware-address": mac, "ip-addresses": ips})
+	}
+	return out
 }
 
 func contains(list []string, v string) bool {

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Prisma } from '@prisma/client';
-import { intToIp, ipToInt, parseCidr, perRegion, PrivateNetworksService, vnetId } from './private-networks.service';
+import { guestAddressMismatch, intToIp, ipToInt, parseCidr, perRegion, PrivateNetworksService, vnetId } from './private-networks.service';
 
 beforeAll(() => {
   process.env.DATABASE_URL ??= 'postgresql://test@localhost/test';
@@ -18,6 +18,12 @@ describe('address helpers', () => {
     expect(perRegion('sdn_vnet', 'sa1')).toBe('sdn_vnet');
     expect(perRegion('sa1=sdn_vnet, sa2=shared_bridge', 'sa2')).toBe('shared_bridge');
     expect(perRegion('sa1=sdn_vnet', 'eu1')).toBeUndefined();
+  });
+  it('flags a guest that does not carry its allocated address', () => {
+    expect(guestAddressMismatch('10.96.0.2', ['10.96.0.2', '203.0.113.10', '172.17.0.1'])).toBe(false);
+    expect(guestAddressMismatch('10.96.0.2', ['10.96.0.77'])).toBe(true);
+    expect(guestAddressMismatch('10.96.0.2', [])).toBe(false);
+    expect(guestAddressMismatch(null, ['10.10.0.5'])).toBe(false);
   });
   it('derives a short VNet id from the tag', () => {
     expect(vnetId(100_000)).toBe('pn255s');
