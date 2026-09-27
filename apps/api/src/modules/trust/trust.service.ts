@@ -1,9 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ApiError } from '../../common/errors/api-error';
 import { EventsService } from '../events/events.service';
-import { NatsService, Subjects } from '../../common/nats/nats.service';
+import { TemporalService } from '../../common/temporal/temporal.service';
+
+/** Prefix of Team.suspensionReason for suspensions that paying lifts automatically. */
+export const BILLING_SUSPENSION = 'billing:';
 
 /**
  * Trust & safety: pre-flight checks before any resource is created, plus the hooks
@@ -11,7 +14,9 @@ import { NatsService, Subjects } from '../../common/nats/nats.service';
  */
 @Injectable()
 export class TrustService {
-  constructor(private readonly prisma: PrismaService, private readonly events: EventsService, private readonly nats: NatsService) {}
+  private readonly log = new Logger(TrustService.name);
+
+  constructor(private readonly prisma: PrismaService, private readonly events: EventsService, private readonly temporal: TemporalService) {}
 
   /** Throws if the team may not create resources right now. */
   async assertCanProvision(teamId: string) {
@@ -45,18 +50,83 @@ export class TrustService {
     return flag;
   }
 
+  /**
+   * Suspends a team. Running servers are powered off through the normal power workflow (not
+   * deleted, so a false positive is recoverable) and marked so reinstating powers them back
+   * on. They keep being metered while off, like any stopped server. Safe to call again: it
+   * retries servers that are still running.
+   */
   async suspend(teamId: string, reason: string) {
-    await this.prisma.team.update({ where: { id: teamId }, data: { status: 'suspended' } });
-    // Servers are powered off, not deleted, so a false positive is recoverable.
-    const servers = await this.prisma.server.findMany({ where: { project: { teamId }, status: 'active' } });
-    await this.prisma.server.updateMany({ where: { id: { in: servers.map((s) => s.id) } }, data: { status: 'suspended', statusMessage: reason } });
-    for (const s of servers) this.nats.publish(Subjects.event('server.suspend_requested'), { serverId: s.id });
-    await this.events.emit('account.suspended', { reason }, { teamId });
+    const team = await this.prisma.team.findUniqueOrThrow({ where: { id: teamId }, select: { status: true } });
+    if (team.status === 'closed') return;
+    const first = team.status !== 'suspended';
+    await this.prisma.team.update({ where: { id: teamId }, data: { status: 'suspended', suspensionReason: reason, ...(first ? { suspendedAt: new Date() } : {}) } });
+    const n = await this.powerOffRunning(teamId, reason);
+    if (first) await this.events.emit('account.suspended', { reason, serversPoweredOff: n }, { teamId });
+  }
+
+  /** Powers off whatever is still running for a suspended team (retries earlier failures). */
+  async enforceSuspension(teamId: string) {
+    const team = await this.prisma.team.findUnique({ where: { id: teamId }, select: { status: true, suspensionReason: true } });
+    if (team?.status !== 'suspended') return 0;
+    return this.powerOffRunning(teamId, team.suspensionReason ?? 'account suspended');
   }
 
   async reinstate(teamId: string) {
-    await this.prisma.team.update({ where: { id: teamId }, data: { status: 'active' } });
-    await this.prisma.server.updateMany({ where: { project: { teamId }, status: 'suspended' }, data: { status: 'off', statusMessage: null } });
-    await this.events.emit('account.reinstated', {}, { teamId });
+    await this.prisma.team.update({ where: { id: teamId }, data: { status: 'active', suspensionReason: null, suspendedAt: null } });
+    // Servers from before this change were left in the old `suspended` state; they are powered off too.
+    await this.prisma.server.updateMany({ where: { project: { teamId }, status: 'suspended', deletedAt: null }, data: { status: 'off', statusMessage: null, suspendedPoweredOff: true } });
+    const servers = await this.prisma.server.findMany({ where: { project: { teamId }, suspendedPoweredOff: true, deletedAt: null } });
+    let started = 0;
+    for (const s of servers) {
+      // A server that is not off (its stop failed, or someone started it by hand) only loses the mark.
+      if (s.status !== 'off') {
+        await this.prisma.server.update({ where: { id: s.id }, data: { suspendedPoweredOff: false, statusMessage: null } });
+        continue;
+      }
+      if (await this.power(s.id, 'start', 'provisioning')) started++;
+      await this.prisma.server.update({ where: { id: s.id }, data: { suspendedPoweredOff: false, statusMessage: null } });
+    }
+    await this.events.emit('account.reinstated', { serversPoweredOn: started }, { teamId });
+  }
+
+  /** Lifts a suspension for non payment once nothing is left 14 days overdue. Other suspensions stay. */
+  async reinstateIfSettled(teamId: string) {
+    const team = await this.prisma.team.findUnique({ where: { id: teamId }, select: { status: true, suspensionReason: true } });
+    if (team?.status !== 'suspended' || !team.suspensionReason?.startsWith(BILLING_SUSPENSION)) return false;
+    const overdue = await this.prisma.invoice.count({ where: { teamId, status: 'open', reminderStage: { gte: 14 } } });
+    if (overdue) return false;
+    await this.reinstate(teamId);
+    return true;
+  }
+
+  private async powerOffRunning(teamId: string, reason: string) {
+    const servers = await this.prisma.server.findMany({ where: { project: { teamId }, status: 'active', deletedAt: null }, select: { id: true } });
+    let n = 0;
+    for (const s of servers) {
+      await this.prisma.server.update({ where: { id: s.id }, data: { suspendedPoweredOff: true, statusMessage: `Powered off: ${reason}` } });
+      if (await this.power(s.id, 'stop', 'active')) n++;
+    }
+    return n;
+  }
+
+  /** Records a power action and starts the powerServer workflow, like a customer's start or stop. */
+  private async power(serverId: string, op: 'start' | 'stop', nextStatus: 'provisioning' | 'active') {
+    const action = await this.prisma.$transaction(async (tx) => {
+      const a = await tx.serverAction.create({ data: { serverId, type: op, params: op === 'stop' ? { force: false } : {}, requestedBy: 'system:suspension' } });
+      await tx.server.update({ where: { id: serverId }, data: { status: nextStatus } });
+      return a;
+    });
+    const workflowId = `powerServer-${action.id}`;
+    try {
+      await this.temporal.start('powerServer', [{ serverId, actionId: action.id, op, force: false }] as never, workflowId);
+      await this.prisma.serverAction.update({ where: { id: action.id }, data: { workflowId, status: 'running' } });
+      return true;
+    } catch (err) {
+      this.log.error(`suspension could not ${op} server ${serverId}: ${(err as Error).message}`);
+      await this.prisma.serverAction.update({ where: { id: action.id }, data: { status: 'failed', error: 'workflow_start_failed', finishedAt: new Date() } });
+      if (op === 'start') await this.prisma.server.update({ where: { id: serverId }, data: { status: 'off' } });
+      return false;
+    }
   }
 }

@@ -6,6 +6,7 @@ import { TemporalService } from '../../common/temporal/temporal.service';
 import type { Actor } from '../../common/auth/actor';
 import { ApiError } from '../../common/errors/api-error';
 import { IamService } from '../iam/iam.service';
+import { TrustService } from '../trust/trust.service';
 import { EventsService } from '../events/events.service';
 import { SpendService } from '../billing/spend.service';
 import { ServersService } from '../compute/servers.service';
@@ -65,6 +66,7 @@ export class KubernetesService {
     private readonly prisma: PrismaService,
     private readonly temporal: TemporalService,
     private readonly iam: IamService,
+    private readonly trust: TrustService,
     private readonly events: EventsService,
     private readonly spend: SpendService,
     private readonly servers: ServersService,
@@ -96,6 +98,7 @@ export class KubernetesService {
 
   async create(actor: Actor, dto: CreateClusterDto) {
     const project = await this.iam.resolveProject(actor, dto.project);
+    await this.trust.assertCanProvision(actor.teamId);
     const [region, controlSize, team] = await Promise.all([
       this.prisma.region.findUnique({ where: { id: dto.region ?? 'sa1' } }),
       this.prisma.size.findUnique({ where: { id: dto.controlSize ?? DEFAULT_CONTROL_SIZE } }),

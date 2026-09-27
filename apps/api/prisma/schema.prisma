@@ -79,6 +79,9 @@ model Team {
   currency Currency      @default(USD)
   country  String        @default("SA") // ISO 3166-1; drives SAR billing, ZATCA e-invoicing and PDPL residency
   status   AccountStatus @default(pending_verification)
+  /// Why the team is suspended. "billing: ..." is lifted automatically once the overdue invoices are settled.
+  suspensionReason String?
+  suspendedAt      DateTime?
   taxId    String? // Vergi No / VAT
   // Trust & safety
   kycLevel   Int      @default(0) // 0 none, 1 phone, 2 ID, 3 business
@@ -361,6 +364,8 @@ model Server {
   /// Set for platform owned VMs ("lb:<id>"): hidden from the server list, not deletable directly.
   managedBy String?
   meteredSince   DateTime? // billing starts here, never before VM is running
+  /// Powered off because the team was suspended; reinstating the team powers it back on.
+  suspendedPoweredOff Boolean @default(false)
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
   deletedAt DateTime?
@@ -699,6 +704,9 @@ model Invoice {
   dueAt       DateTime?
   paidAt      DateTime?
   voidedAt    DateTime?
+  /// Last overdue reminder sent: 0 none, then 3, 7 or 14 days past dueAt. At 14 the team is suspended.
+  reminderStage  Int        @default(0)
+  lastReminderAt DateTime?
   createdAt   DateTime      @default(now())
 
   team    Team          @relation(fields: [teamId], references: [id])
@@ -707,6 +715,7 @@ model Invoice {
   creditNotes CreditNote[]
 
   @@unique([teamId, periodStart, periodEnd])
+  @@index([status, dueAt])
 }
 
 enum CreditKind {

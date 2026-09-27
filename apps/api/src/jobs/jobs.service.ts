@@ -5,6 +5,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { MeteringService } from '../modules/billing/metering.service';
 import { RatingService } from '../modules/billing/rating.service';
 import { InvoicesService } from '../modules/billing/invoices.service';
+import { DunningService } from '../modules/billing/dunning.service';
 import { SpendService } from '../modules/billing/spend.service';
 import { FxService } from '../modules/billing/fx.service';
 import { EventsService } from '../modules/events/events.service';
@@ -33,6 +34,7 @@ export class JobsService {
     private readonly metering: MeteringService,
     private readonly rating: RatingService,
     private readonly invoices: InvoicesService,
+    private readonly dunning: DunningService,
     private readonly spend: SpendService,
     private readonly events: EventsService,
     private readonly fx: FxService,
@@ -104,6 +106,11 @@ export class JobsService {
       await this.invoices.issueForPreviousMonth();
       await this.spend.resetTokenCounters();
     });
+  }
+
+  @Cron('0 15 6 * * *') // 06:15 UTC daily (09:15 in Riyadh): overdue reminders at 3, 7 and 14 days, suspension at 14
+  dunningRun() {
+    return this.locked('dunning', 30 * 60_000, () => this.dunning.run());
   }
 
   @Cron('7 * * * *') // hourly: refresh the USD→SAR rate

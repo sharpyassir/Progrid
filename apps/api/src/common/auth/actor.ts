@@ -1,4 +1,4 @@
-import type { TeamRole } from '@prisma/client';
+import type { AccountStatus, TeamRole } from '@prisma/client';
 
 /**
  * Who is making the request. Both humans (console session) and AI agents (API token)
@@ -17,6 +17,8 @@ export interface Actor {
   /** Actions that need a human to approve before they run (phase 2 enforcement). */
   requireApprovalFor: Set<string>;
   locale: string;
+  /** The team's account status when the credential was resolved (suspended teams may only use billing). */
+  teamStatus?: AccountStatus;
 }
 
 export const ALL_SCOPES = [

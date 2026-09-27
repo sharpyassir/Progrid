@@ -36,10 +36,24 @@ export class AuthGuard implements CanActivate {
     }
 
     const required = this.reflector.getAllAndOverride<string[]>(SCOPES_KEY, [ctx.getHandler(), ctx.getClass()]) ?? [];
+    if (actor.teamStatus === 'suspended' && !allowedWhileSuspended(req.method, req.path, required)) {
+      throw new ApiError(403, 'account_suspended', `This account is suspended. Only billing is available: pay any overdue invoice at ${loadConfig().CONSOLE_URL}/billing, or contact support.`);
+    }
     const missing = required.filter((s) => !actor.scopes.has(s));
     if (missing.length) {
       throw ApiError.forbidden(`Token is missing required scope(s): ${missing.join(', ')}`);
     }
     return true;
   }
+}
+
+/**
+ * What a suspended team can still do: read billing, pay (top up or pay an invoice), and load
+ * its own account so the console can show the billing page. Everything else is refused.
+ */
+export function allowedWhileSuspended(method: string, path: string, required: string[]): boolean {
+  if (method === 'GET' && path === '/v1/account') return true;
+  if (method === 'GET' && required.length > 0 && required.every((s) => s === 'billing:read')) return true;
+  if (method === 'POST' && (path === '/v1/billing/topup' || /^\/v1\/billing\/invoices\/[^/]+\/pay$/.test(path))) return true;
+  return false;
 }

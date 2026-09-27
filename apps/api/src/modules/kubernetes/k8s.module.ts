@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { TrustModule } from '../trust/trust.module';
 import { ComputeModule } from '../compute/compute.module';
 import { NetworkModule } from '../network/network.module';
 import { EventsModule } from '../events/events.module';
@@ -9,7 +10,7 @@ import { KubernetesController } from './k8s.controller';
 import { KubernetesService } from './k8s.service';
 
 @Module({
-  imports: [ComputeModule, NetworkModule, EventsModule, BillingModule, LbModule, StorageModule],
+  imports: [TrustModule, ComputeModule, NetworkModule, EventsModule, BillingModule, LbModule, StorageModule],
   controllers: [KubernetesController],
   providers: [KubernetesService],
   exports: [KubernetesService],

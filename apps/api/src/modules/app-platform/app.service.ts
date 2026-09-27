@@ -7,6 +7,7 @@ import type { Actor } from '../../common/auth/actor';
 import { ApiError } from '../../common/errors/api-error';
 import { loadConfig } from '../../config/config';
 import { IamService } from '../iam/iam.service';
+import { TrustService } from '../trust/trust.service';
 import { EventsService } from '../events/events.service';
 import { SpendService } from '../billing/spend.service';
 import { FirewallsService } from '../network/firewalls.service';
@@ -49,6 +50,7 @@ export class AppPlatformService {
     private readonly prisma: PrismaService,
     private readonly temporal: TemporalService,
     private readonly iam: IamService,
+    private readonly trust: TrustService,
     private readonly events: EventsService,
     private readonly spend: SpendService,
     private readonly firewalls: FirewallsService,
@@ -71,6 +73,7 @@ export class AppPlatformService {
 
   async create(actor: Actor, dto: CreateAppDto) {
     const project = await this.iam.resolveProject(actor, dto.project);
+    await this.trust.assertCanProvision(actor.teamId);
     const [region, team] = await Promise.all([this.prisma.region.findUnique({ where: { id: dto.region ?? 'sa1' } }), this.prisma.team.findUniqueOrThrow({ where: { id: actor.teamId } })]);
     if (!region?.available) throw ApiError.invalid(`Unknown or unavailable region "${dto.region}"`);
     if (await this.prisma.platformApp.findUnique({ where: { slug: dto.name } })) throw ApiError.conflict('name_taken', `The name "${dto.name}" is taken; app names are unique across the platform`);

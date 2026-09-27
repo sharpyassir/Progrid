@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { TrustModule } from '../trust/trust.module';
 import { EventsModule } from '../events/events.module';
 import { BillingModule } from '../billing/billing.module';
 import { NetworkModule } from '../network/network.module';
@@ -7,7 +8,7 @@ import { AdminAppPlatformController, AppPlatformController } from './app.control
 import { AppPlatformService } from './app.service';
 
 @Module({
-  imports: [EventsModule, BillingModule, NetworkModule, forwardRef(() => GithubModule)],
+  imports: [TrustModule, EventsModule, BillingModule, NetworkModule, forwardRef(() => GithubModule)],
   controllers: [AppPlatformController, AdminAppPlatformController],
   providers: [AppPlatformService],
   exports: [AppPlatformService],

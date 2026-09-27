@@ -36,7 +36,8 @@ export class MeteringService {
   }
 
   /**
-   * Fallback meter: every minute, emit one server-minute for every active server and
+   * Fallback meter: every minute, emit one server-minute for every server that exists (running,
+   * stopped, or powered off because its team is suspended) and
    * one minute per assigned public IP / snapshot GB. Duplicates from agents are dropped
    * by the unique index on (resourceType, resourceId, at).
    */
@@ -44,7 +45,7 @@ export class MeteringService {
     const at = minuteAligned(now);
     const [servers, ips, snapshots, volumes, lbs, buckets, dbs] = await Promise.all([
       // Kubernetes workers are customer capacity and bill as servers; control plane nodes, load balancer and database nodes are part of their product's price.
-      this.prisma.server.findMany({ where: { status: { in: ['active', 'off', 'rebooting', 'resizing', 'rebuilding'] }, meteredSince: { not: null }, OR: [{ managedBy: null }, { managedBy: { startsWith: 'k8s:' }, tags: { has: 'worker' } }] }, select: { id: true, projectId: true, hostId: true, backupsEnabled: true, managed: true } }),
+      this.prisma.server.findMany({ where: { status: { in: ['active', 'off', 'rebooting', 'resizing', 'rebuilding', 'suspended'] }, meteredSince: { not: null }, OR: [{ managedBy: null }, { managedBy: { startsWith: 'k8s:' }, tags: { has: 'worker' } }] }, select: { id: true, projectId: true, hostId: true, backupsEnabled: true, managed: true } }),
       // IPs held by a load balancer (the VIP) or its nodes are part of the load balancer price.
       this.prisma.publicIp.findMany({ where: { status: { in: ['assigned', 'reserved'] }, projectId: { not: null }, loadBalancer: null, dbCluster: null, OR: [{ serverId: null }, { server: { managedBy: null } }] }, select: { id: true, projectId: true } }),
       this.prisma.snapshot.findMany({ where: { status: 'available', kind: 'manual' }, select: { id: true, projectId: true, sizeGb: true } }),

@@ -8,6 +8,7 @@ import type { Actor } from '../../../common/auth/actor';
 import type { PaymentProvider } from './provider';
 import { MoyasarProvider } from './moyasar.provider';
 import { FakeProvider } from './fake.provider';
+import { TrustService } from '../../trust/trust.service';
 
 /** A pending checkout younger than this is handed out again instead of starting a second one. */
 const PENDING_REUSE_MS = 30 * 60_000;
@@ -18,7 +19,7 @@ export class PaymentsService {
   private readonly log = new Logger(PaymentsService.name);
   private readonly providers: Record<'moyasar' | 'fake', PaymentProvider> = { moyasar: new MoyasarProvider(), fake: new FakeProvider() };
 
-  constructor(private readonly prisma: PrismaService, private readonly events: EventsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly events: EventsService, private readonly trust: TrustService) {}
 
   /** The adapter that took a stored payment (for refunds). */
   providerByName(name: ProviderName): PaymentProvider | undefined {
@@ -118,9 +119,9 @@ export class PaymentsService {
     return out;
   }
 
-  /** Called after money arrives or a debt is settled another way. */
+  /** Called after money arrives or a debt is settled another way: lifts a suspension for non payment and powers servers back on. */
   async liftBillingSuspension(teamId: string) {
-    await this.prisma.team.updateMany({ where: { id: teamId, status: 'suspended' }, data: { status: 'active' } });
+    await this.trust.reinstateIfSettled(teamId).catch((e) => this.log.error(`reinstating team ${teamId} failed: ${(e as Error).message}`));
   }
 
   private async start(actor: Actor, team: { id: string; name: string; currency: Currency }, amountMinor: number, description: string, invoiceId: string | undefined) {

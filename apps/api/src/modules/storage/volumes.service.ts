@@ -6,6 +6,7 @@ import type { Actor } from '../../common/auth/actor';
 import { ApiError } from '../../common/errors/api-error';
 import { loadConfig } from '../../config/config';
 import { IamService } from '../iam/iam.service';
+import { TrustService } from '../trust/trust.service';
 import { EventsService } from '../events/events.service';
 import { SpendService } from '../billing/spend.service';
 import { AttachVolumeDto, CreateVolumeDto, ResizeVolumeDto } from './volumes.dto';
@@ -27,7 +28,7 @@ const select = {
  */
 @Injectable()
 export class VolumesService {
-  constructor(private readonly prisma: PrismaService, private readonly iam: IamService, private readonly temporal: TemporalService, private readonly events: EventsService, private readonly spend: SpendService) {}
+  constructor(private readonly prisma: PrismaService, private readonly iam: IamService, private readonly trust: TrustService, private readonly temporal: TemporalService, private readonly events: EventsService, private readonly spend: SpendService) {}
 
   async list(actor: Actor, project?: string, serverId?: string) {
     const p = await this.iam.resolveProject(actor, project);
@@ -44,6 +45,7 @@ export class VolumesService {
 
   async create(actor: Actor, dto: CreateVolumeDto) {
     const project = await this.iam.resolveProject(actor, dto.project);
+    await this.trust.assertCanProvision(actor.teamId);
     const region = await this.prisma.region.findUnique({ where: { id: dto.region ?? cfg.DEFAULT_REGION } });
     if (!region?.available) throw ApiError.invalid(`Unknown or unavailable region "${dto.region}"`);
     if (await this.prisma.volume.findFirst({ where: { projectId: project.id, name: dto.name, deletedAt: null } })) throw ApiError.conflict('name_taken', `A volume named "${dto.name}" already exists in this project`);
