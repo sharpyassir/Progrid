@@ -148,6 +148,35 @@ export async function snapshotServer(input: SnapshotInput): Promise<void> {
   }
 }
 
+export interface RestoreInput {
+  serverId: string;
+  actionId: string;
+  snapshotId: string;
+}
+
+/**
+ * Restore = power off, roll the VM back to one of its own snapshots, plug the volumes in
+ * again (the rollback also restores the VM config of that moment), power on.
+ */
+export async function restoreServer(input: RestoreInput): Promise<void> {
+  const { serverId, actionId, snapshotId } = input;
+  try {
+    if (await act.isRunning(serverId)) await act.powerOp(serverId, 'stop', false);
+    await slow.rollbackVm(serverId, snapshotId);
+    await act.reattachVolumes(serverId);
+    await act.powerOp(serverId, 'start', false);
+    await act.applyFirewall(serverId);
+    await act.setStatus(serverId, 'active');
+    await act.completeAction(actionId);
+    await act.emit('server.restored', serverId, { snapshotId });
+  } catch (err) {
+    const message = describe(err);
+    await act.syncStatusFromHypervisor(serverId, message);
+    await act.failAction(actionId, message);
+    throw ApplicationFailure.nonRetryable(message);
+  }
+}
+
 export interface DeleteInput {
   serverId: string;
   actionId: string;

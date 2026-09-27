@@ -164,6 +164,7 @@ server.registerTool('create_server', {
     name: z.string().regex(/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/).describe('Hostname label, lowercase letters, digits and hyphens'),
     size: z.string().default('s-1vcpu-2gb').describe('Size id from list_sizes'),
     image: z.string().default('ubuntu-24-04').describe('Image id or marketplace app slug from list_images'),
+    snapshotId: z.string().optional().describe('Create a copy of a server from one of its snapshots instead of an image; image is then ignored'),
     project: z.string().optional(),
     userData: z.string().optional().describe('cloud-init user data'),
     appVariables: z.record(z.string()).optional().describe('Variables for a marketplace app, e.g. { admin_email: "..." }'),
@@ -172,9 +173,9 @@ server.registerTool('create_server', {
     managed: z.boolean().optional().describe('Managed tier: patched, hardened and watched by the care agent, daily backups included, 30% of the plan price plus backups'),
     wait: z.boolean().default(true).describe('Wait up to 2 minutes for the server to become active'),
   },
-}, async ({ wait, ...body }) => run(async () => {
+}, async ({ wait, image, ...body }) => run(async () => {
   const keys = await api<{ data: { id: string }[] }>('GET', '/v1/ssh-keys').catch(() => ({ data: [] }));
-  let s = await api<any>('POST', '/v1/servers', { ...body, sshKeys: keys.data.map((k) => k.id) });
+  let s = await api<any>('POST', '/v1/servers', { ...body, ...(body.snapshotId ? {} : { image }), sshKeys: keys.data.map((k) => k.id) });
   if (wait) {
     const until = Date.now() + 120_000;
     while (Date.now() < until && !['active', 'failed', 'off'].includes(s.status)) {
@@ -196,6 +197,12 @@ server.registerTool('server_action', {
     name: z.string().optional().describe('For snapshot: a name'),
   },
 }, async ({ id, action, ...rest }) => run(() => api('POST', `/v1/servers/${id}/actions`, { type: action, ...rest })));
+
+server.registerTool('restore_server', {
+  title: 'Restore server from snapshot',
+  description: 'Roll a server back to one of its own snapshots: it powers off, the disk returns to the snapshot and it powers on again. Everything written since the snapshot is lost, so ask the user first.',
+  inputSchema: { id: z.string(), snapshotId: z.string(), confirm: z.literal(true).describe('Must be true. Ask the user before calling.') },
+}, async ({ id, snapshotId }) => run(() => api('POST', `/v1/servers/${id}/restore`, { snapshotId })));
 
 server.registerTool('delete_server', {
   title: 'Delete server',

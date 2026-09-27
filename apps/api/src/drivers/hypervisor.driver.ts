@@ -12,7 +12,7 @@ export interface VmSpec {
   vcpu: number;
   memoryMb: number;
   diskGb: number;
-  /** Image driverRef (e.g. Proxmox template) */
+  /** Image driverRef (e.g. Proxmox template), or a snapshot driverRef to clone that snapshot */
   imageRef: string;
   sshKeys: string[];
   /** cloud-init user-data (already rendered) */
@@ -79,6 +79,8 @@ export interface HypervisorDriver {
 
   snapshotVm(hostRef: string, vmRef: string, snapshotId: string): Promise<{ snapshotRef: string; sizeGb: number }>;
   deleteSnapshot(hostRef: string, snapshotRef: string): Promise<void>;
+  /** Rolls the VM's disks back to its own snapshot. The VM must be stopped. */
+  rollbackVm(hostRef: string, vmRef: string, snapshotRef: string): Promise<void>;
 
   attachPublicIp(hostRef: string, vmRef: string, ip: { address: string; gateway: string; prefix: number }): Promise<void>;
   detachPublicIp(hostRef: string, vmRef: string, address: string): Promise<void>;

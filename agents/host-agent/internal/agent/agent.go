@@ -374,7 +374,7 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 		if err := a.pve.Snapshot(ctx, ref.VMID, name); err != nil {
 			return nil, err
 		}
-		sref, _ := json.Marshal(map[string]interface{}{"vmid": ref.VMID, "node": ref.Node, "name": name})
+		sref, _ := json.Marshal(protocol.SnapshotRef{VMID: ref.VMID, Node: ref.Node, Name: name})
 		st, _ := a.pve.Status(ctx, ref.VMID)
 		var sizeGb float64
 		if st != nil {
@@ -382,15 +382,31 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 		}
 		return map[string]interface{}{"snapshotRef": string(sref), "sizeGb": sizeGb}, nil
 
+	case protocol.JobRollback:
+		var p struct {
+			VmRef       string `json:"vmRef"`
+			SnapshotRef string `json:"snapshotRef"`
+		}
+		json.Unmarshal(job.Params, &p)
+		ref, err := parseRef(p.VmRef)
+		if err != nil {
+			return nil, err
+		}
+		var snap protocol.SnapshotRef
+		if err := json.Unmarshal([]byte(p.SnapshotRef), &snap); err != nil || snap.Name == "" {
+			return nil, permanent{"bad_ref", fmt.Errorf("invalid snapshotRef %q", p.SnapshotRef)}
+		}
+		if snap.VMID != ref.VMID {
+			return nil, permanent{"bad_ref", fmt.Errorf("snapshot %s belongs to vm %d, not %d", snap.Name, snap.VMID, ref.VMID)}
+		}
+		return nil, a.pve.Rollback(ctx, ref.VMID, snap.Name)
+
 	case protocol.JobSnapshotDel:
 		var p struct {
 			SnapshotRef string `json:"snapshotRef"`
 		}
 		json.Unmarshal(job.Params, &p)
-		var s struct {
-			VMID int    `json:"vmid"`
-			Name string `json:"name"`
-		}
+		var s protocol.SnapshotRef
 		if err := json.Unmarshal([]byte(p.SnapshotRef), &s); err != nil {
 			return nil, permanent{"bad_ref", err}
 		}
@@ -490,18 +506,30 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 }
 
 func (a *Agent) create(ctx context.Context, spec protocol.VmSpec, log *slog.Logger) (interface{}, error) {
+	// A template ref clones the golden image; a snapshot ref clones the source VM's snapshot.
 	var img struct {
-		Template int `json:"template"`
+		Template int    `json:"template"`
+		VMID     int    `json:"vmid"`
+		Node     string `json:"node"`
+		Name     string `json:"name"`
 	}
-	if err := json.Unmarshal([]byte(spec.ImageRef), &img); err != nil || img.Template == 0 {
-		return nil, permanent{"bad_image_ref", fmt.Errorf("imageRef %q is not a template ref", spec.ImageRef)}
+	if err := json.Unmarshal([]byte(spec.ImageRef), &img); err != nil || (img.Template == 0 && (img.VMID == 0 || img.Name == "")) {
+		return nil, permanent{"bad_image_ref", fmt.Errorf("imageRef %q is neither a template nor a snapshot ref", spec.ImageRef)}
+	}
+	if img.Template == 0 && img.Node != "" && img.Node != a.cfg.Proxmox.Node {
+		return nil, permanent{"wrong_node", fmt.Errorf("snapshot %s lives on node %s, not %s", img.Name, img.Node, a.cfg.Proxmox.Node)}
 	}
 	vmid, err := a.pve.NextID(ctx)
 	if err != nil {
 		return nil, err
 	}
 	log = log.With("vmid", vmid)
-	if err := a.pve.Clone(ctx, img.Template, vmid, spec.Name); err != nil {
+	if img.Template != 0 {
+		err = a.pve.Clone(ctx, img.Template, vmid, spec.Name)
+	} else {
+		err = a.pve.CloneSnapshot(ctx, img.VMID, img.Name, vmid, spec.Name)
+	}
+	if err != nil {
 		return nil, err
 	}
 

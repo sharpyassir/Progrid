@@ -5,7 +5,7 @@ import { CurrentActor, Public, RequireScopes } from '../../common/auth/decorator
 import type { Actor } from '../../common/auth/actor';
 import { ManagedCareService, ServersService } from './servers.service';
 import type { ManagedReport } from './managed-agent';
-import { CreateServerDto, ListServersQuery, ServerActionDto, UpdateServerDto } from './compute.dto';
+import { CreateServerDto, ListServersQuery, RestoreServerDto, ServerActionDto, UpdateServerDto } from './compute.dto';
 
 @ApiTags('servers')
 @ApiBearerAuth()
@@ -43,6 +43,12 @@ export class ServersController {
   @Post(':id/actions') @RequireScopes('servers:write') @HttpCode(202)
   action(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: ServerActionDto) {
     return this.servers.action(actor, id, dto);
+  }
+
+  /** Rolls the server back to one of its snapshots: power off, roll back, power on. Everything written since is lost. */
+  @Post(':id/restore') @RequireScopes('servers:write') @HttpCode(202)
+  restore(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: RestoreServerDto) {
+    return this.servers.restore(actor, id, dto);
   }
 
   @Get(':id/actions') @RequireScopes('servers:read')

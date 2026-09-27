@@ -272,6 +272,47 @@ func TestVolumeSurvivesRebuild(t *testing.T) {
 	}
 }
 
+func TestRollbackAndCreateFromSnapshot(t *testing.T) {
+	h := newHarness(t)
+	vmid, ref := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_snap")})))
+	snapRef := h.mustOK(h.job(protocol.JobSnapshot, map[string]interface{}{"vmRef": ref, "snapshotId": "S1"})).Result.(map[string]interface{})["snapshotRef"].(string)
+
+	// Restore: the control plane stops the VM, rolls back, and starts it again.
+	h.mustOK(h.job(protocol.JobStop, map[string]interface{}{"vmRef": ref, "force": true}))
+	h.mustOK(h.job(protocol.JobRollback, map[string]interface{}{"vmRef": ref, "snapshotRef": snapRef}))
+	if h.sim.VM(vmid).RolledBackTo != "pgs1" {
+		t.Fatalf("rollback not done: %+v", h.sim.VM(vmid))
+	}
+	h.mustOK(h.job(protocol.JobStart, map[string]interface{}{"vmRef": ref}))
+
+	// A snapshot of another VM is refused before Proxmox is called.
+	r := h.job(protocol.JobRollback, map[string]interface{}{"vmRef": `{"vmid":999,"node":"pve1"}`, "snapshotRef": snapRef})
+	if r.OK || r.Error.Code != "bad_ref" || r.Error.Retryable {
+		t.Fatalf("expected bad_ref for a foreign snapshot, got %+v", r)
+	}
+	// A snapshot that does not exist is a Proxmox error.
+	r = h.job(protocol.JobRollback, map[string]interface{}{"vmRef": ref, "snapshotRef": strings.Replace(snapRef, "pgs1", "pgnope", 1)})
+	if r.OK || !strings.Contains(r.Error.Message, "does not exist") {
+		t.Fatalf("expected a missing snapshot error, got %+v", r)
+	}
+
+	// Create from the snapshot: a full clone of the source VM at that snapshot.
+	sp := spec("srv_from_snap")
+	sp.ImageRef = snapRef
+	newID, _ := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": sp})))
+	if src := h.sim.VM(newID).Source; src != itoa(vmid)+"@pgs1" {
+		t.Fatalf("new vm cloned from %q, want %d@pgs1", src, vmid)
+	}
+	if !strings.Contains(h.sim.VM(newID).Tags, "server-srv_from_snap") {
+		t.Fatalf("clone from snapshot not configured: %+v", h.sim.VM(newID))
+	}
+	// A snapshot on another node cannot be cloned here.
+	sp.ImageRef = strings.Replace(snapRef, `"node":"pve1"`, `"node":"pve9"`, 1)
+	if r := h.job(protocol.JobCreate, map[string]interface{}{"spec": sp}); r.OK || r.Error.Code != "wrong_node" {
+		t.Fatalf("expected wrong_node, got %+v", r)
+	}
+}
+
 func TestErrorsAreClassified(t *testing.T) {
 	h := newHarness(t)
 

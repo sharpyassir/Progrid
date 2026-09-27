@@ -14,6 +14,7 @@ export type JobKind =
   | 'vm.status'
   | 'vm.find_by_tag'
   | 'vm.snapshot'
+  | 'vm.rollback'
   | 'snapshot.delete'
   | 'net.attach_ip'
   | 'net.detach_ip'

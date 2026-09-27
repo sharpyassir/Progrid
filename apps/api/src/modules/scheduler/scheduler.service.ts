@@ -13,6 +13,8 @@ export interface PlacementRequest {
   /** Server IDs this server must not share a host with (anti-affinity). */
   avoidServerIds?: string[];
   family?: string;
+  /** Place only on this host (a clone of a snapshot runs on the node that holds it). */
+  onlyHostId?: string;
 }
 
 /**
@@ -36,7 +38,7 @@ export class SchedulerService {
         : [];
 
       const hosts = await this.prisma.host.findMany({
-        where: { regionId: req.regionId, status: 'active', id: { notIn: avoidHostIds } },
+        where: { regionId: req.regionId, status: 'active', id: req.onlyHostId ? { equals: req.onlyHostId, notIn: avoidHostIds } : { notIn: avoidHostIds } },
       });
 
       const staleAfter = Date.now() - 3 * 60_000;

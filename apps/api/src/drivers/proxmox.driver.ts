@@ -97,6 +97,9 @@ export class ProxmoxDriver implements HypervisorDriver {
   async deleteSnapshot(hostRef: string, snapshotRef: string) {
     await this.job(hostRef, 'snapshot.delete', { snapshotRef });
   }
+  async rollbackVm(hostRef: string, vmRef: string, snapshotRef: string) {
+    await this.job(hostRef, 'vm.rollback', { vmRef, snapshotRef }, 600_000);
+  }
   async attachPublicIp(hostRef: string, vmRef: string, ip: { address: string; gateway: string; prefix: number }) {
     await this.job(hostRef, 'net.attach_ip', { vmRef, ip });
   }

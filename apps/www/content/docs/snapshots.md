@@ -7,11 +7,17 @@ order: 14
 
 ## Snapshots
 
-A snapshot is a copy of the whole disk at that moment. Take one from the server's **Snapshots** tab, with `pgcloud servers snapshot web-1`, or with the `snapshot` action in the API. Snapshots are stored separately from the server, so they survive its deletion, and are charged per GB per month.
+A snapshot is a copy of the whole disk at that moment. Take one from the server's **Snapshots** tab, with `pgcloud servers snapshot web-1`, or with the `snapshot` action in the API. Snapshots are charged per GB per month.
 
 A snapshot taken while the server runs can miss data that was only in memory. For a database, stop the server first or use the database's own dump tool alongside.
 
-Create a new server from a snapshot by choosing it as the image. The new server gets a fresh address.
+## Restoring a server
+
+Roll a server back to one of its own snapshots with `pgcloud servers restore web-1 SNAPSHOT_ID`, the `restore_server` MCP tool, or `POST /v1/servers/{id}/restore` and `{"snapshotId": "..."}`. The server powers off, its disk returns to the moment of the snapshot, and it powers on again with the same address. Everything written since the snapshot is lost, including on volumes that were attached when it was taken.
+
+## New server from a snapshot
+
+Create a copy of a server by passing `snapshotId` instead of `image` to `POST /v1/servers`, or with `pgcloud servers create web-2 --snapshot SNAPSHOT_ID`. The copy runs in the same region, gets a fresh address, your SSH keys and its own hostname, and needs a size with at least as much disk as the original. The server the snapshot was taken from must still exist.
 
 ## Backups
 

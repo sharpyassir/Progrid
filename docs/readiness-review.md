@@ -85,9 +85,9 @@ what blocks money first. Items marked "fixed" were corrected in the same commit 
     disk, and rebuild attaches every volume the database shows attached to the new VM.
 13. **Bandwidth billing is wrong.** Fixed: the agent sends outbound bytes since the previous
     tick, and rating charges per GB above the size's included transfer in each calendar month.
-14. **Backups are same cluster snapshots** with no restore path and a fake size, and they die
-    with the VM. Add a restore workflow and an off host copy (Proxmox Backup Server or the Hetzner
-    Storage Box) before advertising backups.
+14. **Backups are same cluster snapshots** and they die with the VM. The restore workflow
+    (`POST /v1/servers/{id}/restore`) and create from snapshot now exist; an off host copy (Proxmox
+    Backup Server or the Hetzner Storage Box) is still needed before advertising backups.
 15. **IP blocks and images have no admin API.** Fixed: `admin/v1/ip-blocks` and `admin/v1/images`, with
     back office pages.
 

@@ -13,7 +13,7 @@ import { SpendService } from '../billing/spend.service';
 import { MarketplaceService } from '../marketplace/marketplace.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import type { Approval } from '@prisma/client';
-import { CreateServerDto, ListServersQuery, ServerActionDto, UpdateServerDto } from './compute.dto';
+import { CreateServerDto, ListServersQuery, RestoreServerDto, ServerActionDto, UpdateServerDto } from './compute.dto';
 import { randomBytes } from 'node:crypto';
 import { hasManagedAgent, healthOf, renderManagedInstallScript, withManagedAgent, type ManagedReport } from './managed-agent';
 
@@ -26,6 +26,7 @@ const ALLOWED: Record<ActionType, ServerStatus[]> = {
   resize: ['active', 'off'],
   rebuild: ['active', 'off'],
   snapshot: ['active', 'off'],
+  restore: ['active', 'off'],
   delete: ['active', 'off', 'failed', 'new'],
 };
 
@@ -58,6 +59,7 @@ export class ServersService {
     // What runs when a person approves a parked request.
     this.approvals.registerExecutor('servers:create', (actor, a) => this.create(actor, a.payload as unknown as CreateServerDto));
     this.approvals.registerExecutor('servers:delete', (actor, a) => this.delete(actor, a.resourceId!));
+    this.approvals.registerExecutor('servers:restore', (actor, a) => this.restore(actor, a.resourceId!, a.payload as unknown as RestoreServerDto));
     for (const k of ['servers:stop', 'servers:reboot', 'servers:resize', 'servers:resize-down', 'servers:rebuild', 'servers:snapshot', 'servers:start']) {
       this.approvals.registerExecutor(k, (actor, a) => this.action(actor, a.resourceId!, a.payload as unknown as ServerActionDto));
     }
@@ -93,23 +95,36 @@ export class ServersService {
     const cfg = loadConfig();
     const project = await this.iam.resolveProject(actor, dto.project);
     await this.trust.assertCanProvision(actor.teamId);
+    if (!dto.image === !dto.snapshotId) throw ApiError.invalid('Pass either image or snapshotId');
     if (this.approvals.needs(actor, 'servers:create')) {
-      await this.approvals.request(actor, { kind: 'servers:create', resourceType: 'server', resourceName: dto.name, projectId: project.id, summary: `Create server ${dto.name} (${dto.size}, ${dto.image})`, payload: { ...dto, project: project.id } });
+      await this.approvals.request(actor, { kind: 'servers:create', resourceType: 'server', resourceName: dto.name, projectId: project.id, summary: `Create server ${dto.name} (${dto.size}, ${dto.image ?? `snapshot ${dto.snapshotId}`})`, payload: { ...dto, project: project.id } });
     }
 
+    // From a snapshot: the new VM is a full clone of the snapshot, on the host and in the region of its source server.
+    const snapshot = dto.snapshotId
+      ? await this.prisma.snapshot.findFirst({ where: { id: dto.snapshotId, status: 'available', project: { teamId: actor.teamId } }, include: { server: true } })
+      : null;
+    if (dto.snapshotId && !snapshot) throw ApiError.notFound('snapshot', dto.snapshotId);
+    const source = snapshot?.server;
+    if (snapshot && (!source || source.deletedAt || !source.hostId)) throw ApiError.invalidState('The server this snapshot was taken from no longer exists, so the snapshot cannot be cloned');
+    if (source && dto.region && dto.region !== source.regionId) throw ApiError.invalid(`A server from this snapshot is created in region ${source.regionId}`);
+
     const [region, size, image] = await Promise.all([
-      this.prisma.region.findUnique({ where: { id: dto.region ?? cfg.DEFAULT_REGION } }),
+      this.prisma.region.findUnique({ where: { id: source?.regionId ?? dto.region ?? cfg.DEFAULT_REGION } }),
       this.prisma.size.findUnique({ where: { id: dto.size } }),
-      this.prisma.image.findFirst({ where: { OR: [{ id: dto.image }, { app: { slug: dto.image } }], deprecated: false }, include: { app: true } }),
+      source
+        ? this.prisma.image.findUnique({ where: { id: source.imageId }, include: { app: true } })
+        : this.prisma.image.findFirst({ where: { OR: [{ id: dto.image }, { app: { slug: dto.image } }], deprecated: false }, include: { app: true } }),
     ]);
     if (!region?.available) throw ApiError.invalid(`Unknown or unavailable region "${dto.region}"`);
     if (!size?.available) throw ApiError.invalid(`Unknown size "${dto.size}"`);
     if (!image) throw ApiError.invalid(`Unknown image "${dto.image}"`);
+    if (source && size.diskGb < source.diskGb) throw ApiError.invalid(`The snapshot holds a ${source.diskGb} GB disk; choose a size with at least that much disk`);
     if (image.regionId && image.regionId !== region.id) throw ApiError.invalid('Image is not available in this region');
     if (size.diskGb < image.minDiskGb || size.memoryMb < image.minMemoryMb) {
       throw ApiError.invalid(`Image "${image.id}" needs at least ${image.minDiskGb} GB disk and ${image.minMemoryMb} MB memory`);
     }
-    if (image.app && image.app.status !== 'published') throw ApiError.invalid('This marketplace app is not published');
+    if (image.app && !snapshot && image.app.status !== 'published') throw ApiError.invalid('This marketplace app is not published');
     if (image.app) {
       const minSize = await this.prisma.size.findUniqueOrThrow({ where: { id: image.app.minSizeId } });
       if (size.memoryMb < minSize.memoryMb) throw ApiError.invalid(`"${image.app.name}" needs at least size ${minSize.id}`);
@@ -149,7 +164,8 @@ export class ServersService {
 
     // Managed tier: the care agent rides along as a second cloud-init part, and daily backups are on.
     const managedToken = dto.managed ? randomBytes(24).toString('base64url') : null;
-    const baseUserData = image.app ? this.marketplace.renderCloudInit(image.app, dto.appVariables ?? {}, dto.userData) : dto.userData;
+    // A snapshot already holds the installed app, so only the customer's user-data applies.
+    const baseUserData = image.app && !snapshot ? this.marketplace.renderCloudInit(image.app, dto.appVariables ?? {}, dto.userData) : dto.userData;
     const userData = managedToken ? withManagedAgent(baseUserData, this.managedScript(managedToken)) : baseUserData;
 
     const server = await this.prisma.server.create({
@@ -158,6 +174,7 @@ export class ServersService {
         regionId: region.id,
         sizeId: size.id,
         imageId: image.id,
+        sourceSnapshotId: snapshot?.id,
         name: dto.name,
         vcpu: size.vcpu,
         memoryMb: size.memoryMb,
@@ -299,6 +316,27 @@ export class ServersService {
     const workflow = { start: 'powerServer', stop: 'powerServer', reboot: 'powerServer', resize: 'resizeServer', rebuild: 'rebuildServer', snapshot: 'snapshotServer' }[dto.type];
     await this.startWorkflow(action.id, workflow, [{ serverId: server.id, actionId: action.id, ...params, op: dto.type }]);
     await this.events.emit(`server.${dto.type}_requested`, { serverId: server.id, ...params }, { actor, resource: `server:${server.id}` });
+    return this.prisma.serverAction.findUniqueOrThrow({ where: { id: action.id } });
+  }
+
+  /** Rolls a server back to one of its own snapshots. Data written after the snapshot is lost. */
+  async restore(actor: Actor, id: string, dto: RestoreServerDto) {
+    const server = await this.mustOwn(actor, id);
+    this.assertTransition(server.status, 'restore');
+    if (server.managedBy) throw ApiError.invalidState(`This server is managed by ${server.managedBy.replace('lb:', 'load balancer ')}; it cannot be restored directly`);
+    const snapshot = await this.prisma.snapshot.findFirst({ where: { id: dto.snapshotId, serverId: id, status: 'available' } });
+    if (!snapshot) throw ApiError.notFound('snapshot', dto.snapshotId);
+    if (this.approvals.needs(actor, 'servers:restore')) {
+      await this.approvals.request(actor, { kind: 'servers:restore', resourceType: 'server', resourceId: server.id, resourceName: server.name, projectId: server.projectId, summary: `Restore server ${server.name} to snapshot ${snapshot.name}`, payload: { ...dto } });
+    }
+
+    const action = await this.prisma.$transaction(async (tx) => {
+      const a = await tx.serverAction.create({ data: { serverId: server.id, type: 'restore', params: { snapshotId: snapshot.id }, requestedBy: actor.tokenId ?? actor.userId } });
+      await tx.server.update({ where: { id: server.id }, data: { status: 'rebuilding' } });
+      return a;
+    });
+    await this.startWorkflow(action.id, 'restoreServer', [{ serverId: server.id, actionId: action.id, snapshotId: snapshot.id }]);
+    await this.events.emit('server.restore_requested', { serverId: server.id, snapshotId: snapshot.id }, { actor, resource: `server:${server.id}` });
     return this.prisma.serverAction.findUniqueOrThrow({ where: { id: action.id } });
   }
 

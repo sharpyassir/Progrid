@@ -39,6 +39,7 @@ export interface Activities {
   finalizeDelete(serverId: string): Promise<void>;
   createSnapshotRecord(serverId: string, name: string, kind?: 'manual' | 'backup'): Promise<string>;
   snapshotVm(serverId: string, snapshotId: string): Promise<void>;
+  rollbackVm(serverId: string, snapshotId: string): Promise<void>;
   failSnapshot(snapshotId: string, message: string): Promise<void>;
   deleteSnapshotVm(snapshotId: string): Promise<void>;
   volumeCreate(volumeId: string): Promise<void>;
@@ -98,6 +99,14 @@ export function createActivities(app: INestApplicationContext): Activities {
   const apps = app.get(AppPlatformService);
   const temporal = app.get(TemporalService);
 
+  /** The snapshot a server is created from, with the host of its source VM. */
+  async function sourceSnapshot(snapshotId: string) {
+    const snap = await prisma.snapshot.findUnique({ where: { id: snapshotId }, include: { server: true } });
+    if (!snap || snap.status !== 'available' || !snap.driverRef) throw nonRetryable(`snapshot ${snapshotId} is not available`);
+    if (!snap.server?.hostId || snap.server.deletedAt) throw nonRetryable(`the server snapshot ${snapshotId} was taken from no longer exists`);
+    return snap;
+  }
+
   /** Loads a server with everything the driver needs. Throws non-retryable if gone. */
   async function load(serverId: string) {
     const s = await prisma.server.findUnique({ where: { id: serverId }, include: { host: true, image: true, size: true, publicIps: { include: { block: true } }, project: { include: { team: true } } } });
@@ -125,13 +134,16 @@ export function createActivities(app: INestApplicationContext): Activities {
     },
 
     async setImage(serverId, imageId) {
-      await prisma.server.update({ where: { id: serverId }, data: { imageId } });
+      // A rebuild installs the image, so a server made from a snapshot stops cloning it.
+      await prisma.server.update({ where: { id: serverId }, data: { imageId, sourceSnapshotId: null } });
     },
 
     async placeServer(serverId, avoid) {
       const s = await load(serverId);
       if (s.hostId) return; // already placed (retry)
-      const placement = await wrap(scheduler.place({ regionId: s.regionId, vcpu: s.vcpu, memoryMb: s.memoryMb, diskGb: s.diskGb, avoidServerIds: avoid, family: s.size.family }));
+      // A snapshot lives with its source VM, so a clone of it must run on that VM's host.
+      const onlyHostId = s.sourceSnapshotId ? (await sourceSnapshot(s.sourceSnapshotId)).server!.hostId! : undefined;
+      const placement = await wrap(scheduler.place({ regionId: s.regionId, vcpu: s.vcpu, memoryMb: s.memoryMb, diskGb: s.diskGb, avoidServerIds: avoid, family: s.size.family, onlyHostId }));
       await prisma.server.update({ where: { id: serverId }, data: { hostId: placement.hostId } });
       log.log(`placed ${serverId} on host ${placement.hostId}`);
     },
@@ -159,7 +171,7 @@ export function createActivities(app: INestApplicationContext): Activities {
           vcpu: s.vcpu,
           memoryMb: s.memoryMb,
           diskGb: s.diskGb,
-          imageRef: s.image.driverRef ?? s.image.id,
+          imageRef: s.sourceSnapshotId ? (await sourceSnapshot(s.sourceSnapshotId)).driverRef! : s.image.driverRef ?? s.image.id,
           sshKeys: keys.map((k) => k.publicKey),
           userData: s.userData ?? undefined,
           networkRef: `vpc-${s.projectId}`,
@@ -290,6 +302,19 @@ export function createActivities(app: INestApplicationContext): Activities {
       try {
         const r = await wrap(driver.snapshotVm(hostRef(s), s.driverRef, snapshotId));
         await prisma.snapshot.update({ where: { id: snapshotId }, data: { status: 'available', driverRef: r.snapshotRef, sizeGb: r.sizeGb } });
+      } finally {
+        clearInterval(heartbeat);
+      }
+    },
+
+    async rollbackVm(serverId, snapshotId) {
+      const s = await load(serverId);
+      if (!s.driverRef) throw nonRetryable('server has no VM');
+      const snap = await prisma.snapshot.findFirst({ where: { id: snapshotId, serverId, status: 'available' } });
+      if (!snap?.driverRef) throw nonRetryable(`snapshot ${snapshotId} is not available for this server`);
+      const heartbeat = setInterval(() => Context.current().heartbeat(), 20_000);
+      try {
+        await wrap(driver.rollbackVm(hostRef(s), s.driverRef, snap.driverRef));
       } finally {
         clearInterval(heartbeat);
       }

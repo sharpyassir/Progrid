@@ -20,20 +20,24 @@ import (
 
 // VM is the simulated machine state.
 type VM struct {
-	VMID      int
-	Name      string
-	Template  bool
-	Status    string // running | stopped
-	Cores     int
-	MemoryMb  int
-	DiskGb    int
-	Tags      string
-	NetOut    int64             // outbound byte counter since boot
-	Config    map[string]string // last /config form, for assertions
-	Snaps     []string
-	FWRules   []map[string]string
-	FWOpts    map[string]string
-	StartedAt time.Time
+	VMID     int
+	Name     string
+	Template bool
+	Status   string // running | stopped
+	Cores    int
+	MemoryMb int
+	DiskGb   int
+	Tags     string
+	NetOut   int64             // outbound byte counter since boot
+	Config   map[string]string // last /config form, for assertions
+	Snaps    []string
+	// Source is "<vmid>" for a template clone or "<vmid>@<snapname>" for a snapshot clone.
+	Source string
+	// RolledBackTo is the snapshot of the last rollback.
+	RolledBackTo string
+	FWRules      []map[string]string
+	FWOpts       map[string]string
+	StartedAt    time.Time
 }
 
 type task struct {
@@ -82,7 +86,7 @@ func (s *Sim) URL() string { return s.srv.URL }
 func (s *Sim) Close()      { s.srv.Close() }
 
 // FailNext makes the next n calls of an operation fail with a 500 task or response.
-// Operations: clone, config, resize, start, stop, shutdown, reboot, delete, snapshot, status, ping.
+// Operations: clone, config, resize, start, stop, shutdown, reboot, delete, snapshot, rollback, status, ping.
 func (s *Sim) FailNext(op string, n int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -263,8 +267,12 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 			fail(500, "clone failed: simulated fault")
 			return
 		}
+		if snap := r.Form.Get("snapname"); snap != "" && !contains(vm.Snaps, snap) {
+			fail(500, "snapshot '"+snap+"' does not exist")
+			return
+		}
 		newid, _ := strconv.Atoi(r.Form.Get("newid"))
-		s.vms[newid] = &VM{VMID: newid, Name: r.Form.Get("name"), Status: "stopped", NetOut: 2000, Cores: vm.Cores, MemoryMb: vm.MemoryMb, DiskGb: vm.DiskGb, Config: map[string]string{}, FWOpts: map[string]string{}}
+		s.vms[newid] = &VM{Source: sourceOf(vmid, r.Form.Get("snapname")), VMID: newid, Name: r.Form.Get("name"), Status: "stopped", NetOut: 2000, Cores: vm.Cores, MemoryMb: vm.MemoryMb, DiskGb: vm.DiskGb, Config: map[string]string{}, FWOpts: map[string]string{}}
 		ok(s.newTask("OK"))
 		return
 	case sub == "/config" && r.Method == http.MethodGet:
@@ -412,6 +420,23 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		ok(s.newTask(e))
 		return
+	case strings.HasPrefix(sub, "/snapshot/") && strings.HasSuffix(sub, "/rollback") && r.Method == http.MethodPost:
+		if vm == nil {
+			notExist()
+			return
+		}
+		name := strings.TrimSuffix(strings.TrimPrefix(sub, "/snapshot/"), "/rollback")
+		if !contains(vm.Snaps, name) {
+			fail(500, "snapshot '"+name+"' does not exist")
+			return
+		}
+		e := exit("rollback")
+		if e == "OK" {
+			// Without a saved memory state Proxmox leaves the VM stopped after a rollback.
+			vm.Status, vm.RolledBackTo = "stopped", name
+		}
+		ok(s.newTask(e))
+		return
 	case strings.HasPrefix(sub, "/snapshot/") && r.Method == http.MethodDelete:
 		if vm == nil {
 			notExist()
@@ -489,6 +514,22 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fail(501, "pvesim: unhandled "+r.Method+" "+path)
+}
+
+func contains(list []string, v string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+func sourceOf(vmid int, snapname string) string {
+	if snapname == "" {
+		return strconv.Itoa(vmid)
+	}
+	return strconv.Itoa(vmid) + "@" + snapname
 }
 
 func isNIC(key string) bool {

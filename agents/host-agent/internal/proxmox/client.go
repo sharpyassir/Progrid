@@ -133,8 +133,17 @@ func (c *Client) NextID(ctx context.Context) (int, error) {
 
 // Clone does a full clone of a template onto the Ceph storage.
 func (c *Client) Clone(ctx context.Context, template, newid int, name string) error {
+	return c.CloneSnapshot(ctx, template, "", newid, name)
+}
+
+// CloneSnapshot does a full clone of a VM's snapshot (qm clone --snapname). An empty
+// snapname clones the current state, which is what template clones use.
+func (c *Client) CloneSnapshot(ctx context.Context, source int, snapname string, newid int, name string) error {
 	f := url.Values{"newid": {fmt.Sprint(newid)}, "name": {name}, "full": {"1"}, "storage": {c.cfg.Storage}}
-	return c.post(ctx, c.vmPath(template, "/clone"), f, 10*time.Minute)
+	if snapname != "" {
+		f.Set("snapname", snapname)
+	}
+	return c.post(ctx, c.vmPath(source, "/clone"), f, 10*time.Minute)
 }
 
 // Configure sets CPU/RAM, cloud-init and network. Snippets for user-data live on a
@@ -263,6 +272,11 @@ func (c *Client) AgentPing(ctx context.Context, vmid int) error {
 
 func (c *Client) Snapshot(ctx context.Context, vmid int, name string) error {
 	return c.post(ctx, c.vmPath(vmid, "/snapshot"), url.Values{"snapname": {name}, "vmstate": {"0"}}, 10*time.Minute)
+}
+
+// Rollback restores the VM disks to the snapshot (qm rollback). The VM must be stopped.
+func (c *Client) Rollback(ctx context.Context, vmid int, name string) error {
+	return c.post(ctx, c.vmPath(vmid, "/snapshot/"+name+"/rollback"), url.Values{}, 10*time.Minute)
 }
 
 func (c *Client) DeleteSnapshot(ctx context.Context, vmid int, name string) error {

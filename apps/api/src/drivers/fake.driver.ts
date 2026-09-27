@@ -97,6 +97,11 @@ export class FakeDriver implements HypervisorDriver {
     return { snapshotRef: JSON.stringify({ fake: true, vmRef, snapshotId }), sizeGb: (vm?.spec.diskGb ?? 25) * 0.4 };
   }
   async deleteSnapshot() {}
+  async rollbackVm(_h: string, vmRef: string) {
+    await sleep(500);
+    const vm = this.vms.get(vmRef);
+    if (vm) vm.power = 'stopped';
+  }
   // These three are called from the API process, which does not share memory with the
   // worker that created the VM. Unknown refs are accepted so the dev console stays usable.
   async attachPublicIp(_h: string, vmRef: string, ip: { address: string }) {
