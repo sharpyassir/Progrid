@@ -9,13 +9,18 @@ good shape and have been exercised end to end with the fake driver. Nothing has 
 real Proxmox, real Ceph, real PowerDNS, real Moyasar or real mail. The gaps below are ranked by
 what blocks money first. Items marked "fixed" were corrected in the same commit as this document.
 
+Update, same day: a second round fixed everything in sections A to D that could be fixed in code
+without hardware or outside accounts, except ZATCA. The items below say what changed and what
+still needs a real cluster or a real account. An integration suite now drives every product
+end to end through the public API against simulated hosts and agents, and runs in CI.
+
 ## Status by layer
 
 | Layer | State | Verdict |
 |---|---|---|
 | Website, docs, legal pages, brand | Complete | Ship |
-| Console and API (accounts, tokens, approvals, projects) | Complete, tested with fake driver | Ship, with the security items below |
-| Billing math, price book, VAT, invoices PDF | Complete | Ship after the invoicing fixes below |
+| Console and API (accounts, teams, tokens, approvals, sessions, staff roles) | Complete, covered by the integration suite | Ship |
+| Billing (rating, VAT, atomic invoices, refunds, credit notes, dunning, suspension, prepaid gate) | Complete, covered by the integration suite | Ship once Moyasar is tested |
 | Payments (Moyasar) | Written, never run against Moyasar | Test on a real merchant account |
 | ZATCA e-invoicing | Not built, only a flag on the invoice | Must build or contract before the first SAR invoice |
 | Support tickets and email intake | Complete, tested | Ship |
@@ -24,7 +29,7 @@ what blocks money first. Items marked "fixed" were corrected in the same commit 
 | Volumes, object storage, DNS | Written against Ceph RBD, RGW and PowerDNS; never run on real ones | Test on real cluster |
 | Managed databases, Kubernetes, App Platform | Written end to end and run in the integration suite against simulated agents; agents never booted on a real VM | Expect a hardening pass of one to two weeks each |
 | Control plane hosting (compose, Ansible) | Single host, working for a demo | Not fit for paying customers as is |
-| Observability, backups, DR | Minimal | Build before charging |
+| Observability, backups, DR | All databases dumped nightly with WAL archiving; worker and API health checks; no metrics, alerting or status page yet | Build monitoring before charging |
 
 ## A. Blocks taking money (build first)
 
