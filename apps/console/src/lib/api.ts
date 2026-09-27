@@ -3,6 +3,8 @@
  * same endpoints the CLI, Terraform and agents use. Session token lives in localStorage.
  */
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+/** The marketing site, for legal and help links. */
+export const WWW_URL = process.env.NEXT_PUBLIC_WWW_URL ?? 'https://progrid.sa';
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public details?: Record<string, unknown>) {

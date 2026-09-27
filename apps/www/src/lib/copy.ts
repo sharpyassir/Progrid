@@ -21,7 +21,7 @@ export interface Copy {
   marketplace: { eyebrow: string; h2: string; lead: string };
   compare: { eyebrow: string; h2: string; cols: [string, string, string]; rows: [string, string, string, string][] };
   cta: { h2: string; lead: string; create: string; docs: string };
-  footer: { tagline: string; cols: [string, string[]][]; copyright: string; builtOn: string };
+  footer: { tagline: string; cols: [string, [string, string][]][]; copyright: string; builtOn: string };
 }
 
 const en: Copy = {
@@ -91,10 +91,10 @@ const en: Copy = {
   footer: {
     tagline: 'The developer cloud for Saudi Arabia.',
     cols: [
-      ['Products', ['Servers', 'Marketplace', 'Managed Agents', 'Inference Engine', 'Security']],
-      ['Developers', ['API reference', 'CLI', 'Terraform', 'SDKs', 'Status']],
-      ['Company', ['About', 'Pricing', 'Vendor program', 'Careers', 'Contact']],
-      ['Legal', ['Terms', 'Privacy (PDPL)', 'SLA', 'Acceptable use']],
+      ['Products', [['Servers', '/#products'], ['Marketplace', '/#marketplace'], ['AI tools', '/#agents'], ['Pricing', '/#pricing'], ['Security', '/docs/security']]],
+      ['Developers', [['API reference', '/docs/api-reference'], ['CLI', '/docs/cli'], ['Terraform', '/docs/api'], ['SDKs', '/docs/api'], ['Status', '#']]],
+      ['Company', [['About us', '/about'], ['Contact', '/contact'], ['Careers', '/careers'], ['Vendor program', '/contact']]],
+      ['Legal', [['Terms of service', '/legal/terms'], ['Acceptable use', '/legal/acceptable-use'], ['Privacy (PDPL)', '/legal/privacy'], ['Refunds', '/legal/refunds'], ['SLA', '/legal/sla'], ['Cookies', '/legal/cookies']]],
     ],
     copyright: 'Progrid. All rights reserved.', builtOn: 'Built on open source: Proxmox VE, Ceph, Temporal, NATS',
   },
@@ -167,10 +167,10 @@ const tr: Copy = {
   footer: {
     tagline: 'Suudi Arabistan için geliştirici bulutu.',
     cols: [
-      ['Ürünler', ['Sunucular', 'Uygulama Mağazası', 'Yönetilen Ajanlar', 'Çıkarım Motoru', 'Güvenlik']],
-      ['Geliştiriciler', ['API referansı', 'Komut satırı', 'Terraform', 'SDK’lar', 'Durum']],
-      ['Şirket', ['Hakkında', 'Fiyatlar', 'Satıcı programı', 'Kariyer', 'İletişim']],
-      ['Hukuki', ['Koşullar', 'Gizlilik (PDPL)', 'SLA', 'Kabul edilebilir kullanım']],
+      ['Ürünler', [['Sunucular', '/#products'], ['Uygulama Mağazası', '/#marketplace'], ['Yapay zeka araçları', '/#agents'], ['Fiyatlar', '/#pricing'], ['Güvenlik', '/docs/security']]],
+      ['Geliştiriciler', [['API referansı', '/docs/api-reference'], ['CLI', '/docs/cli'], ['Terraform', '/docs/api'], ['SDK’lar', '/docs/api'], ['Durum', '#']]],
+      ['Şirket', [['Hakkımızda', '/about'], ['İletişim', '/contact'], ['Kariyer', '/careers'], ['Satıcı programı', '/contact']]],
+      ['Hukuki', [['Hizmet koşulları', '/legal/terms'], ['Kabul edilebilir kullanım', '/legal/acceptable-use'], ['Gizlilik (PDPL)', '/legal/privacy'], ['İadeler', '/legal/refunds'], ['SLA', '/legal/sla'], ['Çerezler', '/legal/cookies']]],
     ],
     copyright: 'Progrid. Tüm hakları saklıdır.', builtOn: 'Açık kaynak üzerine: Proxmox VE, Ceph, Temporal, NATS',
   },
@@ -242,10 +242,10 @@ const ar: Copy = {
   footer: {
     tagline: 'الخدمات السحابية للمطورين في السعودية.',
     cols: [
-      ['المنتجات', ['السيرفرات', 'المتجر', 'أدوات الذكاء الاصطناعي', 'الأمان']],
-      ['المطورون', ['مرجع API', 'سطر الأوامر', 'Terraform', 'حزم SDK', 'حالة الخدمة']],
-      ['الشركة', ['عن Progrid', 'الأسعار', 'برنامج الموردين', 'الوظائف', 'تواصل معنا']],
-      ['قانوني', ['الشروط', 'الخصوصية (PDPL)', 'اتفاقية مستوى الخدمة', 'سياسة الاستخدام']],
+      ['المنتجات', [['السيرفرات', '/#products'], ['المتجر', '/#marketplace'], ['أدوات الذكاء الاصطناعي', '/#agents'], ['الأسعار', '/#pricing'], ['الأمان', '/docs/security']]],
+      ['المطورون', [['مرجع API', '/docs/api-reference'], ['سطر الأوامر', '/docs/cli'], ['Terraform', '/docs/api'], ['حزم SDK', '/docs/api'], ['حالة الخدمة', '#']]],
+      ['الشركة', [['من نحن', '/about'], ['تواصل معنا', '/contact'], ['الوظائف', '/careers'], ['برنامج الموردين', '/contact']]],
+      ['قانوني', [['شروط الخدمة', '/legal/terms'], ['سياسة الاستخدام', '/legal/acceptable-use'], ['الخصوصية (PDPL)', '/legal/privacy'], ['الاسترجاع والإلغاء', '/legal/refunds'], ['اتفاقية مستوى الخدمة', '/legal/sla'], ['ملفات الارتباط', '/legal/cookies']]],
     ],
     copyright: 'Progrid. جميع الحقوق محفوظة.', builtOn: 'مبني على مصادر مفتوحة: Proxmox VE وCeph وTemporal وNATS',
   },

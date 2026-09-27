@@ -119,6 +119,7 @@ start / resize / rebuild / snapshot / delete; metering → hourly rating → inv
 | Console: login, servers, one-click apps, billing; EN/TR/AR with RTL | ✅ minimal |
 | Account security: TOTP two factor (required for owners), email verification, password reset, rate limits | ✅ |
 | Hardware plan for launch: Hetzner Falkenstein auction servers, Storage Box backups, OVH Eco failover, capacity math ([docs/hardware-plan.md](docs/hardware-plan.md)) | ✅ |
+| Company and legal pages in English and Arabic: about, contact, careers, terms of service with subscription terms, acceptable use, PDPL privacy, refunds and cancellation, SLA, cookies; linked from the footer and the signup form | ✅ |
 | Hosting: Dockerfiles, production compose with Caddy TLS and backups, Ansible for the management host and Proxmox nodes, deploy workflow ([docs/hosting.md](docs/hosting.md)) | ✅ |
 | Payments: Moyasar checkout (mada, Visa, Mastercard, Apple Pay) in SAR or USD, credit top up, invoice pay, invoice PDF, built in test page | ✅ |
 | Monitoring: per minute metrics from the host agent, graphs on the server page, alert rules with email and webhook, incidents | ✅ |

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useState } from 'react';
-import { api, ApiError, setToken } from '@/lib/api';
+import { api, ApiError, WWW_URL, setToken } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { useShell } from '@/components/shell';
 
@@ -55,6 +55,7 @@ export default function LoginPage() {
           </div>
         )}
         {error && <p className="text-sm text-red-600">{error}</p>}
+        {mode === 'signup' && <p className="text-xs text-neutral-500">{t(locale, 'agreePrefix')} <a className="underline" href={`${WWW_URL}${locale === 'en' ? '' : `/${locale}`}/legal/terms`} target="_blank" rel="noreferrer">{t(locale, 'termsLink')}</a> {t(locale, 'agreeAnd')} <a className="underline" href={`${WWW_URL}${locale === 'en' ? '' : `/${locale}`}/legal/privacy`} target="_blank" rel="noreferrer">{t(locale, 'privacyLink')}</a>.</p>}
         <button className="btn-primary w-full justify-center" disabled={busy}>{t(locale, mode === 'login' ? 'login' : 'signup')}</button>
         <div className="flex items-center justify-between text-sm text-neutral-500">
           <button type="button" onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setNeedCode(false); }}>

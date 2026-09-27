@@ -26,3 +26,4 @@ partner conversations.
 | pgcloud-kubernetes.png, pgcloud-kubernetes-cluster.png | Managed Kubernetes: cluster list with the create form, and one cluster with endpoint, control plane, pools with node readiness, and the load balancer and volume its manifests created |
 | pgcloud-app-platform.png, pgcloud-app-platform-app.png | App Platform: app list with the create form, and one app with source, domains, logs, configuration and deploy history |
 | progrid-home-ar.pdf, progrid-home-ar.png | Progrid home page, desktop view in Arabic, with the riyal price list and managed plans |
+| progrid-about-ar.png, progrid-about-en.png | About us page for Progrid Arabia in Arabic and English |

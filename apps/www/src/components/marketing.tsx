@@ -20,8 +20,9 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 export function Header() {
   const [open, setOpen] = useState(false);
   const c = useCopy(); const lang = useLang();
+  const home = LANGS.find((l) => l.code === lang)?.path ?? '/';
   const links = [
-    ['#products', c.nav.products], ['#agents', c.nav.agents], ['#pricing', c.nav.pricing], ['#marketplace', c.nav.marketplace], ['/docs', c.nav.docs],
+    [`${home}#products`, c.nav.products], [`${home}#agents`, c.nav.agents], [`${home}#pricing`, c.nav.pricing], [`${home}#marketplace`, c.nav.marketplace], ['/docs', c.nav.docs],
   ];
   const langs = <span className="flex gap-1 text-xs">{LANGS.map((l) => <a key={l.code} href={l.path} className={`rounded px-1.5 py-0.5 ${l.code === lang ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white'}`}>{l.label}</a>)}</span>;
   return (
@@ -352,13 +353,14 @@ export function Cta() {
 }
 
 export function Footer() {
-  const c = useCopy();
+  const c = useCopy(); const lang = useLang();
   const cols = c.footer.cols;
+  const prefix = lang === 'en' ? '' : `/${lang}`;
   return (
     <footer className="border-t border-slate-200 bg-white py-14 text-sm">
       <div className="container-x grid gap-10 sm:grid-cols-2 lg:grid-cols-5">
         <div className="lg:col-span-1"><div className="flex items-center gap-2 font-bold"><Logo /> Progrid</div><p className="mt-3 text-slate-500">{c.footer.tagline}</p><p className="mt-3 flex gap-2 text-slate-500">{LANGS.map((l) => <a key={l.code} href={l.path} className="hover:text-slate-900">{l.label}</a>)}</p></div>
-        {cols.map(([h, ls]) => <div key={h}><div className="font-semibold">{h}</div><ul className="mt-3 space-y-2 text-slate-600">{ls.map((l) => <li key={l}><a href="#" className="hover:text-slate-900">{l}</a></li>)}</ul></div>)}
+        {cols.map(([h, ls]) => <div key={h}><div className="font-semibold">{h}</div><ul className="mt-3 space-y-2 text-slate-600">{ls.map(([l, href]) => <li key={l}><a href={href.startsWith('/docs') || href.startsWith('http') || href === '#' ? href : `${prefix}${href}`} className="hover:text-slate-900">{l}</a></li>)}</ul></div>)}
       </div>
       <div className="container-x mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-6 text-xs text-slate-500"><span>© {new Date().getFullYear()} {c.footer.copyright}</span><span>{c.footer.builtOn}</span></div>
     </footer>
