@@ -98,6 +98,7 @@ model Team {
   invoices  Invoice[]
   credits   Credit[]
   payments  Payment[]
+  creditNotes CreditNote[]
   abuseFlags AbuseFlag[]
   webhooks  Webhook[]
 }
@@ -675,6 +676,8 @@ enum InvoiceStatus {
   paid
   void
   uncollectible
+  /// Fully reversed by credit notes.
+  credited
 }
 
 model Invoice {
@@ -688,16 +691,20 @@ model Invoice {
   taxMinor    Int           @default(0) // VAT 15% for SA
   creditMinor Int           @default(0)
   totalMinor  Int
+  /// Credit notes applied against what is still due (open invoices only). Due = totalMinor - creditedMinor.
+  creditedMinor Int         @default(0)
   status      InvoiceStatus @default(draft)
   eInvoiceId  String? // ZATCA e-invoicing provider reference
   eInvoiceType String? // "zatca" for Saudi teams (Fatoora), null otherwise
   dueAt       DateTime?
   paidAt      DateTime?
+  voidedAt    DateTime?
   createdAt   DateTime      @default(now())
 
   team    Team          @relation(fields: [teamId], references: [id])
   records UsageRecord[]
   payments Payment[]
+  creditNotes CreditNote[]
 
   @@unique([teamId, periodStart, periodEnd])
 }
@@ -747,6 +754,11 @@ model Payment {
   amountMinor Int
   status      PaymentStatus   @default(pending)
   failureReason String?
+  /// Refunded so far; the status becomes refunded once it equals amountMinor.
+  refundedMinor Int           @default(0)
+  /// The provider's reference for the refund (for Moyasar, the refunded payment id).
+  refundRef   String?
+  refundedAt  DateTime?
   /// Return URLs and the adapter that created the checkout (fake in development).
   metadata    Json            @default("{}")
   paidAt      DateTime?
@@ -755,11 +767,34 @@ model Payment {
   team    Team     @relation(fields: [teamId], references: [id])
   invoice Invoice? @relation(fields: [invoiceId], references: [id])
 
+  @@index([invoiceId, status])
   @@index([provider, providerRef])
   @@index([teamId, createdAt])
 }
 
 // ───────────────────────── Trust & safety ─────────────────────────
+
+/// Reverses all or part of an issued invoice. Numbered from credit_note_number_seq (CN-2026-000045).
+model CreditNote {
+  id          String   @id @default(cuid())
+  number      String   @unique
+  teamId      String
+  invoiceId   String
+  currency    Currency
+  amountMinor Int
+  /// Part applied against what was still due on an open invoice; the rest became refund credit.
+  appliedToDueMinor Int @default(0)
+  creditId    String?
+  reason      String
+  createdBy   String? // staff userId
+  createdAt   DateTime @default(now())
+
+  team    Team    @relation(fields: [teamId], references: [id])
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@index([teamId, createdAt])
+  @@index([invoiceId])
+}
 
 enum AbuseKind {
   mining

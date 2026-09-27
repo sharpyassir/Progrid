@@ -58,6 +58,19 @@ const en = {
   // network and storage
   firewalls: 'Firewalls', rules: 'rules', attachedServers: 'servers', newFirewall: 'Create firewall',
   snapshots: 'Snapshots', publicIps: 'Public IPs', webhooks: 'Webhooks', newWebhook: 'Add webhook', events: 'Events', url: 'URL',
+  // back office invoices
+  invoices: 'Invoices', invoiceNumber: 'Number', team: 'Team', period: 'Period', total: 'Total', amountDue: 'Due', overdue: 'overdue', allStatuses: 'All statuses', noInvoices: 'No invoices yet.',
+  adminInvoicesLead: 'Refund card payments, issue credit notes, void unpaid invoices, record bank transfers and write off invoices. Every action is recorded in the audit log.',
+  cardPayments: 'Payments', creditNotes: 'Credit notes', refunded: 'refunded', method: 'Method', amount: 'Amount', reason: 'Reason', reference: 'Reference', done: 'Done.', topUp: 'top up',
+  refund: 'Refund', creditNote: 'Credit note', voidInvoice: 'Void', recordPayment: 'Record payment', markUncollectible: 'Mark uncollectible',
+  bankTransfer: 'Bank transfer', manualPayment: 'Other, recorded by hand', leaveEmptyForFull: 'Leave empty for the full amount',
+  refundConfirm: (amount: string, what: string) => `Refund ${amount} to the card for ${what}? This cannot be undone.`,
+  refundTopupNote: 'Refunding a top up takes the same amount out of the team\'s unused credit.',
+  creditNoteConfirm: (amount: string, number: string) => `Issue a credit note of ${amount} against invoice ${number}?`,
+  creditNoteNote: 'On an unpaid invoice the credit note lowers what is due. On a paid invoice it becomes team credit.',
+  voidConfirm: (number: string) => `Void invoice ${number}? Use this only for an invoice issued in error. Any credit it used goes back to the team.`,
+  recordPaymentConfirm: (amount: string, number: string) => `Record ${amount} received for invoice ${number} and mark it paid?`,
+  uncollectibleConfirm: (number: string) => `Mark invoice ${number} as uncollectible? It stays on record and can still be paid later.`,
 };
 
 type Dict = { [K in keyof typeof en]: (typeof en)[K] };
@@ -107,6 +120,18 @@ const tr: Dict = {
   scopes: 'Yetkiler', tokenShownOnce: 'Bu tokenı şimdi kopyala. Yalnızca bir kez gösterilir.', revoke: 'İptal et',
   firewalls: 'Güvenlik duvarları', rules: 'kural', attachedServers: 'sunucu', newFirewall: 'Güvenlik duvarı oluştur',
   snapshots: 'Anlık görüntüler', publicIps: 'Genel IP’ler', webhooks: 'Webhook’lar', newWebhook: 'Webhook ekle', events: 'Olaylar', url: 'URL',
+  invoices: 'Faturalar', invoiceNumber: 'Numara', team: 'Ekip', period: 'Dönem', total: 'Toplam', amountDue: 'Kalan', overdue: 'gecikmiş', allStatuses: 'Tüm durumlar', noInvoices: 'Henüz fatura yok.',
+  adminInvoicesLead: 'Kart ödemelerini iade edin, iade faturası kesin, ödenmemiş faturaları iptal edin, havaleleri kaydedin ve tahsil edilemeyen faturaları işaretleyin. Her işlem denetim kaydına yazılır.',
+  cardPayments: 'Ödemeler', creditNotes: 'İade faturaları', refunded: 'iade edildi', method: 'Yöntem', amount: 'Tutar', reason: 'Gerekçe', reference: 'Referans', done: 'Tamam.', topUp: 'bakiye yükleme',
+  refund: 'İade et', creditNote: 'İade faturası', voidInvoice: 'İptal et', recordPayment: 'Ödeme kaydet', markUncollectible: 'Tahsil edilemez',
+  bankTransfer: 'Havale', manualPayment: 'Diğer, elle kaydedilen', leaveEmptyForFull: 'Tam tutar için boş bırakın',
+  refundConfirm: (amount, what) => `${what} için ${amount} karta iade edilsin mi? Geri alınamaz.`,
+  refundTopupNote: 'Bir bakiye yüklemesini iade etmek, aynı tutarı ekibin kullanılmamış bakiyesinden düşer.',
+  creditNoteConfirm: (amount, number) => `${number} numaralı faturaya ${amount} tutarında iade faturası kesilsin mi?`,
+  creditNoteNote: 'Ödenmemiş faturada iade faturası kalan tutarı düşürür. Ödenmiş faturada ekip bakiyesine eklenir.',
+  voidConfirm: (number) => `${number} numaralı fatura iptal edilsin mi? Yalnızca hatayla kesilen faturalar için kullanın. Kullandığı bakiye ekibe geri döner.`,
+  recordPaymentConfirm: (amount, number) => `${number} numaralı fatura için ${amount} tahsil edildi olarak kaydedilip ödendi işaretlensin mi?`,
+  uncollectibleConfirm: (number) => `${number} numaralı fatura tahsil edilemez olarak işaretlensin mi? Kayıtta kalır ve daha sonra yine ödenebilir.`,
 };
 
 const ar: Dict = {
@@ -154,6 +179,18 @@ const ar: Dict = {
   scopes: 'الصلاحيات', tokenShownOnce: 'انسخ هذا الرمز الآن. يُعرض مرة واحدة فقط.', revoke: 'إلغاء',
   firewalls: 'جدران الحماية', rules: 'قواعد', attachedServers: 'خوادم', newFirewall: 'إنشاء جدار حماية',
   snapshots: 'اللقطات', publicIps: 'عناوين IP العامة', webhooks: 'Webhooks', newWebhook: 'إضافة webhook', events: 'الأحداث', url: 'الرابط',
+  invoices: 'الفواتير', invoiceNumber: 'الرقم', team: 'الفريق', period: 'الفترة', total: 'الإجمالي', amountDue: 'المتبقي', overdue: 'متأخرة', allStatuses: 'كل الحالات', noInvoices: 'ما فيه فواتير للحين.',
+  adminInvoicesLead: 'من هنا ترجّع مدفوعات البطاقات، وتصدر إشعارات دائنة، وتلغي الفواتير اللي ما انسدت، وتسجّل التحويلات البنكية، وتشطب الفواتير اللي ما تنحصّل. كل إجراء ينحفظ في سجل التدقيق.',
+  cardPayments: 'المدفوعات', creditNotes: 'الإشعارات الدائنة', refunded: 'مسترجع', method: 'الطريقة', amount: 'المبلغ', reason: 'السبب', reference: 'المرجع', done: 'تم.', topUp: 'شحن رصيد',
+  refund: 'استرجاع', creditNote: 'إشعار دائن', voidInvoice: 'إلغاء', recordPayment: 'تسجيل دفعة', markUncollectible: 'ما تنحصّل',
+  bankTransfer: 'تحويل بنكي', manualPayment: 'غير كذا، تسجيل يدوي', leaveEmptyForFull: 'خلّه فاضي للمبلغ كامل',
+  refundConfirm: (amount, what) => `متأكد تبغى ترجّع ${amount} للبطاقة عن ${what}؟ ما تقدر تتراجع بعدها.`,
+  refundTopupNote: 'إذا رجّعت شحن رصيد، ينخصم نفس المبلغ من رصيد الفريق اللي ما انصرف.',
+  creditNoteConfirm: (amount, number) => `تبغى تصدر إشعار دائن بـ ${amount} على الفاتورة ${number}؟`,
+  creditNoteNote: 'على فاتورة ما انسدت، الإشعار الدائن ينقّص المبلغ المتبقي. وعلى فاتورة مسدّدة يصير رصيد للفريق.',
+  voidConfirm: (number) => `تبغى تلغي الفاتورة ${number}؟ استخدمها بس للفاتورة اللي طلعت بالغلط. أي رصيد انخصم عليها يرجع للفريق.`,
+  recordPaymentConfirm: (amount, number) => `تسجّل إن ${amount} وصلت عن الفاتورة ${number} وتعتبرها مسدّدة؟`,
+  uncollectibleConfirm: (number) => `تعتبر الفاتورة ${number} ما تنحصّل؟ تظل محفوظة وممكن تنسدّ بعدين.`,
 };
 
 const dict: Record<Locale, Dict> = { en, tr, ar };

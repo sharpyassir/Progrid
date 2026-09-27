@@ -15,6 +15,8 @@ export interface CheckoutInput {
 
 export interface CheckoutResult { providerRef: string; redirectUrl: string }
 
+export interface RefundResult { refundRef: string }
+
 export interface PaymentEvent { providerRef: string; status: 'succeeded' | 'failed'; amountMinor?: number; currency?: Currency; reason?: string }
 
 /** One card payment provider. Adapters do HTTP only; the service owns the database. */
@@ -23,4 +25,6 @@ export interface PaymentProvider {
   createCheckout(input: CheckoutInput): Promise<CheckoutResult>;
   /** Verifies a webhook or callback and turns it into normalized events. Throws on a bad signature. */
   parseEvent(rawBody: Buffer, headers: Record<string, string | undefined>, query?: Record<string, string>): Promise<PaymentEvent[]>;
+  /** Refunds part or all of a captured payment back to the card. Throws when the provider refuses. */
+  refund(providerRef: string, amountMinor: number): Promise<RefundResult>;
 }

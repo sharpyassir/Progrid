@@ -19,7 +19,7 @@ export const CUSTOMER_EVENTS = [
   'kubernetes.created', 'kubernetes.updated', 'kubernetes.deleted', 'kubernetes.failed', 'kubernetes.pool_added', 'kubernetes.pool_scaled', 'kubernetes.pool_removed', 'kubernetes.cloud_updated',
   'ticket.opened', 'ticket.replied', 'ticket.answered', 'ticket.closed', 'support.plan_changed',
   'server.managed_enabled', 'server.managed_disabled', 'server.managed_warning', 'server.managed_recovered',
-  'snapshot.completed', 'invoice.issued', 'invoice.paid', 'payment.failed',
+  'snapshot.completed', 'invoice.issued', 'invoice.paid', 'invoice.credited', 'invoice.voided', 'payment.failed', 'payment.refunded',
   'spend.alert', 'spend.limit_reached', 'account.suspended',
   'approval.requested', 'approval.decided',
   'payment.started', 'payment.succeeded',

@@ -8,11 +8,12 @@ import { SpendService } from './spend.service';
 import { FxService } from './fx.service';
 import { PaymentsService } from './payments/payments.service';
 import { PaymentsController } from './payments/payments.controller';
+import { BillingAdminService } from './billing-admin.service';
 
 @Module({
   imports: [EventsModule],
   controllers: [BillingController, PricingController, PaymentsController],
-  providers: [FxService, SpendService, MeteringService, RatingService, InvoicesService, PaymentsService],
-  exports: [FxService, SpendService, MeteringService, RatingService, InvoicesService, PaymentsService],
+  providers: [FxService, SpendService, MeteringService, RatingService, InvoicesService, PaymentsService, BillingAdminService],
+  exports: [FxService, SpendService, MeteringService, RatingService, InvoicesService, PaymentsService, BillingAdminService],
 })
 export class BillingModule {}

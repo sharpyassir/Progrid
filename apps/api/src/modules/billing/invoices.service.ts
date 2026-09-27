@@ -110,11 +110,11 @@ export class InvoicesService {
   }
 
   list(teamId: string) {
-    return this.prisma.invoice.findMany({ where: { teamId }, orderBy: { periodStart: 'desc' } });
+    return this.prisma.invoice.findMany({ where: { teamId }, orderBy: { periodStart: 'desc' }, include: { creditNotes: { select: { id: true, number: true, amountMinor: true, reason: true, createdAt: true } } } });
   }
 
   async get(teamId: string, id: string) {
-    return this.prisma.invoice.findFirst({ where: { id, teamId }, include: { records: true, payments: true } });
+    return this.prisma.invoice.findFirst({ where: { id, teamId }, include: { records: true, payments: true, creditNotes: true } });
   }
 
   /** Full row for the PDF renderer. */

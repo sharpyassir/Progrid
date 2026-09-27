@@ -20,6 +20,11 @@ export class PaymentsService {
 
   constructor(private readonly prisma: PrismaService, private readonly events: EventsService) {}
 
+  /** The adapter that took a stored payment (for refunds). */
+  providerByName(name: ProviderName): PaymentProvider | undefined {
+    return name === 'moyasar' || name === 'fake' ? this.providers[name] : undefined;
+  }
+
   providerFor(currency: Currency): PaymentProvider {
     const c = loadConfig();
     void currency; // one provider serves both currencies
@@ -55,7 +60,9 @@ export class PaymentsService {
       if (!pending.providerRef || !meta.redirectUrl) throw ApiError.conflict('payment_in_progress', `A payment for invoice ${inv.number} is already being started. Try again in a moment.`);
       return { paymentId: pending.id, provider: meta.providerName ?? pending.provider, amountMinor: pending.amountMinor, currency: pending.currency, redirectUrl: meta.redirectUrl };
     }
-    return this.start(actor, team, inv.totalMinor, `pgcloud invoice ${inv.number}`, inv.id);
+    const due = inv.totalMinor - inv.creditedMinor;
+    if (due <= 0) throw ApiError.invalidState(`Invoice ${inv.number} has nothing left to pay`);
+    return this.start(actor, team, due, `pgcloud invoice ${inv.number}`, inv.id);
   }
 
   list(actor: Actor) {
@@ -111,7 +118,8 @@ export class PaymentsService {
     return out;
   }
 
-  private async liftBillingSuspension(teamId: string) {
+  /** Called after money arrives or a debt is settled another way. */
+  async liftBillingSuspension(teamId: string) {
     await this.prisma.team.updateMany({ where: { id: teamId, status: 'suspended' }, data: { status: 'active' } });
   }
 
