@@ -425,7 +425,8 @@ export class KubernetesService {
     }));
     const vip = c.publicIp?.address ?? '';
     const cfg = loadConfig();
-    const volumesHere = Object.values(state.volumes ?? {}).filter((v) => v.node === n.server.name).map((v) => ({ id: v.volumeId, serial: serial(v.volumeId) }));
+    // A volume whose claim is gone (its PV is being deleted) leaves the node's list, so the worker unmounts it and it can be detached.
+    const volumesHere = Object.values(state.volumes ?? {}).filter((v) => v.node === n.server.name && !(state.deletePvs ?? []).includes(v.pvName)).map((v) => ({ id: v.volumeId, serial: serial(v.volumeId) }));
     return {
       version: c.configVersion,
       kubeVersion: c.version,
