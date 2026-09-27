@@ -480,9 +480,15 @@ func (a *Agent) create(ctx context.Context, spec protocol.VmSpec, log *slog.Logg
 
 	userDataRef := ""
 	if spec.UserData != "" {
+		// The snippet replaces the user-data Proxmox would generate, so it must carry the keys and hostname.
+		userData, err := renderUserData(spec.UserData, spec.Hostname, spec.SshKeys)
+		if err != nil {
+			log.Warn("render user-data", "err", err)
+			userData = spec.UserData
+		}
 		if err := os.MkdirAll(snippetsDir(), 0o755); err == nil {
 			path := filepath.Join(snippetsDir(), fmt.Sprintf("pgcloud-%d-user.yaml", vmid))
-			if err := os.WriteFile(path, []byte(spec.UserData), 0o600); err == nil {
+			if err := os.WriteFile(path, []byte(userData), 0o600); err == nil {
 				userDataRef = a.pve.SnippetRef(vmid)
 			} else {
 				log.Warn("write user-data snippet", "err", err)

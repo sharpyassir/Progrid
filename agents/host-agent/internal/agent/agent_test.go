@@ -148,6 +148,11 @@ func TestCreateConfiguresCloneAndBoots(t *testing.T) {
 	}
 	if b, err := os.ReadFile(filepath.Join(os.Getenv("PGCLOUD_SNIPPETS_DIR"), "pgcloud-"+itoa(vmid)+"-user.yaml")); err != nil || !strings.Contains(string(b), "hostname: web-1") {
 		t.Fatalf("user-data snippet not written: %v", err)
+	} else if !strings.Contains(string(b), "ssh-ed25519 AAAA test") || !strings.Contains(string(b), "fqdn: web-1") {
+		t.Fatalf("user-data snippet lacks the SSH key or hostname: %s", b)
+	}
+	if k := vm.Config["sshkeys"]; k != "ssh-ed25519%20AAAA%20test" {
+		t.Fatalf("sshkeys not encoded with %%20: %q", k)
 	}
 
 	// wait_boot answers once the guest agent pings, which the simulator delays after start.

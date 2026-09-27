@@ -170,12 +170,20 @@ func (c *Client) Configure(ctx context.Context, vmid int, v VMConfig) error {
 		f.Set("ipconfig1", "ip="+v.PublicIP+",gw="+v.Gateway)
 	}
 	if len(v.SSHKeys) > 0 {
-		f.Set("sshkeys", url.QueryEscape(strings.Join(v.SSHKeys, "\n")))
+		f.Set("sshkeys", EncodeSSHKeys(v.SSHKeys))
 	}
 	if v.UserData != "" {
 		f.Set("cicustom", "user="+v.UserData)
 	}
 	return c.do(ctx, http.MethodPost, c.vmPath(vmid, "/config"), f, nil)
+}
+
+// EncodeSSHKeys renders the sshkeys config value. Proxmox expects the keys URL encoded
+// with %20 for spaces and %0A for newlines, and decodes it without turning "+" into a
+// space. url.QueryEscape writes spaces as "+" (and a literal "+" as %2B), so every "+" left
+// in its output was a space. The form encoding of the request wraps the value once more.
+func EncodeSSHKeys(keys []string) string {
+	return strings.ReplaceAll(url.QueryEscape(strings.Join(keys, "\n")), "+", "%20")
 }
 
 // SetResources changes only cores and memory. Name, tags and network stay untouched so

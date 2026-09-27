@@ -73,10 +73,10 @@ what blocks money first. Items marked "fixed" were corrected in the same commit 
    the workflow, the agent answers a repeated id with the stored result (or waits for the run in
    progress), the request waits up to 10 minutes, and a failed create finds and deletes any VM
    tagged `server-<id>`.
-10. **SSH access on real Proxmox.** Any cloud-init user-data (marketplace, managed tier, platform
-    nodes) replaces the Proxmox generated user-data, so SSH keys and hostname are dropped unless
-    the rendered user-data carries them. The `sshkeys` field is also URL encoded with plus signs
-    for spaces, which Proxmox may not decode. Both need a real node test and a fix.
+10. **SSH access on real Proxmox.** Fixed in code: when user-data is supplied, the agent renders
+    the SSH keys, hostname and default user into it (merged into a cloud-config, or as an extra
+    part of a multipart document), and `sshkeys` is encoded with %20 and %0A. Still needs a
+    real node test.
 11. **Private network and tenant isolation.** Every VM sits on one shared bridge with DHCP and no
     per tenant VNet, VXLAN or address assignment, so the private IP is never filled and tenants
     can see each other. Build per project VNets with the Proxmox SDN and IPAM, and enable
