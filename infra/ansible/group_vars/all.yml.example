@@ -17,7 +17,7 @@ fx_usd_sar: 3.75
 backup_keep_days: 14
 backup_s3_url: ""
 ssh_allow_from: []                  # CIDRs allowed to reach 22; empty means anywhere
-control_plane_cidr: 10.0.0.0/8      # management network that may reach agents on customer facing nodes
+control_plane_cidr: 10.0.0.0/12     # management network that may reach platform agents; must not overlap the tenant pool (10.96.0.0/12)
 company_name: Progrid Arabia
 company_address: "Riyadh, Kingdom of Saudi Arabia"
 company_tax_id: ""                  # VAT registration number, printed on invoices

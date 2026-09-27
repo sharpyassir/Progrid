@@ -116,8 +116,9 @@ what blocks money first. Items marked "fixed" were corrected in the same commit 
     the Kubernetes join token. `CONTROL_PLANE_CIDR` was never set (fixed in the Ansible template)
     and `/status` needs no secret. Agents now listen on the private address, which the control
     plane allocates and records at create time (item 11), so it no longer falls back to the
-    public address for new nodes. Still to do: TLS, and a `CONTROL_PLANE_CIDR` narrower than
-    `10.0.0.0/8`, which also covers the tenant pool `10.96.0.0/12`.
+    public address for new nodes. `CONTROL_PLANE_CIDR` now defaults to `10.0.0.0/12`, clear of
+    the tenant pool `10.96.0.0/12`, and cluster traffic between nodes (replication, etcd, VRRP)
+    is allowed from the cluster's own project network only. Still to do: TLS on the agent channel.
 18. **Managed Postgres bootstrap.** The Ubuntu package creates a default cluster in the same data
     directory Patroni expects, the postgres password is never set, three node clusters skip user
     creation, the pgBackRest endpoint is passed as a URL, WAL archiving is on before a repository

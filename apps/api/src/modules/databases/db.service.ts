@@ -14,6 +14,7 @@ import { SpendService } from '../billing/spend.service';
 import { ServersService } from '../compute/servers.service';
 import { FirewallsService } from '../network/firewalls.service';
 import { IpsService } from '../network/ips.service';
+import { PrivateNetworksService } from '../network/private-networks.service';
 import { OBJECT_STORAGE_PROVIDER, ObjectStorageProvider, emptyAndDeleteBucket } from '../storage/objects/objects.provider';
 import { renderDbCloudInit } from './cloud-init';
 import { recordDiskUsage } from '../monitoring/metrics.service';
@@ -23,7 +24,6 @@ import { CreateDatabaseDto, DbNameDto, ENGINE_PORTS, ENGINE_VERSIONS, RestoreDat
 const NODE_IMAGE = 'ubuntu-24-04';
 /** Owner of backup buckets: not a customer project, so they are neither listed nor billed. */
 const PLATFORM_PROJECT = 'platform';
-const PRIVATE_NET = '10.0.0.0/8';
 
 /** What GET /status on a node reports. */
 interface NodeReport {
@@ -67,8 +67,14 @@ export class DatabasesService {
     private readonly servers: ServersService,
     private readonly firewalls: FirewallsService,
     private readonly ips: IpsService,
+    private readonly privateNetworks: PrivateNetworksService,
     @Inject(OBJECT_STORAGE_PROVIDER) private readonly storage: ObjectStorageProvider,
   ) {}
+
+  /** Cluster traffic (replication, etcd, VRRP) is allowed from the project's own private network only, never other tenants. */
+  private async projectNet(projectId: string, regionId: string) {
+    return (await this.privateNetworks.ensureNetwork(projectId, regionId)).cidr;
+  }
 
   async list(actor: Actor, project?: string) {
     const p = await this.iam.resolveProject(actor, project);
@@ -102,7 +108,7 @@ export class DatabasesService {
 
     const vip = await this.ips.reserve(region.id, project.id);
     const port = ENGINE_PORTS[dto.engine];
-    const fw = await this.firewalls.create(actor, project.id, { name: `db-${dto.name}`, rules: firewallRules(dto.engine, port, trusted, nodes) });
+    const fw = await this.firewalls.create(actor, project.id, { name: `db-${dto.name}`, rules: firewallRules(dto.engine, port, trusted, nodes, await this.projectNet(project.id, region.id)) });
     const vmSecret = randomBytes(24).toString('base64url');
     const cluster = await this.prisma.dbCluster.create({
       data: {
@@ -137,7 +143,7 @@ export class DatabasesService {
     if (!['active', 'updating', 'failed'].includes(c.status)) throw ApiError.invalidState(`Database is ${c.status}; wait for it to settle`);
     const trusted = dto.trustedSources !== undefined ? validateCidrs(dto.trustedSources) : undefined;
     await this.prisma.dbCluster.update({ where: { id }, data: { trustedSources: trusted, backupHourUtc: dto.backupHourUtc, status: 'updating', statusMessage: null, configVersion: { increment: 1 } } });
-    if (trusted && c.firewallId) await this.firewalls.replaceRules(actor, c.projectId, c.firewallId, firewallRules(c.engine, c.port, trusted, c.nodes)).catch((err) => this.log.warn(`firewall update for ${id}: ${(err as Error).message}`));
+    if (trusted && c.firewallId) await this.firewalls.replaceRules(actor, c.projectId, c.firewallId, firewallRules(c.engine, c.port, trusted, c.nodes, await this.projectNet(c.projectId, c.regionId))).catch((err) => this.log.warn(`firewall update for ${id}: ${(err as Error).message}`));
     await this.pushLater(id, actor);
     return this.get(actor, id, project);
   }
@@ -482,7 +488,7 @@ export class DatabasesService {
   }
 }
 
-function firewallRules(engine: 'postgres' | 'valkey' | 'mysql', port: number, trusted: string[], nodes: number) {
+function firewallRules(engine: 'postgres' | 'valkey' | 'mysql', port: number, trusted: string[], nodes: number, privateNet: string) {
   const cidrs = trusted.length ? trusted : ['0.0.0.0/0', '::/0'];
   const cp = loadConfig().CONTROL_PLANE_CIDR;
   const internal: Record<string, [string, string][]> = { postgres: [['2379-2380', 'cluster consensus'], ['8008', 'cluster api'], ['6432', 'pooler']], valkey: [['26379', 'sentinel'], ['6380', 'tls replication']], mysql: [] };
@@ -491,10 +497,10 @@ function firewallRules(engine: 'postgres' | 'valkey' | 'mysql', port: number, tr
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: String(port), cidrs },
     ...(engine === 'postgres' ? [{ direction: 'inbound' as const, protocol: 'tcp' as const, ports: '6432', cidrs, description: 'connection pooler' }] : []),
     ...(engine === 'valkey' ? [{ direction: 'inbound' as const, protocol: 'tcp' as const, ports: '6380', cidrs, description: 'tls port' }] : []),
-    ...internal[engine].map(([ports, description]) => ({ direction: 'inbound' as const, protocol: 'tcp' as const, ports, cidrs: [PRIVATE_NET], description })),
-    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: String(port), cidrs: [PRIVATE_NET], description: 'replication' },
+    ...internal[engine].map(([ports, description]) => ({ direction: 'inbound' as const, protocol: 'tcp' as const, ports, cidrs: [privateNet], description })),
+    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: String(port), cidrs: [privateNet], description: 'replication' },
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '9009', cidrs: [cp], description: 'pgcloud database agent' },
-    ...(nodes > 1 ? [{ direction: 'inbound' as const, protocol: 'vrrp' as const, cidrs: [PRIVATE_NET], description: 'keepalived between database nodes' }] : []),
+    ...(nodes > 1 ? [{ direction: 'inbound' as const, protocol: 'vrrp' as const, cidrs: [privateNet], description: 'keepalived between database nodes' }] : []),
     { direction: 'outbound' as const, protocol: 'any' as const, cidrs: ['0.0.0.0/0'] },
   ];
 }

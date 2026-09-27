@@ -87,7 +87,8 @@ address from it on net0 (no gateway; the default route stays on the public NIC n
 
 The pool must not overlap the management network, a DHCP range on the shared bridge or any other routed
 range. `CONTROL_PLANE_CIDR` (who may call the platform agents on port 9009) should name the management
-addresses only; the old default `10.0.0.0/8` also covers the tenant pool.
+addresses only. It defaults to `10.0.0.0/12`, which stays clear of the default tenant pool; keep it that way
+if you change either range.
 
 **shared_bridge** puts every net0 on the agent's `proxmox.bridge` (`customers`). Projects are on
 different subnets and the IP filter stops a guest from sending from an address it was not given, but they

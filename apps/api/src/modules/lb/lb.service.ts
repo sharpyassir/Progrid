@@ -13,6 +13,7 @@ import { SpendService } from '../billing/spend.service';
 import { ServersService } from '../compute/servers.service';
 import { FirewallsService } from '../network/firewalls.service';
 import { IpsService } from '../network/ips.service';
+import { PrivateNetworksService } from '../network/private-networks.service';
 import { renderHaproxyConfig, renderKeepalivedConfig } from './haproxy';
 import { renderLbCloudInit } from './cloud-init';
 import { agentHost, vrrpPass } from '../../common/platform-agent';
@@ -22,7 +23,6 @@ import { DEFAULT_HEALTH_CHECK, ForwardingRule, HealthCheck, StickySessions } fro
 const NODE_SIZE = 's-1vcpu-2gb';
 const NODE_IMAGE = 'ubuntu-24-04';
 /** Project networks; VRRP between the nodes runs over it. */
-const PRIVATE_NET = '10.0.0.0/8';
 
 const lbInclude = {
   publicIp: { select: { address: true } },
@@ -50,7 +50,13 @@ export class LoadBalancersService {
     private readonly servers: ServersService,
     private readonly firewalls: FirewallsService,
     private readonly ips: IpsService,
+    private readonly privateNetworks: PrivateNetworksService,
   ) {}
+
+  /** Cluster traffic (replication, etcd, VRRP) is allowed from the project's own private network only, never other tenants. */
+  private async projectNet(projectId: string, regionId: string) {
+    return (await this.privateNetworks.ensureNetwork(projectId, regionId)).cidr;
+  }
 
   async list(actor: Actor, project?: string) {
     const p = await this.iam.resolveProject(actor, project);
@@ -78,7 +84,7 @@ export class LoadBalancersService {
     await this.spend.assertCanSpend(actor, project.id, (await this.spend.monthlyPriceMinor('load_balancer', 'lb_node', team.currency)) * nodes);
 
     const vip = await this.ips.reserve(region.id, project.id);
-    const fw = await this.firewalls.create(actor, project.id, { name: `lb-${dto.name}`, rules: firewallRules(rules, nodes) });
+    const fw = await this.firewalls.create(actor, project.id, { name: `lb-${dto.name}`, rules: firewallRules(rules, nodes, await this.projectNet(project.id, region.id)) });
     const lb = await this.prisma.loadBalancer.create({
       data: {
         projectId: project.id, regionId: region.id, name: dto.name, nodes, algorithm: dto.algorithm ?? 'round_robin',
@@ -120,7 +126,7 @@ export class LoadBalancersService {
         status: 'updating', statusMessage: null, configVersion: { increment: 1 },
       },
     });
-    if (dto.forwardingRules && lb.firewallId) await this.firewalls.replaceRules(actor, lb.projectId, lb.firewallId, firewallRules(rules, lb.nodes)).catch((err) => this.log.warn(`firewall update for ${id} failed: ${(err as Error).message}`));
+    if (dto.forwardingRules && lb.firewallId) await this.firewalls.replaceRules(actor, lb.projectId, lb.firewallId, firewallRules(rules, lb.nodes, await this.projectNet(lb.projectId, lb.regionId))).catch((err) => this.log.warn(`firewall update for ${id} failed: ${(err as Error).message}`));
     await this.pushLater(id, actor);
     return present(await this.prisma.loadBalancer.findUniqueOrThrow({ where: { id }, include: lbInclude }));
   }
@@ -337,13 +343,13 @@ export class LoadBalancersService {
   }
 }
 
-function firewallRules(rules: ForwardingRule[], nodes: number) {
+function firewallRules(rules: ForwardingRule[], nodes: number, privateNet: string) {
   const cp = loadConfig().CONTROL_PLANE_CIDR;
   return [
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '22', cidrs: [cp], description: 'platform ssh' },
     ...rules.map((r) => ({ direction: 'inbound' as const, protocol: 'tcp' as const, ports: String(r.entryPort), cidrs: ['0.0.0.0/0', '::/0'] })),
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '9009', cidrs: [cp], description: 'pgcloud load balancer agent' },
-    ...(nodes > 1 ? [{ direction: 'inbound' as const, protocol: 'vrrp' as const, cidrs: [PRIVATE_NET], description: 'keepalived between load balancer nodes' }] : []),
+    ...(nodes > 1 ? [{ direction: 'inbound' as const, protocol: 'vrrp' as const, cidrs: [privateNet], description: 'keepalived between load balancer nodes' }] : []),
     { direction: 'outbound' as const, protocol: 'any' as const, cidrs: ['0.0.0.0/0'] },
   ];
 }

@@ -100,7 +100,7 @@ const schema = z.object({
   DNS_HOSTMASTER: z.string().default('hostmaster.progrid.sa'),
   FX_PROVIDER_URL: z.string().url().default('https://open.er-api.com/v6/latest/USD'),
   /** Where the control plane reaches platform VMs from. SSH and the agents on :9009 accept only this range. */
-  CONTROL_PLANE_CIDR: z.string().regex(/^[0-9a-fA-F.:]+\/\d{1,3}$/).default('10.0.0.0/8'),
+  CONTROL_PLANE_CIDR: z.string().regex(/^[0-9a-fA-F.:]+\/\d{1,3}$/).default('10.0.0.0/12'),
 });
 
 export type AppConfig = z.infer<typeof schema>;

@@ -12,6 +12,7 @@ import { SpendService } from '../billing/spend.service';
 import { ServersService } from '../compute/servers.service';
 import { FirewallsService } from '../network/firewalls.service';
 import { IpsService } from '../network/ips.service';
+import { PrivateNetworksService } from '../network/private-networks.service';
 import { LoadBalancersService } from '../lb/lb.service';
 import { VolumesService } from '../storage/volumes.service';
 import { OBJECT_STORAGE_PROVIDER, ObjectStorageProvider, emptyAndDeleteBucket } from '../storage/objects/objects.provider';
@@ -21,7 +22,6 @@ import { agentHost, vipNetworkFor, vrrpPass } from '../../common/platform-agent'
 import { CreateClusterDto, DEFAULT_CONTROL_SIZE, KUBE_VERSIONS, MAX_POOLS, NodePoolDto, ScalePoolDto, UpdateClusterDto } from './k8s.dto';
 
 const NODE_IMAGE = 'ubuntu-24-04';
-const PRIVATE_NET = '10.0.0.0/8';
 const API_PORT = 6443;
 /** Owner of platform buckets: not a customer project, so they are neither listed nor billed. */
 const PLATFORM_PROJECT = 'platform';
@@ -77,10 +77,16 @@ export class KubernetesService {
     private readonly servers: ServersService,
     private readonly firewalls: FirewallsService,
     private readonly ips: IpsService,
+    private readonly privateNetworks: PrivateNetworksService,
     private readonly lbs: LoadBalancersService,
     private readonly volumes: VolumesService,
     @Inject(OBJECT_STORAGE_PROVIDER) private readonly storage: ObjectStorageProvider,
   ) {}
+
+  /** Cluster traffic (replication, etcd, VRRP) is allowed from the project's own private network only, never other tenants. */
+  private async projectNet(projectId: string, regionId: string) {
+    return (await this.privateNetworks.ensureNetwork(projectId, regionId)).cidr;
+  }
 
   versions() {
     return { data: KUBE_VERSIONS.map((v, i) => ({ version: v, default: i === 0 })) };
@@ -128,7 +134,7 @@ export class KubernetesService {
     if (freeIps < control + workers + 1) throw ApiError.quota('Not enough public addresses in the region for this cluster right now');
 
     const vip = await this.ips.reserve(region.id, project.id);
-    const fw = await this.firewalls.create(actor, project.id, { name: `k8s-${dto.name}`, rules: firewallRules(!!dto.ha) });
+    const fw = await this.firewalls.create(actor, project.id, { name: `k8s-${dto.name}`, rules: firewallRules(!!dto.ha, await this.projectNet(project.id, region.id)) });
     const version = dto.version ?? KUBE_VERSIONS[0];
     const cluster = await this.prisma.kubeCluster.create({
       data: {
@@ -564,19 +570,19 @@ export class KubernetesService {
   }
 }
 
-function firewallRules(ha: boolean) {
+function firewallRules(ha: boolean, privateNet: string) {
   const cp = loadConfig().CONTROL_PLANE_CIDR;
   return [
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '22', cidrs: [cp], description: 'platform ssh' },
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: String(API_PORT), cidrs: ['0.0.0.0/0', '::/0'], description: 'kubernetes api' },
-    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: String(API_PORT), cidrs: [PRIVATE_NET], description: 'kubernetes api between nodes' },
+    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: String(API_PORT), cidrs: [privateNet], description: 'kubernetes api between nodes' },
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '30000-32767', cidrs: ['0.0.0.0/0', '::/0'], description: 'node ports' },
     { direction: 'inbound' as const, protocol: 'udp' as const, ports: '30000-32767', cidrs: ['0.0.0.0/0', '::/0'], description: 'node ports' },
-    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '2379-2380', cidrs: [PRIVATE_NET], description: 'etcd' },
-    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '10250-10260', cidrs: [PRIVATE_NET], description: 'kubelet (10250) and controllers between nodes' },
-    { direction: 'inbound' as const, protocol: 'udp' as const, ports: '8472', cidrs: [PRIVATE_NET], description: 'flannel vxlan between nodes' },
+    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '2379-2380', cidrs: [privateNet], description: 'etcd' },
+    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '10250-10260', cidrs: [privateNet], description: 'kubelet (10250) and controllers between nodes' },
+    { direction: 'inbound' as const, protocol: 'udp' as const, ports: '8472', cidrs: [privateNet], description: 'flannel vxlan between nodes' },
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '9009', cidrs: [cp], description: 'pgcloud node agent' },
-    ...(ha ? [{ direction: 'inbound' as const, protocol: 'vrrp' as const, cidrs: [PRIVATE_NET], description: 'keepalived between control plane nodes' }] : []),
+    ...(ha ? [{ direction: 'inbound' as const, protocol: 'vrrp' as const, cidrs: [privateNet], description: 'keepalived between control plane nodes' }] : []),
     { direction: 'outbound' as const, protocol: 'any' as const, cidrs: ['0.0.0.0/0'] },
   ];
 }
