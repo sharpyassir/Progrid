@@ -54,3 +54,10 @@ body { @apply bg-white text-slate-900 antialiased; font-family: ui-sans-serif, s
 [dir="rtl"] .h2, [dir="rtl"] h1, [dir="rtl"] h2, [dir="rtl"] h3 { letter-spacing: 0; font-weight: 700; line-height: 1.35; }
 [dir="rtl"] .eyebrow { letter-spacing: 0; }
 [dir="rtl"] code, [dir="rtl"] pre, [dir="rtl"] .code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+/* STC Forward is the brand typeface for Arabic. It is licensed, not bundled: drop the files into public/fonts and the rules below pick them up; until then the page falls back to IBM Plex Sans Arabic. */
+@font-face { font-family: "STC Forward"; src: url("/fonts/STCForward-Regular.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "STC Forward"; src: url("/fonts/STCForward-Medium.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "STC Forward"; src: url("/fonts/STCForward-Bold.woff2") format("woff2"); font-weight: 700; font-display: swap; }
+[dir="rtl"] body, [dir="rtl"] { font-family: "STC Forward", "IBM Plex Sans Arabic", ui-sans-serif, system-ui, "Segoe UI", Tahoma, sans-serif; }
+[dir="rtl"] .hero-title { font-family: "STC Forward", "IBM Plex Sans Arabic", sans-serif; font-weight: 700; color: #fff; }

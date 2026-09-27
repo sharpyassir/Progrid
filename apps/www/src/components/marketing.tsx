@@ -72,8 +72,8 @@ export function Hero() {
           <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-slate-200">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> {c.hero.badge}
           </span>
-          <h1 className="mt-6 text-4xl font-extrabold leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl">
-            {c.hero.h1a}<span className="bg-gradient-to-r from-sky-300 to-blue-400 bg-clip-text text-transparent">{c.hero.h1b}</span>.
+          <h1 className="hero-title mt-6 text-4xl font-extrabold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-6xl">
+            {c.hero.h1a}{c.hero.h1b}.
           </h1>
           <p className="mt-6 max-w-xl text-lg text-slate-300">
             {c.hero.lead}
