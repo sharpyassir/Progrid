@@ -40,7 +40,7 @@ It needs:
 temporal server start-dev --headless &      # once
 cd apps/api
 npx prisma generate
-pnpm test:integration                        # about three minutes
+pnpm test:integration                        # about four minutes 
 pnpm test:integration databases              # one file
 IT_LOG=log pnpm test:integration             # with the API and worker logs
 ```
