@@ -50,6 +50,9 @@ func New(cfg *config.Config, pve *proxmox.Client, version string, log *slog.Logg
 	if cfg.NATSCreds != "" {
 		opts = append(opts, nats.UserCredentials(cfg.NATSCreds))
 	}
+	if tok := firstNonEmpty(os.Getenv("NATS_TOKEN"), cfg.NATSToken); tok != "" {
+		opts = append(opts, nats.Token(tok))
+	}
 	nc, err := nats.Connect(cfg.NATSURL, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("nats: %w", err)
@@ -549,4 +552,14 @@ func toPVERules(rules []protocol.FirewallRule) []proxmox.FWRule {
 		}
 	}
 	return out
+}
+
+// firstNonEmpty returns the first argument that is not the empty string.
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

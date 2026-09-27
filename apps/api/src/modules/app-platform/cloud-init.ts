@@ -46,7 +46,7 @@ write_files:
     content: |
       #!/usr/bin/env python3
       # pgcloud app host agent. Standard library only. The control plane is the only writer of configuration.
-      import http.server, json, os, shutil, subprocess, threading, time, urllib.request
+      import http.server, json, os, shlex, shutil, subprocess, threading, time, urllib.request
       SECRET = open('/opt/pgcloud/vm.secret').read().strip()
       ROOT = '/var/lib/pgcloud/apps'
       LAST = '/opt/pgcloud/last-config.json'
@@ -88,15 +88,17 @@ write_files:
           aid = app['id']; d = ROOT + '/' + aid; src = d + '/src'; log = d + '/build.log'
           os.makedirs(d, exist_ok=True); open(log, 'w').write('=== build %s %s ===\\n' % (aid, time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())))
           try:
+              # Every customer supplied value is shell quoted: repo, token, branch and commit come from the API.
               repo = app['repo']
               if app.get('token'): repo = 'https://x-access-token:%s@%s' % (app['token'], repo[len('https://'):])
+              q = shlex.quote; repo_q = q(repo); branch = q(app['branch'])
               if os.path.isdir(src + '/.git'):
-                  sh('git remote set-url origin %s' % repo, cwd=src)
-                  sh('git fetch --depth 1 origin %s && git reset --hard origin/%s' % (app['branch'], app['branch']), cwd=src, log=log)
+                  sh('git remote set-url origin %s' % repo_q, cwd=src)
+                  sh('git fetch --depth 1 origin %s && git reset --hard origin/%s' % (branch, branch), cwd=src, log=log)
               else:
                   shutil.rmtree(src, ignore_errors=True)
-                  sh('git clone --depth 1 --branch %s %s %s' % (app['branch'], repo, src), log=log)
-              if app.get('commit'): sh('git fetch --depth 1 origin %s && git checkout -q %s' % (app['commit'], app['commit']), cwd=src, log=log, check=False)
+                  sh('git clone --depth 1 --branch %s %s %s' % (branch, repo_q, q(src)), log=log)
+              if app.get('commit'): sh('git fetch --depth 1 origin %s && git checkout -q %s' % (q(app['commit']), q(app['commit'])), cwd=src, log=log, check=False)
               commit = sh('git rev-parse HEAD', cwd=src).strip()
               gen = detect_dockerfile(src)
               if gen: open(src + '/Dockerfile.pgcloud', 'w').write(gen)

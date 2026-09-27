@@ -17,7 +17,7 @@ export class SupportController {
   /** Plan catalog with prices; public so the website can show it. */
   @Public() @Get('plans')
   plans(@Query('currency') currency?: string) {
-    return this.support.plans(currency === 'SAR' ? 'SAR' : 'USD');
+    return this.support.plans(currency === 'USD' ? 'USD' : 'SAR');
   }
 
   /**

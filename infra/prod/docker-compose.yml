@@ -13,6 +13,7 @@ x-api: &api
     DATABASE_URL: postgresql://pgcloud:${POSTGRES_PASSWORD}@postgres:5432/pgcloud
     REDIS_URL: redis://redis:6379
     NATS_URL: nats://nats:4222
+    NATS_TOKEN: ${NATS_TOKEN}
     TEMPORAL_ADDRESS: temporal:7233
   depends_on:
     postgres: { condition: service_healthy }

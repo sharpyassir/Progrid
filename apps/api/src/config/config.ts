@@ -6,6 +6,8 @@ const schema = z.object({
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().default('redis://localhost:6379'),
   NATS_URL: z.string().default('nats://localhost:4222'),
+  /** Token the production NATS server is started with (--auth). Empty for local dev. */
+  NATS_TOKEN: z.string().optional(),
   TEMPORAL_ADDRESS: z.string().default('localhost:7233'),
   TEMPORAL_NAMESPACE: z.string().default('default'),
   TEMPORAL_TASK_QUEUE: z.string().default('pgcloud-control-plane'),

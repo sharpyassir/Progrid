@@ -25,7 +25,7 @@ export interface Copy {
 }
 
 const en: Copy = {
-  meta: { title: 'Progrid: the developer cloud for Saudi Arabia, built for people and AI agents', description: 'Get a server in 60 seconds. Hourly billing in dollars or riyals with ZATCA e-invoices, data that stays in Suudi Arabistan, one click apps, and API tokens your AI agents can use safely.' },
+  meta: { title: 'Progrid: the developer cloud for Saudi Arabia, built for people and AI agents', description: 'Get a server in 60 seconds. Hourly billing in dollars or riyals with ZATCA e-invoices, one click apps, and API tokens your AI agents can use safely.' },
   nav: { products: 'Products', agents: 'For AI agents', pricing: 'Pricing', marketplace: 'Marketplace', docs: 'Docs', signIn: 'Sign in', startFree: 'Start free', menu: 'Menu' },
   hero: {
     badge: 'Launching 2027',

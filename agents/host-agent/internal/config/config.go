@@ -24,6 +24,7 @@ type Config struct {
 	HostID    string        `yaml:"host_id"` // control plane Host.id, given at registration
 	NATSURL   string        `yaml:"nats_url"`
 	NATSCreds string        `yaml:"nats_creds"` // path to .creds (NKey/JWT); empty for dev
+	NATSToken string        `yaml:"nats_token"` // shared token (--auth on the server); NATS_TOKEN env overrides
 	Heartbeat time.Duration `yaml:"heartbeat"`  // default 60s
 	Proxmox   Proxmox       `yaml:"proxmox"`
 }

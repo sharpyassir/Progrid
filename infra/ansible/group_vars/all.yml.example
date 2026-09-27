@@ -1,6 +1,6 @@
 # Copy to group_vars/all.yml. Secrets go in group_vars/vault.yml (ansible-vault) with the vault_ prefix.
-domain: pgcloud.example
-acme_email: ops@pgcloud.example
+domain: progrid.sa
+acme_email: support@progrid.sa
 registry: ghcr.io/sharpyassir
 image_tag: latest
 host_agent_version: v0.1.0          # GitHub release tag that carries host-agent_linux_amd64.tar.gz
@@ -10,12 +10,22 @@ proxmox_token_id: pgcloud@pve!control-plane
 proxmox_ceph_pool: vm-disks
 proxmox_vxlan_zone: customers
 mail_provider: postmark
-mail_from: "pgcloud <no-reply@pgcloud.example>"
+mail_from: "Progrid <no-reply@progrid.sa>"
+support_inbox: support@progrid.sa
 require_totp_for_owners: true
 fx_usd_sar: 3.75
 backup_keep_days: 14
 backup_s3_url: ""
 ssh_allow_from: []                  # CIDRs allowed to reach 22; empty means anywhere
+control_plane_cidr: 10.0.0.0/8      # management network that may reach agents on customer facing nodes
+company_name: Progrid Arabia
+company_address: "Riyadh, Kingdom of Saudi Arabia"
+company_tax_id: ""                  # VAT registration number, printed on invoices
+payment_provider: moyasar           # fake only on a demo box; it hands out free credit
+dns_provider: powerdns              # fake only on a demo box
+dns_nameservers: ns1.progrid.sa,ns2.progrid.sa
+object_storage_provider: rgw        # fake only on a demo box
+s3_endpoint: https://s3.sa1.progrid.sa
 
 # --- vault.yml keys (values with ansible-vault) ---
 # vault_postgres_password: ...
@@ -23,6 +33,13 @@ ssh_allow_from: []                  # CIDRs allowed to reach 22; empty means any
 # vault_jwt_secret: ...
 # vault_proxmox_token_secret: ...
 # vault_mail_api_key: ...
+# vault_moyasar_secret_key: ...
+# vault_moyasar_webhook_secret: ...
+# vault_support_inbound_secret: ...
+# vault_pdns_api_key: ...
+# vault_rgw_admin_access_key: ...
+# vault_rgw_admin_secret_key: ...
+# vault_pve_agent_token_secret: ...
 # vault_backup_s3_key: ""
 # vault_backup_s3_secret: ""
 # vault_ghcr_user: ""               # only when images are private

@@ -9,6 +9,7 @@ import { loadConfig } from '../../config/config';
 import { EventsService } from '../events/events.service';
 import { SpendService } from '../billing/spend.service';
 import { FxService } from '../billing/fx.service';
+import { BOOK_CURRENCY } from '../billing/pricing';
 import { AdminListTicketsQuery, CreateTicketDto, ListTicketsQuery, PLAN_CATALOG, Priority, SUPPORT_PLANS, SupportPlanId, TicketMessageDto } from './support.dto';
 
 /** Normalized inbound email, from whichever provider posts it. */
@@ -44,14 +45,14 @@ export class SupportService {
     private readonly mail: MailService,
   ) {}
 
-  /** Plan catalog with prices in the team's currency (or USD when unauthenticated). */
-  async plans(currency: 'USD' | 'SAR' = 'USD') {
-    const prices = await this.prisma.price.findMany({ where: { resourceType: 'support', currency: 'USD', validTo: null } });
-    const rate = currency === 'USD' ? 1 : await this.fx.rate(currency, new Date());
+  /** Plan catalog with prices in the requested currency, converted from the SAR price book. */
+  async plans(currency: 'USD' | 'SAR' = BOOK_CURRENCY) {
+    const prices = await this.prisma.price.findMany({ where: { resourceType: 'support', currency: BOOK_CURRENCY, validTo: null } });
+    const rate = await this.fx.bookRate(currency, new Date());
     return {
       data: SUPPORT_PLANS.map((id) => {
-        const usd = prices.find((p) => p.sku === `support-${id}`)?.monthlyMinor ?? 0;
-        return { id, ...PLAN_CATALOG[id], currency, monthlyMinor: Math.round(usd * rate) };
+        const book = prices.find((p) => p.sku === `support-${id}`)?.monthlyMinor ?? 0;
+        return { id, ...PLAN_CATALOG[id], currency, monthlyMinor: Math.round(book * rate) };
       }),
     };
   }

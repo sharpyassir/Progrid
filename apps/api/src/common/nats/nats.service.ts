@@ -24,9 +24,9 @@ export class NatsService implements OnModuleInit, OnModuleDestroy {
   private nc?: NatsConnection;
 
   async onModuleInit() {
-    const { NATS_URL } = loadConfig();
+    const { NATS_URL, NATS_TOKEN } = loadConfig();
     try {
-      this.nc = await connect({ servers: NATS_URL, name: 'pgcloud-api', reconnect: true, maxReconnectAttempts: -1 });
+      this.nc = await connect({ servers: NATS_URL, name: 'pgcloud-api', reconnect: true, maxReconnectAttempts: -1, ...(NATS_TOKEN ? { token: NATS_TOKEN } : {}) });
       this.log.log(`connected to NATS at ${NATS_URL}`);
     } catch (err) {
       // Local dev without NATS still works with the fake driver.
