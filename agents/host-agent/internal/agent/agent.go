@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -491,9 +492,26 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 		}
 
 	case protocol.JobAttachIP, protocol.JobDetachIP:
-		// Public IPs are configured at create time via cloud-init (ipconfig1). Floating
-		// IP moves are phase 2 and need a config + guest-agent network reload here.
-		return nil, permanent{"not_implemented", fmt.Errorf("%s: floating IPs are phase 2", job.Kind)}
+		var p struct {
+			VmRef   string             `json:"vmRef"`
+			IP      *protocol.PublicIP `json:"ip"`
+			Address string             `json:"address"`
+		}
+		json.Unmarshal(job.Params, &p)
+		ref, err := parseRef(p.VmRef)
+		if err != nil {
+			return nil, err
+		}
+		if job.Kind == protocol.JobAttachIP {
+			if p.IP == nil || p.IP.Address == "" || p.IP.Prefix == 0 {
+				return nil, permanent{"bad_params", fmt.Errorf("ip with address, gateway and prefix is required")}
+			}
+			return nil, a.attachIP(ctx, ref.VMID, *p.IP)
+		}
+		if p.Address == "" {
+			return nil, permanent{"bad_params", fmt.Errorf("address is required")}
+		}
+		return nil, a.detachIP(ctx, ref.VMID, p.Address)
 
 	default:
 		return nil, permanent{"unknown_job", fmt.Errorf("unknown job kind %q", job.Kind)}
@@ -569,6 +587,44 @@ func (a *Agent) create(ctx context.Context, spec protocol.VmSpec, log *slog.Logg
 	}
 	ref, _ := json.Marshal(protocol.VmRef{VMID: vmid, Node: a.cfg.Proxmox.Node, ServerID: spec.ServerID, ProjectID: strings.TrimPrefix(spec.NetworkRef, "vpc-")})
 	return protocol.VmHandle{VmRef: string(ref)}, nil
+}
+
+// attachIP puts a public address on the VM's public NIC (net1) and its cloud-init network
+// config (ipconfig1), keeping the NIC's MAC when it already exists. Proxmox hot plugs the
+// NIC; the guest applies the address from the regenerated cloud-init drive on its next boot.
+func (a *Agent) attachIP(ctx context.Context, vmid int, ip protocol.PublicIP) error {
+	cfg, err := a.pve.Config(ctx, vmid)
+	if err != nil {
+		return err
+	}
+	nic := "virtio,bridge=" + a.cfg.Proxmox.PublicBridge + ",firewall=1"
+	if model := strings.SplitN(cfg["net1"], ",", 2)[0]; strings.HasPrefix(model, "virtio=") {
+		nic = model + ",bridge=" + a.cfg.Proxmox.PublicBridge + ",firewall=1"
+	}
+	ipconfig := fmt.Sprintf("ip=%s/%d", ip.Address, ip.Prefix)
+	if ip.Gateway != "" {
+		ipconfig += ",gw=" + ip.Gateway
+	}
+	if err := a.pve.SetConfig(ctx, vmid, url.Values{"net1": {nic}, "ipconfig1": {ipconfig}}); err != nil {
+		return err
+	}
+	return a.pve.RegenerateCloudInit(ctx, vmid)
+}
+
+// detachIP removes the public NIC when it carries the address. Idempotent: a VM without the
+// address is left alone.
+func (a *Agent) detachIP(ctx context.Context, vmid int, address string) error {
+	cfg, err := a.pve.Config(ctx, vmid)
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(cfg["ipconfig1"], "ip="+address+"/") {
+		return nil
+	}
+	if err := a.pve.DeleteConfig(ctx, vmid, "net1", "ipconfig1"); err != nil {
+		return err
+	}
+	return a.pve.RegenerateCloudInit(ctx, vmid)
 }
 
 // findByTag lists the VMs on this node that carry the tag, as vmRefs. The control plane uses

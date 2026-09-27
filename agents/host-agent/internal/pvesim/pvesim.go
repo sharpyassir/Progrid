@@ -36,9 +36,11 @@ type VM struct {
 	Source string
 	// RolledBackTo is the snapshot of the last rollback.
 	RolledBackTo string
-	FWRules      []map[string]string
-	FWOpts       map[string]string
-	StartedAt    time.Time
+	// CloudInitRegens counts PUT /cloudinit calls (the drive is rebuilt after a network change).
+	CloudInitRegens int
+	FWRules         []map[string]string
+	FWOpts          map[string]string
+	StartedAt       time.Time
 }
 
 type task struct {
@@ -318,7 +320,9 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 			vm.Config = map[string]string{}
 		}
 		if del := r.Form.Get("delete"); del != "" {
-			delete(vm.Config, del)
+			for _, k := range strings.Split(del, ",") {
+				delete(vm.Config, strings.TrimSpace(k))
+			}
 			ok(nil)
 			return
 		}
@@ -349,6 +353,14 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 		if _, sent := r.Form["tags"]; sent {
 			vm.Tags = r.Form.Get("tags")
 		}
+		ok(nil)
+		return
+	case sub == "/cloudinit" && r.Method == http.MethodPut:
+		if vm == nil {
+			notExist()
+			return
+		}
+		vm.CloudInitRegens++
 		ok(nil)
 		return
 	case sub == "/resize" && r.Method == http.MethodPut:

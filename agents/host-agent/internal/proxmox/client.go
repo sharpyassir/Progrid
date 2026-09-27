@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -200,6 +201,27 @@ func EncodeSSHKeys(keys []string) string {
 func (c *Client) SetResources(ctx context.Context, vmid int, cores, memoryMb int) error {
 	f := url.Values{"cores": {fmt.Sprint(cores)}, "memory": {fmt.Sprint(memoryMb)}}
 	return c.do(ctx, http.MethodPost, c.vmPath(vmid, "/config"), f, nil)
+}
+
+// SetConfig posts arbitrary config keys (used for floating IP NICs).
+func (c *Client) SetConfig(ctx context.Context, vmid int, f url.Values) error {
+	return c.do(ctx, http.MethodPost, c.vmPath(vmid, "/config"), f, nil)
+}
+
+// DeleteConfig removes config keys (comma separated list, as Proxmox accepts it).
+func (c *Client) DeleteConfig(ctx context.Context, vmid int, keys ...string) error {
+	return c.do(ctx, http.MethodPost, c.vmPath(vmid, "/config"), url.Values{"delete": {strings.Join(keys, ",")}}, nil)
+}
+
+// RegenerateCloudInit rebuilds the cloud-init drive so a changed ipconfig reaches the
+// guest on its next cloud-init run. Older nodes without the endpoint are tolerated.
+func (c *Client) RegenerateCloudInit(ctx context.Context, vmid int) error {
+	err := c.do(ctx, http.MethodPut, c.vmPath(vmid, "/cloudinit"), url.Values{}, nil)
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && (apiErr.Status == 501 || apiErr.Status == 404) {
+		return nil
+	}
+	return err
 }
 
 func (c *Client) ResizeDisk(ctx context.Context, vmid int, diskGb int) error {

@@ -327,6 +327,48 @@ func TestRollbackAndCreateFromSnapshot(t *testing.T) {
 	}
 }
 
+// A floating IP moves from one server to another: detach from the first, attach to the second.
+func TestFloatingIPMoves(t *testing.T) {
+	h := newHarness(t)
+	idA, refA := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_fa")})))
+	sb := spec("srv_fb")
+	sb.PublicIP = nil
+	idB, refB := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": sb})))
+	if _, has := h.sim.VM(idB).Config["net1"]; has {
+		t.Fatal("server B should start without a public NIC")
+	}
+
+	// Detaching an address the VM does not carry changes nothing.
+	h.mustOK(h.job(protocol.JobDetachIP, map[string]interface{}{"vmRef": refA, "address": "198.51.100.7"}))
+	if h.sim.VM(idA).Config["net1"] == "" {
+		t.Fatal("detach of another address removed the NIC")
+	}
+	h.mustOK(h.job(protocol.JobDetachIP, map[string]interface{}{"vmRef": refA, "address": "203.0.113.10"}))
+	a := h.sim.VM(idA)
+	if _, has := a.Config["net1"]; has || a.Config["ipconfig1"] != "" || a.CloudInitRegens != 1 {
+		t.Fatalf("address not removed from A: %v (regens %d)", a.Config, a.CloudInitRegens)
+	}
+
+	ip := protocol.PublicIP{Address: "203.0.113.10", Gateway: "203.0.113.1", Prefix: 24}
+	h.mustOK(h.job(protocol.JobAttachIP, map[string]interface{}{"vmRef": refB, "ip": ip}))
+	b := h.sim.VM(idB)
+	if !strings.HasPrefix(b.Config["net1"], "virtio=") || !strings.HasSuffix(b.Config["net1"], ",bridge=vmbr0,firewall=1") || b.Config["ipconfig1"] != "ip=203.0.113.10/24,gw=203.0.113.1" || b.CloudInitRegens != 1 {
+		t.Fatalf("address not configured on B: %v (regens %d)", b.Config, b.CloudInitRegens)
+	}
+	// Attaching again keeps the NIC's MAC.
+	mac := strings.SplitN(b.Config["net1"], ",", 2)[0]
+	h.mustOK(h.job(protocol.JobAttachIP, map[string]interface{}{"vmRef": refB, "ip": ip}))
+	if got := strings.SplitN(h.sim.VM(idB).Config["net1"], ",", 2)[0]; got != mac {
+		t.Fatalf("reattach changed the MAC: %s, was %s", got, mac)
+	}
+	// And back to A, which gets a NIC again.
+	h.mustOK(h.job(protocol.JobDetachIP, map[string]interface{}{"vmRef": refB, "address": "203.0.113.10"}))
+	h.mustOK(h.job(protocol.JobAttachIP, map[string]interface{}{"vmRef": refA, "ip": ip}))
+	if h.sim.VM(idA).Config["ipconfig1"] != "ip=203.0.113.10/24,gw=203.0.113.1" || h.sim.VM(idB).Config["ipconfig1"] != "" {
+		t.Fatalf("address did not move back: A %v, B %v", h.sim.VM(idA).Config, h.sim.VM(idB).Config)
+	}
+}
+
 func TestErrorsAreClassified(t *testing.T) {
 	h := newHarness(t)
 
@@ -363,8 +405,8 @@ func TestErrorsAreClassified(t *testing.T) {
 		t.Fatalf("expected bad_image_ref, got %+v", r)
 	}
 	r = h.job(protocol.JobAttachIP, map[string]interface{}{"vmRef": `{"vmid":9000,"node":"pve1"}`})
-	if r.OK || r.Error.Code != "not_implemented" || r.Error.Retryable {
-		t.Fatalf("expected not_implemented, got %+v", r)
+	if r.OK || r.Error.Code != "bad_params" || r.Error.Retryable {
+		t.Fatalf("expected bad_params, got %+v", r)
 	}
 }
 
