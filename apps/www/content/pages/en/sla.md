@@ -39,7 +39,7 @@ When a service misses its commitment, you receive credit on the next invoice for
 | Below 99.0%, down to 95.0% | 25% |
 | Below 95.0% | 50% |
 
-Claim within 30 days of the end of the month by writing to billing@progrid.sa with the resource ids and the times you observed. We check against our monitoring and apply the credit within 10 business days. Credit is the only remedy for missing a commitment and is not paid in cash.
+Claim within 30 days of the end of the month by writing to support@progrid.sa with the resource ids and the times you observed. We check against our monitoring and apply the credit within 10 business days. Credit is the only remedy for missing a commitment and is not paid in cash.
 
 ## Support response
 

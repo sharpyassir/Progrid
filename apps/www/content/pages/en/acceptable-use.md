@@ -40,6 +40,6 @@ If your users can upload or publish content, you are responsible for enforcing t
 
 ## Reports and enforcement
 
-Report abuse to **abuse@progrid.sa** with addresses, timestamps and logs. We investigate every report. Where there is an immediate risk to others, to the platform or a legal order, we may suspend the resource first and notify you afterwards. In other cases we notify you and give you a reasonable time to fix the problem. Repeated or serious breaches end the agreement.
+Report abuse to **support@progrid.sa** with addresses, timestamps and logs. We investigate every report. Where there is an immediate risk to others, to the platform or a legal order, we may suspend the resource first and notify you afterwards. In other cases we notify you and give you a reasonable time to fix the problem. Repeated or serious breaches end the agreement.
 
 We cooperate with competent Saudi authorities as required by law, and we notify you of requests concerning your account unless the law prevents it.

@@ -1,37 +1,34 @@
 ---
 title: Contact us
-description: Sales, support, billing, security and press. One business day at most, usually much less.
+description: One address for everything, and a ticket system that keeps every conversation in one place. No phone lines, by design.
 updated: 27 September 2026
 ---
 
-## Support
+## One way to reach us
 
-Open a ticket from **Support** in the console. It reaches the engineers who run the platform and keeps the whole conversation in one place. Response targets depend on your support plan and are listed on the [support page](/docs/support). If you cannot sign in, write to **support@progrid.sa** from the email address on your account.
+Progrid support is fully digital. There is no phone number and no call center. Every request, whether it is technical, commercial, billing, security or legal, comes through the same two doors:
 
-## Sales and partnerships
+1. **Open a ticket** from **Support** in the console. This is the fastest route. Tickets reach the engineers who run the platform, are tied to your account and resources, and keep the whole history in one place. Response targets depend on your support plan and are listed on the [support page](/docs/support).
+2. **Email support@progrid.sa** if you do not have an account yet or cannot sign in. Every email opens a ticket and gets a ticket number in the reply. Write from the email address on your account when the request concerns an existing account.
 
-Moving a workload, sizing a team, or asking for a quote for more than ten servers: **sales@progrid.sa**. Marketplace vendors who want to list an app: **vendors@progrid.sa**.
+We answer within one business day at most, and usually much faster.
 
-## Billing
+## What to include
 
-Questions about an invoice, a ZATCA e-invoice, VAT or a refund: **billing@progrid.sa**. Include the invoice number.
+Tell us what you need in the first message so the right person picks it up:
 
-## Security
-
-Found a vulnerability? Write to **security@progrid.sa**. We acknowledge within one business day, keep you informed, and credit reporters who want to be credited. Please do not test against other customers' resources.
-
-## Abuse
-
-Spam, phishing, attacks or illegal content coming from a Progrid address: **abuse@progrid.sa** with the address, timestamps and logs. Reports are read every day.
-
-## Data protection
-
-Requests under the Personal Data Protection Law, and anything about how we handle personal data: **privacy@progrid.sa**.
+- **Technical**: the resource id, the region, what you expected and what happened, and the time it happened.
+- **Sales, quotes and partnerships**: the workload, the number of servers, and when you plan to move. Marketplace vendors, describe the app you want to list.
+- **Billing and refunds**: the invoice number or payment reference.
+- **Security reports**: the affected endpoint or resource and steps to reproduce. We acknowledge within one business day, keep you informed, and credit reporters who want to be credited. Please do not test against other customers' resources.
+- **Abuse reports**: the Progrid address, timestamps and logs. Reports are read every day.
+- **Data protection**: requests under the Personal Data Protection Law are handled by the same address, with identity confirmed before any data is released.
+- **Legal notices**: send them to support@progrid.sa with "Legal notice" in the subject line.
 
 ## Company
 
 Progrid Arabia (بروجريد العربية)
 Riyadh, Kingdom of Saudi Arabia
-General enquiries: **hello@progrid.sa**
+**support@progrid.sa**
 
 Commercial registration and VAT numbers will be published on this page once registration is complete.

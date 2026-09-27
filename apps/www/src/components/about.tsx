@@ -41,7 +41,7 @@ const COPY: Record<Lang, AboutCopy> = {
       ['Ship, then promise', 'We publish what is live and what is on the roadmap. A feature is not marketed until you can create it from the console.'],
     ],
     companyH2: 'The company',
-    company: [['Legal name', 'Progrid Arabia (بروجريد العربية)'], ['Headquarters', 'Riyadh, Kingdom of Saudi Arabia'], ['Commercial registration', 'Pending publication'], ['VAT registration', 'Pending publication'], ['Contact', 'hello@progrid.sa']],
+    company: [['Legal name', 'Progrid Arabia (بروجريد العربية)'], ['Headquarters', 'Riyadh, Kingdom of Saudi Arabia'], ['Commercial registration', 'Pending publication'], ['VAT registration', 'Pending publication'], ['Contact', 'support@progrid.sa']],
     ctaH2: 'Talk to us', ctaLead: 'Whether you are moving a workload, starting a company or evaluating us for a team, we answer within a business day.', ctaPrimary: 'Create an account', ctaSecondary: 'Contact us',
   },
   tr: {
@@ -69,7 +69,7 @@ const COPY: Record<Lang, AboutCopy> = {
       ['Önce çıkar, sonra söz ver', 'Neyin canlı, neyin yol haritasında olduğunu yayınlarız. Konsoldan oluşturamadığınız bir özelliğin pazarlaması yapılmaz.'],
     ],
     companyH2: 'Şirket',
-    company: [['Yasal ad', 'Progrid Arabia (بروجريد العربية)'], ['Merkez', 'Riyad, Suudi Arabistan Krallığı'], ['Ticaret sicili', 'Yayınlanacak'], ['KDV kaydı', 'Yayınlanacak'], ['İletişim', 'hello@progrid.sa']],
+    company: [['Yasal ad', 'Progrid Arabia (بروجريد العربية)'], ['Merkez', 'Riyad, Suudi Arabistan Krallığı'], ['Ticaret sicili', 'Yayınlanacak'], ['KDV kaydı', 'Yayınlanacak'], ['İletişim', 'support@progrid.sa']],
     ctaH2: 'Bizimle konuşun', ctaLead: 'İş yükü taşıyor, şirket kuruyor ya da ekibiniz için bizi değerlendiriyor olun, bir iş günü içinde yanıtlarız.', ctaPrimary: 'Hesap oluştur', ctaSecondary: 'İletişim',
   },
   ar: {
@@ -97,7 +97,7 @@ const COPY: Record<Lang, AboutCopy> = {
       ['نطلّع، وبعدين نوعد', 'ننشر وش المتوفر ووش على الطريق. ما نسوّق لأي ميزة قبل ما تقدر تنشئها من لوحة التحكم.'],
     ],
     companyH2: 'الشركة',
-    company: [['الاسم القانوني', 'بروجريد العربية (Progrid Arabia)'], ['المقر', 'الرياض، المملكة العربية السعودية'], ['السجل التجاري', 'يُنشر قريبًا'], ['الرقم الضريبي', 'يُنشر قريبًا'], ['التواصل', 'hello@progrid.sa']],
+    company: [['الاسم القانوني', 'بروجريد العربية (Progrid Arabia)'], ['المقر', 'الرياض، المملكة العربية السعودية'], ['السجل التجاري', 'يُنشر قريبًا'], ['الرقم الضريبي', 'يُنشر قريبًا'], ['التواصل', 'support@progrid.sa']],
     ctaH2: 'كلّمنا', ctaLead: 'سواء تنقل عمل قائم، أو تبدأ شركة، أو تقيّمنا لفريقك، نرد عليك خلال يوم عمل.', ctaPrimary: 'أنشئ حسابك', ctaSecondary: 'تواصل معنا',
   },
 };

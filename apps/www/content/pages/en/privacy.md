@@ -4,7 +4,7 @@ description: What personal data Progrid Arabia collects, why, how long we keep i
 updated: 27 September 2026
 ---
 
-Progrid Arabia (بروجريد العربية) ("Progrid", "we") is the controller of the personal data described in this policy. We follow the Personal Data Protection Law of the Kingdom of Saudi Arabia (PDPL) and its implementing regulations. Questions and requests: **privacy@progrid.sa**.
+Progrid Arabia (بروجريد العربية) ("Progrid", "we") is the controller of the personal data described in this policy. We follow the Personal Data Protection Law of the Kingdom of Saudi Arabia (PDPL) and its implementing regulations. Questions and requests: **support@progrid.sa**.
 
 ## What we collect
 
@@ -43,7 +43,7 @@ Account data for as long as your account exists and for 5 years after closure to
 
 ## Your rights
 
-Under the PDPL you can ask us to tell you what personal data we hold about you, to correct it, to delete it where we have no legal duty to keep it, to give you a copy in a usable format, and to stop processing it in certain cases. Send requests to privacy@progrid.sa from the email on your account. We answer within 30 days. You can also complain to the competent authority for personal data protection in the Kingdom.
+Under the PDPL you can ask us to tell you what personal data we hold about you, to correct it, to delete it where we have no legal duty to keep it, to give you a copy in a usable format, and to stop processing it in certain cases. Send requests to support@progrid.sa from the email on your account. We answer within 30 days. You can also complain to the competent authority for personal data protection in the Kingdom.
 
 ## Security
 

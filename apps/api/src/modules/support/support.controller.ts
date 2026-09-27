@@ -1,4 +1,7 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, Post, Put, Query } from '@nestjs/common';
+import { timingSafeEqual } from 'node:crypto';
+import { loadConfig } from '../../config/config';
+import { ApiError } from '../../common/errors/api-error';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentActor, Public, RequireScopes } from '../../common/auth/decorators';
 import type { Actor } from '../../common/auth/actor';
@@ -15,6 +18,22 @@ export class SupportController {
   @Public() @Get('plans')
   plans(@Query('currency') currency?: string) {
     return this.support.plans(currency === 'SAR' ? 'SAR' : 'USD');
+  }
+
+  /**
+   * Inbound email webhook. Postmark posts {From, Subject, TextBody, StrippedTextReply}; Resend and
+   * generic relays post {from, subject, text}. Guarded by SUPPORT_INBOUND_SECRET, sent as the
+   * X-Inbound-Secret header or the ?secret query parameter.
+   */
+  @Public() @Post('inbound') @HttpCode(200)
+  inbound(@Body() raw: Record<string, unknown>, @Headers('x-inbound-secret') header?: string, @Query('secret') query?: string) {
+    const expected = loadConfig().SUPPORT_INBOUND_SECRET;
+    const given = header ?? query ?? '';
+    if (!expected || given.length !== expected.length || !timingSafeEqual(Buffer.from(given), Buffer.from(expected))) throw new ApiError(401, 'unauthorized', 'Bad inbound secret');
+    const str = (v: unknown) => (typeof v === 'string' ? v : '');
+    const fromRaw = str(raw.From) || str(raw.from) || str((raw.sender as Record<string, unknown> | undefined)?.email);
+    const from = /<([^>]+)>/.exec(fromRaw)?.[1] ?? fromRaw;
+    return this.support.inbound({ from, subject: str(raw.Subject) || str(raw.subject), text: str(raw.StrippedTextReply) || str(raw.TextBody) || str(raw.text) });
   }
 
   @Get('plan') @RequireScopes('support:read')

@@ -20,4 +20,4 @@ Roles are posted here as they open. At the moment we are looking for:
 
 ## How to apply
 
-Send a short note and a link to something you built to **careers@progrid.sa**. No cover letter needed. We reply to everyone within a week, and the process is two conversations and a paid take home task.
+Send a short note and a link to something you built to **support@progrid.sa**. No cover letter needed. We reply to everyone within a week, and the process is two conversations and a paid take home task.

@@ -20,11 +20,11 @@ Credit you bought is refundable to the original payment method for 14 days after
 
 ## Our fault
 
-If a Service failed to meet the [Service Level Agreement](/legal/sla), you receive service credit as that agreement describes. If a resource was unusable because of a fault on our side and the SLA does not cover it, tell billing@progrid.sa within 30 days and we refund the hours it was unusable.
+If a Service failed to meet the [Service Level Agreement](/legal/sla), you receive service credit as that agreement describes. If a resource was unusable because of a fault on our side and the SLA does not cover it, tell support@progrid.sa within 30 days and we refund the hours it was unusable.
 
 ## Duplicate or mistaken payments
 
-A payment made twice, or an amount charged in error, is refunded in full once we confirm it. Write to billing@progrid.sa with the invoice or payment reference.
+A payment made twice, or an amount charged in error, is refunded in full once we confirm it. Write to support@progrid.sa with the invoice or payment reference.
 
 ## Chargebacks
 

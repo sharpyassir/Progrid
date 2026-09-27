@@ -8,7 +8,7 @@ These terms are a contract between you and Progrid Arabia (بروجريد الع
 
 ## 1. Your account
 
-You must be at least 18 years old, or act for a company that has authorized you. You are responsible for everything done under your account and its API tokens, including by AI tools and scripts you give a token to. Keep your credentials secret, turn on two step sign in, and tell us at once at security@progrid.sa if you think an account was compromised. Team owners are responsible for the people and tokens they invite.
+You must be at least 18 years old, or act for a company that has authorized you. You are responsible for everything done under your account and its API tokens, including by AI tools and scripts you give a token to. Keep your credentials secret, turn on two step sign in, and tell us at once at support@progrid.sa if you think an account was compromised. Team owners are responsible for the people and tokens they invite.
 
 We may ask for identity or business verification before enabling some features, and we may refuse or close an account that fails verification.
 
@@ -62,8 +62,8 @@ You will indemnify Progrid against claims arising from your content, your use of
 
 **Changes to these terms.** We may update these terms. Material changes are announced by email and on this page at least 30 days before they take effect; continued use after that date is acceptance.
 
-**Notices.** Notices to you go to the email address of the account owner. Notices to us go to legal@progrid.sa.
+**Notices.** Notices to you go to the email address of the account owner. Notices to us go to support@progrid.sa.
 
 **Entire agreement.** These documents are the entire agreement between you and Progrid regarding the Services and replace earlier agreements. If any part is unenforceable, the rest remains in force.
 
-Questions about these terms: **legal@progrid.sa**.
+Questions about these terms: **support@progrid.sa**.

@@ -6,6 +6,8 @@ export interface Mail {
   subject: string;
   text: string;
   html?: string;
+  /** Where replies should go; defaults to the support inbox when set. */
+  replyTo?: string;
 }
 
 /**
@@ -22,14 +24,15 @@ export class MailService {
   last?: Mail;
 
   async send(mail: Mail): Promise<void> {
-    const { MAIL_PROVIDER, MAIL_FROM, MAIL_API_KEY, CONSOLE_URL, COMPANY_NAME } = loadConfig();
+    const { MAIL_PROVIDER, MAIL_FROM, MAIL_API_KEY, CONSOLE_URL, COMPANY_NAME, SUPPORT_INBOX } = loadConfig();
+    const replyTo = mail.replyTo ?? (SUPPORT_INBOX || undefined);
     const html = mail.html ?? wrap(mail.text, `${CONSOLE_URL}/brand/progrid-logo.png`, COMPANY_NAME);
     switch (MAIL_PROVIDER) {
       case 'postmark': {
         const res = await fetch('https://api.postmarkapp.com/email', {
           method: 'POST',
           headers: { 'content-type': 'application/json', accept: 'application/json', 'X-Postmark-Server-Token': MAIL_API_KEY ?? '' },
-          body: JSON.stringify({ From: MAIL_FROM, To: mail.to, Subject: mail.subject, TextBody: mail.text, HtmlBody: html, MessageStream: 'outbound' }),
+          body: JSON.stringify({ From: MAIL_FROM, To: mail.to, Subject: mail.subject, TextBody: mail.text, HtmlBody: html, MessageStream: 'outbound', ...(replyTo ? { ReplyTo: replyTo } : {}) }),
         });
         if (!res.ok) throw new Error(`postmark ${res.status}: ${await res.text()}`);
         return;
@@ -38,7 +41,7 @@ export class MailService {
         const res = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: { 'content-type': 'application/json', authorization: `Bearer ${MAIL_API_KEY ?? ''}` },
-          body: JSON.stringify({ from: MAIL_FROM, to: [mail.to], subject: mail.subject, text: mail.text, html }),
+          body: JSON.stringify({ from: MAIL_FROM, to: [mail.to], subject: mail.subject, text: mail.text, html, ...(replyTo ? { reply_to: replyTo } : {}) }),
         });
         if (!res.ok) throw new Error(`resend ${res.status}: ${await res.text()}`);
         return;

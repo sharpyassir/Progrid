@@ -11,6 +11,17 @@ import { SpendService } from '../billing/spend.service';
 import { FxService } from '../billing/fx.service';
 import { AdminListTicketsQuery, CreateTicketDto, ListTicketsQuery, PLAN_CATALOG, Priority, SUPPORT_PLANS, SupportPlanId, TicketMessageDto } from './support.dto';
 
+/** Normalized inbound email, from whichever provider posts it. */
+export interface InboundMail { from: string; subject: string; text: string }
+
+/** Drops the quoted previous message from an email reply so the ticket shows only the new text. */
+function stripQuoted(text: string) {
+  const lines = text.split(/\r?\n/);
+  const cut = lines.findIndex((l) => /^On .+ wrote:$/.test(l.trim()) || /^-{2,}\s*Original Message\s*-{2,}$/i.test(l.trim()) || /^From: .+/.test(l.trim()) && lines.indexOf(l) > 0);
+  const kept = (cut > 0 ? lines.slice(0, cut) : lines).filter((l) => !l.startsWith('>'));
+  return kept.join('\n').trim() || text.trim();
+}
+
 const ticketInclude = { messages: { orderBy: { createdAt: 'asc' as const } } } satisfies Prisma.TicketInclude;
 type TicketRow = Prisma.TicketGetPayload<{ include: typeof ticketInclude }>;
 
@@ -131,6 +142,43 @@ export class SupportService {
     const updated = await this.prisma.ticket.update({ where: { id }, data: { status: 'closed', closedAt: new Date() }, include: ticketInclude });
     await this.events.emit('ticket.closed', { ticketId: id, number: ticket.number, by: 'customer' }, { actor, resource: `ticket:${id}` });
     return this.present(updated);
+  }
+
+  /**
+   * Email intake: a message sent to the support inbox becomes a ticket, or a reply on the ticket
+   * named in the subject as "[#123]". The sender must match a user; the ticket lands on the team
+   * they own (or their first team). Unknown senders get an acknowledgement that a person will
+   * answer from the mailbox, since we have no account to attach a ticket to.
+   */
+  async inbound(msg: InboundMail) {
+    const email = msg.from.trim().toLowerCase();
+    if (!email || /^(no-?reply|mailer-daemon|postmaster)@/i.test(email)) return { accepted: false, reason: 'ignored_sender' };
+    const subject = (msg.subject || '(no subject)').trim().slice(0, 140);
+    const body = (msg.text || '').trim().slice(0, 20000) || '(empty message)';
+    const user = await this.prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } }, include: { memberships: { orderBy: { role: 'asc' }, include: { team: { select: { id: true, createdAt: true } } } } } });
+    const membership = user?.memberships.sort((a, b) => (a.role === 'owner' ? -1 : b.role === 'owner' ? 1 : a.team.createdAt.getTime() - b.team.createdAt.getTime()))[0];
+    if (!user || !membership) {
+      await this.mail.send({ to: email, subject: `Re: ${subject}`, text: `Thanks for writing to ${loadConfig().COMPANY_NAME} support. We received your message and a person will answer by email within one business day.\n\nIf you have an account, please write from the email address on it, or open a ticket from Support in the console, so we can attach the conversation to your account.` }).catch((e) => this.log.warn(`support ack failed: ${e}`));
+      return { accepted: false, reason: 'unknown_sender' };
+    }
+    const actor: Actor = { userId: user.id, teamId: membership.teamId, role: membership.role, scopes: new Set(['support:read', 'support:write']), isAgent: false, requireApprovalFor: new Set(), locale: 'en' };
+    const ref = /\[#(\d+)\]/.exec(subject);
+    if (ref) {
+      const existing = await this.prisma.ticket.findFirst({ where: { number: Number(ref[1]), teamId: membership.teamId } });
+      if (existing) {
+        const t = await this.reply(actor, existing.id, { body: stripQuoted(body) });
+        return { accepted: true, action: 'replied', ticketId: t.id, number: t.number };
+      }
+    }
+    try {
+      const t = await this.create(actor, { subject: subject.replace(/^(re|fwd?):\s*/i, ''), body: stripQuoted(body), priority: 'normal' });
+      await this.mail.send({ to: email, subject: `Re: [#${t.number}] ${t.subject}`, text: `Your ticket #${t.number} is open. Reply to this email or follow it in the console:\n${loadConfig().CONSOLE_URL}/support/${t.id}` }).catch((e) => this.log.warn(`support ack failed: ${e}`));
+      return { accepted: true, action: 'created', ticketId: t.id, number: t.number };
+    } catch (e) {
+      const reason = e instanceof ApiError ? e.message : 'could not open a ticket';
+      await this.mail.send({ to: email, subject: `Re: ${subject}`, text: `We could not open a ticket from your email: ${reason}\n\nOpen one from Support in the console:\n${loadConfig().CONSOLE_URL}/support` }).catch((err) => this.log.warn(`support ack failed: ${err}`));
+      return { accepted: false, reason };
+    }
   }
 
   // ---- back office ----

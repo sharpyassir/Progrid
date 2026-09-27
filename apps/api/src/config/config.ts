@@ -40,7 +40,9 @@ const schema = z.object({
   MAIL_PROVIDER: z.enum(['log', 'postmark', 'resend']).default('log'),
   MAIL_FROM: z.string().default('Progrid <no-reply@progrid.sa>'),
   /** Where new support tickets and customer replies are mailed for the on duty engineer. Empty disables. */
-  SUPPORT_INBOX: z.string().default(''),
+  SUPPORT_INBOX: z.string().default('support@progrid.sa'),
+  /** Shared secret the mail provider sends with inbound email webhooks (POST /v1/support/inbound). Empty disables intake. */
+  SUPPORT_INBOUND_SECRET: z.string().optional(),
   /** App Platform: hostnames are <app>.<APPS_DOMAIN>; the zone must be hosted on the platform's DNS. */
   APPS_DOMAIN: z.string().default('apps.progrid.sa'),
   /** Server size for shared app hosts; the platform adds one when a region is full. */
