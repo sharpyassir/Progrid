@@ -680,7 +680,7 @@ enum InvoiceStatus {
 model Invoice {
   id          String        @id @default(cuid())
   teamId      String
-  number      String        @unique // "INV-2026-000123"
+  number      String        @unique // "PG-2026-000123", from the invoice_number_seq sequence
   currency    Currency
   periodStart DateTime
   periodEnd   DateTime
@@ -698,6 +698,8 @@ model Invoice {
   team    Team          @relation(fields: [teamId], references: [id])
   records UsageRecord[]
   payments Payment[]
+
+  @@unique([teamId, periodStart, periodEnd])
 }
 
 enum CreditKind {
