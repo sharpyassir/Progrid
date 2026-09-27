@@ -1,5 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { PrivateNetwork } from '@prisma/client';
+import { HYPERVISOR_DRIVER, HypervisorDriver } from '../../drivers/hypervisor.driver';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ApiError } from '../../common/errors/api-error';
 import { loadConfig } from '../../config/config';
@@ -19,7 +21,10 @@ export type PrivateNetworkMode = 'shared_bridge' | 'sdn_vnet';
 export class PrivateNetworksService {
   private readonly log = new Logger(PrivateNetworksService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(HYPERVISOR_DRIVER) private readonly driver: HypervisorDriver,
+  ) {}
 
   /** The network of a project in a region, created from the region pool on first use. */
   async ensureNetwork(projectId: string, regionId: string) {
@@ -79,6 +84,21 @@ export class PrivateNetworksService {
       }
     }
     throw new Error(`could not reserve a private address for server ${server.id}`);
+  }
+
+  /**
+   * The bridge net0 of a new VM in this network attaches to. In sdn_vnet mode that is the
+   * project's VNet, created and applied through the agent of the host the VM goes to the
+   * first time it is needed; in shared_bridge mode it is undefined (the agent's own bridge).
+   */
+  async bridgeFor(network: PrivateNetwork, hostRef: string): Promise<string | undefined> {
+    if (PrivateNetworksService.mode(network.regionId) !== 'sdn_vnet') return undefined;
+    if (!network.sdnAppliedAt) {
+      await this.driver.ensurePrivateNetwork(hostRef, { vnet: network.vnet, zone: loadConfig().PROXMOX_VXLAN_ZONE, tag: network.vxlanTag, alias: `project ${network.projectId}` });
+      await this.prisma.privateNetwork.update({ where: { id: network.id }, data: { sdnAppliedAt: new Date() } });
+      this.log.log(`private network ${network.cidr} of project ${network.projectId} is VNet ${network.vnet} (tag ${network.vxlanTag})`);
+    }
+    return network.vnet;
   }
 
   /** Frees the server's private address. The network itself stays with the project. */

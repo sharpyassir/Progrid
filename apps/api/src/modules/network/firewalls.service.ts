@@ -3,7 +3,8 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { ApiError } from '../../common/errors/api-error';
 import { EventsService } from '../events/events.service';
 import type { Actor } from '../../common/auth/actor';
-import { HYPERVISOR_DRIVER, FirewallRuleSpec, HypervisorDriver } from '../../drivers/hypervisor.driver';
+import { HYPERVISOR_DRIVER, FirewallRuleSpec, HypervisorDriver, NicAddresses } from '../../drivers/hypervisor.driver';
+import { vipNetworkFor } from '../../common/platform-agent';
 import { CreateFirewallDto, FirewallRuleDto } from './network.dto';
 
 /** Default rules for a new server: SSH + HTTP(S) in, everything out. */
@@ -92,7 +93,37 @@ export class FirewallsService {
   async applyToServer(serverId: string) {
     const server = await this.prisma.server.findUnique({ where: { id: serverId }, include: { host: true } });
     if (!server?.host || !server.driverRef || !['active', 'off'].includes(server.status)) return;
-    await this.driver.applyFirewall(server.host.driverRef, server.driverRef, await this.effectiveRules(serverId));
+    await this.driver.applyFirewall(server.host.driverRef, server.driverRef, await this.effectiveRules(serverId), await this.nicAddresses(serverId));
+  }
+
+  /**
+   * What each NIC of the server may send from, for the hypervisor's IP filter (anti spoofing):
+   * the private address on net0, the public addresses on net1, and for a load balancer,
+   * database or Kubernetes node the cluster VIP keepalived may move onto it. The agent turns
+   * the filter on only for NICs whose configured address is in this list.
+   */
+  async nicAddresses(serverId: string): Promise<NicAddresses | undefined> {
+    const s = await this.prisma.server.findUnique({ where: { id: serverId }, select: { privateIp: true, managedBy: true, publicIps: { select: { address: true } } } });
+    if (!s) return undefined;
+    const out: NicAddresses = {};
+    const add = (nic: string, address: string) => {
+      if (!(out[nic] ??= []).includes(address)) out[nic].push(address);
+    };
+    if (s.privateIp) add('net0', s.privateIp);
+    for (const ip of s.publicIps) add('net1', ip.address);
+    const vip = await this.clusterVip(s.managedBy);
+    if (vip) add(vipNetworkFor(vip) === 'private' ? 'net0' : 'net1', vip);
+    return Object.keys(out).length ? out : undefined;
+  }
+
+  private async clusterVip(managedBy: string | null): Promise<string | undefined> {
+    const [kind, id] = (managedBy ?? '').split(':');
+    if (!id) return undefined;
+    const select = { publicIp: { select: { address: true } } };
+    if (kind === 'lb') return (await this.prisma.loadBalancer.findUnique({ where: { id }, select }))?.publicIp?.address;
+    if (kind === 'db') return (await this.prisma.dbCluster.findUnique({ where: { id }, select }))?.publicIp?.address;
+    if (kind === 'k8s') return (await this.prisma.kubeCluster.findUnique({ where: { id }, select }))?.publicIp?.address;
+    return undefined;
   }
 
   private async pushToServers(firewallId: string) {

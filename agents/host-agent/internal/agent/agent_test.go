@@ -786,3 +786,104 @@ func TestRejectsWrongToken(t *testing.T) {
 
 func mustJSON(v interface{}) []byte { b, _ := json.Marshal(v); return b }
 func itoa(i int) string             { return strings.TrimSpace(strings.Replace(string(mustJSON(i)), "\"", "", -1)) }
+
+// A project's VNet is created in the VXLAN zone once, applied, and its servers' net0 sits on it.
+func TestEnsureVNetAndServerOnIt(t *testing.T) {
+	h := newHarness(t)
+	vnet := map[string]interface{}{"vnet": "pn255s", "zone": "tenants", "tag": 100000, "alias": "project proj_1"}
+
+	if r := h.job(protocol.JobEnsureVNet, vnet); r.OK || r.Error.Code != "sdn_zone_missing" || r.Error.Retryable {
+		t.Fatalf("expected a permanent sdn_zone_missing without the zone, got %+v", r)
+	}
+	h.sim.AddZone("tenants", "vxlan")
+	r := h.mustOK(h.job(protocol.JobEnsureVNet, vnet))
+	if res := r.Result.(map[string]interface{}); res["created"] != true || res["applied"] != true {
+		t.Fatalf("vnet not created and applied: %v", res)
+	}
+	if v := h.sim.GetVNet("pn255s"); v == nil || v.Zone != "tenants" || v.Tag != 100000 || v.Pending || h.sim.SDNApplyCount() != 1 {
+		t.Fatalf("vnet state wrong: %+v, applies %d", v, h.sim.SDNApplyCount())
+	}
+	// Idempotent: nothing to create or apply the second time.
+	r = h.mustOK(h.job(protocol.JobEnsureVNet, vnet))
+	if res := r.Result.(map[string]interface{}); res["created"] != false || res["applied"] != false || h.sim.SDNApplyCount() != 1 {
+		t.Fatalf("second ensure changed something: %v, applies %d", res, h.sim.SDNApplyCount())
+	}
+	// The same id with another tag is a conflict, not something to paper over.
+	if r := h.job(protocol.JobEnsureVNet, map[string]interface{}{"vnet": "pn255s", "zone": "tenants", "tag": 100001}); r.OK || r.Error.Code != "sdn_vnet_conflict" {
+		t.Fatalf("expected sdn_vnet_conflict, got %+v", r)
+	}
+	h.sim.AddZone("plain", "simple")
+	if r := h.job(protocol.JobEnsureVNet, map[string]interface{}{"vnet": "pn255t", "zone": "plain", "tag": 100001}); r.OK || r.Error.Code != "sdn_zone_type" {
+		t.Fatalf("expected sdn_zone_type for a simple zone, got %+v", r)
+	}
+
+	sp := spec("srv_vnet")
+	sp.PrivateBridge = "pn255s"
+	vmid, _ := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": sp})))
+	vm := h.sim.VM(vmid)
+	if !strings.HasSuffix(vm.Config["net0"], ",bridge=pn255s,firewall=1,mtu=1") || vm.Config["ipconfig0"] != "ip=10.96.0.2/24" || vm.Status != "running" {
+		t.Fatalf("net0 not on the project's vnet: %v (%s)", vm.Config, vm.Status)
+	}
+	// A VNet that was never applied has no bridge on the node: the VM cannot start and is removed.
+	sp = spec("srv_novnet")
+	sp.PrivateBridge = "pnmissing"
+	if r := h.job(protocol.JobCreate, map[string]interface{}{"spec": sp}); r.OK || !strings.Contains(r.Error.Message, "bridge 'pnmissing' does not exist") {
+		t.Fatalf("expected the start to fail on a missing bridge, got %+v", r)
+	}
+}
+
+// The IP filter only lets each NIC send from its allocated addresses, and never cuts off a NIC
+// whose static address the control plane does not confirm.
+func TestIPFilter(t *testing.T) {
+	h := newHarness(t)
+	vmid, ref := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_ipf")})))
+	rules := []protocol.FirewallRule{{Direction: "inbound", Protocol: "tcp", Ports: "22", Cidrs: []string{"0.0.0.0/0"}}}
+	apply := func(addrs map[string][]string) *pvesim.VM {
+		t.Helper()
+		params := map[string]interface{}{"vmRef": ref, "rules": rules}
+		if addrs != nil {
+			params["addresses"] = addrs
+		}
+		h.mustOK(h.job(protocol.JobApplyFirewall, params))
+		return h.sim.VM(vmid)
+	}
+
+	// A load balancer node: its own public address plus the VIP keepalived may move onto it.
+	vm := apply(map[string][]string{"net0": {"10.96.0.2"}, "net1": {"203.0.113.10", "203.0.113.50"}})
+	if vm.FWOpts["ipfilter"] != "1" || strings.Join(vm.IPSets["ipfilter-net0"], ",") != "10.96.0.2" || strings.Join(vm.IPSets["ipfilter-net1"], ",") != "203.0.113.10,203.0.113.50" {
+		t.Fatalf("ip filter not set: opts %v sets %v", vm.FWOpts, vm.IPSets)
+	}
+	vm = apply(map[string][]string{"net0": {"10.96.0.2"}, "net1": {"203.0.113.10"}})
+	if strings.Join(vm.IPSets["ipfilter-net1"], ",") != "203.0.113.10" {
+		t.Fatalf("stale address kept in the set: %v", vm.IPSets)
+	}
+	// An address the VM is not configured with (a restore to an older config): that NIC stays
+	// unfiltered and the filter goes off, so nothing is cut off.
+	vm = apply(map[string][]string{"net0": {"10.96.0.9"}, "net1": {"203.0.113.10"}})
+	if _, has := vm.IPSets["ipfilter-net0"]; has || vm.FWOpts["ipfilter"] != "0" || len(vm.IPSets["ipfilter-net1"]) != 1 {
+		t.Fatalf("unconfirmed nic filtered: opts %v sets %v", vm.FWOpts, vm.IPSets)
+	}
+	// Floating addresses keep the net1 set in step while the filter is on.
+	apply(map[string][]string{"net0": {"10.96.0.2"}, "net1": {"203.0.113.10"}})
+	h.mustOK(h.job(protocol.JobDetachIP, map[string]interface{}{"vmRef": ref, "address": "203.0.113.10"}))
+	if _, has := h.sim.VM(vmid).IPSets["ipfilter-net1"]; has {
+		t.Fatal("net1 set left behind after detach")
+	}
+	h.mustOK(h.job(protocol.JobAttachIP, map[string]interface{}{"vmRef": ref, "ip": protocol.PublicIP{Address: "198.51.100.7", Gateway: "198.51.100.1", Prefix: 24}}))
+	if got := h.sim.VM(vmid).IPSets["ipfilter-net1"]; strings.Join(got, ",") != "198.51.100.7" {
+		t.Fatalf("attached address not allowed on net1: %v", got)
+	}
+	// An older control plane sends no addresses: the filter goes off.
+	if vm := apply(nil); vm.FWOpts["ipfilter"] != "0" {
+		t.Fatalf("ip filter left on without addresses: %v", vm.FWOpts)
+	}
+
+	// A server still on DHCP is never filtered on net0.
+	sp := spec("srv_ipf_dhcp")
+	sp.PrivateIP = nil
+	dvmid, dref := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": sp})))
+	h.mustOK(h.job(protocol.JobApplyFirewall, map[string]interface{}{"vmRef": dref, "rules": rules, "addresses": map[string][]string{"net1": {"203.0.113.10"}}}))
+	if d := h.sim.VM(dvmid); d.FWOpts["ipfilter"] != "0" || d.IPSets["ipfilter-net0"] != nil {
+		t.Fatalf("dhcp nic filtered: opts %v sets %v", d.FWOpts, d.IPSets)
+	}
+}

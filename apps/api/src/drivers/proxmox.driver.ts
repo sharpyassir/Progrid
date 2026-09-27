@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { NatsService, Subjects } from '../common/nats/nats.service';
 import { Job, JobKind, JobResult } from './agent-protocol';
-import { FirewallRuleSpec, HypervisorDriver, VmHandle, VmSpec, VmStatus } from './hypervisor.driver';
+import { FirewallRuleSpec, HypervisorDriver, NicAddresses, PrivateNetworkSpec, VmHandle, VmSpec, VmStatus } from './hypervisor.driver';
 
 /** Error raised when the host agent reports a failure. `retryable` drives Temporal retry policy. */
 export class AgentJobError extends Error {
@@ -106,7 +106,11 @@ export class ProxmoxDriver implements HypervisorDriver {
   async detachPublicIp(hostRef: string, vmRef: string, address: string) {
     await this.job(hostRef, 'net.detach_ip', { vmRef, address });
   }
-  async applyFirewall(hostRef: string, vmRef: string, rules: FirewallRuleSpec[]) {
-    await this.job(hostRef, 'net.apply_firewall', { vmRef, rules });
+  async applyFirewall(hostRef: string, vmRef: string, rules: FirewallRuleSpec[], addresses?: NicAddresses) {
+    await this.job(hostRef, 'net.apply_firewall', { vmRef, rules, ...(addresses ? { addresses } : {}) });
+  }
+  /** Applying the SDN config reloads the network on every node, so it gets a few minutes. */
+  async ensurePrivateNetwork(hostRef: string, net: PrivateNetworkSpec) {
+    await this.job(hostRef, 'net.ensure_vnet', { ...net }, 360_000, `net.ensure_vnet:${net.vnet}:${net.tag}`);
   }
 }

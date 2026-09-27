@@ -40,10 +40,20 @@ type VM struct {
 	CloudInitRegens int
 	FWRules         []map[string]string
 	FWOpts          map[string]string
-	StartedAt       time.Time
+	// IPSets are the VM's firewall IP sets (ipfilter-net0, ...): name → cidrs.
+	IPSets    map[string][]string
+	StartedAt time.Time
 	// GuestAddrs, when set, is what the guest agent reports instead of the addresses from
 	// ipconfig0 and ipconfig1 (a guest that changed its own network config).
 	GuestAddrs []string
+}
+
+// VNet is a simulated SDN VNet. Pending is true from creation until PUT /cluster/sdn.
+type VNet struct {
+	Zone    string
+	Tag     int
+	Alias   string
+	Pending bool
 }
 
 type task struct {
@@ -65,6 +75,15 @@ type Sim struct {
 	// Volumes are standalone images on the storage: name → size in GB.
 	Volumes map[string]int
 
+	// Zones are the SDN zones an operator created (id → type, e.g. "vxlan"). VNets are
+	// created by the agent; a VNet's bridge exists on the node only once applied.
+	Zones map[string]string
+	VNets map[string]*VNet
+	// Bridges are the node's plain Linux bridges; a VM NIC on anything else fails to start.
+	Bridges map[string]bool
+	// SDNApplies counts PUT /cluster/sdn calls.
+	SDNApplies int
+
 	mu     sync.Mutex
 	vms    map[int]*VM
 	tasks  map[string]task
@@ -83,6 +102,7 @@ func New(node string) *Sim {
 		BootDelay: 200 * time.Millisecond, TaskDelay: 50 * time.Millisecond,
 		vms:   map[int]*VM{9000: {VMID: 9000, Name: "ubuntu-24-04-template", Template: true, Status: "stopped", Cores: 1, MemoryMb: 1024, DiskGb: 10}},
 		tasks: map[string]task{}, nextID: 100, fail: map[string]int{}, Volumes: map[string]int{},
+		Zones: map[string]string{}, VNets: map[string]*VNet{}, Bridges: map[string]bool{"customers": true, "vmbr0": true},
 	}
 	s.srv = httptest.NewServer(http.HandlerFunc(s.handle))
 	return s
@@ -117,6 +137,31 @@ func (s *Sim) SetNetOut(vmid int, bytes int64) {
 	if v, ok := s.vms[vmid]; ok {
 		v.NetOut = bytes
 	}
+}
+
+// AddZone creates an SDN zone, as an operator does once per cluster.
+func (s *Sim) AddZone(zone, typ string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Zones[zone] = typ
+}
+
+// GetVNet returns a copy of the VNet or nil.
+func (s *Sim) GetVNet(id string) *VNet {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if v, ok := s.VNets[id]; ok {
+		c := *v
+		return &c
+	}
+	return nil
+}
+
+// SDNApplyCount returns how often the SDN config was applied.
+func (s *Sim) SDNApplyCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.SDNApplies
 }
 
 // SetGuestAddresses overrides the addresses the VM's guest agent reports.
@@ -168,8 +213,9 @@ func (s *Sim) newTask(exit string) string {
 }
 
 var (
-	reVM   = regexp.MustCompile(`^/nodes/([^/]+)/qemu/(\d+)(/.*)?$`)
-	reTask = regexp.MustCompile(`^/nodes/([^/]+)/tasks/([^/]+)/status$`)
+	reVNetID = regexp.MustCompile(`^[a-z][a-z0-9]{1,7}$`)
+	reVM     = regexp.MustCompile(`^/nodes/([^/]+)/qemu/(\d+)(/.*)?$`)
+	reTask   = regexp.MustCompile(`^/nodes/([^/]+)/tasks/([^/]+)/status$`)
 )
 
 func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
@@ -242,6 +288,70 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		delete(s.Volumes, name)
+		ok(s.newTask("OK"))
+		return
+	case strings.HasPrefix(path, "/cluster/sdn/zones/") && r.Method == http.MethodGet:
+		id := strings.TrimPrefix(path, "/cluster/sdn/zones/")
+		typ, found := s.Zones[id]
+		if !found {
+			fail(500, "sdn '"+id+"' does not exist")
+			return
+		}
+		ok(map[string]interface{}{"zone": id, "type": typ})
+		return
+	case strings.HasPrefix(path, "/cluster/sdn/vnets/") && r.Method == http.MethodGet:
+		id := strings.TrimPrefix(path, "/cluster/sdn/vnets/")
+		v, found := s.VNets[id]
+		if !found || (v.Pending && r.URL.Query().Get("pending") != "1") {
+			fail(500, "sdn '"+id+"' does not exist")
+			return
+		}
+		out := map[string]interface{}{"vnet": id, "zone": v.Zone, "tag": v.Tag, "type": "vnet"}
+		if v.Alias != "" {
+			out["alias"] = v.Alias
+		}
+		if v.Pending {
+			out["state"] = "new"
+		}
+		ok(out)
+		return
+	case path == "/cluster/sdn/vnets" && r.Method == http.MethodPost:
+		id, zone := r.Form.Get("vnet"), r.Form.Get("zone")
+		tag, _ := strconv.Atoi(r.Form.Get("tag"))
+		if !reVNetID.MatchString(id) {
+			fail(400, "vnet: invalid format - vnet ID must be at most 8 characters, starting with a letter")
+			return
+		}
+		if _, found := s.Zones[zone]; !found {
+			fail(500, "zone '"+zone+"' does not exist")
+			return
+		}
+		if _, dup := s.VNets[id]; dup {
+			fail(500, "sdn '"+id+"' already defined")
+			return
+		}
+		if tag < 1 || tag > 16777215 {
+			fail(400, "tag: invalid vxlan tag")
+			return
+		}
+		for other, v := range s.VNets {
+			if v.Zone == zone && v.Tag == tag {
+				fail(500, fmt.Sprintf("tag %d already exists in vnet %s", tag, other))
+				return
+			}
+		}
+		s.VNets[id] = &VNet{Zone: zone, Tag: tag, Alias: r.Form.Get("alias"), Pending: true}
+		ok(nil)
+		return
+	case path == "/cluster/sdn" && r.Method == http.MethodPut:
+		if s.shouldFail("sdn_apply") {
+			ok(s.newTask("reload network failed: simulated fault"))
+			return
+		}
+		for _, v := range s.VNets {
+			v.Pending = false
+		}
+		s.SDNApplies++
 		ok(s.newTask("OK"))
 		return
 	case path == "/nodes/"+s.Node+"/qemu" && r.Method == http.MethodGet:
@@ -419,6 +529,10 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 		op := strings.TrimPrefix(sub, "/status/")
 		e := exit(op)
 		if e == "OK" {
+			if missing := s.missingBridge(vm); missing != "" && (op == "start" || op == "reboot") {
+				ok(s.newTask("bridge '" + missing + "' does not exist"))
+				return
+			}
 			switch op {
 			case "start":
 				vm.Status, vm.StartedAt = "running", time.Now()
@@ -509,6 +623,94 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		vm.Snaps = kept
 		ok(s.newTask("OK"))
+		return
+	case sub == "/firewall/options" && r.Method == http.MethodGet:
+		if vm == nil {
+			notExist()
+			return
+		}
+		out := map[string]interface{}{}
+		for k, v := range vm.FWOpts {
+			if n, err := strconv.Atoi(v); err == nil {
+				out[k] = n
+			} else {
+				out[k] = v
+			}
+		}
+		ok(out)
+		return
+	case sub == "/firewall/ipset" && r.Method == http.MethodGet:
+		if vm == nil {
+			notExist()
+			return
+		}
+		out := []map[string]string{}
+		for name := range vm.IPSets {
+			out = append(out, map[string]string{"name": name})
+		}
+		ok(out)
+		return
+	case sub == "/firewall/ipset" && r.Method == http.MethodPost:
+		if vm == nil {
+			notExist()
+			return
+		}
+		name := r.Form.Get("name")
+		if _, dup := vm.IPSets[name]; dup {
+			fail(500, "IPSet '"+name+"' already exists")
+			return
+		}
+		if vm.IPSets == nil {
+			vm.IPSets = map[string][]string{}
+		}
+		vm.IPSets[name] = []string{}
+		ok(nil)
+		return
+	case strings.HasPrefix(sub, "/firewall/ipset/"):
+		if vm == nil {
+			notExist()
+			return
+		}
+		name, cidr, withEntry := strings.Cut(strings.TrimPrefix(sub, "/firewall/ipset/"), "/")
+		entries, found := vm.IPSets[name]
+		if !found {
+			fail(500, "no such IPSet '"+name+"'")
+			return
+		}
+		switch {
+		case !withEntry && r.Method == http.MethodGet:
+			out := []map[string]string{}
+			for _, c := range entries {
+				out = append(out, map[string]string{"cidr": c})
+			}
+			ok(out)
+		case !withEntry && r.Method == http.MethodPost:
+			c := r.Form.Get("cidr")
+			if contains(entries, c) {
+				fail(500, "entry '"+c+"' already exists")
+				return
+			}
+			vm.IPSets[name] = append(entries, c)
+			ok(nil)
+		case !withEntry && r.Method == http.MethodDelete:
+			if len(entries) > 0 && r.URL.Query().Get("force") != "1" {
+				fail(500, "IPSet '"+name+"' is not empty")
+				return
+			}
+			delete(vm.IPSets, name)
+			ok(nil)
+		case withEntry && r.Method == http.MethodDelete:
+			kept := []string{}
+			for _, c := range entries {
+				if c != cidr {
+					kept = append(kept, c)
+				}
+			}
+			vm.IPSets[name] = kept
+			ok(nil)
+		default:
+			fail(501, "pvesim: unhandled "+r.Method+" "+path)
+		}
 		return
 	case sub == "/firewall/options" && r.Method == http.MethodPut:
 		if vm == nil {
@@ -611,6 +813,25 @@ func guestInterfaces(vm *VM) []map[string]interface{} {
 		out = append(out, map[string]interface{}{"name": "eth" + strconv.Itoa(i), "hardware-address": mac, "ip-addresses": ips})
 	}
 	return out
+}
+
+// missingBridge returns the first bridge a NIC of the VM uses that the node does not have: a
+// plain bridge, or an SDN VNet whose config was applied.
+func (s *Sim) missingBridge(vm *VM) string {
+	for k, v := range vm.Config {
+		if !isNIC(k) {
+			continue
+		}
+		for _, part := range strings.Split(v, ",") {
+			if b, ok := strings.CutPrefix(part, "bridge="); ok {
+				if vn, isVNet := s.VNets[b]; s.Bridges[b] || (isVNet && !vn.Pending) {
+					continue
+				}
+				return b
+			}
+		}
+	}
+	return ""
 }
 
 func contains(list []string, v string) bool {

@@ -440,13 +440,23 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 		var p struct {
 			VmRef string                  `json:"vmRef"`
 			Rules []protocol.FirewallRule `json:"rules"`
+			// Addresses each NIC may send from ("net0": private, "net1": public and VIPs).
+			// Absent from older control planes: the IP filter then stays off.
+			Addresses map[string][]string `json:"addresses"`
 		}
 		json.Unmarshal(job.Params, &p)
 		ref, err := parseRef(p.VmRef)
 		if err != nil {
 			return nil, err
 		}
-		return nil, a.pve.SetFirewall(ctx, ref.VMID, toPVERules(p.Rules))
+		return nil, a.applyFirewall(ctx, ref.VMID, toPVERules(p.Rules), p.Addresses, log)
+
+	case protocol.JobEnsureVNet:
+		var p protocol.VNetSpec
+		if err := json.Unmarshal(job.Params, &p); err != nil || p.VNet == "" || p.Zone == "" || p.Tag <= 0 {
+			return nil, permanent{"bad_params", fmt.Errorf("vnet, zone and tag are required")}
+		}
+		return a.ensureVNet(ctx, p)
 
 	case protocol.JobVolumeCreate:
 		var p struct {
@@ -597,6 +607,10 @@ func (a *Agent) create(ctx context.Context, spec protocol.VmSpec, log *slog.Logg
 		PrivateIP: "dhcp", Bridge: a.cfg.Proxmox.Bridge, PublicBr: a.cfg.Proxmox.PublicBridge,
 		Tags: "pgcloud;server-" + spec.ServerID + ";project-" + strings.TrimPrefix(spec.NetworkRef, "vpc-"),
 	}
+	if spec.PrivateBridge != "" {
+		// The project's own VNet; VXLAN leaves 1450 bytes, which the NIC takes from the bridge.
+		cfg.Bridge, cfg.BridgeMTU = spec.PrivateBridge, true
+	}
 	if spec.PrivateIP != nil && spec.PrivateIP.Address != "" && spec.PrivateIP.Prefix > 0 {
 		// A static address known before boot; the private NIC gets no gateway.
 		cfg.PrivateIP = fmt.Sprintf("%s/%d", spec.PrivateIP.Address, spec.PrivateIP.Prefix)
@@ -644,6 +658,14 @@ func (a *Agent) attachIP(ctx context.Context, vmid int, ip protocol.PublicIP) er
 	if err := a.pve.SetConfig(ctx, vmid, url.Values{"net1": {nic}, "ipconfig1": {ipconfig}}); err != nil {
 		return err
 	}
+	// With the IP filter on, a NIC without its IP set may send from nothing: give net1 the address.
+	if opts, err := a.pve.FirewallOptions(ctx, vmid); err != nil {
+		return err
+	} else if opts["ipfilter"] == "1" {
+		if err := a.pve.SyncIPSet(ctx, vmid, "ipfilter-net1", []string{ip.Address}); err != nil {
+			return err
+		}
+	}
 	return a.pve.RegenerateCloudInit(ctx, vmid)
 }
 
@@ -660,7 +682,120 @@ func (a *Agent) detachIP(ctx context.Context, vmid int, address string) error {
 	if err := a.pve.DeleteConfig(ctx, vmid, "net1", "ipconfig1"); err != nil {
 		return err
 	}
+	if err := a.pve.DeleteIPSet(ctx, vmid, "ipfilter-net1"); err != nil {
+		return err
+	}
 	return a.pve.RegenerateCloudInit(ctx, vmid)
+}
+
+// applyFirewall sets the rules and the IP filter. A NIC gets an ipfilter-net<N> IP set only
+// when its cloud-init config carries a static address that is among the addresses the control
+// plane sent for it; the filter option goes on only when every NIC has one. A NIC still on
+// DHCP (a server from before static addresses, or one rolled back to such a snapshot) is left
+// unfiltered, since filtering it would cut it off.
+func (a *Agent) applyFirewall(ctx context.Context, vmid int, rules []proxmox.FWRule, addrs map[string][]string, log *slog.Logger) error {
+	if addrs == nil {
+		return a.pve.SetFirewall(ctx, vmid, rules, false)
+	}
+	cfg, err := a.pve.Config(ctx, vmid)
+	if err != nil {
+		return err
+	}
+	var nics []string
+	for k := range cfg {
+		if n, ok := strings.CutPrefix(k, "net"); ok && n != "" && strings.Trim(n, "0123456789") == "" {
+			nics = append(nics, k)
+		}
+	}
+	sets := map[string][]string{}
+	all := true
+	for _, k := range nics {
+		static := staticAddress(cfg["ipconfig"+strings.TrimPrefix(k, "net")])
+		if static != "" && containsString(addrs[k], static) {
+			sets[k] = addrs[k]
+		} else {
+			all = false
+			log.Warn("ip filter left off for a nic without a matching static address", "nic", k, "ipconfig", cfg["ipconfig"+strings.TrimPrefix(k, "net")], "allowed", addrs[k])
+		}
+	}
+	enable := all && len(sets) > 0
+	if !enable {
+		// Turn the filter off before removing sets, so no NIC is ever filtered with an empty set.
+		if err := a.pve.SetFirewall(ctx, vmid, rules, false); err != nil {
+			return err
+		}
+	}
+	for _, k := range nics {
+		if list, ok := sets[k]; ok {
+			err = a.pve.SyncIPSet(ctx, vmid, "ipfilter-"+k, list)
+		} else {
+			err = a.pve.DeleteIPSet(ctx, vmid, "ipfilter-"+k)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	if enable {
+		return a.pve.SetFirewall(ctx, vmid, rules, true)
+	}
+	return nil
+}
+
+// ensureVNet creates the project's VNet in the VXLAN zone when it is missing and applies the
+// SDN config, which creates the VNet's bridge on every node of the cluster. Idempotent: an
+// existing VNet with the same zone and tag is applied only when it still has pending changes.
+func (a *Agent) ensureVNet(ctx context.Context, p protocol.VNetSpec) (interface{}, error) {
+	zoneType, err := a.pve.SDNZone(ctx, p.Zone)
+	if err != nil {
+		return nil, err
+	}
+	if zoneType == "" {
+		return nil, permanent{"sdn_zone_missing", fmt.Errorf("SDN zone %q does not exist; create it on the cluster first", p.Zone)}
+	}
+	if zoneType != "vxlan" && zoneType != "evpn" {
+		return nil, permanent{"sdn_zone_type", fmt.Errorf("SDN zone %q is %s, not vxlan or evpn", p.Zone, zoneType)}
+	}
+	v, err := a.pve.SDNVNet(ctx, p.VNet)
+	if err != nil {
+		return nil, err
+	}
+	created := false
+	switch {
+	case v == nil:
+		if err := a.pve.CreateVNet(ctx, p.VNet, p.Zone, p.Tag, p.Alias); err != nil {
+			return nil, err
+		}
+		created = true
+	case v.Zone != p.Zone || v.Tag != p.Tag:
+		return nil, permanent{"sdn_vnet_conflict", fmt.Errorf("VNet %s exists in zone %s with tag %d, not zone %s tag %d", p.VNet, v.Zone, v.Tag, p.Zone, p.Tag)}
+	}
+	applied := false
+	if created || (v != nil && v.State != "") {
+		if err := a.pve.ApplySDN(ctx); err != nil {
+			return nil, err
+		}
+		applied = true
+	}
+	return map[string]interface{}{"vnet": p.VNet, "created": created, "applied": applied}, nil
+}
+
+// staticAddress returns the address of a cloud-init ipconfig with a static IPv4 ("ip=10.96.0.2/24,gw=..."), or "".
+func staticAddress(ipconfig string) string {
+	for _, part := range strings.Split(ipconfig, ",") {
+		if v, ok := strings.CutPrefix(part, "ip="); ok && v != "dhcp" {
+			return strings.SplitN(v, "/", 2)[0]
+		}
+	}
+	return ""
+}
+
+func containsString(list []string, v string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
 
 // findByTag lists the VMs on this node that carry the tag, as vmRefs. The control plane uses

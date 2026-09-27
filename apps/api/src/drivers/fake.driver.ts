@@ -116,6 +116,9 @@ export class FakeDriver implements HypervisorDriver {
     if (vm) vm.rules = rules;
   }
 
+  /** The fake hypervisor has no SDN; every private network already exists. */
+  async ensurePrivateNetwork() {}
+
   private mustGet(vmRef: string): FakeVm {
     const vm = this.vms.get(vmRef);
     if (!vm) throw new Error(`fake vm ${vmRef} not found`);

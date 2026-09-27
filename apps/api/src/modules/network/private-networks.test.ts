@@ -72,7 +72,7 @@ function fakePrisma() {
 describe('PrivateNetworksService', () => {
   it('gives each project its own /24 from the pool and servers .2 upward', async () => {
     const db = fakePrisma();
-    const svc = new PrivateNetworksService(db as any);
+    const svc = new PrivateNetworksService(db as any, {} as any);
     const a1 = await svc.reserveForServer({ id: 's1', projectId: 'pA', regionId: 'sa1' });
     const a2 = await svc.reserveForServer({ id: 's2', projectId: 'pA', regionId: 'sa1' });
     const b1 = await svc.reserveForServer({ id: 's3', projectId: 'pB', regionId: 'sa1' });
@@ -82,7 +82,7 @@ describe('PrivateNetworksService', () => {
 
   it('keeps the address across retries and reuses a released one', async () => {
     const db = fakePrisma();
-    const svc = new PrivateNetworksService(db as any);
+    const svc = new PrivateNetworksService(db as any, {} as any);
     const first = await svc.reserveForServer({ id: 's1', projectId: 'pA', regionId: 'sa1' });
     expect((await svc.reserveForServer({ id: 's1', projectId: 'pA', regionId: 'sa1' })).address).toBe(first.address);
     await svc.releaseForServer('s1');
@@ -92,7 +92,7 @@ describe('PrivateNetworksService', () => {
 
   it('never hands out the same address to concurrent creates', async () => {
     const db = fakePrisma();
-    const svc = new PrivateNetworksService(db as any);
+    const svc = new PrivateNetworksService(db as any, {} as any);
     const got = await Promise.all(Array.from({ length: 20 }, (_, i) => svc.reserveForServer({ id: `s${i}`, projectId: 'pA', regionId: 'sa1' })));
     expect(new Set(got.map((g) => g.address)).size).toBe(20);
     expect(db.nets).toHaveLength(1);

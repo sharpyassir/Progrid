@@ -159,11 +159,18 @@ type VMConfig struct {
 	Gateway   string
 	PrivateIP string // "10.96.3.7/24" (static, no gateway), or "dhcp" when the control plane sent none
 	Bridge    string
+	// BridgeMTU makes net0 take the bridge MTU (mtu=1), which the guest then learns from virtio.
+	// Set for SDN VNets, where VXLAN leaves 1450 bytes.
+	BridgeMTU bool
 	PublicBr  string
 	Tags      string
 }
 
 func (c *Client) Configure(ctx context.Context, vmid int, v VMConfig) error {
+	net0 := "virtio,bridge=" + v.Bridge + ",firewall=1"
+	if v.BridgeMTU {
+		net0 += ",mtu=1"
+	}
 	f := url.Values{
 		"cores":     {fmt.Sprint(v.Cores)},
 		"memory":    {fmt.Sprint(v.MemoryMb)},
@@ -172,7 +179,7 @@ func (c *Client) Configure(ctx context.Context, vmid int, v VMConfig) error {
 		"name":      {v.Hostname},
 		"tags":      {v.Tags},
 		"ciuser":    {"root"},
-		"net0":      {"virtio,bridge=" + v.Bridge + ",firewall=1"},
+		"net0":      {net0},
 		"ipconfig0": {"ip=" + v.PrivateIP},
 	}
 	if v.PublicIP != "" {
@@ -345,8 +352,13 @@ type FWRule struct {
 }
 
 // SetFirewall replaces the VM's rule set and enables the firewall with default DROP in / ACCEPT out.
-func (c *Client) SetFirewall(ctx context.Context, vmid int, rules []FWRule) error {
-	opts := url.Values{"enable": {"1"}, "policy_in": {"DROP"}, "policy_out": {"ACCEPT"}, "dhcp": {"1"}, "ndp": {"1"}}
+// ipfilter turns on the IP filter: each NIC may only send from the addresses in its
+// ipfilter-net<N> IP set, and a NIC without such a set may send from none.
+func (c *Client) SetFirewall(ctx context.Context, vmid int, rules []FWRule, ipfilter bool) error {
+	opts := url.Values{"enable": {"1"}, "policy_in": {"DROP"}, "policy_out": {"ACCEPT"}, "dhcp": {"1"}, "ndp": {"1"}, "ipfilter": {"0"}}
+	if ipfilter {
+		opts.Set("ipfilter", "1")
+	}
 	if err := c.do(ctx, http.MethodPut, c.vmPath(vmid, "/firewall/options"), opts, nil); err != nil {
 		return err
 	}
@@ -386,6 +398,148 @@ func (c *Client) SetFirewall(ctx context.Context, vmid int, rules []FWRule) erro
 		}
 	}
 	return nil
+}
+
+// FirewallOptions returns the VM's firewall options (enable, ipfilter, policy_in, ...).
+func (c *Client) FirewallOptions(ctx context.Context, vmid int) (map[string]string, error) {
+	var raw map[string]interface{}
+	if err := c.do(ctx, http.MethodGet, c.vmPath(vmid, "/firewall/options"), nil, &raw); err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for k, v := range raw {
+		out[k] = fmt.Sprint(v)
+	}
+	return out, nil
+}
+
+// SyncIPSet makes the VM's IP set hold exactly cidrs, creating the set when missing. The
+// ipfilter-net<N> sets are what the IP filter allows a NIC to send from.
+func (c *Client) SyncIPSet(ctx context.Context, vmid int, name string, cidrs []string) error {
+	exists, err := c.hasIPSet(ctx, vmid, name)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		if err := c.do(ctx, http.MethodPost, c.vmPath(vmid, "/firewall/ipset"), url.Values{"name": {name}}, nil); err != nil {
+			return err
+		}
+	}
+	var entries []struct {
+		CIDR string `json:"cidr"`
+	}
+	if err := c.do(ctx, http.MethodGet, c.vmPath(vmid, "/firewall/ipset/"+name), nil, &entries); err != nil {
+		return err
+	}
+	want := map[string]bool{}
+	for _, cidr := range cidrs {
+		want[cidr] = true
+	}
+	have := map[string]bool{}
+	for _, e := range entries {
+		have[e.CIDR] = true
+		if !want[e.CIDR] {
+			if err := c.do(ctx, http.MethodDelete, c.vmPath(vmid, "/firewall/ipset/"+name+"/"+url.PathEscape(e.CIDR)), nil, nil); err != nil {
+				return err
+			}
+		}
+	}
+	for _, cidr := range cidrs {
+		if !have[cidr] {
+			if err := c.do(ctx, http.MethodPost, c.vmPath(vmid, "/firewall/ipset/"+name), url.Values{"cidr": {cidr}}, nil); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// DeleteIPSet removes the VM's IP set with its entries. A missing set is fine.
+func (c *Client) DeleteIPSet(ctx context.Context, vmid int, name string) error {
+	exists, err := c.hasIPSet(ctx, vmid, name)
+	if err != nil || !exists {
+		return err
+	}
+	return c.do(ctx, http.MethodDelete, c.vmPath(vmid, "/firewall/ipset/"+name+"?force=1"), nil, nil)
+}
+
+func (c *Client) hasIPSet(ctx context.Context, vmid int, name string) (bool, error) {
+	var sets []struct {
+		Name string `json:"name"`
+	}
+	if err := c.do(ctx, http.MethodGet, c.vmPath(vmid, "/firewall/ipset"), nil, &sets); err != nil {
+		return false, err
+	}
+	for _, s := range sets {
+		if s.Name == name {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// ---- SDN (cluster wide: one agent creates a VNet, every node gets its bridge) ----
+
+// SDNZone returns the zone's type ("vxlan", "evpn", ...), or "" when the zone does not exist.
+func (c *Client) SDNZone(ctx context.Context, zone string) (string, error) {
+	var z struct {
+		Type string `json:"type"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/cluster/sdn/zones/"+url.PathEscape(zone), nil, &z); err != nil {
+		if isMissing(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	return z.Type, nil
+}
+
+// VNet is an SDN VNet as the API returns it with pending=1; State is "new" or "changed" until
+// the SDN config is applied.
+type VNet struct {
+	VNet  string `json:"vnet"`
+	Zone  string `json:"zone"`
+	Tag   int    `json:"tag"`
+	State string `json:"state"`
+}
+
+// SDNVNet returns the VNet including pending changes, or nil when it does not exist.
+func (c *Client) SDNVNet(ctx context.Context, vnet string) (*VNet, error) {
+	var v VNet
+	if err := c.do(ctx, http.MethodGet, "/cluster/sdn/vnets/"+url.PathEscape(vnet)+"?pending=1", nil, &v); err != nil {
+		if isMissing(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &v, nil
+}
+
+// CreateVNet adds a VNet to a zone: POST /cluster/sdn/vnets. It exists only in the pending
+// config until ApplySDN.
+func (c *Client) CreateVNet(ctx context.Context, vnet, zone string, tag int, alias string) error {
+	f := url.Values{"vnet": {vnet}, "zone": {zone}, "tag": {fmt.Sprint(tag)}}
+	if alias != "" {
+		f.Set("alias", alias)
+	}
+	return c.do(ctx, http.MethodPost, "/cluster/sdn/vnets", f, nil)
+}
+
+// ApplySDN applies the pending SDN config on every node (PUT /cluster/sdn) and waits for it.
+func (c *Client) ApplySDN(ctx context.Context) error {
+	var upid string
+	if err := c.do(ctx, http.MethodPut, "/cluster/sdn", url.Values{}, &upid); err != nil {
+		return err
+	}
+	if upid == "" {
+		return nil
+	}
+	return c.waitTask(ctx, upid, 5*time.Minute)
+}
+
+func isMissing(err error) bool {
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && (apiErr.Status == 404 || apiErr.Status == 500) && (strings.Contains(apiErr.Body, "does not exist") || strings.Contains(apiErr.Body, "no such"))
 }
 
 // ---- block volumes (Ceph RBD images owned by a reserved vmid) ----

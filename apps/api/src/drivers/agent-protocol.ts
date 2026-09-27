@@ -19,6 +19,7 @@ export type JobKind =
   | 'net.attach_ip'
   | 'net.detach_ip'
   | 'net.apply_firewall'
+  | 'net.ensure_vnet'
   | 'volume.create'
   | 'volume.attach'
   | 'volume.detach'

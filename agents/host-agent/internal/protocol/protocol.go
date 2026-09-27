@@ -19,6 +19,7 @@ const (
 	JobAttachIP      = "net.attach_ip"
 	JobDetachIP      = "net.detach_ip"
 	JobApplyFirewall = "net.apply_firewall"
+	JobEnsureVNet    = "net.ensure_vnet"
 	JobVolumeCreate  = "volume.create"
 	JobVolumeAttach  = "volume.attach"
 	JobVolumeDetach  = "volume.detach"
@@ -75,6 +76,17 @@ type VmSpec struct {
 	PublicIP   *PublicIP `json:"publicIp,omitempty"`
 	// PrivateIP is nil for control planes that predate allocation; net0 then uses DHCP.
 	PrivateIP *PrivateIP `json:"privateIp,omitempty"`
+	// PrivateBridge is the project's SDN VNet for net0 (PRIVATE_NETWORK_MODE=sdn_vnet). Empty
+	// means the agent's shared bridge.
+	PrivateBridge string `json:"privateBridge,omitempty"`
+}
+
+// VNetSpec asks for a project's VNet in the VXLAN zone (net.ensure_vnet).
+type VNetSpec struct {
+	VNet  string `json:"vnet"`
+	Zone  string `json:"zone"`
+	Tag   int    `json:"tag"`
+	Alias string `json:"alias,omitempty"`
 }
 
 type VmHandle struct {

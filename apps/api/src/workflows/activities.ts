@@ -175,6 +175,7 @@ export function createActivities(app: INestApplicationContext): Activities {
       const ip = s.publicIps[0];
       // The private address is allocated here, before the VM exists, and kept across retries and rebuilds.
       const priv = await wrap(privateNetworks.reserveForServer(s));
+      const privateBridge = await wrap(privateNetworks.bridgeFor(priv.network, hostRef(s)));
       // Retries of this activity keep the workflow id, so the agent recognizes the repeated create.
       const info = Context.current().info;
       const heartbeat = setInterval(() => Context.current().heartbeat(), 20_000);
@@ -193,6 +194,7 @@ export function createActivities(app: INestApplicationContext): Activities {
           networkRef: `vpc-${s.projectId}`,
           publicIp: ip ? { address: ip.address, gateway: ip.block.gateway, prefix: IpsService.prefixOf(ip.block.cidr) } : undefined,
           privateIp: { address: priv.address, prefix: priv.prefix },
+          privateBridge,
         }),
       ).finally(() => clearInterval(heartbeat));
       if (handle.privateIp && handle.privateIp !== priv.address) log.warn(`createVm ${serverId}: the driver reports ${handle.privateIp}, keeping the allocated ${priv.address}`);
@@ -226,7 +228,7 @@ export function createActivities(app: INestApplicationContext): Activities {
     async applyFirewall(serverId) {
       const s = await load(serverId);
       if (!s.driverRef) return;
-      await wrap(driver.applyFirewall(hostRef(s), s.driverRef, await firewalls.effectiveRules(serverId)));
+      await wrap(driver.applyFirewall(hostRef(s), s.driverRef, await firewalls.effectiveRules(serverId), await firewalls.nicAddresses(serverId)));
     },
 
     async startMeter(serverId) {
