@@ -36,7 +36,9 @@ export class AuthGuard implements CanActivate {
     }
 
     const required = this.reflector.getAllAndOverride<string[]>(SCOPES_KEY, [ctx.getHandler(), ctx.getClass()]) ?? [];
-    if (actor.teamStatus === 'suspended' && !allowedWhileSuspended(req.method, req.path, required)) {
+    // Staff keep the back office even if their own team is suspended.
+    const staffCall = req.path.startsWith('/admin/') && actor.scopes.has('admin');
+    if (actor.teamStatus === 'suspended' && !staffCall && !allowedWhileSuspended(req.method, req.path, required)) {
       throw new ApiError(403, 'account_suspended', `This account is suspended. Only billing is available: pay any overdue invoice at ${loadConfig().CONSOLE_URL}/billing, or contact support.`);
     }
     const missing = required.filter((s) => !actor.scopes.has(s));

@@ -10,6 +10,7 @@ import { BOOK_CURRENCY } from '../billing/pricing';
 import { RatingService } from '../billing/rating.service';
 import { InvoicesService } from '../billing/invoices.service';
 import { BillingAdminService } from '../billing/billing-admin.service';
+import { DunningService } from '../billing/dunning.service';
 import { BackupsService } from '../storage/backups.service';
 import { FxService } from '../billing/fx.service';
 import { startOfMonth } from '../billing/pricing';
@@ -88,6 +89,7 @@ export class AdminController {
     private readonly rating: RatingService,
     private readonly invoices: InvoicesService,
     private readonly billingAdmin: BillingAdminService,
+    private readonly dunningService: DunningService,
     private readonly fx: FxService,
     private readonly backups: BackupsService,
   ) {}
@@ -293,6 +295,12 @@ export class AdminController {
   @Post('billing/issue-invoices')
   async issue() {
     return { issued: await this.invoices.issueForPreviousMonth() };
+  }
+
+  /** Runs the daily overdue reminders and suspensions now (a rerun never mails a stage twice). */
+  @Post('billing/dunning') @HttpCode(200)
+  dunning() {
+    return this.dunningService.run();
   }
 
   // ---- exchange rate ----
