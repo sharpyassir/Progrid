@@ -479,6 +479,13 @@ export class KubernetesService {
     const s = await this.servers.create(actor, { name: n.name, size: n.sizeId, image: NODE_IMAGE, project: n.projectId, region: n.regionId, firewalls: [n.firewallId], tags: ['managed-kubernetes', n.role === 'control' ? 'control-plane' : 'worker', `k8s-${clusterId}`], userData: renderKubeCloudInit({ version: n.version, vmSecret: n.vmSecret, vipNetwork: vipNetworkFor(vip?.publicIp?.address) }) }, { spreadGroup });
     await this.prisma.server.update({ where: { id: s.id }, data: { managedBy: `k8s:${clusterId}` } });
     await this.prisma.kubeNode.create({ data: { clusterId, poolId: n.poolId, serverId: s.id, index: n.index, role: n.role } });
+    // A node that reuses the name of one removed earlier must not be drained by node 0 as that one.
+    const c = await this.prisma.kubeCluster.findUniqueOrThrow({ where: { id: clusterId }, select: { cloudState: true } });
+    const state = (c.cloudState ?? {}) as CloudState;
+    if (state.removeNodes?.includes(n.name)) {
+      state.removeNodes = state.removeNodes.filter((x) => x !== n.name);
+      await this.prisma.kubeCluster.update({ where: { id: clusterId }, data: { cloudState: state as object } });
+    }
   }
 
   /** Drain through node 0 on the next push, then delete the servers. */
