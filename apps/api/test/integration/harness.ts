@@ -204,7 +204,7 @@ export function totp(secret: string) {
 
 // ---- waiting ----
 
-export async function waitFor<T>(fn: () => Promise<T | null | undefined | false>, opts: { what: string; timeoutMs?: number; intervalMs?: number }): Promise<T> {
+export async function waitFor<T>(fn: () => Promise<T | null | undefined | false>, opts: { what: string | (() => string); timeoutMs?: number; intervalMs?: number }): Promise<T> {
   const deadline = Date.now() + (opts.timeoutMs ?? 60_000);
   let last: unknown;
   for (;;) {
@@ -215,7 +215,7 @@ export async function waitFor<T>(fn: () => Promise<T | null | undefined | false>
       if ((err as { fatal?: boolean }).fatal) throw err;
       last = err;
     }
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${opts.what}${last ? `: ${(last as Error).message}` : ''}`);
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${typeof opts.what === 'function' ? opts.what() : opts.what}${last ? `: ${(last as Error).message}` : ''}`);
     await new Promise((r) => setTimeout(r, opts.intervalMs ?? 500));
   }
 }
@@ -231,7 +231,7 @@ export async function waitStatus<T extends { status: string; statusMessage?: str
     if (wanted.includes(r.body.status)) return r.body;
     if (r.body.status === 'failed') throw Object.assign(new Error(`${path} failed: ${r.body.statusMessage ?? ''}`), { fatal: true });
     return null;
-  }, { what: `${path} to be ${wanted.join(' or ')} (last ${seen || 'unknown'})`, timeoutMs });
+  }, { what: () => `${path} to be ${wanted.join(' or ')} (last ${seen || 'unknown'})`, timeoutMs });
 }
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

@@ -84,6 +84,34 @@ describe('managed databases', () => {
     const agent = await s.agents.inspect(nodes[2].serverId);
     expect(agent!.last!.cluster.nodes.map((n: { ip: string }) => n.ip)).toEqual(nodes.map((n) => n.server.privateIp));
 
+    // The primary's VM goes down: another node takes over, the event goes out and connections follow it.
+    const primaryIndex = now.nodeStatus.find((n: { role: string }) => n.role === 'primary').index as number;
+    const primaryServer = nodes[primaryIndex].serverId;
+    await c.ok('POST', `/v1/servers/${primaryServer}/actions`, { type: 'stop' }, 202);
+    await waitStatus(c, `/v1/servers/${primaryServer}`, 'off');
+    await s.get(DatabasesService).refreshAll();
+    const failed = await c.ok('GET', `/v1/databases/${db.id}`);
+    const next = failed.nodeStatus.find((n: { role: string }) => n.role === 'primary');
+    expect(next.index).not.toBe(primaryIndex);
+    expect(failed.connection.privateHost).toBe(nodes[next.index].server.privateIp);
+    const audit = await s.prisma.auditLog.findFirst({ where: { action: 'database.failover', request: { path: ['databaseId'], equals: db.id } } });
+    expect(audit?.request).toMatchObject({ from: primaryIndex, to: next.index });
+    // Backups go to the new primary.
+    const b = await c.ok('POST', `/v1/databases/${db.id}/backups`, {}, 202);
+    const done = await waitFor(async () => {
+      await s.get(DatabasesService).refreshAll();
+      return (await c.ok('GET', `/v1/databases/${db.id}/backups`)).data.find((x: { id: string; status: string }) => x.id === b.id && x.status !== 'running');
+    }, { what: 'the backup on the new primary', timeoutMs: 30_000, intervalMs: 1000 });
+    expect(done.status).toBe('completed');
+    // Back up, it rejoins as a replica.
+    await c.ok('POST', `/v1/servers/${primaryServer}/actions`, { type: 'start' }, 202);
+    await waitStatus(c, `/v1/servers/${primaryServer}`, 'active');
+    await waitFor(async () => {
+      await s.get(DatabasesService).refreshAll();
+      const r = await c.ok('GET', `/v1/databases/${db.id}`);
+      return r.nodeStatus[primaryIndex].role === 'replica' && r.nodeStatus.filter((n: { role: string }) => n.role === 'primary').length === 1 ? r : null;
+    }, { what: 'the old primary to rejoin as a replica', timeoutMs: 30_000 });
+
     // A new user reaches every node before the cluster is active again.
     await c.ok('POST', `/v1/databases/${db.id}/users`, { name: 'etl' }, 201);
     const updated = await waitStatus<any>(c, `/v1/databases/${db.id}`, 'active', 90_000);

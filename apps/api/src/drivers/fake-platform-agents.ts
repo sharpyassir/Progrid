@@ -374,6 +374,7 @@ export class FakePlatformAgents {
         if (node.engine === 'postgres') {
           // etcd elects nothing until a majority of its members run; the first Patroni to start then leads.
           if (cl.leader == null && cl.configured.length >= Math.floor(nodes.length / 2) + 1) cl.leader = cl.configured[0];
+          await this.failover(cl, c);
           if (cl.leader == null) throw new NotReady('waiting for the cluster to elect a primary');
           if (cl.leader === me.index) {
             cl.roles = [...new Set([...cl.roles, ...wantRoles])];
@@ -404,11 +405,34 @@ export class FakePlatformAgents {
     });
   }
 
+  /** Patroni: when the leader's VM is down, the lowest running member takes over. */
+  private async failover(cl: Json, c: Json) {
+    if (cl.leader == null) return;
+    const ipOf = (index: number) => (c.cluster.nodes as Json[]).find((n) => n.index === index)?.ip;
+    const up = async (index: number) => (await this.get<FakeNode>(`vm:${ipOf(index)}`))?.power === 'running';
+    if (await up(cl.leader)) return;
+    for (const index of [...(cl.configured as number[])].sort((a, b) => a - b)) {
+      if (await up(index)) {
+        cl.leader = index;
+        return;
+      }
+    }
+  }
+
   private async dbEngineStatus(node: FakeNode): Promise<Json> {
     const c = node.last;
     const disk = 12.5;
     if (node.engine === 'postgres') {
-      const cl = c ? await this.get<Json>(`cluster:db:${c.cluster.name}`) : null;
+      const cl = c
+        ? await this.locked(`db:${c.cluster.name}`, async () => {
+            const x = await this.get<Json>(`cluster:db:${c.cluster.name}`);
+            if (x) {
+              await this.failover(x, c);
+              await this.put(`cluster:db:${c.cluster.name}`, x);
+            }
+            return x;
+          })
+        : null;
       const me = c ? selfNode(c) : null;
       const primary = !!me && cl?.leader === me.index;
       const members = c && cl?.leader != null ? (c.cluster.nodes as Json[]).filter((n) => cl.configured.includes(n.index)).map((n) => ({ name: n.name, role: n.index === cl.leader ? 'leader' : 'replica', state: n.index === cl.leader ? 'running' : 'streaming', lag: n.index === cl.leader ? undefined : 0 })) : [];
