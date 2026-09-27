@@ -11,7 +11,7 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
     <div className="min-h-screen bg-white text-slate-900">
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="container-x flex h-14 items-center gap-4">
-          <Link href="/" className="text-lg font-bold tracking-tight">Progrid</Link>
+          <Link href="/" className="flex items-center gap-2.5 text-lg font-bold tracking-tight"><img src="/brand/progrid-mark.svg" width="22" height="28" alt="" aria-hidden /> Progrid</Link>
           <Link href="/docs" className="text-sm font-medium text-slate-600">Docs</Link>
           <div className="ms-auto flex items-center gap-4 text-sm">
             <Link href="/docs/api-reference" className="text-slate-600 hover:text-slate-900">API reference</Link>

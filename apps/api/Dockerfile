@@ -14,7 +14,7 @@ COPY apps/api apps/api
 RUN pnpm --filter @pgcloud/api prisma:generate && pnpm --filter @pgcloud/api build
 # Self contained copy of the api package with its dependencies (dev deps kept for the prisma CLI and seed),
 # then the Prisma client is generated inside that copy so the runtime image needs no build step.
-RUN pnpm --filter @pgcloud/api deploy --legacy /out && cp -r apps/api/dist /out/dist && cp -r apps/api/prisma /out/prisma \
+RUN pnpm --filter @pgcloud/api deploy --legacy /out && cp -r apps/api/dist /out/dist && cp -r apps/api/prisma /out/prisma && cp -r apps/api/assets /out/assets \
     && cd /out && node node_modules/prisma/build/index.js generate
 
 FROM node:22-bookworm-slim

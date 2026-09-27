@@ -77,7 +77,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <ShellCtx.Provider value={{ locale, setLocale, authed, signOut }}>
       <header className="border-b border-neutral-200 dark:border-neutral-800">
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-2.5">
-          <Link href="/servers" className="me-2 font-semibold tracking-tight">Progrid</Link>
+          <Link href="/servers" className="me-2 flex items-center gap-2 font-semibold tracking-tight"><img src="/brand/progrid-mark.svg" width="19" height="24" alt="" aria-hidden className="dark:hidden" /><img src="/brand/progrid-mark-white.svg" width="19" height="24" alt="" aria-hidden className="hidden dark:block" /> Progrid</Link>
           {authed && <DesktopNav />}
           <div className="ms-auto flex items-center gap-2">
             {authed ? (

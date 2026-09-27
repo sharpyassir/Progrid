@@ -1,8 +1,11 @@
 import PDFDocument from 'pdfkit';
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Invoice, Team, UsageRecord } from '@prisma/client';
 import { loadConfig } from '../../config/config';
 
+/** Official logo lockup, shipped with the api package (assets/progrid-logo.png). */
+const LOGO = [join(__dirname, '../../../assets/progrid-logo.png'), join(process.cwd(), 'assets/progrid-logo.png'), join(process.cwd(), 'apps/api/assets/progrid-logo.png')].find((f) => existsSync(f));
 const FONT = ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/dejavu/DejaVuSans.ttf'].find(existsSync);
 const FONT_BOLD = ['/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf'].find(existsSync);
 
@@ -21,7 +24,11 @@ export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageReco
     const date = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '');
 
     // Header
-    doc.font(bold).fontSize(20).text(c.COMPANY_NAME, 50, 50);
+    if (LOGO) {
+      doc.image(LOGO, 50, 44, { height: 30 });
+    } else {
+      doc.font(bold).fontSize(20).text(c.COMPANY_NAME, 50, 50);
+    }
     doc.font(regular).fontSize(9).fillColor('#555').text(c.COMPANY_ADDRESS, 50, 76, { width: 260 });
     if (c.COMPANY_TAX_ID) doc.text(`Tax ID: ${c.COMPANY_TAX_ID}`);
     doc.fillColor('#000').font(bold).fontSize(16).text('INVOICE', 350, 50, { align: 'right' });
@@ -75,8 +82,8 @@ export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageReco
     // Footer
     doc.fontSize(8).fillColor('#555').font(regular);
     const note = inv.currency === 'SAR'
-      ? 'Prices are set in US dollars and converted to Saudi riyals at the exchange rate stored for each hour of usage. This is a tax invoice under the ZATCA e-invoicing regulation; the QR code and clearance are attached by our e-invoicing provider.'
-      : 'Prices are in US dollars. No VAT is charged on this invoice.';
+      ? 'Prices are set in Saudi riyals and exclude VAT; VAT at 15% is shown as a separate line. This is a tax invoice under the ZATCA e-invoicing regulation; the QR code and clearance are attached by our e-invoicing provider.'
+      : 'Prices are set in Saudi riyals and converted to US dollars at the exchange rate stored for each hour of usage. No VAT is charged on this invoice.';
     doc.text(note, 50, 760, { width: 495, align: 'center' });
     doc.text(`${c.COMPANY_NAME} · ${c.PUBLIC_API_URL.replace(/^https?:\/\/(api\.)?/, '')}`, 50, 775, { width: 495, align: 'center' });
     doc.end();

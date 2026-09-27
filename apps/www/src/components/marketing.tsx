@@ -28,7 +28,7 @@ export function Header() {
   return (
     <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0b1220]/80 text-white backdrop-blur">
       <div className="container-x flex h-16 items-center gap-8">
-        <a href="/" className="flex items-center gap-2 text-lg font-bold tracking-tight"><Logo /> Progrid</a>
+        <a href="/" className="flex items-center gap-2.5 text-lg font-bold tracking-tight"><Logo white size={30} /> Progrid</a>
         <nav className="hidden items-center gap-7 text-sm text-slate-300 md:flex">
           {links.map(([h, l]) => <a key={h} href={h} className="hover:text-white">{l}</a>)}
         </nav>
@@ -50,15 +50,9 @@ export function Header() {
   );
 }
 
-function Logo() {
-  return (
-    <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden>
-      <defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stopColor="#60a5fa" /><stop offset="1" stopColor="#2563eb" /></linearGradient></defs>
-      <rect x="1" y="1" width="24" height="24" rx="7" fill="url(#g)" />
-      <path d="M8 17V9h4.5a3 3 0 0 1 0 6H10" stroke="#fff" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="17.5" cy="16.5" r="1.6" fill="#fff" />
-    </svg>
-  );
+/** The official Progrid mark: a 4 by 5 grid of rounded squares with one cyan dot. Files live in public/brand. */
+export function Logo({ white = false, size = 28 }: { white?: boolean; size?: number }) {
+  return <img src={white ? '/brand/progrid-mark-white.svg' : '/brand/progrid-mark.svg'} width={Math.round(size * 98 / 124)} height={size} alt="" aria-hidden className="shrink-0" />;
 }
 
 /* ───────────────────────── Hero ───────────────────────── */
@@ -359,7 +353,7 @@ export function Footer() {
   return (
     <footer className="border-t border-slate-200 bg-white py-14 text-sm">
       <div className="container-x grid gap-10 sm:grid-cols-2 lg:grid-cols-5">
-        <div className="lg:col-span-1"><div className="flex items-center gap-2 font-bold"><Logo /> Progrid</div><p className="mt-3 text-slate-500">{c.footer.tagline}</p><p className="mt-3 flex gap-2 text-slate-500">{LANGS.map((l) => <a key={l.code} href={l.path} className="hover:text-slate-900">{l.label}</a>)}</p></div>
+        <div className="lg:col-span-1"><div className="flex items-center gap-2.5 font-bold text-[#0b47c9]"><Logo size={30} /> Progrid</div><p className="mt-3 text-slate-500">{c.footer.tagline}</p><p className="mt-3 flex gap-2 text-slate-500">{LANGS.map((l) => <a key={l.code} href={l.path} className="hover:text-slate-900">{l.label}</a>)}</p></div>
         {cols.map(([h, ls]) => <div key={h}><div className="font-semibold">{h}</div><ul className="mt-3 space-y-2 text-slate-600">{ls.map(([l, href]) => <li key={l}><a href={href.startsWith('/docs') || href.startsWith('http') || href === '#' ? href : `${prefix}${href}`} className="hover:text-slate-900">{l}</a></li>)}</ul></div>)}
       </div>
       <div className="container-x mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-6 text-xs text-slate-500"><span>© {new Date().getFullYear()} {c.footer.copyright}</span><span>{c.footer.builtOn}</span></div>

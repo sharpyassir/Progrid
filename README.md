@@ -132,3 +132,5 @@ start / resize / rebuild / snapshot / delete; metering → hourly rating → inv
 `nats-server` and the `temporal` CLI (`temporal server start-dev --headless`), then run
 the same commands as above. The Timescale migration is a no-op on plain Postgres (usage
 events stay a regular table), so nothing else changes.
+
+Brand assets (official logo, icons, social image) live in `docs/brand/`, with copies under each app's `public/brand`.
