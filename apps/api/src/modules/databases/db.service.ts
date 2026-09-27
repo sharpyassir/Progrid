@@ -8,6 +8,7 @@ import type { Actor } from '../../common/auth/actor';
 import { ApiError } from '../../common/errors/api-error';
 import { loadConfig } from '../../config/config';
 import { IamService } from '../iam/iam.service';
+import { TrustService } from '../trust/trust.service';
 import { EventsService } from '../events/events.service';
 import { SpendService } from '../billing/spend.service';
 import { ServersService } from '../compute/servers.service';
@@ -45,6 +46,7 @@ export class DatabasesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly iam: IamService,
+    private readonly trust: TrustService,
     private readonly temporal: TemporalService,
     private readonly events: EventsService,
     private readonly spend: SpendService,
@@ -66,6 +68,7 @@ export class DatabasesService {
 
   async create(actor: Actor, dto: CreateDatabaseDto) {
     const project = await this.iam.resolveProject(actor, dto.project);
+    await this.trust.assertCanProvision(actor.teamId);
     const region = await this.prisma.region.findUnique({ where: { id: dto.region ?? loadConfig().DEFAULT_REGION } });
     if (!region?.available) throw ApiError.invalid(`Unknown or unavailable region "${dto.region}"`);
     const version = dto.version ?? ENGINE_VERSIONS[dto.engine][0];

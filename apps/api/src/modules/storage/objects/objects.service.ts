@@ -5,6 +5,7 @@ import type { Actor } from '../../../common/auth/actor';
 import { ApiError } from '../../../common/errors/api-error';
 import { loadConfig } from '../../../config/config';
 import { IamService } from '../../iam/iam.service';
+import { TrustService } from '../../trust/trust.service';
 import { EventsService } from '../../events/events.service';
 import { OBJECT_STORAGE_PROVIDER, ObjectStorageProvider } from './objects.provider';
 import { CreateBucketDto, CreateStorageKeyDto, PresignDto, UpdateBucketDto } from './objects.dto';
@@ -23,7 +24,7 @@ export class ObjectsService {
   readonly endpoint: string;
   readonly region: string;
 
-  constructor(private readonly prisma: PrismaService, private readonly iam: IamService, private readonly events: EventsService, @Inject(OBJECT_STORAGE_PROVIDER) private readonly provider: ObjectStorageProvider) {
+  constructor(private readonly prisma: PrismaService, private readonly iam: IamService, private readonly trust: TrustService, private readonly events: EventsService, @Inject(OBJECT_STORAGE_PROVIDER) private readonly provider: ObjectStorageProvider) {
     const cfg = loadConfig();
     this.endpoint = cfg.S3_ENDPOINT;
     this.region = cfg.S3_REGION;
@@ -53,6 +54,7 @@ export class ObjectsService {
 
   async create(actor: Actor, dto: CreateBucketDto) {
     const p = await this.iam.resolveProject(actor, dto.project);
+    await this.trust.assertCanProvision(actor.teamId);
     const region = await this.prisma.region.findUnique({ where: { id: dto.region ?? loadConfig().DEFAULT_REGION } });
     if (!region?.available) throw ApiError.invalid(`Unknown or unavailable region "${dto.region}"`);
     if (RESERVED.test(dto.name) || dto.name.includes('..')) throw ApiError.invalid('That bucket name is reserved');

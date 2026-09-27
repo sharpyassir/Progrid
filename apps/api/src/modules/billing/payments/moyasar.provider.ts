@@ -1,9 +1,9 @@
 import { timingSafeEqual } from 'node:crypto';
 import { ApiError } from '../../../common/errors/api-error';
 import { loadConfig } from '../../../config/config';
-import type { CheckoutInput, CheckoutResult, PaymentEvent, PaymentProvider } from './provider';
+import type { CheckoutInput, CheckoutResult, PaymentEvent, PaymentProvider, RefundResult } from './provider';
 
-interface MoyasarInvoice { id: string; status: string; amount: number; currency: string; url: string; payments?: { id: string; status: string }[] }
+interface MoyasarInvoice { id: string; status: string; amount: number; currency: string; url: string; payments?: { id: string; status: string; amount?: number; currency?: string }[] }
 interface MoyasarPayment { id: string; status: string; amount: number; currency: string; invoice_id?: string | null; metadata?: Record<string, string> }
 
 /**
@@ -48,9 +48,32 @@ export class MoyasarProvider implements PaymentProvider {
     }
     if (!invoiceId) throw ApiError.invalid('No Moyasar invoice in the request');
     const inv = await this.call<MoyasarInvoice>('GET', `/v1/invoices/${invoiceId}`);
-    if (inv.status === 'paid') return [{ providerRef: inv.id, status: 'succeeded', amountMinor: inv.amount, currency: inv.currency as PaymentEvent['currency'] }];
+    if (inv.status === 'paid') {
+      // Report what was actually captured when Moyasar lists the payments, so the service can
+      // compare it with our record; otherwise the invoice amount stands for it.
+      const paid = (inv.payments ?? []).filter((p) => p.status === 'paid' && typeof p.amount === 'number');
+      const amountMinor = paid.length ? paid.reduce((s, p) => s + (p.amount ?? 0), 0) : inv.amount;
+      const currency = (paid.find((p) => p.currency && p.currency.toUpperCase() !== inv.currency.toUpperCase())?.currency ?? inv.currency).toUpperCase();
+      return [{ providerRef: inv.id, status: 'succeeded', amountMinor, currency: currency as PaymentEvent['currency'] }];
+    }
     if (['failed', 'canceled', 'expired', 'voided'].includes(inv.status)) return [{ providerRef: inv.id, status: 'failed', reason: inv.status }];
     return [];
+  }
+
+  /**
+   * Refunds through `POST /v1/payments/{id}/refund`. Our providerRef is the Moyasar invoice, so
+   * the captured payment on it is looked up first; a payment id (pay_...) is used as is.
+   */
+  async refund(providerRef: string, amountMinor: number): Promise<RefundResult> {
+    let paymentId = providerRef;
+    if (!providerRef.startsWith('pay_')) {
+      const inv = await this.call<MoyasarInvoice>('GET', `/v1/invoices/${providerRef}`);
+      const paid = (inv.payments ?? []).find((p) => p.status === 'paid' || p.status === 'captured' || p.status === 'refunded');
+      if (!paid) throw new ApiError(409, 'invalid_state', `Moyasar invoice ${providerRef} has no captured payment to refund`);
+      paymentId = paid.id;
+    }
+    const p = await this.call<MoyasarPayment>('POST', `/v1/payments/${paymentId}/refund`, { amount: amountMinor });
+    return { refundRef: p.id };
   }
 
   private async call<T>(method: string, path: string, body?: unknown): Promise<T> {

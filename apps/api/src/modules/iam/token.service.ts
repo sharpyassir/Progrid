@@ -101,6 +101,7 @@ export class TokenService {
       isAgent: token.isAgent,
       requireApprovalFor: new Set(token.requireApprovalFor),
       locale: token.user.locale,
+      teamStatus: token.team.status,
     };
   }
 
@@ -130,6 +131,7 @@ export class TokenService {
       isAgent: false,
       requireApprovalFor: new Set(),
       locale: membership.user.locale,
+      teamStatus: membership.team.status,
     };
   }
 }

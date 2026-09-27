@@ -37,6 +37,13 @@ const schema = z.object({
   MOYASAR_SECRET_KEY: z.string().optional(),
   MOYASAR_WEBHOOK_SECRET: z.string().optional(),
   MOYASAR_BASE_URL: z.string().url().default('https://api.moyasar.com'),
+  /**
+   * New teams must top up once (or reach KYC level 1) before running postpaid resources.
+   * "false" or "0" turns the check off.
+   */
+  REQUIRE_PREPAID_BEFORE_POSTPAID: z.enum(['true', 'false', '1', '0']).default('true').transform((v) => v === 'true' || v === '1'),
+  /** Usage a team may run up per month before that first top up, in the team's currency minor units (halalas for SAR). */
+  FREE_ALLOWANCE_MINOR: z.coerce.number().int().min(0).default(0),
   /** Seller details printed on invoices. */
   COMPANY_NAME: z.string().default('Progrid'),
   COMPANY_ADDRESS: z.string().default('Saudi Arabia'),

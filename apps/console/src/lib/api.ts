@@ -2,6 +2,8 @@
  * Thin client for the pgcloud API. The console is just one API client — it uses the
  * same endpoints the CLI, Terraform and agents use. Session token lives in localStorage.
  */
+import { getLocale, t } from './i18n';
+
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 /** The marketing site, for legal and help links. */
 export const WWW_URL = process.env.NEXT_PUBLIC_WWW_URL ?? 'https://progrid.sa';
@@ -38,7 +40,9 @@ export async function api<T>(path: string, init: RequestInit & { idempotent?: bo
   const body = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
     const e = body?.error ?? { code: 'error', message: res.statusText };
-    throw new ApiError(res.status, e.code, e.message, e.details);
+    // Billing gates get a message in the person's language that points to the billing page.
+    const message = e.code === 'payment_required' ? t(getLocale(), 'paymentRequired') : e.code === 'account_suspended' ? t(getLocale(), 'accountSuspended') : e.message;
+    throw new ApiError(res.status, e.code, message, e.details);
   }
   return body as T;
 }

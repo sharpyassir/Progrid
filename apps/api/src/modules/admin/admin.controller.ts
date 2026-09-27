@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, IsString, Length, Min } from 'class-validator';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CurrentActor, RequireScopes } from '../../common/auth/decorators';
 import type { Actor } from '../../common/auth/actor';
@@ -9,6 +9,8 @@ import { EventsService } from '../events/events.service';
 import { BOOK_CURRENCY } from '../billing/pricing';
 import { RatingService } from '../billing/rating.service';
 import { InvoicesService } from '../billing/invoices.service';
+import { BillingAdminService } from '../billing/billing-admin.service';
+import { DunningService } from '../billing/dunning.service';
 import { BackupsService } from '../storage/backups.service';
 import { FxService } from '../billing/fx.service';
 import { startOfMonth } from '../billing/pricing';
@@ -43,6 +45,30 @@ class PriceDto {
   @IsInt() @Min(0) monthlyMinor: number;
 }
 
+class RefundDto {
+  /** Omit to refund whatever is left of the payment. */
+  @IsOptional() @IsInt() @Min(1) amountMinor?: number;
+  @IsOptional() @IsString() @Length(0, 500) reason?: string;
+}
+
+class CreditNoteDto {
+  @IsInt() @Min(1) amountMinor: number;
+  @IsString() @Length(3, 500) reason: string;
+}
+
+class ReasonDto {
+  @IsOptional() @IsString() @Length(0, 500) reason?: string;
+}
+
+class ManualPaymentDto {
+  @IsIn(['bank_transfer', 'manual']) provider: 'bank_transfer' | 'manual';
+  /** Omit to record exactly what is due. */
+  @IsOptional() @IsInt() @Min(1) amountMinor?: number;
+  /** Bank transfer reference or receipt number. */
+  @IsOptional() @IsString() @Length(0, 200) reference?: string;
+  @IsOptional() @IsDateString() receivedAt?: string;
+}
+
 class ResolveDto {
   @IsIn(['false_positive', 'warned', 'suspended']) resolution: 'false_positive' | 'warned' | 'suspended';
 }
@@ -62,6 +88,8 @@ export class AdminController {
     private readonly events: EventsService,
     private readonly rating: RatingService,
     private readonly invoices: InvoicesService,
+    private readonly billingAdmin: BillingAdminService,
+    private readonly dunningService: DunningService,
     private readonly fx: FxService,
     private readonly backups: BackupsService,
   ) {}
@@ -114,7 +142,46 @@ export class AdminController {
 
   @Get('invoices')
   async listInvoices(@Query('status') status?: string) {
-    return { data: await this.prisma.invoice.findMany({ where: status ? { status: status as never } : {}, include: { team: { select: { id: true, name: true, slug: true, country: true } } }, orderBy: { createdAt: 'desc' }, take: 100 }) };
+    return { data: await this.billingAdmin.listInvoices(status) };
+  }
+
+  /** Recent payments of every kind, for refunds of top ups and invoice payments alike. */
+  @Get('payments')
+  async listPayments(@Query('status') status?: string) {
+    return {
+      data: await this.prisma.payment.findMany({
+        where: status ? { status: status as never } : {},
+        include: { team: { select: { id: true, name: true, slug: true } }, invoice: { select: { number: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      }),
+    };
+  }
+
+  /** Refunds a card payment to the card (Moyasar refund API; the test provider always succeeds). */
+  @Post('payments/:id/refund') @HttpCode(200)
+  refund(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: RefundDto) {
+    return this.billingAdmin.refund(actor, id, dto.amountMinor, dto.reason);
+  }
+
+  @Post('invoices/:id/credit-notes')
+  creditNote(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: CreditNoteDto) {
+    return this.billingAdmin.creditNote(actor, id, dto.amountMinor, dto.reason);
+  }
+
+  @Post('invoices/:id/void') @HttpCode(200)
+  voidInvoice(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: ReasonDto) {
+    return this.billingAdmin.void(actor, id, dto.reason);
+  }
+
+  @Post('invoices/:id/payments')
+  recordPayment(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: ManualPaymentDto) {
+    return this.billingAdmin.recordPayment(actor, id, { provider: dto.provider, amountMinor: dto.amountMinor, reference: dto.reference, receivedAt: dto.receivedAt ? new Date(dto.receivedAt) : undefined });
+  }
+
+  @Post('invoices/:id/uncollectible') @HttpCode(200)
+  uncollectible(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: ReasonDto) {
+    return this.billingAdmin.markUncollectible(actor, id, dto.reason);
   }
 
   @Get('prices')
@@ -228,6 +295,12 @@ export class AdminController {
   @Post('billing/issue-invoices')
   async issue() {
     return { issued: await this.invoices.issueForPreviousMonth() };
+  }
+
+  /** Runs the daily overdue reminders and suspensions now (a rerun never mails a stage twice). */
+  @Post('billing/dunning') @HttpCode(200)
+  dunning() {
+    return this.dunningService.run();
   }
 
   // ---- exchange rate ----

@@ -4,9 +4,8 @@ import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { AdminShell, fmtDate, fmtMoney } from '@/components/admin-shell';
-import { StatusBadge } from '@/components/status-badge';
 
-interface Invoice { id: string; number: string; status: string; totalMinor: number; currency: string; periodStart: string; dueAt: string | null; eInvoiceType: string | null; team: { id: string; name: string; slug: string; country: string } }
+interface Invoice { id: string; number: string; status: string; totalMinor: number; creditedMinor?: number; currency: string; periodStart: string; dueAt: string | null; eInvoiceType: string | null; team: { id: string; name: string; slug: string; country: string } }
 interface Fx { rate: number; history: { rate: string; source: string; at: string }[] }
 interface Price { id: string; resourceType: string; sku: string; monthlyMinor: number; unit: string; validFrom: string }
 
@@ -61,21 +60,10 @@ export default function AdminFinance() {
           </tbody></table>
         </section>
       </div>
-      <section className="card p-0">
-        <h2 className="border-b border-neutral-100 px-4 py-2 font-medium dark:border-neutral-800">Invoices <span className="ms-2 text-xs font-normal text-neutral-500">{open.length} open · {fmtMoney(open.filter((i) => i.currency === 'SAR').reduce((s, i) => s + i.totalMinor, 0), 'SAR')} + {fmtMoney(open.filter((i) => i.currency === 'USD').reduce((s, i) => s + i.totalMinor, 0), 'USD')} outstanding</span></h2>
-        <table className="w-full text-sm">
-          <thead className="text-xs uppercase text-neutral-500"><tr><th className="px-4 py-2 text-start">Number</th><th className="px-4 py-2 text-start">Team</th><th className="px-4 py-2 text-start">Period</th><th className="px-4 py-2 text-start">Status</th><th className="px-4 py-2 text-start">Type</th><th className="px-4 py-2 text-end">Total</th></tr></thead>
-          <tbody>
-            {invoices.length === 0 && <tr><td className="px-4 py-3 text-neutral-500" colSpan={6}>No invoices yet.</td></tr>}
-            {invoices.map((i) => (
-              <tr key={i.id} className="border-t border-neutral-100 dark:border-neutral-800">
-                <td className="px-4 py-2 font-mono">{i.number}</td><td className="px-4 py-2"><Link href={`/admin/teams/${i.team.id}`} className="hover:underline">{i.team.name}</Link> <span className="text-xs text-neutral-500">{i.team.country}</span></td>
-                <td className="px-4 py-2 text-neutral-500">{i.periodStart.slice(0, 7)}</td><td className="px-4 py-2"><StatusBadge status={i.status === 'paid' ? 'active' : i.status === 'open' ? 'pending' : i.status} />{i.status === 'open' && i.dueAt && new Date(i.dueAt) < new Date() && <span className="ms-1 text-xs text-red-600">overdue</span>}</td>
-                <td className="px-4 py-2 text-xs text-neutral-500">{i.eInvoiceType ?? 'invoice'}</td><td className="px-4 py-2 text-end font-medium">{fmtMoney(i.totalMinor, i.currency)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <section className="card flex flex-wrap items-center gap-3">
+        <h2 className="font-medium">Invoices</h2>
+        <span className="text-sm text-neutral-500">{open.length} open · {fmtMoney(open.filter((i) => i.currency === 'SAR').reduce((s, i) => s + i.totalMinor - (i.creditedMinor ?? 0), 0), 'SAR')} + {fmtMoney(open.filter((i) => i.currency === 'USD').reduce((s, i) => s + i.totalMinor - (i.creditedMinor ?? 0), 0), 'USD')} outstanding</span>
+        <Link href="/admin/invoices" className="btn-ghost ms-auto">Refunds, credit notes and payments</Link>
       </section>
     </AdminShell>
   );

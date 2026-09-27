@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { TrustModule } from '../../trust/trust.module';
 import { loadConfig } from '../../../config/config';
 import { EventsModule } from '../../events/events.module';
 import { BucketsController, FakeS3Controller, StorageKeysController } from './objects.controller';
@@ -6,7 +7,7 @@ import { ObjectsService } from './objects.service';
 import { FakeObjectStorage, OBJECT_STORAGE_PROVIDER, RgwObjectStorage } from './objects.provider';
 
 @Module({
-  imports: [EventsModule],
+  imports: [TrustModule, EventsModule],
   controllers: [BucketsController, StorageKeysController, FakeS3Controller],
   providers: [
     ObjectsService,
