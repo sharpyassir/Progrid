@@ -55,7 +55,9 @@ export interface Activities {
   lbFinalizeDelete(lbId: string): Promise<void>;
   emitLb(name: string, lbId: string, payload: Record<string, unknown>): Promise<void>;
   dbWaitNodes(clusterId: string): Promise<void>;
-  dbPushConfig(clusterId: string): Promise<{ applied: number; nodes: number }>;
+  dbPushConfig(clusterId: string): Promise<{ applied: number; nodes: number; waiting: string[]; errors: string[] }>;
+  dbWaitApplied(clusterId: string, timeoutMinutes: number): Promise<void>;
+  dbRestore(clusterId: string, backupId: string): Promise<void>;
   dbSetStatus(clusterId: string, status: DbClusterStatus, message?: string): Promise<void>;
   dbDeleteNodes(clusterId: string): Promise<void>;
   dbWaitNodesGone(clusterId: string): Promise<void>;
@@ -436,6 +438,14 @@ export function createActivities(app: INestApplicationContext): Activities {
       }
     },
 
+    async dbWaitApplied(clusterId, timeoutMinutes) {
+      await wrap(dbs.waitApplied(clusterId, timeoutMinutes * 60_000, () => Context.current().heartbeat()));
+    },
+
+    async dbRestore(clusterId, backupId) {
+      await wrap(dbs.runRestore(clusterId, backupId, () => Context.current().heartbeat()));
+    },
+
     async dbSetStatus(clusterId, status, message) {
       const data: Record<string, unknown> = { status, statusMessage: message ?? null };
       if (status === 'active') data.meteredSince = (await prisma.dbCluster.findUnique({ where: { id: clusterId }, select: { meteredSince: true } }))?.meteredSince ?? new Date();
@@ -468,8 +478,10 @@ export function createActivities(app: INestApplicationContext): Activities {
       if (!c) return;
       if (c.publicIpId) await ips.release(c.publicIpId).catch(() => undefined);
       if (c.firewallId) await prisma.firewall.delete({ where: { id: c.firewallId } }).catch(() => undefined);
-      // Backups stay in the platform bucket for seven days after deletion (pgBackRest retention), then expire.
-      await prisma.dbCluster.update({ where: { id: clusterId }, data: { status: 'deleted', deletedAt: new Date(), publicIpId: null, firewallId: null, meteredSince: null, adminPassword: '', backupSecretKey: null } });
+      // Backups go with the cluster: empty and remove the platform bucket and its key.
+      const removed = await dbs.purgeBackups(clusterId);
+      log.log(`database ${clusterId}: removed ${removed} backup objects`);
+      await prisma.dbCluster.update({ where: { id: clusterId }, data: { status: 'deleted', deletedAt: new Date(), publicIpId: null, firewallId: null, meteredSince: null, adminPassword: '', backupBucket: null, backupAccessKey: null, backupSecretKey: null } });
     },
 
     // ---- managed kubernetes (same shape as databases) ----

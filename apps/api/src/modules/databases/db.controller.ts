@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentActor, RequireScopes } from '../../common/auth/decorators';
 import type { Actor } from '../../common/auth/actor';
 import { DatabasesService } from './db.service';
-import { CreateDatabaseDto, DbNameDto, ENGINE_VERSIONS, UpdateDatabaseDto } from './db.dto';
+import { CreateDatabaseDto, DbNameDto, ENGINE_VERSIONS, RestoreDatabaseDto, UpdateDatabaseDto } from './db.dto';
 
 @ApiTags('databases')
 @ApiBearerAuth()
@@ -74,5 +74,10 @@ export class DatabasesController {
   @Post(':id/backups') @RequireScopes('databases:write') @HttpCode(202)
   backup(@CurrentActor() actor: Actor, @Param('id') id: string, @Query('project') project?: string) {
     return this.dbs.startBackup(actor, id, 'manual', project);
+  }
+
+  @Post(':id/restore') @RequireScopes('databases:write') @HttpCode(202)
+  restore(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: RestoreDatabaseDto, @Query('project') project?: string) {
+    return this.dbs.restore(actor, id, dto, project);
   }
 }

@@ -1287,6 +1287,7 @@ enum DbClusterStatus {
   active
   updating
   failed
+  restoring
   deleting
   deleted
 }
@@ -1387,6 +1388,8 @@ model DbBackup {
   status      DbBackupStatus @default(running)
   sizeBytes   BigInt?
   label       String?
+  /// Engine side name of the backup: pgBackRest set label, or the object key of the RDB or XtraBackup stream.
+  ref         String?
   startedAt   DateTime       @default(now())
   completedAt DateTime?
   error       String?
