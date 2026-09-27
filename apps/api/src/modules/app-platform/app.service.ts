@@ -14,7 +14,7 @@ import { SpendService } from '../billing/spend.service';
 import { FirewallsService } from '../network/firewalls.service';
 import { GithubService } from '../github/github.service';
 import { renderAppHostCloudInit } from './cloud-init';
-import { agentHost } from '../../common/platform-agent';
+import { agentFetch, agentHost } from '../../common/platform-agent';
 import { APP_SIZES, AppSizeId, CreateAppDto, DomainDto, MAX_DOMAINS, UpdateAppDto } from './app.dto';
 
 const HOST_MANAGED = 'apps:host';
@@ -188,7 +188,7 @@ export class AppPlatformService {
     const ip = app.host ? agentHost(app.host.server) : null;
     if (ip && app.host?.server.status === 'active') {
       try {
-        const r = await fetch(`http://${ip}:9009/logs?app=${app.id}&type=${type}`, { headers: { 'X-Pgcloud-Secret': app.host.vmSecret }, signal: AbortSignal.timeout(6000) }).then((x) => x.json() as Promise<{ log: string }>);
+        const r = await agentFetch(ip, { path: `/logs?app=${app.id}&type=${type}`, secret: app.host.vmSecret, timeoutMs: 6000 }).then((x) => x.json() as Promise<{ log: string }>);
         const log = (r.log ?? '').slice(-32_000);
         if (type === 'build') await this.prisma.platformApp.update({ where: { id }, data: { buildLog: log } });
         return { id, type, log, live: true, updatedAt: new Date() };
@@ -357,7 +357,7 @@ export class AppPlatformService {
       });
     }
     const version = (await this.prisma.appHost.update({ where: { id: hostId }, data: { configVersion: { increment: 1 } } })).configVersion;
-    const r = await fetch(`http://${ip}:9009/config`, { method: 'POST', headers: { 'X-Pgcloud-Secret': host.vmSecret, 'content-type': 'application/json' }, body: JSON.stringify({ version, apps }), signal: AbortSignal.timeout(60_000) });
+    const r = await agentFetch(ip, { method: 'POST', path: '/config', secret: host.vmSecret, body: { version, apps }, timeoutMs: 60_000 });
     if (!r.ok) throw ApiError.invalid(`App host rejected the configuration: ${r.status} ${(await r.text().catch(() => '')).slice(0, 300)}`);
     return { ok: true, version };
   }
@@ -405,7 +405,7 @@ export class AppPlatformService {
   async hostStatus(h: { vmSecret: string; server: { id: string; name: string; status: string; privateIp: string | null; publicIps: { address: string }[] } }): Promise<HostStatus | null> {
     const ip = agentHost(h.server);
     if (!ip || h.server.status !== 'active') return null;
-    const r = await fetch(`http://${ip}:9009/status`, { headers: { 'X-Pgcloud-Secret': h.vmSecret }, signal: AbortSignal.timeout(8000) });
+    const r = await agentFetch(ip, { path: '/status', secret: h.vmSecret, timeoutMs: 8000 });
     if (!r.ok) return null;
     return (await r.json()) as HostStatus;
   }

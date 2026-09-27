@@ -9,7 +9,7 @@ import { EventsService } from '../events/events.service';
 import { ServersService } from '../compute/servers.service';
 import { FirewallsService } from '../network/firewalls.service';
 import { renderDeployCloudInit } from './cloud-init';
-import { agentHost } from '../../common/platform-agent';
+import { agentFetch, agentHost } from '../../common/platform-agent';
 import { CreateDeployDto } from './deploy.dto';
 import { loadConfig } from '../../config/config';
 import { GithubService } from '../github/github.service';
@@ -150,7 +150,7 @@ export class DeployService {
     const ip = agentHost(d.server);
     if (ip && d.server.status === 'active') {
       try {
-        const r = await fetch(`http://${ip}:9009/logs`, { headers: { 'X-Pgcloud-Secret': d.vmSecret }, signal: AbortSignal.timeout(5000) }).then((r) => r.json() as Promise<{ status: string; commit: string | null; log: string }>);
+        const r = await agentFetch(ip, { path: '/logs', secret: d.vmSecret, timeoutMs: 5000 }).then((r) => r.json() as Promise<{ status: string; commit: string | null; log: string }>);
         const status = r.status === 'live' ? 'live' : r.status === 'failed' ? 'failed' : 'deploying';
         const log = r.log.slice(-32_000);
         await this.prisma.deployment.update({ where: { id }, data: { status, lastCommit: r.commit ?? undefined, buildLog: log, logUpdatedAt: new Date() } });
@@ -169,7 +169,7 @@ export class DeployService {
     const ip = agentHost(d.server);
     if (!ip || d.server.status !== 'active') return;
     try {
-      const r = await fetch(`http://${ip}:9009/status`, { headers: { 'X-Pgcloud-Secret': d.vmSecret }, signal: AbortSignal.timeout(4000) }).then((r) => r.json() as Promise<{ status: string; commit: string | null }>);
+      const r = await agentFetch(ip, { path: '/status', secret: d.vmSecret, timeoutMs: 4000 }).then((r) => r.json() as Promise<{ status: string; commit: string | null }>);
       const status = r.status === 'live' ? 'live' : r.status === 'failed' ? 'failed' : 'deploying';
       await this.prisma.deployment.update({ where: { id }, data: { status, lastCommit: r.commit ?? undefined, ...(status === 'live' ? { lastDeployAt: new Date() } : {}) } });
     } catch {
@@ -188,7 +188,7 @@ export class DeployService {
       if (inst && !inst.suspendedAt) token = await this.github.installationToken(inst.installationId).catch(() => undefined);
     }
     try {
-      await fetch(`http://${ip}:9009/redeploy`, { method: 'POST', headers: { 'X-Pgcloud-Secret': d.vmSecret, 'content-type': 'application/json' }, body: JSON.stringify(token ? { token, commit } : { commit }), signal: AbortSignal.timeout(5000) });
+      await agentFetch(ip, { method: 'POST', path: '/redeploy', secret: d.vmSecret, body: token ? { token, commit } : { commit }, timeoutMs: 5000 });
     } catch (err) {
       // With the fake driver there is no VM to call; the status poller will keep it 'deploying'.
       this.log.warn(`redeploy hook unreachable for ${d.id}: ${(err as Error).message}`);

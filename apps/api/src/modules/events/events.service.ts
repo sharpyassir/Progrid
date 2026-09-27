@@ -54,7 +54,8 @@ export class EventsService {
     await this.prisma.auditLog.create({
       data: {
         teamId,
-        userId: ctx.actor?.userId,
+        // Platform actors (app hosts, the Kubernetes cloud controller without an owner) act as "system", which is no user row.
+        userId: ctx.actor?.userId === 'system' ? undefined : ctx.actor?.userId,
         tokenId: ctx.actor?.tokenId,
         action: name,
         resource: ctx.resource,

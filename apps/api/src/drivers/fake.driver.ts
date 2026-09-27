@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { FakePlatformAgents } from './fake-platform-agents';
 import { FirewallRuleSpec, HypervisorDriver, VmHandle, VmSpec, VmStatus } from './hypervisor.driver';
 
 interface FakeVm {
@@ -7,6 +8,7 @@ interface FakeVm {
   bootedAt: number;
   ips: string[];
   rules: FirewallRuleSpec[];
+  privateIp: string;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -14,6 +16,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /**
  * In-memory hypervisor for local development and tests. "Boots" a VM in ~2 seconds.
  * State lives in the worker process; restarting the worker forgets every VM.
+ * Each VM gets a private address on its project's network, and the platform agent its
+ * cloud-init installs is simulated by FakePlatformAgents.
  */
 @Injectable()
 export class FakeDriver implements HypervisorDriver {
@@ -22,6 +26,8 @@ export class FakeDriver implements HypervisorDriver {
   private readonly vms = new Map<string, FakeVm>();
   private readonly volumes = new Map<string, { sizeGb: number; attachedTo?: string }>();
   private nextId = 100;
+
+  constructor(@Optional() readonly agents?: FakePlatformAgents) {}
 
   async createVolume(_h: string, spec: { volumeId: string; sizeGb: number }) {
     await sleep(200);
@@ -51,9 +57,11 @@ export class FakeDriver implements HypervisorDriver {
   async createVm(hostRef: string, spec: VmSpec): Promise<VmHandle> {
     await sleep(300);
     const vmRef = JSON.stringify({ fake: true, vmid: this.nextId++, host: JSON.parse(hostRef).node ?? 'fake1' });
-    const privateIp = spec.privateIp?.address ?? `10.10.${Math.floor(this.nextId / 250)}.${this.nextId % 250}`;
-    this.vms.set(vmRef, { spec, power: 'running', bootedAt: Date.now(), ips: [], rules: [] });
-    this.log.debug(`created ${spec.name} → ${vmRef}`);
+    // The control plane allocates the private address; the simulator's own allocation is only a fallback for older callers.
+    const privateIp = spec.privateIp?.address ?? (this.agents ? await this.agents.allocateAddress(spec.networkRef) : `10.10.${Math.floor(this.nextId / 250)}.${this.nextId % 250}`);
+    this.vms.set(vmRef, { spec, power: 'running', bootedAt: Date.now(), ips: [], rules: [], privateIp });
+    await this.agents?.boot(spec.serverId, privateIp, spec.userData);
+    this.log.debug(`created ${spec.name} → ${vmRef} (${privateIp})`);
     return { vmRef, privateIp };
   }
 
@@ -65,19 +73,27 @@ export class FakeDriver implements HypervisorDriver {
   }
 
   async startVm(_h: string, vmRef: string) {
-    this.mustGet(vmRef).power = 'running';
+    const vm = this.mustGet(vmRef);
+    vm.power = 'running';
+    await this.agents?.setPower(vm.privateIp, 'running');
   }
   async stopVm(_h: string, vmRef: string) {
-    this.mustGet(vmRef).power = 'stopped';
+    const vm = this.mustGet(vmRef);
+    vm.power = 'stopped';
+    await this.agents?.setPower(vm.privateIp, 'stopped');
   }
   async rebootVm(_h: string, vmRef: string) {
     const vm = this.mustGet(vmRef);
     vm.power = 'stopped';
+    await this.agents?.setPower(vm.privateIp, 'stopped');
     await sleep(500);
     vm.power = 'running';
+    await this.agents?.setPower(vm.privateIp, 'running');
   }
   async deleteVm(_h: string, vmRef: string) {
+    const vm = this.vms.get(vmRef);
     this.vms.delete(vmRef); // idempotent
+    if (vm) await this.agents?.remove(vm.privateIp);
   }
   async resizeVm(_h: string, vmRef: string, size: { vcpu: number; memoryMb: number; diskGb: number }) {
     Object.assign(this.mustGet(vmRef).spec, size);
@@ -100,7 +116,10 @@ export class FakeDriver implements HypervisorDriver {
   async rollbackVm(_h: string, vmRef: string) {
     await sleep(500);
     const vm = this.vms.get(vmRef);
-    if (vm) vm.power = 'stopped';
+    if (vm) {
+      vm.power = 'stopped';
+      await this.agents?.setPower(vm.privateIp, 'stopped');
+    }
   }
   // These three are called from the API process, which does not share memory with the
   // worker that created the VM. Unknown refs are accepted so the dev console stays usable.

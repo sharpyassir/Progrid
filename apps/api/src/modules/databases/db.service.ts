@@ -18,7 +18,7 @@ import { PrivateNetworksService } from '../network/private-networks.service';
 import { OBJECT_STORAGE_PROVIDER, ObjectStorageProvider, emptyAndDeleteBucket } from '../storage/objects/objects.provider';
 import { renderDbCloudInit } from './cloud-init';
 import { recordDiskUsage } from '../monitoring/metrics.service';
-import { agentHost, vipNetworkFor, vrrpPass } from '../../common/platform-agent';
+import { agentFetch, agentHost, vipNetworkFor, vrrpPass } from '../../common/platform-agent';
 import { CreateDatabaseDto, DbNameDto, ENGINE_PORTS, ENGINE_VERSIONS, RestoreDatabaseDto, UpdateDatabaseDto } from './db.dto';
 
 const NODE_IMAGE = 'ubuntu-24-04';
@@ -223,7 +223,7 @@ export class DatabasesService {
     const ip = primary ? agentHost(primary.server) : null;
     if (!ip) return { id: b.id, status: 'running' };
     try {
-      const r = await fetch(`http://${ip}:9009/backup`, { method: 'POST', headers: { 'X-Pgcloud-Secret': c.vmSecret, 'content-type': 'application/json' }, body: JSON.stringify({ id: b.id }), signal: AbortSignal.timeout(8000) });
+      const r = await agentFetch(ip, { method: 'POST', path: '/backup', secret: c.vmSecret, body: { id: b.id }, timeoutMs: 8000 });
       if (!r.ok) throw new Error(`node answered ${r.status}`);
     } catch (err) {
       // Nodes unreachable (or fake): the minute job will not find a result and marks it failed after six hours.
@@ -267,7 +267,7 @@ export class DatabasesService {
       const ip = agentHost(n.server);
       if (!ip) throw new Error(`node ${n.index} has no address`);
       const rid = `${backupId}-${n.index}-${Date.now()}`;
-      const post = await fetch(`http://${ip}:9009/restore`, { method: 'POST', headers: { 'X-Pgcloud-Secret': c.vmSecret, 'content-type': 'application/json' }, body: JSON.stringify({ id: rid, backupId, ref: b.ref, primary: n.id === primary.id, primaryIp }), signal: AbortSignal.timeout(10_000) });
+      const post = await agentFetch(ip, { method: 'POST', path: '/restore', secret: c.vmSecret, body: { id: rid, backupId, ref: b.ref, primary: n.id === primary.id, primaryIp }, timeoutMs: 10_000 });
       if (!post.ok) throw new Error(`node ${n.index} refused the restore: ${post.status} ${(await post.text().catch(() => '')).slice(0, 200)}`);
       const deadline = Date.now() + 3 * 3600_000;
       for (;;) {
@@ -309,7 +309,7 @@ export class DatabasesService {
   }
 
   private async nodeStatus(secret: string, ip: string): Promise<NodeReport> {
-    const r = await fetch(`http://${ip}:9009/status`, { headers: { 'X-Pgcloud-Secret': secret }, signal: AbortSignal.timeout(6000) });
+    const r = await agentFetch(ip, { path: '/status', secret, timeoutMs: 6000 });
     if (!r.ok) throw new Error(`status answered ${r.status}`);
     return (await r.json()) as NodeReport;
   }
@@ -350,7 +350,7 @@ export class DatabasesService {
         params: {},
       };
       try {
-        const r = await fetch(`http://${ip}:9009/config`, { method: 'POST', headers: { 'X-Pgcloud-Secret': c.vmSecret, 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(120_000) });
+        const r = await agentFetch(ip, { method: 'POST', path: '/config', secret: c.vmSecret, body, timeoutMs: 120_000 });
         if (r.ok) {
           applied++;
           await this.prisma.dbNode.update({ where: { id: n.id }, data: { appliedVersion: c.configVersion, lastSeenAt: new Date() } });
@@ -391,18 +391,22 @@ export class DatabasesService {
       }
       const previousPrimary = c.nodeServers.find((n) => n.role === 'primary')?.index;
       let newPrimary: number | undefined;
+      const reportedPrimary: number[] = [];
       for (const n of c.nodeServers) {
         const ip = agentHost(n.server);
         if (!ip || n.server.status !== 'active') continue;
         try {
-          const r = await fetch(`http://${ip}:9009/status`, { headers: { 'X-Pgcloud-Secret': c.vmSecret }, signal: AbortSignal.timeout(4000) }).then((x) => {
+          const r = await agentFetch(ip, { path: '/status', secret: c.vmSecret, timeoutMs: 4000 }).then((x) => {
             if (!x.ok) throw new Error(`status answered ${x.status}`);
             return x.json() as Promise<NodeReport>;
           });
           await this.prisma.dbNode.update({ where: { id: n.id }, data: { role: r.role, lagBytes: r.lagBytes ?? null, lastSeenAt: new Date(), appliedVersion: r.version } });
           await recordDiskUsage(this.prisma, n.serverId, r.diskUsedPercent);
           if (this.unreachable.delete(n.id)) await this.emit('database.node_recovered', c, { node: n.index, serverId: n.serverId });
-          if (r.role === 'primary') newPrimary = n.index;
+          if (r.role === 'primary') {
+            newPrimary = n.index;
+            reportedPrimary.push(n.index);
+          }
           for (const b of r.backups ?? []) {
             if (b.status === 'running') continue;
             const row = await this.prisma.dbBackup.findUnique({ where: { id: b.id } });
@@ -419,6 +423,9 @@ export class DatabasesService {
           }
         }
       }
+      // A primary that did not answer this pass is not the primary any more once another node is:
+      // keep only the ones that said so, or connection details and backups keep going to the old one.
+      if (reportedPrimary.length) await this.prisma.dbNode.updateMany({ where: { clusterId: c.id, role: 'primary', index: { notIn: reportedPrimary } }, data: { role: 'unknown' } });
       if (newPrimary !== undefined && previousPrimary !== undefined && newPrimary !== previousPrimary) await this.emit('database.failover', c, { from: previousPrimary, to: newPrimary });
       if (c.status === 'updating' && c.nodeServers.every((n) => n.appliedVersion >= c.configVersion)) await this.prisma.dbCluster.update({ where: { id: c.id }, data: { status: 'active' } });
       // Backups that never reported within six hours count as failed.

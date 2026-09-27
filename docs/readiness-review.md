@@ -22,7 +22,7 @@ what blocks money first. Items marked "fixed" were corrected in the same commit 
 | Compute on Proxmox (host agent, workflows) | Written, tested against a simulator only | First real node test will find bugs; list below |
 | Networking (public IPs, firewall, private network) | Public IP, firewall and per project private networks written (static addresses, SDN VNets, IP filter), tested against the simulator; IPv6 missing | Test SDN on a real cluster |
 | Volumes, object storage, DNS | Written against Ceph RBD, RGW and PowerDNS; never run on real ones | Test on real cluster |
-| Managed databases, Kubernetes, App Platform | Written end to end; agents never booted on a real VM | Expect a hardening pass of one to two weeks each |
+| Managed databases, Kubernetes, App Platform | Written end to end and run in the integration suite against simulated agents; agents never booted on a real VM | Expect a hardening pass of one to two weeks each |
 | Control plane hosting (compose, Ansible) | Single host, working for a demo | Not fit for paying customers as is |
 | Observability, backups, DR | Minimal | Build before charging |
 
@@ -162,10 +162,23 @@ what blocks money first. Items marked "fixed" were corrected in the same commit 
     done before launch.
 30. **Team management.** No member invites, role changes, tax profile, or account closure, even
     though the refund policy says customers can close their account from the console.
-31. **Tests.** Six test files in the repository. Nothing covers payments, invoices, IAM, the auth
-    guard, admin or workflows, and the fake driver does not simulate the node agents, so the
-    managed products have never been exercised even in simulation. Add fake agents and an
-    integration suite that runs in CI.
+31. **Tests.** Partly done. With the fake driver, every platform agent call now goes to an in
+    process simulator (`apps/api/src/drivers/fake-platform-agents.ts`) that answers like the
+    Python agents: same paths, status codes, JSON and shared secret, the database agent's 409
+    until a primary and the users exist, and the app host's Docker and Caddy readiness. The
+    fake driver gives each VM a private address on its project network. An integration suite
+    (`apps/api/test/integration`, `pnpm test:integration`, the `integration` job in CI) boots the
+    API and the Temporal worker with the real workflows against Postgres, Redis and Temporal, and
+    covers signup, sessions, scoped API tokens, the prepaid gate and card top ups, servers,
+    snapshots, volumes and public addresses, load balancers, one and three node Postgres with
+    failover, Valkey, MySQL, Kubernetes with scaling, join tokens and the cloud controller, App
+    Platform with custom domains and host failure, Git Deploy, rating, invoices with VAT,
+    dunning and reinstatement, and limited staff with two factor sign in. It found and fixed
+    four bugs: a scaled up Kubernetes node drained under a reused name, the volume of a deleted
+    claim never released, a dead Postgres primary kept as primary after failover, and the
+    system actor breaking the audit log on the first app host. Still missing: the Proxmox
+    driver and the host agent against a real node, the real Python agents (the simulator
+    follows their code but does not run it), Moyasar, PowerDNS and RGW, and the console.
 
 ## E. Claims to correct on the website until built
 
