@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
+import { resolveCname, resolveTxt } from 'node:dns/promises';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TemporalService } from '../../common/temporal/temporal.service';
@@ -13,6 +14,7 @@ import { SpendService } from '../billing/spend.service';
 import { FirewallsService } from '../network/firewalls.service';
 import { GithubService } from '../github/github.service';
 import { renderAppHostCloudInit } from './cloud-init';
+import { agentHost } from '../../common/platform-agent';
 import { APP_SIZES, AppSizeId, CreateAppDto, DomainDto, MAX_DOMAINS, UpdateAppDto } from './app.dto';
 
 const HOST_MANAGED = 'apps:host';
@@ -24,14 +26,27 @@ const HOST_RESERVE_MB = 1536;
 
 const appInclude = {
   region: { select: { id: true, name: true } },
-  host: { include: { server: { select: { status: true, publicIps: { select: { address: true } } } } } },
+  host: { include: { server: { select: { id: true, name: true, status: true, privateIp: true, publicIps: { select: { address: true } } } } } },
   deploys: { orderBy: { startedAt: 'desc' as const }, take: 10, select: { id: true, status: true, trigger: true, commit: true, startedAt: true, finishedAt: true } },
 } satisfies Prisma.PlatformAppInclude;
 type AppRow = Prisma.PlatformAppGetPayload<{ include: typeof appInclude }>;
-type HostRow = Prisma.AppHostGetPayload<{ include: { server: { select: { status: true; publicIps: { select: { address: true } } } }; apps: { include: { deploys: { orderBy: { startedAt: 'desc' }; take: 1 }; installation: true } } } }>;
+type HostRow = Prisma.AppHostGetPayload<{ include: { server: { select: { id: true; name: true; status: true; privateIp: true; publicIps: { select: { address: true } } } }; apps: { include: { deploys: { orderBy: { startedAt: 'desc' }; take: 1 }; installation: true } } } }>;
+
+/** Ownership check of one custom domain (PlatformApp.domainChecks). */
+interface DomainCheck {
+  token: string;
+  verifiedAt: string | null;
+}
+type DomainChecks = Record<string, DomainCheck>;
+
+/** A host that has not reported Docker and Caddy running for this long counts as failed. */
+const HOST_DOWN_MS = 5 * 60_000;
 
 interface HostStatus {
   version: number;
+  docker?: boolean;
+  caddy?: boolean;
+  ready?: boolean;
   apps: Record<string, { deployId?: string; state?: 'building' | 'live' | 'failed'; commit?: string | null; error?: string | null; running?: number; logTail?: string }>;
 }
 
@@ -170,7 +185,7 @@ export class AppPlatformService {
   /** Build log (from the host, cached on the app) or the runtime log of the first instance. */
   async logs(actor: Actor, id: string, type: 'build' | 'runtime' = 'build', project?: string) {
     const app = await this.own(actor, id, project);
-    const ip = app.host?.server.publicIps[0]?.address;
+    const ip = app.host ? agentHost(app.host.server) : null;
     if (ip && app.host?.server.status === 'active') {
       try {
         const r = await fetch(`http://${ip}:9009/logs?app=${app.id}&type=${type}`, { headers: { 'X-Pgcloud-Secret': app.host.vmSecret }, signal: AbortSignal.timeout(6000) }).then((x) => x.json() as Promise<{ log: string }>);
@@ -191,15 +206,58 @@ export class AppPlatformService {
     if (app.customDomains.includes(domain)) return this.present(app);
     if (app.customDomains.length >= MAX_DOMAINS) throw ApiError.quota(`An app can have at most ${MAX_DOMAINS} custom domains`);
     if (await this.prisma.platformApp.findFirst({ where: { customDomains: { has: domain }, deletedAt: null } })) throw ApiError.conflict('domain_taken', `${domain} is already attached to another app`);
-    await this.prisma.platformApp.update({ where: { id }, data: { customDomains: { push: domain } } });
-    if (app.hostId) await this.pushHost(app.hostId).catch((e) => this.log.warn(`domain push: ${e.message}`));
+    // Served only once verified: a TXT record with the token, or a CNAME to the app's own hostname.
+    const checks: DomainChecks = { ...((app.domainChecks ?? {}) as unknown as DomainChecks), [domain]: { token: `progrid-${randomBytes(16).toString('hex')}`, verifiedAt: null } };
+    await this.prisma.platformApp.update({ where: { id }, data: { customDomains: { push: domain }, domainChecks: checks as unknown as Prisma.InputJsonValue } });
     await this.events.emit('app.domain_added', { appId: id, domain }, { actor, resource: `app:${id}` });
+    await this.checkDomains(id).catch((e) => this.log.warn(`domain check for ${id}: ${(e as Error).message}`));
     return this.present(await this.own(actor, id, project));
+  }
+
+  async verifyDomain(actor: Actor, id: string, domain: string, project?: string) {
+    const app = await this.own(actor, id, project);
+    const name = domain.toLowerCase();
+    if (!app.customDomains.includes(name)) throw ApiError.notFound('domain', name);
+    const verified = await this.checkDomains(id);
+    const out = this.present(await this.own(actor, id, project));
+    if (!verified.includes(name) && !(out.domains.find((d) => d.domain === name)?.verified)) {
+      throw ApiError.invalidState(`No ownership record found for ${name} yet. Add a TXT record at _progrid-verify.${name} with the token shown for the domain, or a CNAME from ${name} to ${out.hostname}, then try again; DNS changes can take a few minutes.`);
+    }
+    return out;
+  }
+
+  /**
+   * Looks up every unverified domain of an app; marks the ones that pass and pushes the host
+   * when any did. Returns the newly verified domains.
+   */
+  async checkDomains(appId: string): Promise<string[]> {
+    const app = await this.prisma.platformApp.findUnique({ where: { id: appId } });
+    if (!app) return [];
+    const checks = (app.domainChecks ?? {}) as unknown as DomainChecks;
+    const target = `${app.slug}.${loadConfig().APPS_DOMAIN}`.toLowerCase();
+    const verified: string[] = [];
+    for (const domain of app.customDomains) {
+      const check = checks[domain];
+      if (!check || check.verifiedAt) continue;
+      const txt = await resolveTxt(`_progrid-verify.${domain}`).catch(() => [] as string[][]);
+      const cname = await resolveCname(domain).catch(() => [] as string[]);
+      if (txt.some((parts) => parts.join('').trim() === check.token) || cname.some((c) => c.replace(/\.$/, '').toLowerCase() === target)) {
+        check.verifiedAt = new Date().toISOString();
+        verified.push(domain);
+      }
+    }
+    if (!verified.length) return [];
+    await this.prisma.platformApp.update({ where: { id: appId }, data: { domainChecks: checks as unknown as Prisma.InputJsonValue } });
+    for (const domain of verified) await this.emit('app.domain_verified', appId, { domain });
+    if (app.hostId) await this.pushHost(app.hostId).catch((e) => this.log.warn(`domain push: ${e.message}`));
+    return verified;
   }
 
   async removeDomain(actor: Actor, id: string, domain: string, project?: string) {
     const app = await this.own(actor, id, project);
-    await this.prisma.platformApp.update({ where: { id }, data: { customDomains: app.customDomains.filter((d) => d !== domain.toLowerCase()) } });
+    const checks = { ...((app.domainChecks ?? {}) as unknown as DomainChecks) };
+    delete checks[domain.toLowerCase()];
+    await this.prisma.platformApp.update({ where: { id }, data: { customDomains: app.customDomains.filter((d) => d !== domain.toLowerCase()), domainChecks: checks as unknown as Prisma.InputJsonValue } });
     if (app.hostId) await this.pushHost(app.hostId).catch((e) => this.log.warn(`domain push: ${e.message}`));
     return this.present(await this.own(actor, id, project));
   }
@@ -230,11 +288,11 @@ export class AppPlatformService {
     const fw = await this.prisma.firewall.findFirst({ where: { projectId: project.id, name: 'app-hosts' } }) ?? (await this.firewalls.create(await this.platformActor(), project.id, {
       name: 'app-hosts',
       rules: [
-        { direction: 'inbound', protocol: 'tcp', ports: '22', cidrs: [process.env.CONTROL_PLANE_CIDR ?? '0.0.0.0/0'], description: 'platform ssh' },
+        { direction: 'inbound', protocol: 'tcp', ports: '22', cidrs: [cfg.CONTROL_PLANE_CIDR], description: 'platform ssh' },
         { direction: 'inbound', protocol: 'tcp', ports: '80', cidrs: ['0.0.0.0/0', '::/0'], description: 'http' },
         { direction: 'inbound', protocol: 'tcp', ports: '443', cidrs: ['0.0.0.0/0', '::/0'], description: 'https' },
         { direction: 'inbound', protocol: 'udp', ports: '443', cidrs: ['0.0.0.0/0', '::/0'], description: 'http3' },
-        { direction: 'inbound', protocol: 'tcp', ports: '9009', cidrs: [process.env.CONTROL_PLANE_CIDR ?? '0.0.0.0/0'], description: 'pgcloud app agent' },
+        { direction: 'inbound', protocol: 'tcp', ports: '9009', cidrs: [cfg.CONTROL_PLANE_CIDR], description: 'pgcloud app agent' },
         { direction: 'outbound', protocol: 'any', cidrs: ['0.0.0.0/0'] },
       ],
     }));
@@ -261,19 +319,30 @@ export class AppPlatformService {
     const app = await this.prisma.platformApp.findUniqueOrThrow({ where: { id: appId } });
     if (app.hostId) return app.hostId;
     const need = APP_SIZES[app.size as AppSizeId].memoryMb * app.instances;
-    const hosts = await this.prisma.appHost.findMany({ where: { regionId: app.regionId, status: { in: ['active', 'provisioning'] } }, include: { apps: { where: { deletedAt: null }, select: { size: true, instances: true } } } });
+    // Failed and draining hosts are never used. An active host must have reported Docker and
+    // Caddy running recently, and is asked again before it gets the app; a provisioning host is
+    // fine because the workflow waits for it to become ready.
+    const hosts = await this.prisma.appHost.findMany({ where: { regionId: app.regionId, status: { in: ['active', 'provisioning'] } }, include: { server: { select: { id: true, name: true, status: true, privateIp: true, publicIps: { select: { address: true } } } }, apps: { where: { deletedAt: null }, select: { size: true, instances: true } } } });
     const free = (h: (typeof hosts)[number]) => h.capacityMb - h.apps.reduce((n, a) => n + APP_SIZES[a.size as AppSizeId].memoryMb * a.instances, 0);
-    const candidates = hosts.filter((h) => free(h) >= need).sort((a, b) => (a.status === b.status ? free(b) - free(a) : a.status === 'active' ? -1 : 1));
-    const host = candidates[0] ?? (await this.provisionHost(app.regionId));
+    const fresh = (h: (typeof hosts)[number]) => h.status === 'provisioning' || (!!h.readyAt && Date.now() - h.readyAt.getTime() < HOST_DOWN_MS);
+    const candidates = hosts.filter((h) => free(h) >= need && fresh(h)).sort((a, b) => (a.status === b.status ? free(b) - free(a) : a.status === 'active' ? -1 : 1));
+    let host: { id: string } | undefined;
+    for (const h of candidates) {
+      if (h.status === 'provisioning' || hostReady(await this.hostStatus(h).catch(() => null))) {
+        host = h;
+        break;
+      }
+    }
+    host ??= await this.provisionHost(app.regionId);
     await this.prisma.platformApp.update({ where: { id: appId }, data: { hostId: host.id } });
     return host.id;
   }
 
   /** Push the desired state of every app on a host to its agent. */
   async pushHost(hostId: string) {
-    const host = await this.prisma.appHost.findUnique({ where: { id: hostId }, include: { server: { select: { status: true, publicIps: { select: { address: true } } } }, apps: { where: { deletedAt: null, status: { notIn: ['deleted'] } }, include: { deploys: { orderBy: { startedAt: 'desc' }, take: 1 }, installation: true } } } });
+    const host = await this.prisma.appHost.findUnique({ where: { id: hostId }, include: { server: { select: { id: true, name: true, status: true, privateIp: true, publicIps: { select: { address: true } } } }, apps: { where: { deletedAt: null, status: { notIn: ['deleted'] } }, include: { deploys: { orderBy: { startedAt: 'desc' }, take: 1 }, installation: true } } } });
     if (!host) return { ok: false };
-    const ip = host.server.publicIps[0]?.address;
+    const ip = agentHost(host.server);
     if (!ip || host.server.status !== 'active') throw ApiError.invalidState('App host is not active yet');
     const cfg = loadConfig();
     const apps = [] as Record<string, unknown>[];
@@ -283,7 +352,7 @@ export class AppPlatformService {
       if (a.installation && !a.installation.suspendedAt) token = await this.github.installationToken(a.installation.installationId).catch(() => undefined);
       const size = APP_SIZES[a.size as AppSizeId];
       apps.push({
-        id: a.id, slug: a.slug, hostnames: [`${a.slug}.${cfg.APPS_DOMAIN}`, ...a.customDomains], repo: a.repoUrl, branch: a.branch, token, commit: a.deploys[0]?.commit ?? null,
+        id: a.id, slug: a.slug, hostnames: [`${a.slug}.${cfg.APPS_DOMAIN}`, ...verifiedDomains(a)], repo: a.repoUrl, branch: a.branch, token, commit: a.deploys[0]?.commit ?? null,
         port: a.port, env: a.envVars, memoryMb: size.memoryMb, cpus: size.cpus, instances: a.instances, deployId: a.deploys[0]?.id ?? 'none', healthPath: a.healthPath, stopped: a.status === 'stopped',
       });
     }
@@ -295,21 +364,46 @@ export class AppPlatformService {
 
   /** Every minute: hosts that finished booting, build results, and runtime state. */
   async refreshAll() {
-    const provisioning = await this.prisma.appHost.findMany({ where: { status: 'provisioning' }, include: { server: { select: { status: true, statusMessage: true } } } });
+    const provisioning = await this.prisma.appHost.findMany({ where: { status: 'provisioning' }, include: { server: { select: { id: true, name: true, status: true, statusMessage: true, privateIp: true, publicIps: { select: { address: true } } } } } });
     for (const h of provisioning) {
-      if (h.server.status === 'active') await this.prisma.appHost.update({ where: { id: h.id }, data: { status: 'active' } });
+      // Usable only once the agent reports Docker and Caddy running, not merely when the VM is up.
+      if (h.server.status === 'active' && hostReady(await this.hostStatus(h).catch(() => null))) await this.prisma.appHost.update({ where: { id: h.id }, data: { status: 'active', readyAt: new Date() } });
       else if (h.server.status === 'failed') await this.prisma.appHost.update({ where: { id: h.id }, data: { status: 'failed' } });
     }
-    const hosts = await this.prisma.appHost.findMany({ where: { status: 'active' }, include: { server: { select: { status: true, publicIps: { select: { address: true } } } }, apps: { where: { deletedAt: null }, include: { deploys: { orderBy: { startedAt: 'desc' }, take: 1 } } } } });
+    const hosts = await this.prisma.appHost.findMany({ where: { status: 'active' }, include: { server: { select: { id: true, name: true, status: true, privateIp: true, publicIps: { select: { address: true } } } }, apps: { where: { deletedAt: null }, include: { deploys: { orderBy: { startedAt: 'desc' }, take: 1 } } } } });
     for (const h of hosts) {
       const st = await this.hostStatus(h).catch(() => null);
+      if (hostReady(st)) await this.prisma.appHost.update({ where: { id: h.id }, data: { readyAt: new Date() } });
+      else if (h.server.status === 'failed' || Date.now() - (h.readyAt ?? h.createdAt).getTime() > HOST_DOWN_MS) {
+        await this.failHost(h.id, st ? `docker ${st.docker ? 'up' : 'down'}, caddy ${st.caddy ? 'up' : 'down'}` : 'agent unreachable');
+        continue;
+      }
       if (!st) continue;
       for (const a of h.apps) await this.applyReport(a, st.apps[a.id]);
     }
+    // Pending custom domains are looked up again every five minutes for a week after they were added.
+    if (new Date().getUTCMinutes() % 5 === 0) {
+      const pending = await this.prisma.platformApp.findMany({ where: { deletedAt: null, customDomains: { isEmpty: false }, updatedAt: { gt: new Date(Date.now() - 7 * 86_400_000) } }, select: { id: true, domainChecks: true } });
+      for (const a of pending) {
+        if (Object.values((a.domainChecks ?? {}) as unknown as DomainChecks).some((c) => !c.verifiedAt)) await this.checkDomains(a.id).catch(() => undefined);
+      }
+    }
   }
 
-  async hostStatus(h: { vmSecret: string; server: { status: string; publicIps: { address: string }[] } }): Promise<HostStatus | null> {
-    const ip = h.server.publicIps[0]?.address;
+  /** A failed host gets no new apps; its apps are placed on a healthy host, redeployed there, and DNS follows. */
+  async failHost(hostId: string, reason: string) {
+    const h = await this.prisma.appHost.update({ where: { id: hostId }, data: { status: 'failed' }, include: { server: { select: { name: true } } } });
+    const apps = await this.prisma.platformApp.findMany({ where: { hostId, deletedAt: null, status: { notIn: ['deleting', 'deleted'] } }, select: { id: true } });
+    this.log.warn(`app host ${h.server.name} failed (${reason}); moving ${apps.length} apps`);
+    for (const a of apps) {
+      await this.prisma.platformApp.update({ where: { id: a.id }, data: { hostId: null } });
+      await this.redeploy(null, a.id, 'host_failed').catch((e) => this.log.warn(`move app ${a.id}: ${(e as Error).message}`));
+    }
+    return apps.length;
+  }
+
+  async hostStatus(h: { vmSecret: string; server: { id: string; name: string; status: string; privateIp: string | null; publicIps: { address: string }[] } }): Promise<HostStatus | null> {
+    const ip = agentHost(h.server);
     if (!ip || h.server.status !== 'active') return null;
     const r = await fetch(`http://${ip}:9009/status`, { headers: { 'X-Pgcloud-Secret': h.vmSecret }, signal: AbortSignal.timeout(8000) });
     if (!r.ok) return null;
@@ -398,12 +492,27 @@ export class AppPlatformService {
     return {
       id: a.id, name: a.slug, status: a.status, statusMessage: a.statusMessage,
       url: `https://${a.slug}.${cfg.APPS_DOMAIN}`, hostname: `${a.slug}.${cfg.APPS_DOMAIN}`, customDomains: a.customDomains,
+      domains: a.customDomains.map((d) => {
+        const check = ((a.domainChecks ?? {}) as unknown as DomainChecks)[d];
+        return { domain: d, verified: !!check?.verifiedAt, verifiedAt: check?.verifiedAt ?? null, verification: check && !check.verifiedAt ? { txt: { name: `_progrid-verify.${d}`, value: check.token }, cname: { name: d, value: `${a.slug}.${cfg.APPS_DOMAIN}` } } : null };
+      }),
       region: a.region, repoUrl: a.repoUrl, repo: a.repoFullName, source: a.installationId ? 'github_app' : 'url', branch: a.branch, port: a.port,
       size: { id: a.size, memoryMb: size.memoryMb, cpus: size.cpus }, instances: a.instances, healthPath: a.healthPath, env: a.envVars as Record<string, string>,
       hostIp: a.host?.server.publicIps[0]?.address ?? null, lastCommit: a.lastCommit, lastDeployAt: a.lastDeployAt,
       deploys: a.deploys, projectId: a.projectId, createdAt: a.createdAt,
     };
   }
+}
+
+/** Docker and Caddy both running. Agents from before the readiness report count as ready when they answer. */
+export function hostReady(st: HostStatus | null | undefined): boolean {
+  return !!st && (st.ready ?? true);
+}
+
+/** Custom domains that passed the ownership check; the only ones written into the Caddyfile. */
+function verifiedDomains(a: { customDomains: string[]; domainChecks: Prisma.JsonValue }) {
+  const checks = (a.domainChecks ?? {}) as unknown as DomainChecks;
+  return a.customDomains.filter((d) => !!checks[d]?.verifiedAt);
 }
 
 export { HOST_MANAGED as APP_HOST_MANAGED };

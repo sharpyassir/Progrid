@@ -15,6 +15,7 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import type { Approval } from '@prisma/client';
 import { CreateServerDto, ListServersQuery, RestoreServerDto, ServerActionDto, UpdateServerDto } from './compute.dto';
 import { randomBytes } from 'node:crypto';
+import { recordDiskUsage } from '../monitoring/metrics.service';
 import { hasManagedAgent, healthOf, renderManagedInstallScript, withManagedAgent, type ManagedReport } from './managed-agent';
 
 /** Transitions allowed from each state. Everything else is `invalid_state`. */
@@ -91,7 +92,8 @@ export class ServersService {
     return present(server);
   }
 
-  async create(actor: Actor, dto: CreateServerDto) {
+  /** `opts.spreadGroup` (platform callers only): nodes of one cluster, placed on different hosts where the region allows. */
+  async create(actor: Actor, dto: CreateServerDto, opts: { spreadGroup?: string } = {}) {
     const cfg = loadConfig();
     const project = await this.iam.resolveProject(actor, dto.project);
     await this.trust.assertCanProvision(actor.teamId);
@@ -187,7 +189,7 @@ export class ServersService {
         managedToken,
         managedHealth: dto.managed ? 'pending' : null,
         firewalls: dto.firewalls?.length ? { create: dto.firewalls.map((firewallId) => ({ firewallId })) } : undefined,
-        actions: { create: { type: 'create', params: { avoid: dto.avoid ?? [] }, requestedBy: actor.tokenId ?? actor.userId } },
+        actions: { create: { type: 'create', params: { avoid: dto.avoid ?? [], ...(opts.spreadGroup ? { spreadGroup: opts.spreadGroup } : {}) }, requestedBy: actor.tokenId ?? actor.userId } },
       },
       include: { ...serverInclude, actions: true },
     });
@@ -423,6 +425,7 @@ export class ManagedCareService {
     const now = new Date();
     const { health, issues } = healthOf(report, now, now);
     await this.prisma.server.update({ where: { id: server.id }, data: { managedReport: report as object, managedReportedAt: now, managedHealth: health } });
+    await recordDiskUsage(this.prisma, server.id, report.diskUsedPct, now);
     if (health === 'warn' && server.managedHealth !== 'warn') await this.events.emit('server.managed_warning', { serverId: server.id, name: server.name, issues }, { resource: `server:${server.id}`, teamId: server.project.teamId });
     if (health === 'ok' && server.managedHealth === 'warn') await this.events.emit('server.managed_recovered', { serverId: server.id, name: server.name }, { resource: `server:${server.id}`, teamId: server.project.teamId });
     return { ok: true, health, issues };

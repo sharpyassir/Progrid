@@ -1,6 +1,8 @@
 import { ArrayMaxSize, IsArray, IsBoolean, IsEmail, IsIn, IsInt, IsNumber, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 
-export const METRICS = ['cpu', 'memory', 'disk', 'net_in', 'net_out'] as const;
+export const METRICS = ['cpu', 'memory', 'disk', 'net_in', 'net_out', 'db_node_unreachable', 'app_deploy_failed'] as const;
+/** Metrics that fire on an event instead of a threshold; they cover every database or app of the team. */
+export const EVENT_METRICS = ['db_node_unreachable', 'app_deploy_failed'] as const;
 
 export class CreateAlertDto {
   @IsString() @Length(1, 80) name: string;

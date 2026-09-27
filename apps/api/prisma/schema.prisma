@@ -544,6 +544,8 @@ enum FirewallProtocol {
   tcp
   udp
   icmp
+  /// IP protocol 112, keepalived between cluster members
+  vrrp
   any
 }
 
@@ -1045,6 +1047,10 @@ enum AlertMetric {
   disk
   net_in
   net_out
+  /// Event based: a managed database node unreachable for five minutes. Threshold and window are ignored.
+  db_node_unreachable
+  /// Event based: an App Platform deploy failed. Threshold and window are ignored.
+  app_deploy_failed
 }
 
 enum AlertComparator {
@@ -1363,6 +1369,7 @@ enum DbClusterStatus {
   active
   updating
   failed
+  restoring
   deleting
   deleted
 }
@@ -1463,6 +1470,8 @@ model DbBackup {
   status      DbBackupStatus @default(running)
   sizeBytes   BigInt?
   label       String?
+  /// Engine side name of the backup: pgBackRest set label, or the object key of the RDB or XtraBackup stream.
+  ref         String?
   startedAt   DateTime       @default(now())
   completedAt DateTime?
   error       String?
@@ -1566,6 +1575,10 @@ model KubeCluster {
   configVersion Int               @default(1)
   /// Cloud controller state: load balancers and volumes created for Services and PVCs.
   cloudState    Json              @default("{}")
+  /// Platform owned bucket for daily etcd snapshots; null keeps snapshots on the control plane nodes.
+  backupBucket    String?
+  backupAccessKey String?
+  backupSecretKey String?
   meteredSince  DateTime?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
@@ -1655,6 +1668,8 @@ model AppHost {
   capacityMb    Int
   vmSecret      String
   configVersion Int           @default(1)
+  /// Last time the agent reported Docker and Caddy running.
+  readyAt       DateTime?
   createdAt     DateTime      @default(now())
 
   region Region        @relation(fields: [regionId], references: [id])
@@ -1685,6 +1700,9 @@ model PlatformApp {
   instances      Int               @default(1)
   healthPath     String?
   customDomains  String[]          @default([])
+  /// Ownership checks per custom domain: { "<domain>": { "token": "...", "verifiedAt": "<ISO time>" | null } }.
+  /// Only verified domains are served.
+  domainChecks   Json              @default("{}")
   lastCommit     String?
   lastDeployAt   DateTime?
   buildLog       String?

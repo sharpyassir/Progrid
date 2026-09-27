@@ -1,3 +1,8 @@
+import { AGENT_S3_PY, agentNetPy, indentBlock } from '../../common/platform-agent';
+
+/** Flannel release the clusters install; bump deliberately after testing. */
+export const FLANNEL_MANIFEST = 'https://github.com/flannel-io/flannel/releases/download/v0.26.1/kube-flannel.yml';
+
 /**
  * cloud-init for a managed Kubernetes node (control plane or worker; the role comes with
  * the first config push). Installs containerd, kubeadm, kubelet and kubectl from the
@@ -6,15 +11,21 @@
  * (POST /config) and reports state (GET /status).
  *
  * What the agent does with a config:
- *   control plane, index 0   kubeadm init behind the VIP, install the CNI (flannel), the
- *                            pgcloud-block StorageClass, keep the join token alive, upload
- *                            certificates for the other control plane nodes, label and taint
+ *   control plane, index 0   kubeadm init behind the VIP, install the CNI (flannel, pinned
+ *                            and bound to the private interface), the pgcloud-block
+ *                            StorageClass, issue join tokens (24 hour TTL, POST /join-token
+ *                            for later joins), upload certificates for the other control
+ *                            plane nodes, label and taint
  *                            nodes, patch LoadBalancer Services with the addresses the
  *                            platform assigned, create PersistentVolumes for block volumes
  *                            the platform attached, and remove nodes that left the cluster
  *   control plane, others    kubeadm join --control-plane
  *   workers                  kubeadm join, then format and mount block volumes assigned to
  *                            them under /var/lib/pgcloud/volumes/<id>
+ *
+ * Every node's kubelet uses the private address (--node-ip). Control plane nodes renew the
+ * kubeadm certificates monthly, one node a day apart, and take a daily etcd snapshot that
+ * goes to the cluster's bucket when it has one, or stays on the node for seven days.
  *
  * GET /status on node 0 also carries the admin kubeconfig, the CA hash the joiners need,
  * node readiness, LoadBalancer Services and pending PersistentVolumeClaims of the
@@ -24,6 +35,11 @@
 export interface KubeNodeInit {
   version: string; // "1.31"
   vmSecret: string;
+  /**
+   * Network the API VIP lives on: private for a private address, public for the public
+   * address in kubeconfig today (see vipNetworkFor). VRRP always runs over the private network.
+   */
+  vipNetwork: 'public' | 'private';
 }
 
 export function renderKubeCloudInit(d: KubeNodeInit): string {
@@ -46,6 +62,8 @@ write_files:
     content: '${d.vmSecret}'
   - path: /opt/pgcloud/kube.version
     content: '${d.version}'
+  - path: /opt/pgcloud/vip.network
+    content: '${d.vipNetwork}'
   - path: /etc/systemd/system/pgcloud-k8sd.service
     content: |
       [Unit]
@@ -62,11 +80,15 @@ write_files:
     content: |
       #!/usr/bin/env python3
       # pgcloud managed Kubernetes node agent. Standard library only.
-      import base64, glob, http.server, json, os, subprocess, threading, time
+      import base64, glob, http.server, json, os, re, shutil, subprocess, threading, time, urllib.request, urllib.parse
       SECRET = open('/opt/pgcloud/vm.secret').read().strip()
       STATE = '/opt/pgcloud/state.json'
       LAST = '/opt/pgcloud/last-config.json'
       lock = threading.Lock()
+      slock = threading.Lock()
+      FLANNEL = '${FLANNEL_MANIFEST}'
+      CRICTL = 'crictl --runtime-endpoint unix:///run/containerd/containerd.sock '
+      SNAPSHOTS = '/var/lib/pgcloud/etcd-snapshots'
 
       def sh(cmd, check=True, timeout=900, env=None):
           r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout, env=env)
@@ -74,10 +96,42 @@ write_files:
           return r.stdout
       def write(path, content, mode=0o644):
           os.makedirs(os.path.dirname(path), exist_ok=True); open(path, 'w').write(content); os.chmod(path, mode)
+${agentNetPy(6)}
+
       def state():
           try: return json.load(open(STATE))
           except Exception: return {'version': 0}
       def save(st): json.dump(st, open(STATE, 'w'))
+      def update_state(**kw):
+          with slock:
+              st = state(); st.update(kw); save(st)
+      def log(msg):
+          try: open('/var/log/pgcloud-k8sd.log', 'a').write(time.strftime('%Y-%m-%dT%H:%M:%SZ ', time.gmtime()) + msg + '\\n')
+          except Exception: pass
+      def last_config():
+          try: return json.load(open(LAST))
+          except Exception: return None
+      def size_gb(q, default=10):
+          # Kubernetes quantity (10Gi, 500Mi, 1Ti, 20G, plain bytes) in whole GiB, rounded up. Odd values fall back to the default.
+          try:
+              q = str(q).strip()
+              units = {'Ki': 2**10, 'Mi': 2**20, 'Gi': 2**30, 'Ti': 2**40, 'Pi': 2**50, 'k': 10**3, 'K': 10**3, 'M': 10**6, 'G': 10**9, 'T': 10**12, 'P': 10**15}
+              n = None
+              for u in sorted(units, key=len, reverse=True):
+                  if q.endswith(u): n = float(q[:-len(u)]) * units[u]; break
+              if n is None: n = float(q)
+              return max(1, -(-int(n) // 2**30))
+          except Exception: return default
+      def node_ip(m):
+          return private_ipv4() or m['ip']
+      def kubelet_node_ip(m):
+          # The kubelet registers and serves on the private address, not the public one.
+          if write_if_changed('/etc/default/kubelet', 'KUBELET_EXTRA_ARGS=--node-ip=%s\\n' % node_ip(m)):
+              sh('systemctl restart kubelet', check=False)
+      def write_if_changed(path, content, mode=0o644):
+          old = open(path).read() if os.path.exists(path) else None
+          if old == content: return False
+          write(path, content, mode); return True
       def kubectl(args, check=True, inp=None):
           r = subprocess.run('kubectl --kubeconfig /etc/kubernetes/admin.conf ' + args, shell=True, capture_output=True, text=True, timeout=120, input=inp)
           if check and r.returncode != 0: raise RuntimeError('kubectl ' + args[:60] + ': ' + r.stderr.strip()[-300:])
@@ -86,29 +140,39 @@ write_files:
       def initialized(): return os.path.exists('/etc/kubernetes/kubelet.conf')
 
       def keepalived(c, m):
-          write('/etc/keepalived/keepalived.conf', "vrrp_script chk_api {\\n  script \\"/usr/bin/curl -sfk https://127.0.0.1:6443/healthz\\"\\n  interval 2\\n  fall 3\\n  rise 2\\n}\\nvrrp_instance VI_k8s {\\n  state BACKUP\\n  interface eth0\\n  virtual_router_id %d\\n  priority %d\\n  advert_int 1\\n  authentication { auth_type PASS auth_pass pgcloudk8 }\\n  virtual_ipaddress { %s/%d }\\n  track_script { chk_api }\\n}\\n" % (c['cluster']['vrid'], 100 - m['index'], c['cluster']['vip'], c['cluster']['prefix']))
+          # VRRP runs unicast between the control plane nodes over the private network; the VIP
+          # sits on the interface named by /opt/pgcloud/vip.network.
+          peers = [n['ip'] for n in c['cluster']['nodes'] if n['role'] == 'control' and not n['isSelf']]
+          uni = ("  unicast_src_ip %s\\n  unicast_peer { %s }\\n" % (private_ipv4() or m['ip'], ' '.join(peers))) if peers else ''
+          text = "vrrp_script chk_api {\\n  script \\"/usr/bin/curl -sfk https://127.0.0.1:6443/healthz\\"\\n  interval 2\\n  fall 3\\n  rise 2\\n}\\nvrrp_instance VI_k8s {\\n  state BACKUP\\n  interface %s\\n  virtual_router_id %d\\n  priority %d\\n  advert_int 1\\n%s  authentication { auth_type PASS auth_pass %s }\\n  virtual_ipaddress { %s/%d dev %s }\\n  track_script { chk_api }\\n}\\n" % (private_iface() or 'eth0', c['cluster']['vrid'], 100 - m['index'], uni, c['cluster']['vrrpPass'], c['cluster']['vip'], c['cluster']['prefix'], vip_iface())
+          if os.path.exists('/etc/keepalived/keepalived.conf') and open('/etc/keepalived/keepalived.conf').read() == text: return
+          write('/etc/keepalived/keepalived.conf', text)
           sh('systemctl enable --now keepalived && systemctl restart keepalived', check=False)
 
       def init_control(c, m):
           cfg = {'apiVersion': 'kubeadm.k8s.io/v1beta4', 'kind': 'ClusterConfiguration', 'kubernetesVersion': 'stable-' + c['kubeVersion'],
                  'clusterName': c['cluster']['name'], 'controlPlaneEndpoint': c['cluster']['endpoint'],
                  'networking': {'podSubnet': c['podCidr'], 'serviceSubnet': c['serviceCidr']},
-                 'apiServer': {'certSANs': [c['cluster']['vip'], m['ip'], m['name']]}}
+                 'apiServer': {'certSANs': [c['cluster']['vip'], node_ip(m), m['ip'], m['name']]}}
+          # Join tokens live 24 hours; nodes added later get a fresh one through POST /join-token.
           init = {'apiVersion': 'kubeadm.k8s.io/v1beta4', 'kind': 'InitConfiguration', 'certificateKey': c['certKey'],
-                  'bootstrapTokens': [{'token': c['joinToken'], 'ttl': '0s'}],
-                  'localAPIEndpoint': {'advertiseAddress': m['ip']}, 'nodeRegistration': {'name': m['name']}}
+                  'bootstrapTokens': [{'token': c['joinToken'], 'ttl': '24h'}],
+                  'localAPIEndpoint': {'advertiseAddress': node_ip(m)}, 'nodeRegistration': {'name': m['name']}}
           write('/opt/pgcloud/kubeadm.json', json.dumps(cfg) + '\\n---\\n' + json.dumps(init), 0o600)
           sh('kubeadm init --config /opt/pgcloud/kubeadm.json --upload-certs', timeout=1200)
-          kubectl('apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml')
+          # Flannel from a pinned release, with the cluster's pod network and VXLAN on the private interface.
+          manifest = sh('curl -fsSL %s' % FLANNEL, timeout=120).replace('10.244.0.0/16', c['podCidr'])
+          iface = private_iface() or 'eth0'
+          manifest = re.sub(r'\\n(\\s*)- --kube-subnet-mgr', lambda x: x.group(0) + '\\n' + x.group(1) + '- --iface=' + iface, manifest, count=1)
+          kubectl('apply -f -', inp=manifest)
           kubectl('apply -f -', inp=json.dumps({'apiVersion': 'storage.k8s.io/v1', 'kind': 'StorageClass', 'metadata': {'name': 'pgcloud-block', 'annotations': {'storageclass.kubernetes.io/is-default-class': 'true'}}, 'provisioner': 'pgcloud.dev/block', 'volumeBindingMode': 'WaitForFirstConsumer', 'reclaimPolicy': 'Delete'}))
 
       def join(c, m, control):
-          extra = ' --control-plane --certificate-key ' + c['certKey'] + ' --apiserver-advertise-address ' + m['ip'] if control else ''
+          extra = ' --control-plane --certificate-key ' + c['certKey'] + ' --apiserver-advertise-address ' + node_ip(m) if control else ''
           sh('kubeadm join %s --token %s --discovery-token-ca-cert-hash sha256:%s --node-name %s%s' % (c['cluster']['endpoint'], c['joinToken'], c['caHash'], m['name'], extra), timeout=1200)
 
       def reconcile_control(c):
-          # Bootstrap token and certificate key must stay usable for nodes that join later.
-          sh('kubeadm token create %s --ttl 0 2>/dev/null || true' % c['joinToken'], check=False)
+          # The certificate key must stay usable for control plane nodes that join later (tokens: POST /join-token).
           sh('kubeadm init phase upload-certs --upload-certs --certificate-key %s' % c['certKey'], check=False)
           for n in c['cluster']['nodes']:
               if n['role'] != 'worker': continue
@@ -157,6 +221,7 @@ write_files:
 
       def apply(c):
           m = me(c)
+          if not initialized(): kubelet_node_ip(m)
           if m['role'] == 'control':
               keepalived(c, m)
               if not initialized():
@@ -168,7 +233,7 @@ write_files:
               if not initialized():
                   if not c.get('caHash'): raise NotReady('waiting for the control plane')
                   join(c, m, False)
-              st = state(); st['mounted'] = mount_volumes(c); save(st)
+              update_state(mounted=mount_volumes(c))
 
       class NotReady(Exception): pass
 
@@ -176,7 +241,8 @@ write_files:
           st = state(); c = None
           try: c = json.load(open(LAST))
           except Exception: pass
-          out = {'version': st.get('version', 0), 'initialized': initialized(), 'mounted': st.get('mounted', []), 'role': me(c)['role'] if c else None, 'index': me(c)['index'] if c else None}
+          out = {'version': st.get('version', 0), 'initialized': initialized(), 'mounted': st.get('mounted', []), 'role': me(c)['role'] if c else None, 'index': me(c)['index'] if c else None,
+                 'etcdSnapshot': st.get('etcdSnapshot'), 'etcdSnapshotError': st.get('etcdSnapshotError'), 'certsRenewedAt': st.get('certsRenewedAt'), 'certsError': st.get('certsError')}
           if c and me(c)['role'] == 'control' and me(c)['index'] == 0 and os.path.exists('/etc/kubernetes/admin.conf'):
               try:
                   out['caHash'] = sh("openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | openssl rsa -pubin -outform der 2>/dev/null | openssl dgst -sha256 -hex | sed 's/^.* //'", check=False).strip()
@@ -189,14 +255,61 @@ write_files:
                                       'ip': (s['status'].get('loadBalancer', {}).get('ingress') or [{}])[0].get('ip')}
                                      for s in svcs.get('items', []) if s['spec'].get('type') == 'LoadBalancer']
                   pvcs = json.loads(kubectl('get pvc -A -o json', check=False) or '{"items":[]}')
-                  out['pvcs'] = [{'namespace': p['metadata']['namespace'], 'name': p['metadata']['name'], 'uid': p['metadata']['uid'], 'phase': p['status'].get('phase'),
-                                  'sizeGb': int(str(p['spec']['resources']['requests'].get('storage', '10Gi')).rstrip('Gi') or 10),
-                                  'node': p['metadata'].get('annotations', {}).get('volume.kubernetes.io/selected-node')}
+                  out['pvcs'] = [{'namespace': p['metadata']['namespace'], 'name': p['metadata']['name'], 'uid': p['metadata']['uid'], 'phase': (p.get('status') or {}).get('phase'),
+                                  'sizeGb': size_gb(((p['spec'].get('resources') or {}).get('requests') or {}).get('storage', '10Gi')),
+                                  'node': (p['metadata'].get('annotations') or {}).get('volume.kubernetes.io/selected-node')}
                                  for p in pvcs.get('items', []) if p['spec'].get('storageClassName') == 'pgcloud-block']
                   out['apiHealthy'] = 'ok' in sh('curl -sfk https://127.0.0.1:6443/healthz', check=False)
               except Exception as e:
                   out['error'] = str(e)[-300:]
           return out
+
+      # ---- control plane upkeep: etcd snapshots daily, kubeadm certificates monthly ----
+${indentBlock(AGENT_S3_PY, 6)}
+
+      def etcd_snapshot(c, m):
+          os.makedirs(SNAPSHOTS, exist_ok=True)
+          cid = (sh(CRICTL + 'ps --name etcd -q', check=False).split() or [None])[0]
+          if not cid: raise RuntimeError('etcd container not found')
+          # etcd runs as a static pod with /var/lib/etcd mounted, so the snapshot lands on the host.
+          sh(CRICTL + 'exec %s etcdctl --endpoints=https://127.0.0.1:2379 --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key snapshot save /var/lib/etcd/pgcloud-snapshot.db' % cid, timeout=600)
+          name = 'etcd-%s-%s.db' % (m['name'], time.strftime('%Y%m%dT%H%M%SZ', time.gmtime()))
+          path = SNAPSHOTS + '/' + name
+          shutil.move('/var/lib/etcd/pgcloud-snapshot.db', path); os.chmod(path, 0o600)
+          if c.get('backup'):
+              s3_put(c['backup'], c['cluster']['name'] + '/etcd/' + name, path); os.remove(path)
+          # Local copies are kept for seven days.
+          for f in glob.glob(SNAPSHOTS + '/etcd-*.db'):
+              if time.time() - os.path.getmtime(f) > 7 * 86400: os.remove(f)
+          return name
+
+      def renew_certs():
+          sh('kubeadm certs renew all', timeout=600)
+          # Static pods read certificates at start: restart them one at a time so the node keeps serving.
+          hold = '/etc/kubernetes/pgcloud-restart'; os.makedirs(hold, exist_ok=True)
+          for pod in ('etcd', 'kube-apiserver', 'kube-controller-manager', 'kube-scheduler'):
+              src = '/etc/kubernetes/manifests/%s.yaml' % pod
+              if not os.path.exists(src): continue
+              shutil.move(src, hold + '/' + pod + '.yaml'); time.sleep(20)
+              shutil.move(hold + '/' + pod + '.yaml', src); time.sleep(30)
+
+      def upkeep():
+          while True:
+              time.sleep(600)
+              try:
+                  c = last_config()
+                  if not c or not initialized() or me(c)['role'] != 'control': continue
+                  m = me(c); st = state(); now = time.time()
+                  if now - st.get('etcdSnapshotAt', 0) > 86400:
+                      try: update_state(etcdSnapshotAt=now, etcdSnapshot=etcd_snapshot(c, m), etcdSnapshotError=None)
+                      except Exception as e: update_state(etcdSnapshotAt=now, etcdSnapshotError=str(e)[-300:]); log('etcd snapshot: ' + str(e)[-300:])
+                  # Monthly, with control plane nodes a day apart so the API stays up behind the VIP.
+                  if 'certsRenewedAt' not in st: update_state(certsRenewedAt=now)
+                  elif now - st['certsRenewedAt'] > (30 + m['index']) * 86400:
+                      try: renew_certs(); update_state(certsRenewedAt=now, certsError=None)
+                      except Exception as e: update_state(certsRenewedAt=now - 29 * 86400, certsError=str(e)[-300:]); log('certificate renewal: ' + str(e)[-300:])
+              except Exception as e:
+                  log('upkeep: ' + str(e)[-300:])
 
       class H(http.server.BaseHTTPRequestHandler):
           def log_message(self, *a): pass
@@ -207,12 +320,23 @@ write_files:
           def do_POST(self):
               if self.headers.get('X-Pgcloud-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
               n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
+              if self.path == '/join-token':
+                  # A fresh bootstrap token for nodes joining later, valid 24 hours.
+                  if not os.path.exists('/etc/kubernetes/admin.conf'): return self._send(409, {'error': 'not_ready'})
+                  try: return self._send(200, {'token': sh('kubeadm token create --ttl 24h').strip().split()[-1]})
+                  except Exception as e: return self._send(500, {'error': 'token_failed', 'detail': str(e)[-300:]})
+              if self.path in ('/renew-certs', '/etcd-snapshot'):
+                  c = last_config()
+                  if not c or not initialized() or me(c)['role'] != 'control': return self._send(409, {'error': 'not_control_plane'})
+                  if self.path == '/renew-certs': threading.Thread(target=lambda: (renew_certs(), update_state(certsRenewedAt=time.time())), daemon=True).start()
+                  else: threading.Thread(target=lambda: update_state(etcdSnapshotAt=time.time(), etcdSnapshot=etcd_snapshot(c, me(c))), daemon=True).start()
+                  return self._send(202, {'started': True})
               if self.path == '/config':
                   with lock:
                       try:
                           json.dump(body, open(LAST, 'w')); os.chmod(LAST, 0o600)
                           apply(body)
-                          st = state(); st['version'] = body['version']; save(st)
+                          update_state(version=body['version'])
                       except NotReady as e:
                           return self._send(409, {'error': 'not_ready', 'detail': str(e)})
                       except Exception as e:
@@ -221,7 +345,8 @@ write_files:
               self._send(404, {})
           def _send(self, code, body):
               b = json.dumps(body).encode(); self.send_response(code); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
-      http.server.ThreadingHTTPServer(('0.0.0.0', 9009), H).serve_forever()
+      threading.Thread(target=upkeep, daemon=True).start()
+      http.server.ThreadingHTTPServer((bind_address(), 9009), H).serve_forever()
 runcmd:
   - modprobe overlay && modprobe br_netfilter && sysctl --system
   - swapoff -a && sed -i '/ swap / s/^/#/' /etc/fstab

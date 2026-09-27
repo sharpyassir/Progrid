@@ -5,7 +5,7 @@ import type { DbClusterStatus, KubeClusterStatus, PlatformAppStatus, LoadBalance
 import { LoadBalancersService } from '../modules/lb/lb.service';
 import { DatabasesService } from '../modules/databases/db.service';
 import { KubernetesService } from '../modules/kubernetes/k8s.service';
-import { AppPlatformService } from '../modules/app-platform/app.service';
+import { AppPlatformService, hostReady } from '../modules/app-platform/app.service';
 import { TemporalService } from '../common/temporal/temporal.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { HYPERVISOR_DRIVER, HypervisorDriver } from '../drivers/hypervisor.driver';
@@ -57,7 +57,9 @@ export interface Activities {
   lbFinalizeDelete(lbId: string): Promise<void>;
   emitLb(name: string, lbId: string, payload: Record<string, unknown>): Promise<void>;
   dbWaitNodes(clusterId: string): Promise<void>;
-  dbPushConfig(clusterId: string): Promise<{ applied: number; nodes: number }>;
+  dbPushConfig(clusterId: string): Promise<{ applied: number; nodes: number; waiting: string[]; errors: string[] }>;
+  dbWaitApplied(clusterId: string, timeoutMinutes: number): Promise<void>;
+  dbRestore(clusterId: string, backupId: string): Promise<void>;
   dbSetStatus(clusterId: string, status: DbClusterStatus, message?: string): Promise<void>;
   dbDeleteNodes(clusterId: string): Promise<void>;
   dbWaitNodesGone(clusterId: string): Promise<void>;
@@ -143,9 +145,19 @@ export function createActivities(app: INestApplicationContext): Activities {
       if (s.hostId) return; // already placed (retry)
       // A snapshot lives with its source VM, so a clone of it must run on that VM's host.
       const onlyHostId = s.sourceSnapshotId ? (await sourceSnapshot(s.sourceSnapshotId)).server!.hostId! : undefined;
-      const placement = await wrap(scheduler.place({ regionId: s.regionId, vcpu: s.vcpu, memoryMb: s.memoryMb, diskGb: s.diskGb, avoidServerIds: avoid, family: s.size.family, onlyHostId }));
+      // Cluster nodes (load balancer, database, Kubernetes) carry a spread group: keep them on different hosts.
+      const create = await prisma.serverAction.findFirst({ where: { serverId, type: 'create' }, orderBy: { startedAt: 'asc' }, select: { params: true } });
+      const group = (create?.params as { spreadGroup?: string } | null)?.spreadGroup;
+      const siblings = group
+        ? (await prisma.serverAction.findMany({ where: { type: 'create', params: { path: ['spreadGroup'], equals: group } }, select: { serverId: true } })).map((a) => a.serverId).filter((id) => id !== serverId)
+        : [];
+      const placement = await wrap(scheduler.place({ regionId: s.regionId, vcpu: s.vcpu, memoryMb: s.memoryMb, diskGb: s.diskGb, avoidServerIds: [...new Set([...avoid, ...siblings])], softAvoid: !!group, serverId, family: s.size.family, onlyHostId }));
       await prisma.server.update({ where: { id: serverId }, data: { hostId: placement.hostId } });
       log.log(`placed ${serverId} on host ${placement.hostId}`);
+      if (placement.sharedWithAvoided) {
+        log.warn(`${serverId} shares host ${placement.hostId} with another node of ${group}: the region has too few hosts`);
+        await events.emit('server.placement_shared_host', { serverId, name: s.name, group, hostId: placement.hostId, reason: 'the region has too few hosts to keep cluster nodes apart' }, { teamId: s.project.teamId, resource: `server:${serverId}` });
+      }
     },
 
     async reserveIp(serverId) {
@@ -476,6 +488,14 @@ export function createActivities(app: INestApplicationContext): Activities {
       }
     },
 
+    async dbWaitApplied(clusterId, timeoutMinutes) {
+      await wrap(dbs.waitApplied(clusterId, timeoutMinutes * 60_000, () => Context.current().heartbeat()));
+    },
+
+    async dbRestore(clusterId, backupId) {
+      await wrap(dbs.runRestore(clusterId, backupId, () => Context.current().heartbeat()));
+    },
+
     async dbSetStatus(clusterId, status, message) {
       const data: Record<string, unknown> = { status, statusMessage: message ?? null };
       if (status === 'active') data.meteredSince = (await prisma.dbCluster.findUnique({ where: { id: clusterId }, select: { meteredSince: true } }))?.meteredSince ?? new Date();
@@ -508,8 +528,10 @@ export function createActivities(app: INestApplicationContext): Activities {
       if (!c) return;
       if (c.publicIpId) await ips.release(c.publicIpId).catch(() => undefined);
       if (c.firewallId) await prisma.firewall.delete({ where: { id: c.firewallId } }).catch(() => undefined);
-      // Backups stay in the platform bucket for seven days after deletion (pgBackRest retention), then expire.
-      await prisma.dbCluster.update({ where: { id: clusterId }, data: { status: 'deleted', deletedAt: new Date(), publicIpId: null, firewallId: null, meteredSince: null, adminPassword: '', backupSecretKey: null } });
+      // Backups go with the cluster: empty and remove the platform bucket and its key.
+      const removed = await dbs.purgeBackups(clusterId);
+      log.log(`database ${clusterId}: removed ${removed} backup objects`);
+      await prisma.dbCluster.update({ where: { id: clusterId }, data: { status: 'deleted', deletedAt: new Date(), publicIpId: null, firewallId: null, meteredSince: null, adminPassword: '', backupBucket: null, backupAccessKey: null, backupSecretKey: null } });
     },
 
     // ---- managed kubernetes (same shape as databases) ----
@@ -611,6 +633,7 @@ export function createActivities(app: INestApplicationContext): Activities {
       }
       if (c.publicIpId) await ips.release(c.publicIpId).catch(() => undefined);
       if (c.firewallId) await prisma.firewall.delete({ where: { id: c.firewallId } }).catch(() => undefined);
+      await k8s.purgeBackups(clusterId).catch((e) => log.warn(`etcd snapshot bucket for ${clusterId}: ${(e as Error).message}`));
       await prisma.kubeCluster.update({ where: { id: clusterId }, data: { status: 'deleted', deletedAt: new Date(), publicIpId: null, firewallId: null, meteredSince: null, kubeconfig: null, certKey: '', joinToken: '' } });
     },
 
@@ -629,17 +652,19 @@ export function createActivities(app: INestApplicationContext): Activities {
       const deadline = Date.now() + 20 * 60_000;
       for (;;) {
         Context.current().heartbeat();
-        const h = await prisma.appHost.findUnique({ where: { id: hostId }, include: { server: { select: { status: true, statusMessage: true } } } });
+        const h = await prisma.appHost.findUnique({ where: { id: hostId }, include: { server: { select: { id: true, name: true, status: true, statusMessage: true, privateIp: true, publicIps: { select: { address: true } } } } } });
         if (!h) throw nonRetryable('app host vanished');
-        if (h.server.status === 'active') {
-          if (h.status !== 'active') await prisma.appHost.update({ where: { id: hostId }, data: { status: 'active' } });
+        if (h.status === 'failed') throw nonRetryable('app host failed');
+        // The VM being up is not enough: the agent must report Docker and Caddy running.
+        if (h.server.status === 'active' && hostReady(await apps.hostStatus(h).catch(() => null))) {
+          await prisma.appHost.update({ where: { id: hostId }, data: { status: 'active', readyAt: new Date() } });
           return;
         }
         if (h.server.status === 'failed') {
           await prisma.appHost.update({ where: { id: hostId }, data: { status: 'failed' } });
           throw nonRetryable(`app host failed: ${h.server.statusMessage ?? 'unknown error'}`);
         }
-        if (Date.now() > deadline) throw nonRetryable('app host did not become active in 20 minutes');
+        if (Date.now() > deadline) throw nonRetryable('app host did not report Docker and Caddy running in 20 minutes');
         await new Promise((r) => setTimeout(r, 3000));
       }
     },
@@ -653,7 +678,7 @@ export function createActivities(app: INestApplicationContext): Activities {
       const deadline = Date.now() + 25 * 60_000;
       for (;;) {
         Context.current().heartbeat();
-        const a = await prisma.platformApp.findUnique({ where: { id: appId }, include: { host: { include: { server: { select: { status: true, publicIps: { select: { address: true } } } } } }, deploys: { where: { id: deployId } } } });
+        const a = await prisma.platformApp.findUnique({ where: { id: appId }, include: { host: { include: { server: { select: { id: true, name: true, status: true, privateIp: true, publicIps: { select: { address: true } } } } } }, deploys: { where: { id: deployId } } } });
         if (!a || !a.host) throw nonRetryable('app or host vanished');
         const st = await apps.hostStatus(a.host).catch(() => null);
         if (st) await apps.applyReport({ id: a.id, status: a.status, deploys: a.deploys }, st.apps[a.id]);

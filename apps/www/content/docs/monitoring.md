@@ -7,7 +7,7 @@ order: 15
 
 ## Metrics
 
-Every server reports CPU, memory, disk and network once a minute, straight from the hypervisor, with nothing to install inside the server. Open a server and choose **Metrics** to see the last hour, six hours, day, week or month. The week and month views show hourly averages with the peak CPU for each hour. Minute samples are kept for two weeks, hourly rollups for a year.
+Every server reports CPU, memory, disk throughput and network once a minute, straight from the hypervisor, with nothing to install inside the server. Disk used, which only the server itself can see, comes from the managed care agent on managed servers and from the database agent on managed database nodes. Open a server and choose **Metrics** to see the last hour, six hours, day, week or month. The week and month views show hourly averages with the peak CPU for each hour. Minute samples are kept for two weeks, hourly rollups for a year.
 
 From the terminal or code:
 
@@ -24,7 +24,7 @@ Network and disk values in the API are bytes per second. Multiply by eight and d
 
 ## Alert rules
 
-A rule watches one metric on a set of servers: CPU, memory, disk used, inbound or outbound bandwidth, above or below a threshold, for a number of minutes. Pick the servers by name or by tag, or leave both empty to watch every server in the team.
+A rule watches one metric on a set of servers: CPU, memory, disk used, inbound or outbound bandwidth, above or below a threshold, for a number of minutes. Pick the servers by name or by tag, or leave both empty to watch every server in the team. Two rules fire on events instead of a threshold and cover every resource of that kind in the team: `db_node_unreachable` when a managed database node has not answered for five minutes, and `app_deploy_failed` when an App Platform deploy fails. They resolve when the node answers again or the next deploy succeeds.
 
 When the average over the window crosses the threshold, one incident opens. Team owners and admins get an email, any extra addresses on the rule get it too, and webhooks receive `alert.triggered` with the server, the value and the rule. When the value returns within limits, the incident resolves, one more email goes out, and webhooks receive `alert.resolved`. There is no repeat email while an incident stays open, so a long outage is one message, not fifty.
 

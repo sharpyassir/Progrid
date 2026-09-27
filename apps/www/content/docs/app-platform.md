@@ -45,11 +45,11 @@ The health path (default `/`) is checked on new instances before they take traff
 
 ## Custom domains
 
-Add a domain on the app page or with `pgcloud app domains ID add app.example.com`, then point a CNAME at the app hostname. The certificate is issued on the first request. A domain can be attached to one app at a time.
+Add a domain on the app page or with `pgcloud app domains ID add app.example.com`. The domain is served only after it is verified, which proves it is yours: either point a CNAME from the domain at the app hostname, or add a TXT record at `_progrid-verify.<domain>` holding the token the app shows for that domain (`domains[].verification` in the API). The platform checks every five minutes for a week, or right away with `POST /v1/app-platform/apps/{id}/domains/{domain}/verify`. The certificate is issued on the first request after that. A domain can be attached to one app at a time.
 
 ## Logs
 
-The build log shows the clone, the image build and the instance start. The runtime log is the first instance's output, last 300 lines. Both are on the app page, `pgcloud app logs ID [--runtime] [--follow]`, and `GET /v1/app-platform/apps/{id}/logs?type=build|runtime`.
+The build log shows the clone, the image build and the instance start. The runtime log holds every instance's output, the last 300 lines of each under its own heading. Both are on the app page, `pgcloud app logs ID [--runtime] [--follow]`, and `GET /v1/app-platform/apps/{id}/logs?type=build|runtime`.
 
 ## Limits
 

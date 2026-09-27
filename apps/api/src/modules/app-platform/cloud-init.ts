@@ -1,14 +1,18 @@
 /**
  * cloud-init for an app host: a platform owned server that runs customer containers behind
- * Caddy. `pgcloud-appd` on :9009 receives the whole desired state (POST /config), builds
- * images from the customers' repositories, runs the instances with memory and CPU limits on
- * a private Docker network, writes the Caddyfile (one site per hostname, TLS from Let's
- * Encrypt) and reports per app state and logs (GET /status, GET /logs).
+ * Caddy. Caddy itself runs as a container on the same `pgcloud` Docker network as the apps,
+ * so it reaches instances by container name. `pgcloud-appd` on the private address, port
+ * 9009, receives the whole desired state (POST /config), builds images from the customers'
+ * repositories, runs the instances with memory and CPU limits, writes the Caddyfile (one site
+ * per verified hostname, TLS from Let's Encrypt) and reports per app state, logs and whether
+ * Docker and Caddy are running (GET /status, GET /logs).
  *
  * Builds: a Dockerfile at the repository root wins. Without one, a Node (package.json),
  * Python (requirements.txt or pyproject.toml), Go (go.mod) or static (index.html) project
  * gets a generated Dockerfile. Compose files are not supported on shared hosts.
  */
+import { agentNetPy } from '../../common/platform-agent';
+
 export interface AppHostInit {
   vmSecret: string;
   acmeEmail: string;
@@ -17,7 +21,7 @@ export interface AppHostInit {
 export function renderAppHostCloudInit(d: AppHostInit): string {
   return `#cloud-config
 package_update: true
-packages: [docker.io, git, python3, ca-certificates, curl, debian-keyring, debian-archive-keyring, apt-transport-https]
+packages: [docker.io, git, python3, ca-certificates, curl]
 write_files:
   - path: /opt/pgcloud/vm.secret
     permissions: '0600'
@@ -53,6 +57,9 @@ write_files:
       lock = threading.Lock()
       state = {'version': 0, 'apps': {}}
       building = set()
+      CADDY_IMAGE = 'caddy:2'
+
+${agentNetPy(6)}
 
       def sh(cmd, check=True, timeout=1800, cwd=None, log=None):
           r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout, cwd=cwd)
@@ -142,6 +149,14 @@ write_files:
                   time.sleep(2)
           raise RuntimeError('instance did not answer on port %d within two minutes' % port)
 
+      def ensure_caddy():
+          # Caddy on the pgcloud network, ports 80 and 443 published, config and certificates on the host.
+          sh('docker network inspect pgcloud >/dev/null 2>&1 || docker network create pgcloud', check=False)
+          if sh("docker inspect -f '{{.State.Running}}' caddy 2>/dev/null", check=False).strip() == 'true': return
+          sh('docker rm -f caddy 2>/dev/null || true', check=False)
+          os.makedirs('/var/lib/caddy/data', exist_ok=True); os.makedirs('/var/lib/caddy/config', exist_ok=True)
+          sh('docker run -d --name caddy --restart unless-stopped --network pgcloud -p 80:80 -p 443:443 -p 443:443/udp -v /etc/caddy:/etc/caddy -v /var/lib/caddy/data:/data -v /var/lib/caddy/config:/config ' + CADDY_IMAGE)
+
       def caddy(apps):
           out = ['{', '  email ' + open('/opt/pgcloud/acme.email').read().strip() if os.path.exists('/opt/pgcloud/acme.email') else '', '}', ':80 {', '  respond "pgcloud app platform" 200', '}']
           for app in apps:
@@ -150,10 +165,11 @@ write_files:
               ups = ' '.join('pgcloud-%s-%d:%d' % (app['id'], i, app['port']) for i in range(app['instances']))
               out.append('%s {\\n  encode zstd gzip\\n  reverse_proxy %s {\\n    lb_policy round_robin\\n    health_uri %s\\n    health_interval 10s\\n  }\\n}' % (', '.join(app['hostnames']), ups, app.get('healthPath') or '/'))
           open('/etc/caddy/Caddyfile', 'w').write('\\n'.join(out) + '\\n')
-          sh('caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile', check=False)
+          ensure_caddy()
+          sh('docker exec caddy caddy reload --config /etc/caddy/Caddyfile', check=False)
 
       def apply(c):
-          sh('docker network inspect pgcloud >/dev/null 2>&1 || docker network create pgcloud', check=False)
+          ensure_caddy()
           wanted = {a['id'] for a in c['apps']}
           for aid in list(state['apps']):
               if aid not in wanted:
@@ -183,6 +199,10 @@ write_files:
               out['apps'][aid] = {**st, 'running': running, 'logTail': tail}
           mem = sh("docker stats --no-stream --format '{{.MemUsage}}'", check=False)
           out['memUsed'] = mem.count('\\n')
+          # The control plane places apps only on hosts where both are up.
+          out['docker'] = subprocess.run(['docker', 'info'], capture_output=True).returncode == 0
+          out['caddy'] = sh("docker inspect -f '{{.State.Running}}' caddy 2>/dev/null", check=False).strip() == 'true'
+          out['ready'] = out['docker'] and out['caddy']
           return out
 
       class H(http.server.BaseHTTPRequestHandler):
@@ -195,7 +215,9 @@ write_files:
                   aid = q.get('app', ''); kind = q.get('type', 'build')
                   if not aid.isalnum(): return self._send(400, {'error': 'bad_app'})
                   if kind == 'runtime':
-                      log = sh('docker logs --tail 300 --timestamps pgcloud-%s-0 2>&1' % aid, check=False)
+                      # Every instance, each under its own heading.
+                      names = sorted(sh("docker ps -a --filter label=pgcloud.app=%s --format '{{.Names}}'" % aid, check=False).split())
+                      log = ''.join('=== %s ===\\n%s' % (n, sh('docker logs --tail 300 --timestamps %s 2>&1' % n, check=False)) for n in names if not n.endswith('-next'))
                   else:
                       try:
                           with open(ROOT + '/' + aid + '/build.log', 'rb') as f:
@@ -219,15 +241,15 @@ write_files:
               b = json.dumps(body).encode(); self.send_response(code); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
 
       load_state()
-      http.server.ThreadingHTTPServer(('0.0.0.0', 9009), H).serve_forever()
+      try: ensure_caddy()
+      except Exception: pass
+      http.server.ThreadingHTTPServer((bind_address(), 9009), H).serve_forever()
 runcmd:
   - echo '${d.acmeEmail}' > /opt/pgcloud/acme.email
-  - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-  - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' > /etc/apt/sources.list.d/caddy-stable.list
-  - apt-get update -qq && apt-get install -y -qq caddy
   - systemctl enable --now docker
   - docker network create pgcloud || true
-  - systemctl restart caddy
+  - mkdir -p /var/lib/caddy/data /var/lib/caddy/config
+  - docker run -d --name caddy --restart unless-stopped --network pgcloud -p 80:80 -p 443:443 -p 443:443/udp -v /etc/caddy:/etc/caddy -v /var/lib/caddy/data:/data -v /var/lib/caddy/config:/config caddy:2 || true
   - mkdir -p /var/lib/pgcloud/apps && systemctl daemon-reload && systemctl enable --now pgcloud-appd
 `;
 }

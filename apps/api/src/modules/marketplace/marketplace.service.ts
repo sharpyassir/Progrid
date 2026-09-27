@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import type { MarketplaceApp } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ApiError } from '../../common/errors/api-error';
+import { CloudConfigMergeError, mergeCloudConfig } from './cloud-config-merge';
 
 export interface AppVariable {
   name: string;
@@ -43,7 +45,9 @@ export class MarketplaceService {
   /**
    * Renders the app's cloud-init with the customer's variables. Unknown variables are
    * rejected; required ones must be present; `generate: password` fills in a secret.
-   * Customer user-data, if any, is appended as a runcmd so both run.
+   * Customer user-data, if any, is merged in: list keys (write_files, runcmd, packages,
+   * bootcmd) are concatenated after the app's, and the app's value wins for every other key,
+   * so user-data can add to the install but not replace it.
    */
   renderCloudInit(app: MarketplaceApp, supplied: Record<string, string>, customerUserData?: string): string {
     const vars = (app.variables as unknown as AppVariable[]) ?? [];
@@ -62,7 +66,12 @@ export class MarketplaceService {
 
     let rendered = app.cloudInit.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, k: string) => values[k] ?? '');
     if (customerUserData?.trim()) {
-      rendered += `\n# --- customer user-data ---\nwrite_files:\n  - path: /var/lib/cloud/pgcloud-user-data.sh\n    permissions: '0755'\n    content: |\n${customerUserData.split('\n').map((l) => '      ' + l).join('\n')}\nruncmd:\n  - [ /var/lib/cloud/pgcloud-user-data.sh ]\n`;
+      try {
+        rendered = mergeCloudConfig(rendered, customerUserData);
+      } catch (err) {
+        if (err instanceof CloudConfigMergeError) throw ApiError.invalid(err.message);
+        throw err;
+      }
     }
     return rendered;
   }
@@ -70,7 +79,13 @@ export class MarketplaceService {
 
 function generatePassword(len = 20) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  // Bytes at or above the largest multiple of the alphabet size are skipped so every character is equally likely.
+  const limit = 256 - (256 % alphabet.length);
   let out = '';
-  for (let i = 0; i < len; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  while (out.length < len) {
+    for (const b of randomBytes(len * 2)) {
+      if (b < limit && out.length < len) out += alphabet[b % alphabet.length];
+    }
+  }
   return out;
 }

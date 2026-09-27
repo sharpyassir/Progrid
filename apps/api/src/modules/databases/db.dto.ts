@@ -25,3 +25,8 @@ export class UpdateDatabaseDto {
 export class DbNameDto {
   @IsString() @Length(1, 63) @Matches(/^[a-z_][a-z0-9_]*$/, { message: 'use lowercase letters, digits and underscores, starting with a letter' }) name: string;
 }
+
+export class RestoreDatabaseDto {
+  /** A completed backup of this cluster (GET /v1/databases/:id/backups). */
+  @IsString() @Length(1, 64) backupId: string;
+}

@@ -17,6 +17,13 @@ const slow = proxyActivities<Activities>({
   retry: { initialInterval: '5s', backoffCoefficient: 2, maximumInterval: '2 minutes', maximumAttempts: 3, nonRetryableErrorTypes: ['NonRetryable'] },
 });
 
+/** Long running database work (bootstrap, restore): progress is reported by heartbeats, never retried blindly. */
+const long = proxyActivities<Activities>({
+  startToCloseTimeout: '4 hours',
+  heartbeatTimeout: '2 minutes',
+  retry: { maximumAttempts: 1 },
+});
+
 export interface CreateServerInput {
   serverId: string;
   actionId: string;
@@ -320,7 +327,8 @@ export async function createDatabase(input: { clusterId: string }): Promise<void
   const { clusterId } = input;
   try {
     await slow.dbWaitNodes(clusterId);
-    await slow.dbPushConfig(clusterId);
+    // Active only once every node has applied the config, users and databases included.
+    await long.dbWaitApplied(clusterId, 40);
     await act.dbSetStatus(clusterId, 'active');
     await act.emitDb('database.created', clusterId, {});
   } catch (err) {
@@ -333,12 +341,12 @@ export async function createDatabase(input: { clusterId: string }): Promise<void
 export async function updateDatabase(input: { clusterId: string }): Promise<void> {
   const { clusterId } = input;
   try {
-    const r = await slow.dbPushConfig(clusterId);
-    if (r.applied === r.nodes) await act.dbSetStatus(clusterId, 'active');
-    await act.emitDb('database.updated', clusterId, { applied: r.applied, nodes: r.nodes });
+    await long.dbWaitApplied(clusterId, 10);
+    await act.dbSetStatus(clusterId, 'active');
+    await act.emitDb('database.updated', clusterId, {});
   } catch (err) {
     const message = describe(err);
-    await act.dbSetStatus(clusterId, 'active', `update failed: ${message}`);
+    await act.dbSetStatus(clusterId, 'failed', `update failed: ${message}`);
     throw ApplicationFailure.nonRetryable(message);
   }
 }
@@ -353,6 +361,21 @@ export async function deleteDatabase(input: { clusterId: string }): Promise<void
   } catch (err) {
     const message = describe(err);
     await act.dbSetStatus(clusterId, 'failed', `delete failed: ${message}`);
+    throw ApplicationFailure.nonRetryable(message);
+  }
+}
+
+export async function restoreDatabase(input: { clusterId: string; backupId: string }): Promise<void> {
+  const { clusterId, backupId } = input;
+  try {
+    await long.dbRestore(clusterId, backupId);
+    await long.dbWaitApplied(clusterId, 20);
+    await act.dbSetStatus(clusterId, 'active');
+    await act.emitDb('database.restored', clusterId, { backupId });
+  } catch (err) {
+    const message = describe(err);
+    await act.dbSetStatus(clusterId, 'failed', `restore failed: ${message}`);
+    await act.emitDb('database.restore_failed', clusterId, { backupId, message });
     throw ApplicationFailure.nonRetryable(message);
   }
 }

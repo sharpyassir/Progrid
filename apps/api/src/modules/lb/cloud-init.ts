@@ -1,12 +1,16 @@
+import { agentNetPy } from '../../common/platform-agent';
+
 /**
  * cloud-init for a load balancer node. Installs HAProxy, keepalived and certbot, and
- * `pgcloud-lbd`: a small HTTP agent on :9009 that receives the rendered config from the
- * control plane (POST /config), validates and reloads HAProxy, issues Let's Encrypt
- * certificates, and reports backend health from the HAProxy stats socket (GET /status).
+ * `pgcloud-lbd`: a small HTTP agent on the private address, port 9009, that receives the
+ * rendered config from the control plane (POST /config), validates and reloads HAProxy,
+ * writes keepalived.conf, issues Let's Encrypt certificates, and reports backend health from
+ * the HAProxy stats socket (GET /status). Every request carries the shared secret.
  */
 export interface LbNodeInit {
   vmSecret: string;
-  keepalived: string;
+  /** Network the VIP lives on. A load balancer VIP is a public address, so it is always public. */
+  vipNetwork: 'public';
 }
 
 export function renderLbCloudInit(d: LbNodeInit): string {
@@ -18,9 +22,8 @@ write_files:
     content: |
       net.ipv4.ip_nonlocal_bind = 1
       net.ipv4.ip_forward = 1
-  - path: /etc/keepalived/keepalived.conf
-    content: |
-${indent(d.keepalived, 6)}
+  - path: /opt/pgcloud/vip.network
+    content: '${d.vipNetwork}'
   - path: /opt/pgcloud/vm.secret
     permissions: '0600'
     content: '${d.vmSecret}'
@@ -29,12 +32,24 @@ ${indent(d.keepalived, 6)}
     content: |
       #!/usr/bin/env python3
       # pgcloud load balancer agent. The control plane is the only writer of haproxy.cfg.
-      import http.server, json, os, socket, subprocess, threading
+      import http.server, json, os, socket, subprocess, threading, time
       SECRET = open('/opt/pgcloud/vm.secret').read().strip()
       CERTS = '/etc/haproxy/certs'
       STATE = '/opt/pgcloud/lb.json'
       os.makedirs(CERTS, exist_ok=True)
       lock = threading.Lock()
+
+${agentNetPy(6)}
+
+      def keepalived(text):
+          # The VIP goes on the public interface; VRRP talks unicast over the private network.
+          text = text.replace('@PRIVATE_IFACE@', private_iface() or 'eth0').replace('@PRIVATE_IP@', private_ipv4() or '').replace('@VIP_IFACE@', vip_iface())
+          path = '/etc/keepalived/keepalived.conf'
+          old = open(path).read() if os.path.exists(path) else None
+          if old == text: return
+          open(path, 'w').write(text)
+          subprocess.run(['systemctl', 'enable', 'keepalived'], capture_output=True)
+          subprocess.run(['systemctl', 'restart', 'keepalived'], capture_output=True)
 
       def state():
           try: return json.load(open(STATE))
@@ -65,6 +80,7 @@ ${indent(d.keepalived, 6)}
               if chk.returncode != 0: return 422, {'error': 'invalid_config', 'detail': chk.stderr[-2000:]}
               os.replace('/etc/haproxy/haproxy.cfg.new', '/etc/haproxy/haproxy.cfg')
               subprocess.run(['systemctl', 'reload', 'haproxy'])
+              if body.get('keepalived'): keepalived(body['keepalived'])
               json.dump({'version': body['version']}, open(STATE, 'w'))
           for le in body.get('letsencrypt') or []:
               if not os.path.exists('/etc/letsencrypt/live/' + le['id']): threading.Thread(target=issue, args=(le['id'], le['domains']), daemon=True).start()
@@ -90,6 +106,7 @@ ${indent(d.keepalived, 6)}
       class H(http.server.BaseHTTPRequestHandler):
           def log_message(self, *a): pass
           def do_GET(self):
+              if self.headers.get('X-Pgcloud-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
               if self.path != '/status': return self._send(404, {})
               self._send(200, {'version': state().get('version', 0), 'backends': stats()})
           def do_POST(self):
@@ -100,7 +117,7 @@ ${indent(d.keepalived, 6)}
               self._send(code, body)
           def _send(self, code, body):
               b = json.dumps(body).encode(); self.send_response(code); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
-      http.server.ThreadingHTTPServer(('0.0.0.0', 9009), H).serve_forever()
+      http.server.ThreadingHTTPServer((bind_address(), 9009), H).serve_forever()
   - path: /etc/systemd/system/pgcloud-lbd.service
     content: |
       [Unit]
@@ -114,11 +131,6 @@ ${indent(d.keepalived, 6)}
 runcmd:
   - sysctl --system
   - systemctl enable --now haproxy
-  - systemctl enable --now keepalived
-  - systemctl enable --now pgcloud-lbd
+  - systemctl daemon-reload && systemctl enable --now pgcloud-lbd
 `;
-}
-
-function indent(s: string, n: number) {
-  return s.split('\n').map((l) => ' '.repeat(n) + l).join('\n');
 }

@@ -72,15 +72,45 @@ pgcloud databases trusted ID 203.0.113.0/24,198.51.100.7
 ## Backups and recovery
 
 A full backup runs every night at the hour you choose (02:00 UTC by default) and is kept for
-seven days, and the write ahead log is archived continuously, so recovery to any point in the
-last seven days is possible. Take a backup before a risky migration with **Back up now** or
-`pgcloud databases backups ID now`. Restores are done by support for now; a self service
-restore to a new cluster is planned.
+seven days. For PostgreSQL the write ahead log is archived continuously once the first backup
+repository is set up. Take a backup before a risky migration with **Back up now** or
+`pgcloud databases backups ID now`.
+
+## Restore
+
+Restore any completed backup of a cluster over that same cluster:
+
+```
+POST /v1/databases/{id}/restore
+{ "backupId": "BACKUP_ID" }
+```
+
+The cluster shows `restoring` while it runs and returns to `active` when every node is back,
+or `failed` with the node's error. A `database.restored` or `database.restore_failed` event
+tells your webhooks. Everything written after the backup was taken is replaced, so take a
+fresh backup first if you may need it.
+
+What happens per engine:
+
+| Engine | Restore |
+| --- | --- |
+| PostgreSQL | The primary is restored with pgBackRest to the end of the chosen full backup while failover is paused, then the replicas are rebuilt from it. |
+| Valkey | The primary loads the backup's RDB file and rebuilds its append only file; replicas resync from it. |
+| MySQL | Every node downloads the backup, prepares it with XtraBackup and copies it back, primary first; replicas then follow the primary again. |
+
+Users and databases you created after the backup are recreated with their current passwords
+right after the restore; their data is whatever the backup held. Restores to a point in time
+between backups, and restores into a new cluster, are not available yet; ask support for
+either. Deleting a cluster deletes its backups too.
 
 ## Failover and maintenance
 
 With three nodes, a failed primary is replaced by a replica within about thirty seconds and
-the address moves with it; a `database.failover` event tells your webhooks. Minor version
+the address moves with it; a `database.failover` event tells your webhooks. PostgreSQL fails
+over through Patroni and Valkey through Sentinel. MySQL fails over when the primary misses
+three health checks in a row: the replica with the most complete transaction history takes
+over and the other replica follows it. When a node stays unreachable for more than five
+minutes a `database.node_unreachable` event goes out. Minor version
 updates are applied to replicas first and then to the primary through a switchover.
 
 ## Terraform, SDKs and agents

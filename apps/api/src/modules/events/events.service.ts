@@ -10,12 +10,13 @@ import type { Actor } from '../../common/auth/actor';
 /** Public event names customers can subscribe to via webhooks. */
 export const CUSTOMER_EVENTS = [
   'database.created', 'database.updated', 'database.deleted', 'database.failover', 'database.backup_completed', 'database.backup_failed',
+  'database.restored', 'database.restore_failed', 'database.node_unreachable', 'database.node_recovered',
   'bucket.created', 'bucket.deleted', 'storage_key.created', 'storage_key.revoked',
   'domain.created', 'domain.deleted', 'domain.record_changed',
   'load_balancer.created', 'load_balancer.updated', 'load_balancer.deleted', 'load_balancer.target_unhealthy', 'load_balancer.target_healthy',
   'volume.created', 'volume.attached', 'volume.detached', 'volume.resized', 'volume.deleted',
   'server.created', 'server.active', 'server.failed', 'server.deleted', 'server.resized',
-  'app.created', 'app.deployed', 'app.deploy_failed', 'app.deleted', 'app.stopped', 'app.started', 'app.domain_added',
+  'app.created', 'app.deployed', 'app.deploy_failed', 'app.deleted', 'app.stopped', 'app.started', 'app.domain_added', 'app.domain_verified',
   'kubernetes.created', 'kubernetes.updated', 'kubernetes.deleted', 'kubernetes.failed', 'kubernetes.pool_added', 'kubernetes.pool_scaled', 'kubernetes.pool_removed', 'kubernetes.cloud_updated',
   'ticket.opened', 'ticket.replied', 'ticket.answered', 'ticket.closed', 'support.plan_changed',
   'server.managed_enabled', 'server.managed_disabled', 'server.managed_warning', 'server.managed_recovered',

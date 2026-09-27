@@ -9,6 +9,7 @@ import { EventsService } from '../events/events.service';
 import { ServersService } from '../compute/servers.service';
 import { FirewallsService } from '../network/firewalls.service';
 import { renderDeployCloudInit } from './cloud-init';
+import { agentHost } from '../../common/platform-agent';
 import { CreateDeployDto } from './deploy.dto';
 import { loadConfig } from '../../config/config';
 import { GithubService } from '../github/github.service';
@@ -69,7 +70,7 @@ export class DeployService {
         { direction: 'inbound', protocol: 'tcp', ports: '22', cidrs: ['0.0.0.0/0'] },
         { direction: 'inbound', protocol: 'tcp', ports: '80', cidrs: ['0.0.0.0/0'] },
         { direction: 'inbound', protocol: 'tcp', ports: '443', cidrs: ['0.0.0.0/0'] },
-        { direction: 'inbound', protocol: 'tcp', ports: '9009', cidrs: [process.env.CONTROL_PLANE_CIDR ?? '0.0.0.0/0'], description: 'pgcloud redeploy hook' },
+        { direction: 'inbound', protocol: 'tcp', ports: '9009', cidrs: [loadConfig().CONTROL_PLANE_CIDR], description: 'pgcloud redeploy hook' },
         { direction: 'outbound', protocol: 'any', cidrs: ['0.0.0.0/0'] },
       ],
     });
@@ -146,7 +147,7 @@ export class DeployService {
   async logs(actor: Actor, id: string) {
     const d = await this.prisma.deployment.findFirst({ where: { id, project: { teamId: actor.teamId } }, include: { server: { include: { publicIps: true } } } });
     if (!d) throw ApiError.notFound('deployment', id);
-    const ip = d.server.publicIps[0]?.address;
+    const ip = agentHost(d.server);
     if (ip && d.server.status === 'active') {
       try {
         const r = await fetch(`http://${ip}:9009/logs`, { headers: { 'X-Pgcloud-Secret': d.vmSecret }, signal: AbortSignal.timeout(5000) }).then((r) => r.json() as Promise<{ status: string; commit: string | null; log: string }>);
@@ -165,10 +166,10 @@ export class DeployService {
   async refreshStatus(id: string) {
     const d = await this.prisma.deployment.findUnique({ where: { id }, include: { server: { include: { publicIps: true } } } });
     if (!d) return;
-    const ip = d.server.publicIps[0]?.address;
+    const ip = agentHost(d.server);
     if (!ip || d.server.status !== 'active') return;
     try {
-      const r = await fetch(`http://${ip}:9009/status`, { signal: AbortSignal.timeout(4000) }).then((r) => r.json() as Promise<{ status: string; commit: string | null }>);
+      const r = await fetch(`http://${ip}:9009/status`, { headers: { 'X-Pgcloud-Secret': d.vmSecret }, signal: AbortSignal.timeout(4000) }).then((r) => r.json() as Promise<{ status: string; commit: string | null }>);
       const status = r.status === 'live' ? 'live' : r.status === 'failed' ? 'failed' : 'deploying';
       await this.prisma.deployment.update({ where: { id }, data: { status, lastCommit: r.commit ?? undefined, ...(status === 'live' ? { lastDeployAt: new Date() } : {}) } });
     } catch {
@@ -176,8 +177,8 @@ export class DeployService {
     }
   }
 
-  private async trigger(d: { id: string; vmSecret: string; installationId?: string | null; server: { status: string; publicIps: { address: string }[] } }, commit?: string) {
-    const ip = d.server.publicIps[0]?.address;
+  private async trigger(d: { id: string; vmSecret: string; installationId?: string | null; server: { id: string; name: string; status: string; privateIp: string | null; publicIps: { address: string }[] } }, commit?: string) {
+    const ip = agentHost(d.server);
     if (!ip || d.server.status !== 'active') throw ApiError.invalidState('Server is not active yet');
     await this.prisma.deployment.update({ where: { id: d.id }, data: { status: 'deploying', lastCommit: commit } });
     // App deployments get a fresh one hour token with every redeploy so the clone keeps working.

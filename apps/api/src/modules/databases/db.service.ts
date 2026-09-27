@@ -14,14 +14,26 @@ import { SpendService } from '../billing/spend.service';
 import { ServersService } from '../compute/servers.service';
 import { FirewallsService } from '../network/firewalls.service';
 import { IpsService } from '../network/ips.service';
-import { OBJECT_STORAGE_PROVIDER, ObjectStorageProvider } from '../storage/objects/objects.provider';
+import { OBJECT_STORAGE_PROVIDER, ObjectStorageProvider, emptyAndDeleteBucket } from '../storage/objects/objects.provider';
 import { renderDbCloudInit } from './cloud-init';
-import { CreateDatabaseDto, DbNameDto, ENGINE_PORTS, ENGINE_VERSIONS, UpdateDatabaseDto } from './db.dto';
+import { recordDiskUsage } from '../monitoring/metrics.service';
+import { agentHost, vipNetworkFor, vrrpPass } from '../../common/platform-agent';
+import { CreateDatabaseDto, DbNameDto, ENGINE_PORTS, ENGINE_VERSIONS, RestoreDatabaseDto, UpdateDatabaseDto } from './db.dto';
 
 const NODE_IMAGE = 'ubuntu-24-04';
 /** Owner of backup buckets: not a customer project, so they are neither listed nor billed. */
 const PLATFORM_PROJECT = 'platform';
 const PRIVATE_NET = '10.0.0.0/8';
+
+/** What GET /status on a node reports. */
+interface NodeReport {
+  version: number;
+  role: string;
+  lagBytes: number | null;
+  diskUsedPercent?: number;
+  backups: { id: string; status: string; sizeBytes?: number; completedAt?: number; error?: string | null; ref?: string }[];
+  restore?: { id: string; status: 'running' | 'completed' | 'failed'; error?: string } | null;
+}
 
 const dbInclude = {
   size: true,
@@ -42,6 +54,8 @@ type DbRow = Prisma.DbClusterGetPayload<{ include: typeof dbInclude }>;
 @Injectable()
 export class DatabasesService {
   private readonly log = new Logger(DatabasesService.name);
+  /** Nodes already reported as unreachable, so the event goes out once per outage. */
+  private readonly unreachable = new Set<string>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -88,7 +102,7 @@ export class DatabasesService {
 
     const vip = await this.ips.reserve(region.id, project.id);
     const port = ENGINE_PORTS[dto.engine];
-    const fw = await this.firewalls.create(actor, project.id, { name: `db-${dto.name}`, rules: firewallRules(dto.engine, port, trusted) });
+    const fw = await this.firewalls.create(actor, project.id, { name: `db-${dto.name}`, rules: firewallRules(dto.engine, port, trusted, nodes) });
     const vmSecret = randomBytes(24).toString('base64url');
     const cluster = await this.prisma.dbCluster.create({
       data: {
@@ -109,7 +123,7 @@ export class DatabasesService {
       this.log.warn(`backup bucket for ${cluster.id} not ready: ${(err as Error).message}`);
     }
     for (let i = 0; i < nodes; i++) {
-      const s = await this.servers.create(actor, { name: `db-${dto.name}-${i}`, size: size.id, image: NODE_IMAGE, project: project.id, region: region.id, firewalls: [fw.id], tags: ['managed-database'], userData: renderDbCloudInit({ engine: dto.engine, vmSecret }) });
+      const s = await this.servers.create(actor, { name: `db-${dto.name}-${i}`, size: size.id, image: NODE_IMAGE, project: project.id, region: region.id, firewalls: [fw.id], tags: ['managed-database'], userData: renderDbCloudInit({ engine: dto.engine, vmSecret, vipNetwork: vipNetworkFor(vip.address) }) }, { spreadGroup: `db:${cluster.id}` });
       await this.prisma.server.update({ where: { id: s.id }, data: { managedBy: `db:${cluster.id}` } });
       await this.prisma.dbNode.create({ data: { clusterId: cluster.id, serverId: s.id, index: i } });
     }
@@ -123,7 +137,7 @@ export class DatabasesService {
     if (!['active', 'updating', 'failed'].includes(c.status)) throw ApiError.invalidState(`Database is ${c.status}; wait for it to settle`);
     const trusted = dto.trustedSources !== undefined ? validateCidrs(dto.trustedSources) : undefined;
     await this.prisma.dbCluster.update({ where: { id }, data: { trustedSources: trusted, backupHourUtc: dto.backupHourUtc, status: 'updating', statusMessage: null, configVersion: { increment: 1 } } });
-    if (trusted && c.firewallId) await this.firewalls.replaceRules(actor, c.projectId, c.firewallId, firewallRules(c.engine, c.port, trusted)).catch((err) => this.log.warn(`firewall update for ${id}: ${(err as Error).message}`));
+    if (trusted && c.firewallId) await this.firewalls.replaceRules(actor, c.projectId, c.firewallId, firewallRules(c.engine, c.port, trusted, c.nodes)).catch((err) => this.log.warn(`firewall update for ${id}: ${(err as Error).message}`));
     await this.pushLater(id, actor);
     return this.get(actor, id, project);
   }
@@ -200,7 +214,7 @@ export class DatabasesService {
     if (await this.prisma.dbBackup.findFirst({ where: { clusterId: id, status: 'running', startedAt: { gt: new Date(Date.now() - 6 * 3600_000) } } })) throw ApiError.invalidState('A backup is already running');
     const b = await this.prisma.dbBackup.create({ data: { clusterId: id, kind, label: `${kind}-${new Date().toISOString().slice(0, 16)}` } });
     const primary = c.nodeServers.find((n) => n.role === 'primary') ?? c.nodeServers[0];
-    const ip = primary?.server.publicIps[0]?.address;
+    const ip = primary ? agentHost(primary.server) : null;
     if (!ip) return { id: b.id, status: 'running' };
     try {
       const r = await fetch(`http://${ip}:9009/backup`, { method: 'POST', headers: { 'X-Pgcloud-Secret': c.vmSecret, 'content-type': 'application/json' }, body: JSON.stringify({ id: b.id }), signal: AbortSignal.timeout(8000) });
@@ -213,22 +227,114 @@ export class DatabasesService {
     return { id: b.id, status: 'running' };
   }
 
+  // ---- restore ----
+
+  /** Restore a completed backup over the cluster. What each engine does is in docs/databases (Restore). */
+  async restore(actor: Actor, id: string, dto: RestoreDatabaseDto, project?: string) {
+    const c = await this.own(actor, id, project);
+    if (c.status !== 'active') throw ApiError.invalidState(`Database is ${c.status}; a restore needs an active cluster`);
+    const b = await this.prisma.dbBackup.findFirst({ where: { id: dto.backupId, clusterId: id } });
+    if (!b) throw ApiError.notFound('backup', dto.backupId);
+    if (b.status !== 'completed') throw ApiError.invalidState(`Backup ${b.id} is ${b.status}; only completed backups can be restored`);
+    if (c.engine === 'postgres' && !b.ref) throw ApiError.invalidState('This backup has no pgBackRest label recorded; take a new backup and restore that one');
+    await this.prisma.dbCluster.update({ where: { id }, data: { status: 'restoring', statusMessage: `restoring backup ${b.label ?? b.id}` } });
+    await this.temporal.start('restoreDatabase', [{ clusterId: id, backupId: b.id }], `restoreDatabase-${id}-${Date.now()}`);
+    await this.events.emit('database.restore_requested', { databaseId: id, backupId: b.id }, { actor, resource: `database:${id}` });
+    return this.get(actor, id, project);
+  }
+
+  /**
+   * Workflow side of a restore. Postgres and Valkey restore on the primary and the replicas
+   * copy from it; MySQL restores every node from the same backup, primary first, so GTID auto
+   * positioning lines up. Afterwards the config version moves on so users and databases made
+   * after the backup come back with the next push.
+   */
+  async runRestore(clusterId: string, backupId: string, heartbeat: () => void = () => undefined) {
+    const c = await this.prisma.dbCluster.findUniqueOrThrow({ where: { id: clusterId }, include: dbInclude });
+    const b = await this.prisma.dbBackup.findUniqueOrThrow({ where: { id: backupId } });
+    const active = c.nodeServers.filter((n) => n.server.status === 'active');
+    const primary = active.find((n) => n.role === 'primary') ?? active[0];
+    if (!primary) throw new Error('no active node to restore on');
+    const primaryIp = nodeList(c).find((m) => m.index === primary.index)!.ip;
+    const order = c.engine === 'mysql' ? [primary, ...active.filter((n) => n.id !== primary.id)] : [primary];
+    for (const n of order) {
+      const ip = agentHost(n.server);
+      if (!ip) throw new Error(`node ${n.index} has no address`);
+      const rid = `${backupId}-${n.index}-${Date.now()}`;
+      const post = await fetch(`http://${ip}:9009/restore`, { method: 'POST', headers: { 'X-Pgcloud-Secret': c.vmSecret, 'content-type': 'application/json' }, body: JSON.stringify({ id: rid, backupId, ref: b.ref, primary: n.id === primary.id, primaryIp }), signal: AbortSignal.timeout(10_000) });
+      if (!post.ok) throw new Error(`node ${n.index} refused the restore: ${post.status} ${(await post.text().catch(() => '')).slice(0, 200)}`);
+      const deadline = Date.now() + 3 * 3600_000;
+      for (;;) {
+        heartbeat();
+        await new Promise((r) => setTimeout(r, 10_000));
+        const st = await this.nodeStatus(c.vmSecret, ip).catch(() => null);
+        const r = st?.restore;
+        if (r?.id === rid && r.status === 'completed') break;
+        if (r?.id === rid && r.status === 'failed') throw new Error(`node ${n.index}: ${r.error ?? 'restore failed'}`);
+        if (Date.now() > deadline) throw new Error(`node ${n.index} did not finish the restore in three hours`);
+      }
+    }
+    await this.prisma.dbCluster.update({ where: { id: clusterId }, data: { configVersion: { increment: 1 } } });
+  }
+
+  /**
+   * Push until every node has applied the current config. Throws with the node's own error
+   * when one fails to apply, or with what the nodes were waiting for at the deadline.
+   */
+  async waitApplied(clusterId: string, timeoutMs: number, heartbeat: () => void = () => undefined) {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      heartbeat();
+      const r = await this.pushConfig(clusterId);
+      if (r.errors.length) throw new Error(r.errors.join('; '));
+      if (r.applied === r.nodes) return r;
+      if (Date.now() > deadline) throw new Error(`only ${r.applied} of ${r.nodes} nodes applied the configuration${r.waiting.length ? `: ${r.waiting.join('; ')}` : ''}`);
+      await new Promise((res) => setTimeout(res, 15_000));
+    }
+  }
+
+  /** On delete: empty the backup bucket, then remove it and its key. */
+  async purgeBackups(clusterId: string) {
+    const c = await this.prisma.dbCluster.findUnique({ where: { id: clusterId } });
+    if (!c?.backupBucket) return 0;
+    const removed = await emptyAndDeleteBucket(this.storage, PLATFORM_PROJECT, c.backupBucket);
+    if (c.backupAccessKey) await this.storage.deleteKey(PLATFORM_PROJECT, c.backupAccessKey).catch(() => undefined);
+    return removed;
+  }
+
+  private async nodeStatus(secret: string, ip: string): Promise<NodeReport> {
+    const r = await fetch(`http://${ip}:9009/status`, { headers: { 'X-Pgcloud-Secret': secret }, signal: AbortSignal.timeout(6000) });
+    if (!r.ok) throw new Error(`status answered ${r.status}`);
+    return (await r.json()) as NodeReport;
+  }
+
   // ---- called by workflows and jobs ----
 
-  /** Renders the node configuration and POSTs it to every node. */
-  async pushConfig(id: string): Promise<{ applied: number; nodes: number }> {
+  /**
+   * Renders the node configuration and POSTs it to every node that does not have it yet.
+   * A node counts as applied only when it answered 200, which the agent sends once users and
+   * databases exist on it. `waiting` holds nodes that answered 409 (waiting for a primary or
+   * for replication), `errors` nodes that failed to apply.
+   */
+  async pushConfig(id: string): Promise<{ applied: number; nodes: number; waiting: string[]; errors: string[] }> {
     const c = await this.prisma.dbCluster.findUnique({ where: { id }, include: { ...dbInclude, publicIp: { include: { block: true } } } });
-    if (!c || c.deletedAt) return { applied: 0, nodes: 0 };
+    if (!c || c.deletedAt) return { applied: 0, nodes: 0, waiting: [], errors: [] };
     const cfg = loadConfig();
-    const nodes = c.nodeServers.map((n) => ({ index: n.index, name: `${c.name}-${n.index}`, ip: n.server.privateIp ?? n.server.publicIps[0]?.address ?? '127.0.0.1' }));
+    const nodes = nodeList(c);
     let applied = 0;
+    const waiting: string[] = [];
+    const errors: string[] = [];
     for (const n of c.nodeServers) {
-      const ip = n.server.publicIps[0]?.address;
+      if (n.appliedVersion >= c.configVersion) {
+        applied++;
+        continue;
+      }
+      const ip = agentHost(n.server);
       if (!ip || n.server.status !== 'active') continue;
       const body = {
         version: c.configVersion,
         engine: c.engine,
-        cluster: { name: `db-${c.name}-${c.id.slice(-6)}`, vrid: (hash(c.id) % 254) + 1, vip: c.publicIp?.address, prefix: c.publicIp ? IpsService.prefixOf(c.publicIp.block.cidr) : 24, nodes: nodes.map((x) => ({ ...x, isSelf: x.index === n.index })) },
+        cluster: { name: `db-${c.name}-${c.id.slice(-6)}`, vrid: (hash(c.id) % 254) + 1, vrrpPass: vrrpPass(c.vmSecret), vip: c.publicIp?.address, prefix: c.publicIp ? IpsService.prefixOf(c.publicIp.block.cidr) : 24, nodes: nodes.map((x) => ({ ...x, isSelf: x.index === n.index })) },
         admin: { user: c.adminUser, password: c.adminPassword },
         replicationPassword: c.vmSecret,
         users: c.users.map((u) => ({ name: u.name, password: u.password })),
@@ -243,41 +349,68 @@ export class DatabasesService {
           applied++;
           await this.prisma.dbNode.update({ where: { id: n.id }, data: { appliedVersion: c.configVersion, lastSeenAt: new Date() } });
         } else {
-          const detail = await r.text().catch(() => '');
-          this.log.warn(`node ${n.server.name} rejected config v${c.configVersion}: ${r.status} ${detail.slice(0, 300)}`);
-          if (r.status === 500) throw ApiError.invalid(`Node ${n.index} could not apply the configuration: ${detail.slice(0, 300)}`);
+          const text = await r.text().catch(() => '');
+          const detail = (() => {
+            try {
+              return String((JSON.parse(text) as { detail?: string }).detail ?? text);
+            } catch {
+              return text;
+            }
+          })().slice(0, 300);
+          if (r.status === 409) waiting.push(`node ${n.index}: ${detail}`);
+          else errors.push(`node ${n.index}: ${detail || `answered ${r.status}`}`);
+          this.log.warn(`node ${n.server.name} did not apply config v${c.configVersion}: ${r.status} ${detail}`);
         }
       } catch (err) {
-        if (err instanceof ApiError) throw err;
+        waiting.push(`node ${n.index}: unreachable`);
         this.log.debug(`node ${n.server.name} unreachable: ${(err as Error).message}`);
       }
     }
-    return { applied, nodes: c.nodeServers.length };
+    return { applied, nodes: c.nodeServers.length, waiting, errors };
   }
 
   /** Minute job: roles, lag and backup results from the nodes; retry unapplied config. */
   async refreshAll() {
     const clusters = await this.prisma.dbCluster.findMany({ where: { status: { in: ['active', 'updating'] }, deletedAt: null }, include: dbInclude });
     for (const c of clusters) {
-      if (c.nodeServers.some((n) => n.appliedVersion < c.configVersion && n.server.status === 'active')) await this.pushConfig(c.id).catch((err) => this.log.warn(`push for ${c.id}: ${(err as Error).message}`));
+      if (c.nodeServers.some((n) => n.appliedVersion < c.configVersion && n.server.status === 'active')) {
+        const r = await this.pushConfig(c.id).catch((err) => {
+          this.log.warn(`push for ${c.id}: ${(err as Error).message}`);
+          return null;
+        });
+        if (r?.errors.length && c.status === 'updating') {
+          await this.prisma.dbCluster.update({ where: { id: c.id }, data: { status: 'failed', statusMessage: `update failed: ${r.errors.join('; ')}` } });
+          continue;
+        }
+      }
       const previousPrimary = c.nodeServers.find((n) => n.role === 'primary')?.index;
       let newPrimary: number | undefined;
       for (const n of c.nodeServers) {
-        const ip = n.server.publicIps[0]?.address;
+        const ip = agentHost(n.server);
         if (!ip || n.server.status !== 'active') continue;
         try {
-          const r = await fetch(`http://${ip}:9009/status`, { signal: AbortSignal.timeout(4000) }).then((x) => x.json() as Promise<{ version: number; role: string; lagBytes: number | null; backups: { id: string; status: string; sizeBytes?: number; completedAt?: number; error?: string | null }[] }>);
+          const r = await fetch(`http://${ip}:9009/status`, { headers: { 'X-Pgcloud-Secret': c.vmSecret }, signal: AbortSignal.timeout(4000) }).then((x) => {
+            if (!x.ok) throw new Error(`status answered ${x.status}`);
+            return x.json() as Promise<NodeReport>;
+          });
           await this.prisma.dbNode.update({ where: { id: n.id }, data: { role: r.role, lagBytes: r.lagBytes ?? null, lastSeenAt: new Date(), appliedVersion: r.version } });
+          await recordDiskUsage(this.prisma, n.serverId, r.diskUsedPercent);
+          if (this.unreachable.delete(n.id)) await this.emit('database.node_recovered', c, { node: n.index, serverId: n.serverId });
           if (r.role === 'primary') newPrimary = n.index;
           for (const b of r.backups ?? []) {
             if (b.status === 'running') continue;
             const row = await this.prisma.dbBackup.findUnique({ where: { id: b.id } });
             if (!row || row.status !== 'running') continue;
-            await this.prisma.dbBackup.update({ where: { id: b.id }, data: { status: b.status === 'completed' ? 'completed' : 'failed', sizeBytes: b.sizeBytes ?? null, completedAt: b.completedAt ? new Date(b.completedAt * 1000) : new Date(), error: b.error ?? null } });
+            await this.prisma.dbBackup.update({ where: { id: b.id }, data: { status: b.status === 'completed' ? 'completed' : 'failed', sizeBytes: b.sizeBytes ?? null, completedAt: b.completedAt ? new Date(b.completedAt * 1000) : new Date(), error: b.error ?? null, ref: b.ref ?? null } });
             await this.emit(b.status === 'completed' ? 'database.backup_completed' : 'database.backup_failed', c, { backupId: b.id, sizeBytes: b.sizeBytes ?? null });
           }
         } catch {
-          /* unreachable: keep last known state */
+          // Unreachable: keep the last known state, and say so once it lasts more than five minutes.
+          const since = n.lastSeenAt ?? c.createdAt;
+          if (Date.now() - since.getTime() > 5 * 60_000 && !this.unreachable.has(n.id)) {
+            this.unreachable.add(n.id);
+            await this.emit('database.node_unreachable', c, { node: n.index, serverId: n.serverId, serverName: n.server.name, lastSeenAt: n.lastSeenAt });
+          }
         }
       }
       if (newPrimary !== undefined && previousPrimary !== undefined && newPrimary !== previousPrimary) await this.emit('database.failover', c, { from: previousPrimary, to: newPrimary });
@@ -349,19 +482,26 @@ export class DatabasesService {
   }
 }
 
-function firewallRules(engine: 'postgres' | 'valkey' | 'mysql', port: number, trusted: string[]) {
+function firewallRules(engine: 'postgres' | 'valkey' | 'mysql', port: number, trusted: string[], nodes: number) {
   const cidrs = trusted.length ? trusted : ['0.0.0.0/0', '::/0'];
+  const cp = loadConfig().CONTROL_PLANE_CIDR;
   const internal: Record<string, [string, string][]> = { postgres: [['2379-2380', 'cluster consensus'], ['8008', 'cluster api'], ['6432', 'pooler']], valkey: [['26379', 'sentinel'], ['6380', 'tls replication']], mysql: [] };
   return [
-    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '22', cidrs: [process.env.CONTROL_PLANE_CIDR ?? '0.0.0.0/0'], description: 'platform ssh' },
+    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '22', cidrs: [cp], description: 'platform ssh' },
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: String(port), cidrs },
     ...(engine === 'postgres' ? [{ direction: 'inbound' as const, protocol: 'tcp' as const, ports: '6432', cidrs, description: 'connection pooler' }] : []),
     ...(engine === 'valkey' ? [{ direction: 'inbound' as const, protocol: 'tcp' as const, ports: '6380', cidrs, description: 'tls port' }] : []),
     ...internal[engine].map(([ports, description]) => ({ direction: 'inbound' as const, protocol: 'tcp' as const, ports, cidrs: [PRIVATE_NET], description })),
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: String(port), cidrs: [PRIVATE_NET], description: 'replication' },
-    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '9009', cidrs: [process.env.CONTROL_PLANE_CIDR ?? '0.0.0.0/0'], description: 'pgcloud database agent' },
+    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '9009', cidrs: [cp], description: 'pgcloud database agent' },
+    ...(nodes > 1 ? [{ direction: 'inbound' as const, protocol: 'vrrp' as const, cidrs: [PRIVATE_NET], description: 'keepalived between database nodes' }] : []),
     { direction: 'outbound' as const, protocol: 'any' as const, cidrs: ['0.0.0.0/0'] },
   ];
+}
+
+/** Cluster members as the agents see them: Patroni member name and the address peers use. */
+function nodeList(c: { name: string; nodeServers: { index: number; server: { privateIp: string | null; publicIps: { address: string }[] } }[] }) {
+  return c.nodeServers.map((n) => ({ index: n.index, name: `${c.name}-${n.index}`, ip: n.server.privateIp ?? n.server.publicIps[0]?.address ?? '127.0.0.1' }));
 }
 
 function validateCidrs(list: string[]) {

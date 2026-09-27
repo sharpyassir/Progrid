@@ -4,6 +4,8 @@
  * `pgcloud-deployd`: a tiny HTTP hook on :9009 that re-pulls and rebuilds when the control
  * plane forwards a GitHub push. Everything is plain bash + python3 so it runs on any image.
  */
+import { agentNetPy } from '../../common/platform-agent';
+
 export interface DeployInit {
   repoUrl: string;
   branch: string;
@@ -68,17 +70,19 @@ ${indent(envFile || '# no env vars', 6)}
     permissions: '0755'
     content: |
       #!/usr/bin/env python3
-      # Redeploy hook. The control plane POSTs /redeploy with X-Pgcloud-Secret after a GitHub push.
-      import http.server, subprocess, os, json
+      # Redeploy hook on the private address. The control plane POSTs /redeploy after a GitHub push; every request carries X-Pgcloud-Secret.
+      import http.server, subprocess, os, json, time
       SECRET = open('/opt/pgcloud/vm.secret').read().strip()
+${agentNetPy(6)}
+
       class H(http.server.BaseHTTPRequestHandler):
           def log_message(self, *a): pass
           def do_GET(self):
+              if self.headers.get('X-Pgcloud-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
               st = open('/opt/pgcloud/status').read().strip() if os.path.exists('/opt/pgcloud/status') else 'deploying'
               commit = open('/opt/pgcloud/last-commit').read().strip() if os.path.exists('/opt/pgcloud/last-commit') else None
               if self.path == '/status': return self._send(200, {'status': st, 'commit': commit})
               if self.path.startswith('/logs'):
-                  if self.headers.get('X-Pgcloud-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
                   log = ''
                   if os.path.exists('/var/log/pgcloud-deploy.log'):
                       with open('/var/log/pgcloud-deploy.log', 'rb') as f:
@@ -98,7 +102,7 @@ ${indent(envFile || '# no env vars', 6)}
               self._send(202, {'status': 'deploying'})
           def _send(self, code, body):
               b = json.dumps(body).encode(); self.send_response(code); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
-      http.server.ThreadingHTTPServer(('0.0.0.0', 9009), H).serve_forever()
+      http.server.ThreadingHTTPServer((bind_address(), 9009), H).serve_forever()
   - path: /opt/pgcloud/vm.secret
     permissions: '0600'
     content: '${d.vmSecret}'

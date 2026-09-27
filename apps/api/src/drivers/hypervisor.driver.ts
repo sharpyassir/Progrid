@@ -44,7 +44,7 @@ export interface VmStatus {
 
 export interface FirewallRuleSpec {
   direction: 'inbound' | 'outbound';
-  protocol: 'tcp' | 'udp' | 'icmp' | 'any';
+  protocol: 'tcp' | 'udp' | 'icmp' | 'vrrp' | 'any';
   ports?: string;
   cidrs: string[];
 }
