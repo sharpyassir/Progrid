@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createRequire, syncBuiltinESMExports } from 'node:module';
 import { randomBytes } from 'node:crypto';
 import { DeployService } from '../../src/modules/deploy/deploy.service';
+import { AppPlatformService } from '../../src/modules/app-platform/app.service';
 import { readyTeam, sut, waitFor, waitStatus, type Sut } from './harness';
 
 let s: Sut;
@@ -100,7 +101,7 @@ describe('App Platform', () => {
     expect((await s.agents.inspect(row.host!.serverId))!.st.apps[app.id]).toBeUndefined();
   });
 
-  it('marks a deploy that fails to build as failed and keeps the previous state', async () => {
+  it('marks an app whose first build fails as failed', async () => {
     const c = (await readyTeam(s)).client;
     const created = await c.ok('POST', '/v1/app-platform/apps', { name: `bad-${randomBytes(3).toString('hex')}`, repoUrl: 'https://github.com/example/broken-app' }, 202);
     const now = await waitFor(async () => {
@@ -112,6 +113,32 @@ describe('App Platform', () => {
     expect(now.deploys[0].status).toBe('failed');
     const deploys = await c.ok('GET', `/v1/app-platform/apps/${created.id}/deploys`);
     expect(deploys.data[0].log).toContain('no Dockerfile');
+  });
+});
+
+describe('App Platform host failure', () => {
+  it('moves the apps of a host that stopped reporting to a new host', async () => {
+    const c = (await readyTeam(s)).client;
+    const created = await c.ok('POST', '/v1/app-platform/apps', { name: `mv-${randomBytes(3).toString('hex')}`, repoUrl: 'https://github.com/example/hello-node' }, 202);
+    const app = await waitStatus<any>(c, `/v1/app-platform/apps/${created.id}`, 'live', 120_000);
+    const before = await s.prisma.platformApp.findUniqueOrThrow({ where: { id: app.id }, include: { host: { include: { server: true } } } });
+
+    // The host's VM dies, and has not reported Docker and Caddy for more than five minutes.
+    await s.agents.setPower(before.host!.server.privateIp!, 'stopped');
+    await s.prisma.appHost.update({ where: { id: before.hostId! }, data: { readyAt: new Date(Date.now() - 6 * 60_000) } });
+    await s.get(AppPlatformService).refreshAll();
+    expect((await s.prisma.appHost.findUniqueOrThrow({ where: { id: before.hostId! } })).status).toBe('failed');
+
+    const moved = await waitFor(async () => {
+      const r = await c.ok('GET', `/v1/app-platform/apps/${app.id}`);
+      return r.status === 'live' && r.deploys[0].trigger === 'host_failed' && r.deploys[0].status === 'live' ? r : null;
+    }, { what: 'the app to be live on another host', timeoutMs: 120_000 });
+    const after = await s.prisma.platformApp.findUniqueOrThrow({ where: { id: app.id }, include: { host: true } });
+    expect(after.hostId).not.toBe(before.hostId);
+    expect(after.host!.status).toBe('active');
+    expect(moved.hostIp).not.toBe(app.hostIp);
+    const newHost = await s.agents.inspect(after.host!.serverId);
+    expect(newHost!.st.apps[app.id].state).toBe('live');
   });
 });
 
