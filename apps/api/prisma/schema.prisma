@@ -726,6 +726,8 @@ enum PaymentProvider {
   moyasar
   bank_transfer
   manual
+  /// The built in test page (development and demos). Never set in production.
+  fake
 }
 
 enum PaymentStatus {

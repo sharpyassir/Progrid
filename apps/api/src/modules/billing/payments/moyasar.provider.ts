@@ -3,7 +3,7 @@ import { ApiError } from '../../../common/errors/api-error';
 import { loadConfig } from '../../../config/config';
 import type { CheckoutInput, CheckoutResult, PaymentEvent, PaymentProvider } from './provider';
 
-interface MoyasarInvoice { id: string; status: string; amount: number; currency: string; url: string; payments?: { id: string; status: string }[] }
+interface MoyasarInvoice { id: string; status: string; amount: number; currency: string; url: string; payments?: { id: string; status: string; amount?: number; currency?: string }[] }
 interface MoyasarPayment { id: string; status: string; amount: number; currency: string; invoice_id?: string | null; metadata?: Record<string, string> }
 
 /**
@@ -48,7 +48,14 @@ export class MoyasarProvider implements PaymentProvider {
     }
     if (!invoiceId) throw ApiError.invalid('No Moyasar invoice in the request');
     const inv = await this.call<MoyasarInvoice>('GET', `/v1/invoices/${invoiceId}`);
-    if (inv.status === 'paid') return [{ providerRef: inv.id, status: 'succeeded', amountMinor: inv.amount, currency: inv.currency as PaymentEvent['currency'] }];
+    if (inv.status === 'paid') {
+      // Report what was actually captured when Moyasar lists the payments, so the service can
+      // compare it with our record; otherwise the invoice amount stands for it.
+      const paid = (inv.payments ?? []).filter((p) => p.status === 'paid' && typeof p.amount === 'number');
+      const amountMinor = paid.length ? paid.reduce((s, p) => s + (p.amount ?? 0), 0) : inv.amount;
+      const currency = (paid.find((p) => p.currency && p.currency.toUpperCase() !== inv.currency.toUpperCase())?.currency ?? inv.currency).toUpperCase();
+      return [{ providerRef: inv.id, status: 'succeeded', amountMinor, currency: currency as PaymentEvent['currency'] }];
+    }
     if (['failed', 'canceled', 'expired', 'voided'].includes(inv.status)) return [{ providerRef: inv.id, status: 'failed', reason: inv.status }];
     return [];
   }
