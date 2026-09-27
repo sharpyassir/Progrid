@@ -52,6 +52,13 @@ type PublicIP struct {
 	Prefix  int    `json:"prefix"`
 }
 
+// PrivateIP is the static address of the private NIC (net0), allocated by the control plane.
+// There is no gateway: the default route belongs to the public NIC.
+type PrivateIP struct {
+	Address string `json:"address"`
+	Prefix  int    `json:"prefix"`
+}
+
 type VmSpec struct {
 	ServerID string `json:"serverId"`
 	Name     string `json:"name"`
@@ -66,6 +73,8 @@ type VmSpec struct {
 	UserData   string    `json:"userData"`
 	NetworkRef string    `json:"networkRef"`
 	PublicIP   *PublicIP `json:"publicIp,omitempty"`
+	// PrivateIP is nil for control planes that predate allocation; net0 then uses DHCP.
+	PrivateIP *PrivateIP `json:"privateIp,omitempty"`
 }
 
 type VmHandle struct {

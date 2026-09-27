@@ -174,6 +174,7 @@ model Project {
   apiTokens ApiToken[]
   usage     UsageRecord[]
   deployments Deployment[]
+  privateNetworks PrivateNetwork[]
 
   @@unique([teamId, slug])
 }
@@ -270,6 +271,7 @@ model Region {
   kubeClusters KubeCluster[]
   platformApps PlatformApp[]
   appHosts     AppHost[]
+  privateNetworks PrivateNetwork[]
 }
 
 enum HostStatus {
@@ -405,6 +407,8 @@ model Server {
   size      Size       @relation(fields: [sizeId], references: [id])
   image     Image      @relation(fields: [imageId], references: [id])
   publicIps PublicIp[]
+  /// The address reserved on the project's private network (net0). Null for servers created before allocation existed.
+  privateIpAlloc PrivateIp?
   snapshots Snapshot[]
   firewalls FirewallServer[]
   actions   ServerAction[]
@@ -533,6 +537,48 @@ model PublicIp {
   reverseDnsSynced Boolean @default(true)
   dbCluster    DbCluster?
   kubeCluster  KubeCluster?
+}
+
+/// A project's private network in one region. Its CIDR comes from the region pool
+/// (PRIVATE_NETWORK_POOL); servers of the project in that region get a static address from
+/// it on their private NIC (net0). In PRIVATE_NETWORK_MODE=sdn_vnet the network is also a
+/// Proxmox SDN VNet in the VXLAN zone, which isolates it from every other project.
+model PrivateNetwork {
+  id           String    @id @default(cuid())
+  projectId    String
+  regionId     String
+  cidr         String // "10.96.3.0/24"
+  /// Index of the CIDR within the region pool; the VXLAN tag and the VNet id derive from it.
+  poolIndex    Int
+  /// VXLAN network identifier of the VNet.
+  vxlanTag     Int
+  /// Proxmox SDN VNet id (at most 8 characters), e.g. "pn7ps".
+  vnet         String
+  /// When the VNet was created and the SDN config applied; null until then (and in shared_bridge mode).
+  sdnAppliedAt DateTime?
+  createdAt    DateTime  @default(now())
+
+  project Project     @relation(fields: [projectId], references: [id])
+  region  Region      @relation(fields: [regionId], references: [id])
+  ips     PrivateIp[]
+
+  @@unique([projectId, regionId])
+  @@unique([regionId, cidr])
+  @@unique([regionId, poolIndex])
+}
+
+/// One address on a private network, held by a server from create until delete.
+model PrivateIp {
+  id        String   @id @default(cuid())
+  networkId String
+  serverId  String?  @unique
+  address   String
+  createdAt DateTime @default(now())
+
+  network PrivateNetwork @relation(fields: [networkId], references: [id], onDelete: Cascade)
+  server  Server?        @relation(fields: [serverId], references: [id], onDelete: SetNull)
+
+  @@unique([networkId, address])
 }
 
 enum FirewallDirection {

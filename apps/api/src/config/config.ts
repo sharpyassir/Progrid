@@ -14,7 +14,27 @@ const schema = z.object({
   TEMPORAL_TASK_QUEUE: z.string().default('pgcloud-control-plane'),
   HYPERVISOR_DRIVER: z.enum(['fake', 'proxmox']).default('fake'),
   PROXMOX_CEPH_POOL: z.string().default('vm-disks'),
+  /** Proxmox SDN VXLAN zone the per project VNets are created in (PRIVATE_NETWORK_MODE=sdn_vnet). */
   PROXMOX_VXLAN_ZONE: z.string().default('customers'),
+  /**
+   * Pool the per project private networks are carved from, one network per project and region.
+   * One CIDR for every region, or per region: "sa1=10.96.0.0/12,sa2=10.112.0.0/12".
+   */
+  PRIVATE_NETWORK_POOL: z.string().default('10.96.0.0/12'),
+  /** Prefix length of each project network; 24 gives 253 server addresses (.2 to .254). */
+  PRIVATE_NETWORK_PREFIX: z.coerce.number().int().min(16).max(28).default(24),
+  /**
+   * How a project network reaches the hypervisor. shared_bridge puts every net0 on the agent's
+   * bridge (dev, and regions without SDN); sdn_vnet gives each project its own VNet in
+   * PROXMOX_VXLAN_ZONE. One value for every region, or per region: "sa1=sdn_vnet" (regions not
+   * listed use shared_bridge).
+   */
+  PRIVATE_NETWORK_MODE: z
+    .string()
+    .default('shared_bridge')
+    .refine((v) => v.split(',').every((p) => ['shared_bridge', 'sdn_vnet'].includes(p.split('=').pop()!.trim())), 'PRIVATE_NETWORK_MODE takes shared_bridge or sdn_vnet, optionally per region as region=mode'),
+  /** VXLAN tag (VNI) of the first pool network; a network's tag is this plus its index in the pool. */
+  PRIVATE_NETWORK_VXLAN_BASE: z.coerce.number().int().min(1).max(16_000_000).default(100_000),
   JWT_SECRET: z.string().min(16).default('dev-only-secret-change-me'),
   /** Key for secrets encrypted at rest (TOTP seeds, webhook secrets). Falls back to JWT_SECRET when unset. */
   SECRETS_KEY: z.string().min(16).optional(),

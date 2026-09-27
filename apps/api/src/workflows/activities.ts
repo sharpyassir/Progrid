@@ -13,6 +13,7 @@ import { AgentJobError } from '../drivers/proxmox.driver';
 import { SchedulerService } from '../modules/scheduler/scheduler.service';
 import { IpsService } from '../modules/network/ips.service';
 import { FirewallsService } from '../modules/network/firewalls.service';
+import { PrivateNetworksService } from '../modules/network/private-networks.service';
 import { EventsService } from '../modules/events/events.service';
 import { ApiError } from '../common/errors/api-error';
 
@@ -94,6 +95,7 @@ export function createActivities(app: INestApplicationContext): Activities {
   const scheduler = app.get(SchedulerService);
   const ips = app.get(IpsService);
   const firewalls = app.get(FirewallsService);
+  const privateNetworks = app.get(PrivateNetworksService);
   const events = app.get(EventsService);
   const lbs = app.get(LoadBalancersService);
   const dbs = app.get(DatabasesService);
@@ -171,6 +173,8 @@ export function createActivities(app: INestApplicationContext): Activities {
       if (s.driverRef) return; // VM already created (retry)
       const keys = await prisma.sshKey.findMany({ where: { id: { in: s.sshKeyIds } } });
       const ip = s.publicIps[0];
+      // The private address is allocated here, before the VM exists, and kept across retries and rebuilds.
+      const priv = await wrap(privateNetworks.reserveForServer(s));
       // Retries of this activity keep the workflow id, so the agent recognizes the repeated create.
       const info = Context.current().info;
       const heartbeat = setInterval(() => Context.current().heartbeat(), 20_000);
@@ -188,9 +192,11 @@ export function createActivities(app: INestApplicationContext): Activities {
           userData: s.userData ?? undefined,
           networkRef: `vpc-${s.projectId}`,
           publicIp: ip ? { address: ip.address, gateway: ip.block.gateway, prefix: IpsService.prefixOf(ip.block.cidr) } : undefined,
+          privateIp: { address: priv.address, prefix: priv.prefix },
         }),
       ).finally(() => clearInterval(heartbeat));
-      await prisma.server.update({ where: { id: serverId }, data: { driverRef: handle.vmRef, privateIp: handle.privateIp } });
+      if (handle.privateIp && handle.privateIp !== priv.address) log.warn(`createVm ${serverId}: the driver reports ${handle.privateIp}, keeping the allocated ${priv.address}`);
+      await prisma.server.update({ where: { id: serverId }, data: { driverRef: handle.vmRef, privateIp: priv.address } });
     },
 
     async waitForBoot(serverId) {
@@ -242,8 +248,9 @@ export function createActivities(app: INestApplicationContext): Activities {
         }
       }
       await ips.releaseForServer(serverId);
+      await privateNetworks.releaseForServer(serverId);
       if (s.hostId) await scheduler.release(s.hostId, s);
-      await prisma.server.update({ where: { id: serverId }, data: { driverRef: null, hostId: null, meteredSince: null } });
+      await prisma.server.update({ where: { id: serverId }, data: { driverRef: null, hostId: null, meteredSince: null, privateIp: null } });
     },
 
     async powerOp(serverId, op, force) {
@@ -294,6 +301,7 @@ export function createActivities(app: INestApplicationContext): Activities {
     async finalizeDelete(serverId) {
       const s = await load(serverId);
       await ips.releaseForServer(serverId);
+      await privateNetworks.releaseForServer(serverId);
       if (s.hostId) await scheduler.release(s.hostId, s);
       await prisma.server.update({ where: { id: serverId }, data: { status: 'deleted', deletedAt: new Date(), hostId: null, meteredSince: null } });
       // Volumes survive their server; the VM is gone so the images are simply free again.

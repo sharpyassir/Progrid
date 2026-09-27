@@ -5,13 +5,14 @@ import type { Actor } from '../../common/auth/actor';
 import { IamService } from '../iam/iam.service';
 import { FirewallsService } from './firewalls.service';
 import { IpsService } from './ips.service';
+import { PrivateNetworksService } from './private-networks.service';
 import { AttachServerDto, CreateFirewallDto, ReplaceRulesDto } from './network.dto';
 
 @ApiTags('network')
 @ApiBearerAuth()
 @Controller('v1')
 export class NetworkController {
-  constructor(private readonly firewalls: FirewallsService, private readonly ips: IpsService, private readonly iam: IamService) {}
+  constructor(private readonly firewalls: FirewallsService, private readonly ips: IpsService, private readonly privateNetworks: PrivateNetworksService, private readonly iam: IamService) {}
 
   @Get('firewalls') @RequireScopes('network:read')
   async list(@CurrentActor() actor: Actor, @Query('project') project?: string) {
@@ -53,6 +54,14 @@ export class NetworkController {
   async remove(@CurrentActor() actor: Actor, @Param('id') id: string, @Query('project') project?: string) {
     const p = await this.iam.resolveProject(actor, project);
     await this.firewalls.remove(actor, p.id, id);
+  }
+
+  /** The project's private networks, one per region, created with its first server there. */
+  @Get('private-networks') @RequireScopes('network:read')
+  async listPrivateNetworks(@CurrentActor() actor: Actor, @Query('project') project?: string) {
+    const p = await this.iam.resolveProject(actor, project);
+    const rows = await this.privateNetworks.list(p.id);
+    return { data: rows.map((n) => ({ id: n.id, region: n.regionId, cidr: n.cidr, servers: n._count.ips, isolated: !!n.sdnAppliedAt, createdAt: n.createdAt })) };
   }
 
   @Get('public-ips') @RequireScopes('network:read')

@@ -569,6 +569,10 @@ func (a *Agent) create(ctx context.Context, spec protocol.VmSpec, log *slog.Logg
 		PrivateIP: "dhcp", Bridge: a.cfg.Proxmox.Bridge, PublicBr: a.cfg.Proxmox.PublicBridge,
 		Tags: "pgcloud;server-" + spec.ServerID + ";project-" + strings.TrimPrefix(spec.NetworkRef, "vpc-"),
 	}
+	if spec.PrivateIP != nil && spec.PrivateIP.Address != "" && spec.PrivateIP.Prefix > 0 {
+		// A static address known before boot; the private NIC gets no gateway.
+		cfg.PrivateIP = fmt.Sprintf("%s/%d", spec.PrivateIP.Address, spec.PrivateIP.Prefix)
+	}
 	if spec.PublicIP != nil {
 		cfg.PublicIP = fmt.Sprintf("%s/%d", spec.PublicIP.Address, spec.PublicIP.Prefix)
 		cfg.Gateway = spec.PublicIP.Gateway
@@ -586,7 +590,11 @@ func (a *Agent) create(ctx context.Context, spec protocol.VmSpec, log *slog.Logg
 		return nil, err
 	}
 	ref, _ := json.Marshal(protocol.VmRef{VMID: vmid, Node: a.cfg.Proxmox.Node, ServerID: spec.ServerID, ProjectID: strings.TrimPrefix(spec.NetworkRef, "vpc-")})
-	return protocol.VmHandle{VmRef: string(ref)}, nil
+	h := protocol.VmHandle{VmRef: string(ref)}
+	if spec.PrivateIP != nil {
+		h.PrivateIP = spec.PrivateIP.Address
+	}
+	return h, nil
 }
 
 // attachIP puts a public address on the VM's public NIC (net1) and its cloud-init network

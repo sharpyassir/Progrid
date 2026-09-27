@@ -113,6 +113,7 @@ func spec(serverID string) protocol.VmSpec {
 		ServerID: serverID, Name: "web-1", Hostname: "web-1", Vcpu: 2, MemoryMb: 4096, DiskGb: 80,
 		ImageRef: `{"template":9000}`, SshKeys: []string{"ssh-ed25519 AAAA test"}, UserData: "#cloud-config\nhostname: web-1\n",
 		NetworkRef: "vpc-proj_1", PublicIP: &protocol.PublicIP{Address: "203.0.113.10", Gateway: "203.0.113.1", Prefix: 24},
+		PrivateIP: &protocol.PrivateIP{Address: "10.96.0.2", Prefix: 24},
 	}
 }
 
@@ -146,6 +147,12 @@ func TestCreateConfiguresCloneAndBoots(t *testing.T) {
 	if !strings.HasPrefix(vm.Config["net1"], "virtio=BC:24:11:") || !strings.HasSuffix(vm.Config["net1"], ",bridge=vmbr0,firewall=1") || !strings.HasPrefix(vm.Config["ipconfig1"], "ip=203.0.113.10/24,gw=203.0.113.1") {
 		t.Fatalf("public network not configured: %v", vm.Config)
 	}
+	if vm.Config["ipconfig0"] != "ip=10.96.0.2/24" || !strings.HasSuffix(vm.Config["net0"], ",bridge=customers,firewall=1") {
+		t.Fatalf("private NIC not static without a gateway: %v", vm.Config)
+	}
+	if h := handleOf(t, r); h.PrivateIP != "10.96.0.2" {
+		t.Fatalf("create result lacks the private address: %+v", h)
+	}
 	if !strings.HasPrefix(vm.Config["cicustom"], "user=local:snippets/pgcloud-") {
 		t.Fatalf("cloud-init snippet not referenced: %v", vm.Config)
 	}
@@ -166,6 +173,27 @@ func TestCreateConfiguresCloneAndBoots(t *testing.T) {
 	if st.Power != "running" {
 		t.Fatalf("expected running after boot, got %+v", st)
 	}
+}
+
+// A control plane that sends no private address keeps the old DHCP behavior on net0.
+func TestCreateWithoutPrivateIPUsesDHCP(t *testing.T) {
+	h := newHarness(t)
+	sp := spec("srv_dhcp")
+	sp.PrivateIP = nil
+	vmid, _ := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": sp})))
+	if got := h.sim.VM(vmid).Config["ipconfig0"]; got != "ip=dhcp" {
+		t.Fatalf("expected DHCP on net0, got %q", got)
+	}
+}
+
+func handleOf(t *testing.T, r protocol.JobResult) protocol.VmHandle {
+	t.Helper()
+	b, _ := json.Marshal(r.Result)
+	var h protocol.VmHandle
+	if err := json.Unmarshal(b, &h); err != nil {
+		t.Fatalf("bad create result %s", b)
+	}
+	return h
 }
 
 func TestPowerSnapshotFirewallResizeDelete(t *testing.T) {

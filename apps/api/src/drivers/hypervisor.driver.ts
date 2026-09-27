@@ -20,6 +20,12 @@ export interface VmSpec {
   /** Tenant overlay network id (VPC). MVP: one default overlay per project. */
   networkRef: string;
   publicIp?: { address: string; gateway: string; prefix: number };
+  /**
+   * Static address on the private NIC (net0), allocated by the control plane from the
+   * project's private network. No gateway: the default route stays on the public NIC.
+   * Without it the agent falls back to DHCP on net0.
+   */
+  privateIp?: { address: string; prefix: number };
   hostname: string;
   /**
    * Stable key for this create attempt (the workflow id). Retries of the same attempt reuse

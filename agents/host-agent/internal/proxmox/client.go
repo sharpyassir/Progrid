@@ -157,7 +157,7 @@ type VMConfig struct {
 	Hostname  string
 	PublicIP  string // "203.0.113.5/24"
 	Gateway   string
-	PrivateIP string // "dhcp" or "10.x/24"
+	PrivateIP string // "10.96.3.7/24" (static, no gateway), or "dhcp" when the control plane sent none
 	Bridge    string
 	PublicBr  string
 	Tags      string
