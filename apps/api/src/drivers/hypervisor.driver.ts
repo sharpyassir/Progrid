@@ -21,6 +21,11 @@ export interface VmSpec {
   networkRef: string;
   publicIp?: { address: string; gateway: string; prefix: number };
   hostname: string;
+  /**
+   * Stable key for this create attempt (the workflow id). Retries of the same attempt reuse
+   * it so the agent answers with the VM it already made instead of cloning a second one.
+   */
+  requestKey?: string;
 }
 
 export interface VmHandle {
@@ -69,6 +74,8 @@ export interface HypervisorDriver {
   deleteVm(hostRef: string, vmRef: string): Promise<void>;
   resizeVm(hostRef: string, vmRef: string, size: { vcpu: number; memoryMb: number; diskGb: number }): Promise<void>;
   getVmStatus(hostRef: string, vmRef: string): Promise<VmStatus>;
+  /** vmRefs of the VMs on the host that carry the tag (every VM is tagged `server-<id>`). */
+  findVmsByTag(hostRef: string, tag: string): Promise<string[]>;
 
   snapshotVm(hostRef: string, vmRef: string, snapshotId: string): Promise<{ snapshotRef: string; sizeGb: number }>;
   deleteSnapshot(hostRef: string, snapshotRef: string): Promise<void>;

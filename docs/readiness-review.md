@@ -69,9 +69,10 @@ what blocks money first. Items marked "fixed" were corrected in the same commit 
    node or the clone must pass a target node.
 8. **NATS authentication.** Fixed: the production NATS server required a token that neither the
    API, the worker nor the host agent sent. All three now send `NATS_TOKEN`.
-9. **Create retries leave orphan VMs.** The NATS request times out after 3 minutes while a clone
-   can take 10, and each retry uses a new job id, so the agent cannot deduplicate. Use the server
-   id as the job id and write the driver reference before the clone finishes.
+9. **Create retries leave orphan VMs.** Fixed: the create job id is derived from the server and
+   the workflow, the agent answers a repeated id with the stored result (or waits for the run in
+   progress), the request waits up to 10 minutes, and a failed create finds and deletes any VM
+   tagged `server-<id>`.
 10. **SSH access on real Proxmox.** Any cloud-init user-data (marketplace, managed tier, platform
     nodes) replaces the Proxmox generated user-data, so SSH keys and hostname are dropped unless
     the rendered user-data carries them. The `sshkeys` field is also URL encoded with plus signs

@@ -36,7 +36,7 @@ export async function createServer(input: CreateServerInput): Promise<void> {
     await act.placeServer(serverId, input.avoid);
     placed = true;
     await act.reserveIp(serverId);
-    await act.createVm(serverId);
+    await slow.createVm(serverId);
     await slow.waitForBoot(serverId);
     await act.applyFirewall(serverId);
     await act.startMeter(serverId);
@@ -111,7 +111,7 @@ export async function rebuildServer(input: RebuildInput): Promise<void> {
   try {
     await act.deleteVm(serverId);
     await act.setImage(serverId, imageId);
-    await act.createVm(serverId);
+    await slow.createVm(serverId);
     await slow.waitForBoot(serverId);
     await act.applyFirewall(serverId);
     await act.setStatus(serverId, 'active');

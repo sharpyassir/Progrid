@@ -146,9 +146,13 @@ export function createActivities(app: INestApplicationContext): Activities {
       if (s.driverRef) return; // VM already created (retry)
       const keys = await prisma.sshKey.findMany({ where: { id: { in: s.sshKeyIds } } });
       const ip = s.publicIps[0];
+      // Retries of this activity keep the workflow id, so the agent recognizes the repeated create.
+      const info = Context.current().info;
+      const heartbeat = setInterval(() => Context.current().heartbeat(), 20_000);
       const handle = await wrap(
         driver.createVm(hostRef(s), {
           serverId: s.id,
+          requestKey: info.workflowExecution?.workflowId,
           name: s.name,
           hostname: s.name,
           vcpu: s.vcpu,
@@ -160,7 +164,7 @@ export function createActivities(app: INestApplicationContext): Activities {
           networkRef: `vpc-${s.projectId}`,
           publicIp: ip ? { address: ip.address, gateway: ip.block.gateway, prefix: IpsService.prefixOf(ip.block.cidr) } : undefined,
         }),
-      );
+      ).finally(() => clearInterval(heartbeat));
       await prisma.server.update({ where: { id: serverId }, data: { driverRef: handle.vmRef, privateIp: handle.privateIp } });
     },
 
@@ -189,8 +193,17 @@ export function createActivities(app: INestApplicationContext): Activities {
     async compensateCreate(serverId) {
       const s = await prisma.server.findUnique({ where: { id: serverId }, include: { host: true } });
       if (!s) return;
-      if (s.driverRef && s.host) {
-        await driver.deleteVm(s.host.driverRef, s.driverRef).catch((e) => log.warn(`compensate: deleteVm ${serverId}: ${e.message}`));
+      if (s.host) {
+        // A create whose reply was lost leaves a VM the database does not know; find it by its tag.
+        const refs = new Set<string>(s.driverRef ? [s.driverRef] : []);
+        const tagged = await driver.findVmsByTag(s.host.driverRef, `server-${serverId}`).catch((e) => {
+          log.warn(`compensate: findVmsByTag ${serverId}: ${e.message}`);
+          return [] as string[];
+        });
+        for (const r of tagged) refs.add(r);
+        for (const r of refs) {
+          await driver.deleteVm(s.host.driverRef, r).catch((e) => log.warn(`compensate: deleteVm ${serverId} ${r}: ${e.message}`));
+        }
       }
       await ips.releaseForServer(serverId);
       if (s.hostId) await scheduler.release(s.hostId, s);

@@ -268,19 +268,78 @@ func TestErrorsAreClassified(t *testing.T) {
 	}
 }
 
-func TestDuplicateJobIsIgnored(t *testing.T) {
+func TestRepeatedJobIDReturnsStoredResult(t *testing.T) {
 	h := newHarness(t)
-	r := h.mustOK(h.jobID("dup_1", protocol.JobCreate, map[string]interface{}{"spec": spec("srv_5")}))
-	vmid, _ := vmidOf(t, r)
-	// Same id again: the agent must not create a second VM, and answers nothing (the
-	// control plane's request times out and re-reads state instead).
-	p, _ := json.Marshal(map[string]interface{}{"spec": spec("srv_5")})
-	body, _ := json.Marshal(protocol.Job{ID: "dup_1", Kind: protocol.JobCreate, Params: p})
-	if _, err := h.nc.Request(h.subj, body, 700*time.Millisecond); err == nil {
-		t.Fatal("duplicate job produced a reply")
+	// Two requests with the same id while the clone runs: one VM, both get the same answer.
+	type reply struct {
+		r   protocol.JobResult
+		err error
 	}
-	if h.sim.VM(vmid+1) != nil {
-		t.Fatal("duplicate job created a second vm")
+	p, _ := json.Marshal(map[string]interface{}{"spec": spec("srv_5")})
+	body, _ := json.Marshal(protocol.Job{ID: "vm.create:srv_5", Kind: protocol.JobCreate, Params: p})
+	replies := make(chan reply, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			msg, err := h.nc.Request(h.subj, body, 15*time.Second)
+			var r protocol.JobResult
+			if err == nil {
+				err = json.Unmarshal(msg.Data, &r)
+			}
+			replies <- reply{r, err}
+		}()
+	}
+	var refs []string
+	for i := 0; i < 2; i++ {
+		rp := <-replies
+		if rp.err != nil {
+			t.Fatalf("no reply: %v", rp.err)
+		}
+		_, ref := vmidOf(t, h.mustOK(rp.r))
+		refs = append(refs, ref)
+	}
+	if refs[0] != refs[1] {
+		t.Fatalf("repeated id got different VMs: %v", refs)
+	}
+	clones := 0
+	for _, c := range h.sim.Calls() {
+		if strings.HasSuffix(c, "/clone") {
+			clones++
+		}
+	}
+	if clones != 1 {
+		t.Fatalf("expected one clone, got %d", clones)
+	}
+
+	// A retry after completion gets the stored result, not a second VM.
+	r := h.mustOK(h.jobID("vm.create:srv_5", protocol.JobCreate, map[string]interface{}{"spec": spec("srv_5")}))
+	if _, ref := vmidOf(t, r); ref != refs[0] {
+		t.Fatalf("retry after completion returned %s, want %s", ref, refs[0])
+	}
+
+	// A failed job is not stored: a retry with the same id runs again and succeeds.
+	h.sim.FailNext("clone", 1)
+	if r := h.jobID("vm.create:srv_5b", protocol.JobCreate, map[string]interface{}{"spec": spec("srv_5b")}); r.OK {
+		t.Fatal("expected the injected clone failure")
+	}
+	h.mustOK(h.jobID("vm.create:srv_5b", protocol.JobCreate, map[string]interface{}{"spec": spec("srv_5b")}))
+}
+
+func TestFindByTag(t *testing.T) {
+	h := newHarness(t)
+	_, ref := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_orphan")})))
+	h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_other")}))
+
+	r := h.mustOK(h.job(protocol.JobFindByTag, map[string]interface{}{"tag": "server-srv_orphan"}))
+	refs := r.Result.(map[string]interface{})["vmRefs"].([]interface{})
+	if len(refs) != 1 || refs[0] != ref {
+		t.Fatalf("find_by_tag returned %v, want [%s]", refs, ref)
+	}
+	r = h.mustOK(h.job(protocol.JobFindByTag, map[string]interface{}{"tag": "server-nothing"}))
+	if refs := r.Result.(map[string]interface{})["vmRefs"].([]interface{}); len(refs) != 0 {
+		t.Fatalf("expected no match, got %v", refs)
+	}
+	if r := h.job(protocol.JobFindByTag, map[string]interface{}{}); r.OK || r.Error.Code != "bad_params" {
+		t.Fatalf("expected bad_params, got %+v", r)
 	}
 }
 

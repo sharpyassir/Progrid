@@ -37,9 +37,21 @@ type Agent struct {
 	log     *slog.Logger
 	version string
 
-	seen   map[string]time.Time // job de-dup
-	seenMu sync.Mutex
+	jobs   map[string]*jobEntry // job de-dup by id
+	jobsMu sync.Mutex
 }
+
+// jobEntry tracks one job id. done closes when the job finishes; res is valid after that.
+// Successful results are kept for jobRetention so a retried request with the same id gets
+// the stored answer instead of running the job again (a second clone would orphan a VM).
+type jobEntry struct {
+	done     chan struct{}
+	res      protocol.JobResult
+	finished time.Time
+}
+
+// jobRetention is how long a completed job's result is kept for repeated ids.
+const jobRetention = time.Hour
 
 func New(cfg *config.Config, pve *proxmox.Client, version string, log *slog.Logger) (*Agent, error) {
 	opts := []nats.Option{
@@ -57,7 +69,7 @@ func New(cfg *config.Config, pve *proxmox.Client, version string, log *slog.Logg
 	if err != nil {
 		return nil, fmt.Errorf("nats: %w", err)
 	}
-	return &Agent{cfg: cfg, pve: pve, nc: nc, log: log.With("node", cfg.Proxmox.Node), version: version, seen: map[string]time.Time{}}, nil
+	return &Agent{cfg: cfg, pve: pve, nc: nc, log: log.With("node", cfg.Proxmox.Node), version: version, jobs: map[string]*jobEntry{}}, nil
 }
 
 func (a *Agent) Run(ctx context.Context) error {
@@ -155,10 +167,24 @@ func (a *Agent) handle(ctx context.Context, m *nats.Msg) {
 		a.reply(m, protocol.JobResult{OK: false, Error: &protocol.JobError{Code: "bad_job", Message: err.Error()}})
 		return
 	}
-	if a.duplicate(job.ID) {
-		a.log.Info("duplicate job ignored", "id", job.ID, "kind", job.Kind)
+	entry, first := a.claim(job.ID)
+	if !first {
+		// A repeated id waits for the running job, or gets the stored result of a finished one.
+		a.log.Info("repeated job id, answering with its result", "id", job.ID, "kind", job.Kind)
+		select {
+		case <-entry.done:
+			a.reply(m, entry.res)
+		case <-ctx.Done():
+		}
 		return
 	}
+	res := a.run(ctx, job)
+	a.finish(job.ID, entry, res)
+	a.reply(m, res)
+}
+
+// run executes one job and turns its outcome into a JobResult.
+func (a *Agent) run(ctx context.Context, job protocol.Job) protocol.JobResult {
 	log := a.log.With("job", job.ID, "kind", job.Kind)
 	log.Info("job start")
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
@@ -178,11 +204,10 @@ func (a *Agent) handle(ctx context.Context, m *nats.Msg) {
 			je.Retryable = false
 		}
 		log.Error("job failed", "err", err, "retryable", je.Retryable)
-		a.reply(m, protocol.JobResult{JobID: job.ID, OK: false, Error: je})
-		return
+		return protocol.JobResult{JobID: job.ID, OK: false, Error: je}
 	}
 	log.Info("job done")
-	a.reply(m, protocol.JobResult{JobID: job.ID, OK: true, Result: res})
+	return protocol.JobResult{JobID: job.ID, OK: true, Result: res}
 }
 
 func (a *Agent) reply(m *nats.Msg, r protocol.JobResult) {
@@ -192,19 +217,35 @@ func (a *Agent) reply(m *nats.Msg, r protocol.JobResult) {
 	}
 }
 
-func (a *Agent) duplicate(id string) bool {
-	a.seenMu.Lock()
-	defer a.seenMu.Unlock()
-	for k, t := range a.seen {
-		if time.Since(t) > time.Hour {
-			delete(a.seen, k)
+// claim registers a job id. It returns the entry and true when this caller must run the
+// job, or the existing entry and false when the id is running or finished already.
+func (a *Agent) claim(id string) (*jobEntry, bool) {
+	a.jobsMu.Lock()
+	defer a.jobsMu.Unlock()
+	for k, e := range a.jobs {
+		if !e.finished.IsZero() && time.Since(e.finished) > jobRetention {
+			delete(a.jobs, k)
 		}
 	}
-	if _, ok := a.seen[id]; ok {
-		return true
+	if e, ok := a.jobs[id]; ok {
+		return e, false
 	}
-	a.seen[id] = time.Now()
-	return false
+	e := &jobEntry{done: make(chan struct{})}
+	a.jobs[id] = e
+	return e, true
+}
+
+// finish stores the result and wakes requests waiting on the same id. Failed jobs are
+// forgotten once the waiters have their answer, so a retry with the same id runs again.
+func (a *Agent) finish(id string, e *jobEntry, res protocol.JobResult) {
+	a.jobsMu.Lock()
+	defer a.jobsMu.Unlock()
+	e.res = res
+	e.finished = time.Now()
+	if !res.OK {
+		delete(a.jobs, id)
+	}
+	close(e.done)
 }
 
 type permanent struct {
@@ -260,6 +301,15 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 		default:
 			return a.status(ctx, ref.VMID)
 		}
+
+	case protocol.JobFindByTag:
+		var p struct {
+			Tag string `json:"tag"`
+		}
+		if err := json.Unmarshal(job.Params, &p); err != nil || p.Tag == "" {
+			return nil, permanent{"bad_params", fmt.Errorf("tag is required")}
+		}
+		return a.findByTag(ctx, p.Tag)
 
 	case protocol.JobResize:
 		var p struct {
@@ -460,6 +510,30 @@ func (a *Agent) create(ctx context.Context, spec protocol.VmSpec, log *slog.Logg
 	return protocol.VmHandle{VmRef: string(ref)}, nil
 }
 
+// findByTag lists the VMs on this node that carry the tag, as vmRefs. The control plane uses
+// it to find a VM whose create reply never arrived (tag "server-<id>").
+func (a *Agent) findByTag(ctx context.Context, tag string) (interface{}, error) {
+	vms, err := a.pve.ListVMs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	refs := []string{}
+	for _, vm := range vms {
+		if vm.Template == 1 {
+			continue
+		}
+		for _, t := range splitTags(vm.Tags) {
+			if t == tag {
+				ref := refFromTags(vm.VMID, a.cfg.Proxmox.Node, vm.Tags)
+				b, _ := json.Marshal(ref)
+				refs = append(refs, string(b))
+				break
+			}
+		}
+	}
+	return map[string]interface{}{"vmRefs": refs}, nil
+}
+
 func (a *Agent) waitBoot(ctx context.Context, vmid int, timeout time.Duration) (interface{}, error) {
 	if timeout == 0 {
 		timeout = 10 * time.Minute
@@ -523,7 +597,7 @@ func parseRef(s string) (*protocol.VmRef, error) {
 // usage need no control-plane lookup.
 func refFromTags(vmid int, node, tags string) protocol.VmRef {
 	r := protocol.VmRef{VMID: vmid, Node: node}
-	for _, t := range strings.Split(tags, ";") {
+	for _, t := range splitTags(tags) {
 		if v, ok := strings.CutPrefix(t, "server-"); ok {
 			r.ServerID = v
 		}
@@ -532,6 +606,11 @@ func refFromTags(vmid int, node, tags string) protocol.VmRef {
 		}
 	}
 	return r
+}
+
+// splitTags splits a Proxmox tag list. The API writes ";" but accepts "," and spaces too.
+func splitTags(tags string) []string {
+	return strings.FieldsFunc(tags, func(r rune) bool { return r == ';' || r == ',' || r == ' ' })
 }
 
 func toPVERules(rules []protocol.FirewallRule) []proxmox.FWRule {

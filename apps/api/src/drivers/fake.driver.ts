@@ -87,6 +87,9 @@ export class FakeDriver implements HypervisorDriver {
     if (!vm) return { power: 'unknown' };
     return { power: vm.power, cpuPercent: Math.random() * 10, memoryUsedMb: Math.floor(vm.spec.memoryMb * 0.3) };
   }
+  async findVmsByTag(_h: string, tag: string) {
+    return [...this.vms.entries()].filter(([, vm]) => `server-${vm.spec.serverId}` === tag).map(([ref]) => ref);
+  }
   async snapshotVm(_h: string, vmRef: string, snapshotId: string) {
     // A worker restart forgets in memory VMs; snapshots of unknown refs still succeed so daily backups keep working in dev.
     const vm = this.vms.get(vmRef);

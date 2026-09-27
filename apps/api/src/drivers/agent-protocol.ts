@@ -12,6 +12,7 @@ export type JobKind =
   | 'vm.delete'
   | 'vm.resize'
   | 'vm.status'
+  | 'vm.find_by_tag'
   | 'vm.snapshot'
   | 'snapshot.delete'
   | 'net.attach_ip'
@@ -24,7 +25,7 @@ export type JobKind =
   | 'volume.delete';
 
 export interface Job<P = Record<string, unknown>> {
-  id: string; // uuid, agents dedupe on it
+  id: string; // agents dedupe on it; a repeated id gets the stored result instead of a second run
   kind: JobKind;
   params: P;
   issuedAt: string;
