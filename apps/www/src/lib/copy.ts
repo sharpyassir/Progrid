@@ -28,17 +28,17 @@ const en: Copy = {
   meta: { title: 'Progrid: the developer cloud for Saudi Arabia, built for people and AI agents', description: 'Get a server in 60 seconds. Hourly billing in dollars or riyals with ZATCA e-invoices, data that stays in Suudi Arabistan, one click apps, and API tokens your AI agents can use safely.' },
   nav: { products: 'Products', agents: 'For AI agents', pricing: 'Pricing', marketplace: 'Marketplace', docs: 'Docs', signIn: 'Sign in', startFree: 'Start free', menu: 'Menu' },
   hero: {
-    badge: 'First region in Saudi Arabia, launching 2027',
+    badge: 'Launching 2027',
     h1a: 'The developer cloud for Saudi Arabia. Built for people ', h1b: 'and AI agents',
-    lead: 'Get a server in 60 seconds. Pay by the hour in dollars or riyals with a ZATCA compliant e-invoice. Your data stays in Saudi Arabia. And your AI agents get API tokens with a spending cap and a human in the loop.',
+    lead: 'Get a server in 60 seconds. Pay by the hour in dollars or riyals with a ZATCA compliant e-invoice. Your AI agents get API tokens with a spending cap and a human in the loop.',
     ctaPrimary: 'Start with $100 in credit', ctaSecondary: 'See how agents deploy',
-    stats: [['60 s', 'to a running server'], ['29 SAR / mo', 'Starter server, billed hourly'], ['100%', 'of your data stays in Saudi Arabia']],
+    stats: [['60 s', 'to a running server'], ['29 SAR / mo', 'Starter server, billed hourly'], ['0 contracts', 'no commitment, cancel any hour']],
   },
   terminal: { ready: 'WordPress is ready at https://185.0.113.42 and billing at 0.04 SAR per hour', orAgent: '# or let your agent do it, with a cap', capNote: '# 50 SAR per month cap, delete needs approval' },
   trust: [
     ['🇸🇦', 'Region in Saudi Arabia', 'Low latency across Saudi Arabia and the Gulf'],
     ['$', 'Priced in dollars, paid in riyals or dollars', 'ZATCA e-invoices; mada, cards and Apple Pay through Moyasar'],
-    ['🔒', 'Data stays in Saudi Arabia', 'PDPL compliant by design'],
+    ['🔒', 'Secure from day one', 'Firewalls, SSH keys, two step sign in and an audit log for every call'],
     ['⏱', 'Hourly billing, monthly cap', 'Pay for 3 hours, not 30 days'],
   ],
   products: {
@@ -79,10 +79,9 @@ const en: Copy = {
     eyebrow: 'Why Progrid', h2: 'The developer experience of a global cloud. The invoices of a local one.',
     cols: ['Progrid', 'Global clouds', 'Local hosts'],
     rows: [
-      ['Region', 'Saudi Arabia', 'Germany or the Netherlands', 'Saudi Arabia'],
+      ['Latency from Saudi Arabia', 'Low', 'Higher', 'Low'],
       ['Billing', 'Hourly, in dollars or riyals', 'Monthly or hourly, in dollars', 'Monthly, in riyals'],
       ['ZATCA e-invoicing', 'Built in', 'No', 'Varies'],
-      ['Data stays in Saudi Arabia (PDPL)', 'Yes', 'No', 'Yes'],
       ['Public API and Terraform', 'Yes', 'Yes', 'Rarely'],
       ['Agent tokens with spending caps', 'Yes', 'No', 'No'],
       ['Console in Arabic and English', 'Yes', 'No', 'English only'],
@@ -105,17 +104,17 @@ const tr: Copy = {
   meta: { title: 'Progrid: Suudi Arabistan için geliştirici bulutu, insanlar ve yapay zeka ajanları için', description: '60 saniyede sunucu. Dolar veya riyal ile saatlik faturalama ve ZATCA e-fatura, Suudi Arabistan’da kalan veri, tek tıkla uygulamalar ve yapay zeka ajanlarının güvenle kullanabileceği API tokenları.' },
   nav: { products: 'Ürünler', agents: 'Yapay zeka ajanları', pricing: 'Fiyatlar', marketplace: 'Uygulama Mağazası', docs: 'Belgeler', signIn: 'Giriş yap', startFree: 'Ücretsiz başla', menu: 'Menü' },
   hero: {
-    badge: 'Suudi Arabistan’daki ilk bölge, 2027’de açılıyor',
+    badge: '2027’de açılıyor',
     h1a: 'Suudi Arabistan için geliştirici bulutu. İnsanlar ', h1b: 've yapay zeka ajanları için',
-    lead: '60 saniyede sunucunuz hazır. Dolar veya riyal ile saatlik ödeyin, ZATCA uyumlu e-fatura alın. Verileriniz Suudi Arabistan’da kalır. Yapay zeka ajanlarınız harcama limitli ve insan onaylı API tokenları kullanır.',
+    lead: '60 saniyede sunucunuz hazır. Dolar veya riyal ile saatlik ödeyin, ZATCA uyumlu e-fatura alın. Yapay zeka ajanlarınız harcama limitli ve insan onaylı API tokenları kullanır.',
     ctaPrimary: '100 $ kredi ile başla', ctaSecondary: 'Ajanlar nasıl kurulum yapıyor',
-    stats: [['60 sn', 'çalışan bir sunucuya'], ['29 SAR / ay', 'Starter sunucu, saatlik faturalanır'], ['%100', 'veriniz Suudi Arabistan’da kalır']],
+    stats: [['60 sn', 'çalışan bir sunucuya'], ['29 SAR / ay', 'Starter sunucu, saatlik faturalanır'], ['0 sözleşme', 'taahhüt yok, istediğiniz saat iptal']],
   },
   terminal: { ready: 'WordPress https://185.0.113.42 adresinde hazır, saatlik ücret 0,04 SAR', orAgent: '# ya da limitli bir tokenla ajanınıza bırakın', capNote: '# aylık 15 $ limit, silme onay ister' },
   trust: [
     ['🇸🇦', 'Suudi Arabistan’da bölge', 'Suudi Arabistan ve Körfez’de düşük gecikme'],
     ['$', 'Dolar bazlı fiyat, riyal veya dolar ile ödeme', 'ZATCA e-faturası; Moyasar ile mada, kart ve Apple Pay'],
-    ['🔒', 'Veri Suudi Arabistan’da kalır', 'Tasarımdan itibaren PDPL uyumlu'],
+    ['🔒', 'İlk günden güvenli', 'Güvenlik duvarı, SSH anahtarları, iki adımlı giriş ve her çağrı için denetim kaydı'],
     ['⏱', 'Saatlik faturalama, aylık tavan', '30 gün değil, 3 saat için ödeyin'],
   ],
   products: {
@@ -156,10 +155,9 @@ const tr: Copy = {
     eyebrow: 'Neden Progrid', h2: 'Küresel bir bulutun geliştirici deneyimi. Yerel bir bulutun faturaları.',
     cols: ['Progrid', 'Küresel bulutlar', 'Yerel sağlayıcılar'],
     rows: [
-      ['Bölge', 'Suudi Arabistan', 'Almanya veya Hollanda', 'Suudi Arabistan'],
+      ['Suudi Arabistan’dan gecikme', 'Düşük', 'Daha yüksek', 'Düşük'],
       ['Faturalama', 'Saatlik, dolar veya riyal', 'Aylık veya saatlik, dolar', 'Aylık, riyal'],
       ['ZATCA e-fatura', 'Yerleşik', 'Hayır', 'Değişir'],
-      ['Veri Suudi Arabistan’da kalır (PDPL)', 'Evet', 'Hayır', 'Evet'],
       ['Açık API ve Terraform', 'Evet', 'Evet', 'Nadiren'],
       ['Harcama limitli ajan tokenları', 'Evet', 'Hayır', 'Hayır'],
       ['Türkçe ve Arapça konsol', 'Evet', 'Hayır', 'Yalnızca Türkçe'],
@@ -179,20 +177,20 @@ const tr: Copy = {
 };
 
 const ar: Copy = {
-  meta: { title: 'Progrid: الخدمات السحابية للمطورين في السعودية', description: 'سيرفرك جاهز خلال 60 ثانية. ادفع بالساعة بالريال مع فاتورة إلكترونية، بياناتك تبقى في السعودية، تطبيقات بضغطة وحدة، ورموز API يستخدمها وكلاء الذكاء الاصطناعي بأمان.' },
-  nav: { products: 'المنتجات', agents: 'لوكلاء الذكاء الاصطناعي', pricing: 'الأسعار', marketplace: 'المتجر', docs: 'الدليل', signIn: 'دخول', startFree: 'ابدأ مجانًا', menu: 'القائمة' },
+  meta: { title: 'Progrid: الخدمات السحابية للمطورين في السعودية', description: 'سيرفرك جاهز خلال 60 ثانية. ادفع بالساعة بالريال مع فاتورة إلكترونية، تطبيقات بضغطة وحدة، ورموز API تستخدمها أدوات الذكاء الاصطناعي بأمان.' },
+  nav: { products: 'المنتجات', agents: 'الذكاء الاصطناعي', pricing: 'الأسعار', marketplace: 'المتجر', docs: 'الدليل', signIn: 'دخول', startFree: 'ابدأ مجانًا', menu: 'القائمة' },
   hero: {
-    badge: 'أول منطقة سعودية، الإطلاق في 2027',
+    badge: 'الإطلاق في 2027',
     h1a: 'الخدمات السحابية', h1b: '',
-    lead: 'خدمة سحابية للبنية التحتية للمطورين (IaaS). سيرفرك يشتغل خلال 60 ثانية، وتدفع بالساعة بالريال مع فاتورة إلكترونية. بياناتك تبقى في السعودية، ووكلاء الذكاء الاصطناعي عندك يشتغلون برموز API بحد إنفاق وبموافقتك.',
-    ctaPrimary: 'ابدأ برصيد مجاني', ctaSecondary: 'شوف كيف ينشر الوكيل',
-    stats: [['60 ثانية', 'وسيرفرك شغّال'], ['29 ريال / شهر', 'باقة Starter، تُحسب بالساعة'], ['100%', 'من بياناتك داخل السعودية']],
+    lead: 'خدمة سحابية للبنية التحتية للمطورين (IaaS). سيرفرك يشتغل خلال 60 ثانية، وتدفع بالساعة بالريال مع فاتورة إلكترونية. وأدوات الذكاء الاصطناعي عندك تشتغل برموز API بحد إنفاق وبموافقتك.',
+    ctaPrimary: 'ابدأ برصيد مجاني', ctaSecondary: 'شوف كيف ينشر الذكاء الاصطناعي',
+    stats: [['60 ثانية', 'وسيرفرك شغّال'], ['29 ريال / شهر', 'باقة Starter، تُحسب بالساعة'], ['0 عقود', 'بدون التزام، تلغي وقت ما تبي']],
   },
-  terminal: { ready: 'WordPress جاهز على https://185.0.113.42 والحساب 0.04 ريال بالساعة', orAgent: '# أو خلّ وكيلك يسويها، بحد إنفاق', capNote: '# حد 50 ريال بالشهر، والحذف يبي موافقة' },
+  terminal: { ready: 'WordPress جاهز على https://185.0.113.42 والحساب 0.04 ريال بالساعة', orAgent: '# أو خلّ مساعدك الذكي يسويها، بحد إنفاق', capNote: '# حد 50 ريال بالشهر، والحذف يبي موافقة' },
   trust: [
-    ['🇸🇦', 'منطقة داخل السعودية', 'استجابة سريعة في السعودية والخليج والشرق الأوسط'],
+    ['🇸🇦', 'مبني للسعودية', 'استجابة سريعة من السعودية والخليج، ودعم بالعربي'],
     ['﷼', 'الأسعار بالريال', 'فاتورة زاتكا الإلكترونية، وتدفع بمدى أو البطاقة أو Apple Pay عبر Moyasar'],
-    ['🔒', 'بياناتك تبقى هنا', 'متوافق مع نظام حماية البيانات الشخصية السعودي (PDPL)'],
+    ['🔒', 'أمان من أول يوم', 'جدار حماية ومفاتيح SSH ودخول بخطوتين وسجل تدقيق لكل طلب'],
     ['⏱', 'تحاسب بالساعة وبسقف شهري', 'استخدمت 3 ساعات؟ تدفع 3 ساعات، مو 30 يوم'],
   ],
   products: {
@@ -201,7 +199,7 @@ const ar: Copy = {
     available: 'متوفر', roadmap: 'قريبًا',
     groups: [
       { name: 'الخدمات الأساسية', desc: 'سيرفرات وأقراص وموزّع أحمال وDNS وتخزين متوافق مع S3 وعناوين IP ونسخ لحظية وجدار حماية ومراقبة، كلها متوفرة الحين. الشبكات الخاصة جاية قريب.', items: ['السيرفرات', 'السيرفرات المُدارة', 'منصة التطبيقات', 'Kubernetes', 'الأقراص', 'موزّع الأحمال', 'DNS', 'التخزين S3', 'النسخ اللحظية', 'عناوين IP', 'جدار الحماية', 'المراقبة'], live: true },
-      { name: 'وكلاء الذكاء الاصطناعي', desc: 'أعطِ Claude أو Cursor أو n8n رمز بحد إنفاق شهري وقواعد موافقة، بدل ما تعطيهم مفاتيح حسابك كلها.', items: ['رموز الوكلاء', 'خادم MCP', 'قائمة الموافقات'], live: true, highlight: true },
+      { name: 'أدوات الذكاء الاصطناعي', desc: 'أعطِ Claude أو Cursor أو n8n رمز بحد إنفاق شهري وقواعد موافقة، بدل ما تعطيهم مفاتيح حسابك كلها.', items: ['رموز الذكاء الاصطناعي', 'خادم MCP', 'قائمة الموافقات'], live: true, highlight: true },
       { name: 'المتجر', desc: '15 تطبيق بضغطة وحدة من يوم الإطلاق، من WordPress إلى Odoo إلى باقة بداية للذكاء الاصطناعي. وتطبيقات Progrid لها مكانها المميز.', items: ['WordPress', 'n8n', 'Odoo', 'Coolify', 'Ollama + Open WebUI'], live: true },
       { name: 'الذكاء الاصطناعي', desc: 'نقطة وحدة متوافقة مع OpenAI، تحاسب على كل رمز. نماذج الشركاء أول، وبعدها كروت GPU الخاصة فينا.', items: ['بوابة النماذج', 'سيرفرات GPU'], live: false },
       { name: 'قواعد البيانات', desc: 'PostgreSQL مُدار مع pgvector، وValkey وMySQL، مع تبديل تلقائي لو صار عطل ونسخ احتياطي كل ليلة.', items: ['PostgreSQL مُدار', 'Valkey مُدار', 'MySQL مُدار'], live: true },
@@ -209,15 +207,14 @@ const ar: Copy = {
     ],
   },
   agents: {
-    eyebrow: 'لوكلاء الذكاء الاصطناعي', h2: 'خلّ وكيلك ينشر. والميزانية تبقى بيدك.',
-    lead: 'السحابات العالمية تعطي الوكلاء نفس الرموز المفتوحة اللي يستخدمها البشر. رموز Progrid فيها حد إنفاق شهري وقائمة إجراءات ما تصير إلا بموافقة إنسان. الـ API هو اللي يفرض هذا، مو التعليمات.',
+    eyebrow: 'الذكاء الاصطناعي', h2: 'خلّ الذكاء الاصطناعي يشتغل. والميزانية بيدك.',
+    lead: 'أدوات مثل Claude Code وCursor وn8n تقدر تنشئ سيرفرات وتنشر لك مباشرة. في Progrid تعطيها رمز خاص فيه حد إنفاق شهري، والإجراءات الحساسة ما تصير إلا بعد موافقتك.',
     points: [
-      ['حد إنفاق لكل رمز', 'حد 50 ريال بالشهر يعني الوكيل ما يقدر ينشئ سيرفر بـ 65 ريال. أبدًا.'],
+      ['حد إنفاق لكل رمز', 'حد 50 ريال بالشهر يعني الأداة ما تقدر تنشئ سيرفر بـ 65 ريال. أبدًا.'],
       ['موافقة على الإجراءات الحساسة', 'الحذف والتصغير وإعادة البناء تنتظر في القائمة لين تضغط موافقة.'],
-      ['صلاحيات مثل الإنسان، وسقف مثل الميزانية', 'servers:write بدون billing:read. محصور في مشروع واحد. وينتهي وقت ما تبي.'],
       ['خادم MCP جاهز', 'أضف Progrid إلى Claude Code أو Cursor بسطر واحد. كل نقطة API تصير أداة.'],
     ],
-    codeCreate: '# أنشئ رمز لوكيل البرمجة حقك', codeCap: '// 50 ريال بالشهر', codeOver: '# وش يشوف الوكيل لما يتجاوز الحد',
+    codeCreate: '# أنشئ رمز لأداة البرمجة حقتك', codeCap: '// 50 ريال بالشهر', codeOver: '# وش تشوف الأداة لما تتجاوز الحد',
   },
   pricing: {
     eyebrow: 'الأسعار', h2: 'واضحة وبدون مفاجآت. بالريال، والضريبة تشوفها قبل ما تدفع.',
@@ -233,12 +230,11 @@ const ar: Copy = {
     eyebrow: 'ليش Progrid', h2: 'تجربة زي السحابة العالمية. وفاتورة محلية بالريال.',
     cols: ['Progrid', 'السحابات العالمية', 'الاستضافة المحلية'],
     rows: [
-      ['المنطقة', 'السعودية', 'ألمانيا أو هولندا', 'السعودية'],
+      ['الاستجابة من السعودية', 'سريعة', 'أبطأ', 'سريعة'],
       ['المحاسبة', 'بالساعة، بالريال', 'بالشهر أو بالساعة، بالدولار', 'بالشهر، بالريال'],
       ['فاتورة زاتكا الإلكترونية', 'مدمجة', 'لا', 'نعم'],
-      ['بياناتك تبقى في السعودية (PDPL)', 'نعم', 'لا', 'نعم'],
       ['API عام وTerraform', 'نعم', 'نعم', 'نادرًا'],
-      ['رموز وكلاء بحد إنفاق', 'نعم', 'لا', 'لا'],
+      ['رموز ذكاء اصطناعي بحد إنفاق', 'نعم', 'لا', 'لا'],
       ['لوحة تحكم بالعربي', 'نعم', 'لا', 'أحيانًا'],
     ],
   },
@@ -246,7 +242,7 @@ const ar: Copy = {
   footer: {
     tagline: 'الخدمات السحابية للمطورين في السعودية.',
     cols: [
-      ['المنتجات', ['السيرفرات', 'المتجر', 'وكلاء الذكاء الاصطناعي', 'الذكاء الاصطناعي', 'الأمان']],
+      ['المنتجات', ['السيرفرات', 'المتجر', 'أدوات الذكاء الاصطناعي', 'الأمان']],
       ['المطورون', ['مرجع API', 'سطر الأوامر', 'Terraform', 'حزم SDK', 'حالة الخدمة']],
       ['الشركة', ['عن Progrid', 'الأسعار', 'برنامج الموردين', 'الوظائف', 'تواصل معنا']],
       ['قانوني', ['الشروط', 'الخصوصية (PDPL)', 'اتفاقية مستوى الخدمة', 'سياسة الاستخدام']],
