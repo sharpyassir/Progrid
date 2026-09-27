@@ -1586,6 +1586,8 @@ model AppHost {
   capacityMb    Int
   vmSecret      String
   configVersion Int           @default(1)
+  /// Last time the agent reported Docker and Caddy running.
+  readyAt       DateTime?
   createdAt     DateTime      @default(now())
 
   region Region        @relation(fields: [regionId], references: [id])
@@ -1616,6 +1618,9 @@ model PlatformApp {
   instances      Int               @default(1)
   healthPath     String?
   customDomains  String[]          @default([])
+  /// Ownership checks per custom domain: { "<domain>": { "token": "...", "verifiedAt": "<ISO time>" | null } }.
+  /// Only verified domains are served.
+  domainChecks   Json              @default("{}")
   lastCommit     String?
   lastDeployAt   DateTime?
   buildLog       String?

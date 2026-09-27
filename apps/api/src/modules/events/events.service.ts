@@ -16,7 +16,7 @@ export const CUSTOMER_EVENTS = [
   'load_balancer.created', 'load_balancer.updated', 'load_balancer.deleted', 'load_balancer.target_unhealthy', 'load_balancer.target_healthy',
   'volume.created', 'volume.attached', 'volume.detached', 'volume.resized', 'volume.deleted',
   'server.created', 'server.active', 'server.failed', 'server.deleted', 'server.resized',
-  'app.created', 'app.deployed', 'app.deploy_failed', 'app.deleted', 'app.stopped', 'app.started', 'app.domain_added',
+  'app.created', 'app.deployed', 'app.deploy_failed', 'app.deleted', 'app.stopped', 'app.started', 'app.domain_added', 'app.domain_verified',
   'kubernetes.created', 'kubernetes.updated', 'kubernetes.deleted', 'kubernetes.failed', 'kubernetes.pool_added', 'kubernetes.pool_scaled', 'kubernetes.pool_removed', 'kubernetes.cloud_updated',
   'ticket.opened', 'ticket.replied', 'ticket.answered', 'ticket.closed', 'support.plan_changed',
   'server.managed_enabled', 'server.managed_disabled', 'server.managed_warning', 'server.managed_recovered',

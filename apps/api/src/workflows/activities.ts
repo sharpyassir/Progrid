@@ -5,7 +5,7 @@ import type { DbClusterStatus, KubeClusterStatus, PlatformAppStatus, LoadBalance
 import { LoadBalancersService } from '../modules/lb/lb.service';
 import { DatabasesService } from '../modules/databases/db.service';
 import { KubernetesService } from '../modules/kubernetes/k8s.service';
-import { AppPlatformService } from '../modules/app-platform/app.service';
+import { AppPlatformService, hostReady } from '../modules/app-platform/app.service';
 import { TemporalService } from '../common/temporal/temporal.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { HYPERVISOR_DRIVER, HypervisorDriver } from '../drivers/hypervisor.driver';
@@ -602,17 +602,19 @@ export function createActivities(app: INestApplicationContext): Activities {
       const deadline = Date.now() + 20 * 60_000;
       for (;;) {
         Context.current().heartbeat();
-        const h = await prisma.appHost.findUnique({ where: { id: hostId }, include: { server: { select: { status: true, statusMessage: true } } } });
+        const h = await prisma.appHost.findUnique({ where: { id: hostId }, include: { server: { select: { id: true, name: true, status: true, statusMessage: true, privateIp: true, publicIps: { select: { address: true } } } } } });
         if (!h) throw nonRetryable('app host vanished');
-        if (h.server.status === 'active') {
-          if (h.status !== 'active') await prisma.appHost.update({ where: { id: hostId }, data: { status: 'active' } });
+        if (h.status === 'failed') throw nonRetryable('app host failed');
+        // The VM being up is not enough: the agent must report Docker and Caddy running.
+        if (h.server.status === 'active' && hostReady(await apps.hostStatus(h).catch(() => null))) {
+          await prisma.appHost.update({ where: { id: hostId }, data: { status: 'active', readyAt: new Date() } });
           return;
         }
         if (h.server.status === 'failed') {
           await prisma.appHost.update({ where: { id: hostId }, data: { status: 'failed' } });
           throw nonRetryable(`app host failed: ${h.server.statusMessage ?? 'unknown error'}`);
         }
-        if (Date.now() > deadline) throw nonRetryable('app host did not become active in 20 minutes');
+        if (Date.now() > deadline) throw nonRetryable('app host did not report Docker and Caddy running in 20 minutes');
         await new Promise((r) => setTimeout(r, 3000));
       }
     },
