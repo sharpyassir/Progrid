@@ -27,6 +27,7 @@ export interface Activities {
   reserveIp(serverId: string): Promise<void>;
   createVm(serverId: string): Promise<void>;
   waitForBoot(serverId: string): Promise<void>;
+  reattachVolumes(serverId: string): Promise<void>;
   applyFirewall(serverId: string): Promise<void>;
   startMeter(serverId: string): Promise<void>;
   compensateCreate(serverId: string): Promise<void>;
@@ -177,6 +178,17 @@ export function createActivities(app: INestApplicationContext): Activities {
         if (status.power !== 'running') throw new Error(`VM is ${status.power} after boot`);
       } finally {
         clearInterval(heartbeat);
+      }
+    },
+
+    async reattachVolumes(serverId) {
+      // After a rebuild the new VM has none of the volumes the database still shows attached.
+      const s = await load(serverId);
+      if (!s.driverRef) throw nonRetryable('server has no VM');
+      const vols = await prisma.volume.findMany({ where: { serverId, driverRef: { not: null }, status: { notIn: ['deleting', 'deleted'] } } });
+      for (const v of vols) {
+        const r = await wrap(driver.attachVolume(hostRef(s), s.driverRef, v.driverRef!, serial(v.id)));
+        await prisma.volume.update({ where: { id: v.id }, data: { device: r.device, statusMessage: null } });
       }
     },
 

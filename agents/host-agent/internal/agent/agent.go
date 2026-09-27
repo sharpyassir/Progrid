@@ -323,8 +323,13 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 		if err != nil {
 			return nil, err
 		}
-		if err := a.pve.Configure(ctx, ref.VMID, proxmox.VMConfig{Cores: p.Vcpu, MemoryMb: p.MemoryMb, Bridge: a.cfg.Proxmox.Bridge, PrivateIP: "dhcp"}); err != nil {
+		// Only cores, memory and the disk change. Resending name, tags or net0 would wipe the
+		// attribution tags and give the NIC a new MAC address.
+		if err := a.pve.SetResources(ctx, ref.VMID, p.Vcpu, p.MemoryMb); err != nil {
 			return nil, err
+		}
+		if p.DiskGb <= 0 {
+			return nil, nil
 		}
 		return nil, a.pve.ResizeDisk(ctx, ref.VMID, p.DiskGb)
 

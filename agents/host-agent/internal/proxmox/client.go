@@ -178,6 +178,13 @@ func (c *Client) Configure(ctx context.Context, vmid int, v VMConfig) error {
 	return c.do(ctx, http.MethodPost, c.vmPath(vmid, "/config"), f, nil)
 }
 
+// SetResources changes only cores and memory. Name, tags and network stay untouched so
+// a resize never rewrites the MAC address or the attribution tags.
+func (c *Client) SetResources(ctx context.Context, vmid int, cores, memoryMb int) error {
+	f := url.Values{"cores": {fmt.Sprint(cores)}, "memory": {fmt.Sprint(memoryMb)}}
+	return c.do(ctx, http.MethodPost, c.vmPath(vmid, "/config"), f, nil)
+}
+
 func (c *Client) ResizeDisk(ctx context.Context, vmid int, diskGb int) error {
 	f := url.Values{"disk": {"scsi0"}, "size": {fmt.Sprintf("%dG", diskGb)}}
 	return c.do(ctx, http.MethodPut, c.vmPath(vmid, "/resize"), f, nil)

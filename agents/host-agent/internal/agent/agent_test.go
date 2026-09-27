@@ -140,7 +140,7 @@ func TestCreateConfiguresCloneAndBoots(t *testing.T) {
 	if !strings.Contains(vm.Tags, "server-srv_1") || !strings.Contains(vm.Tags, "project-proj_1") {
 		t.Fatalf("tags not set for attribution: %q", vm.Tags)
 	}
-	if vm.Config["net1"] != "virtio,bridge=vmbr0,firewall=1" || !strings.HasPrefix(vm.Config["ipconfig1"], "ip=203.0.113.10/24,gw=203.0.113.1") {
+	if !strings.HasPrefix(vm.Config["net1"], "virtio=BC:24:11:") || !strings.HasSuffix(vm.Config["net1"], ",bridge=vmbr0,firewall=1") || !strings.HasPrefix(vm.Config["ipconfig1"], "ip=203.0.113.10/24,gw=203.0.113.1") {
 		t.Fatalf("public network not configured: %v", vm.Config)
 	}
 	if !strings.HasPrefix(vm.Config["cicustom"], "user=local:snippets/pgcloud-") {
@@ -224,6 +224,46 @@ func TestPowerSnapshotFirewallResizeDelete(t *testing.T) {
 	r = h.mustOK(h.job(protocol.JobStatus, map[string]interface{}{"vmRef": ref}))
 	if !strings.Contains(string(mustJSON(r.Result)), `"power":"unknown"`) {
 		t.Fatalf("status of deleted vm: %v", r.Result)
+	}
+}
+
+func TestResizeKeepsNameTagsAndMAC(t *testing.T) {
+	h := newHarness(t)
+	vmid, ref := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_rs")})))
+	before := h.sim.VM(vmid)
+	h.mustOK(h.job(protocol.JobResize, map[string]interface{}{"vmRef": ref, "vcpu": 4, "memoryMb": 8192, "diskGb": 160}))
+	after := h.sim.VM(vmid)
+	if after.Cores != 4 || after.MemoryMb != 8192 || after.DiskGb != 160 {
+		t.Fatalf("resize not applied: %+v", after)
+	}
+	if after.Name != before.Name || after.Tags != before.Tags {
+		t.Fatalf("resize changed name or tags: %q %q, was %q %q", after.Name, after.Tags, before.Name, before.Tags)
+	}
+	for _, k := range []string{"net0", "net1", "ipconfig0", "ipconfig1", "sshkeys", "cicustom"} {
+		if after.Config[k] != before.Config[k] {
+			t.Fatalf("resize changed %s: %q, was %q", k, after.Config[k], before.Config[k])
+		}
+	}
+}
+
+// Rebuild deletes the VM and clones a new one; volumes live on and plug into the new VM.
+func TestVolumeSurvivesRebuild(t *testing.T) {
+	h := newHarness(t)
+	_, ref := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_rb")})))
+	volRef := h.mustOK(h.job(protocol.JobVolumeCreate, map[string]interface{}{"volumeId": "VOLRB", "sizeGb": 50})).Result.(map[string]interface{})["volumeRef"].(string)
+	h.mustOK(h.job(protocol.JobVolumeAttach, map[string]interface{}{"vmRef": ref, "volumeRef": volRef, "serial": "volrb"}))
+
+	h.mustOK(h.job(protocol.JobDelete, map[string]interface{}{"vmRef": ref}))
+	if h.sim.Volumes["vm-900000-vol-volrb"] != 50 {
+		t.Fatalf("deleting the VM destroyed the volume: %v", h.sim.Volumes)
+	}
+	newID, newRef := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_rb")})))
+	r := h.mustOK(h.job(protocol.JobVolumeAttach, map[string]interface{}{"vmRef": newRef, "volumeRef": volRef, "serial": "volrb"}))
+	if r.Result.(map[string]interface{})["device"] != "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_volrb" {
+		t.Fatalf("reattach result wrong: %v", r.Result)
+	}
+	if cfg := h.sim.VM(newID).Config["scsi1"]; !strings.Contains(cfg, "vm-900000-vol-volrb") {
+		t.Fatalf("volume not attached to the rebuilt VM: %q", cfg)
 	}
 }
 

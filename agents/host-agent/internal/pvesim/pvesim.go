@@ -60,6 +60,7 @@ type Sim struct {
 	nextID int
 	fail   map[string]int // operation → remaining failures to inject
 	calls  []string       // method+path log
+	macSeq int            // makes every generated MAC distinct
 
 	srv *httptest.Server
 }
@@ -293,6 +294,9 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
+			if isNIC(k) {
+				v = []string{s.withMAC(v[0], vm.VMID)}
+			}
 			vm.Config[k] = v[0]
 		}
 		if c, err := strconv.Atoi(r.Form.Get("cores")); err == nil {
@@ -301,11 +305,12 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 		if mem, err := strconv.Atoi(r.Form.Get("memory")); err == nil {
 			vm.MemoryMb = mem
 		}
-		if n := r.Form.Get("name"); n != "" {
-			vm.Name = n
+		// Like Proxmox, a key that is sent is stored even when empty.
+		if _, sent := r.Form["name"]; sent {
+			vm.Name = r.Form.Get("name")
 		}
-		if t := r.Form.Get("tags"); t != "" {
-			vm.Tags = t
+		if _, sent := r.Form["tags"]; sent {
+			vm.Tags = r.Form.Get("tags")
 		}
 		ok(nil)
 		return
@@ -474,6 +479,29 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fail(501, "pvesim: unhandled "+r.Method+" "+path)
+}
+
+func isNIC(key string) bool {
+	if !strings.HasPrefix(key, "net") {
+		return false
+	}
+	_, err := strconv.Atoi(strings.TrimPrefix(key, "net"))
+	return err == nil
+}
+
+// withMAC mimics Proxmox: a NIC sent as "virtio,bridge=..." without an address gets a fresh
+// generated MAC ("virtio=BC:24:11:..."), so resending net0 without its MAC changes it.
+func (s *Sim) withMAC(v string, vmid int) string {
+	model, rest, _ := strings.Cut(v, ",")
+	if strings.Contains(model, "=") {
+		return v
+	}
+	s.macSeq++
+	mac := fmt.Sprintf("BC:24:11:%02X:%02X:%02X", vmid%256, s.macSeq/256%256, s.macSeq%256)
+	if rest == "" {
+		return model + "=" + mac
+	}
+	return model + "=" + mac + "," + rest
 }
 
 func urlUnescape(s string) (string, error) {

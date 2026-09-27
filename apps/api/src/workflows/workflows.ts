@@ -105,13 +105,14 @@ export interface RebuildInput {
   imageId: string;
 }
 
-/** Rebuild = delete VM, create from the new image on the same host, keep IPs and firewalls. */
+/** Rebuild = delete VM, create from the new image on the same host, keep IPs, firewalls and volumes. */
 export async function rebuildServer(input: RebuildInput): Promise<void> {
   const { serverId, actionId, imageId } = input;
   try {
     await act.deleteVm(serverId);
     await act.setImage(serverId, imageId);
     await slow.createVm(serverId);
+    await act.reattachVolumes(serverId);
     await slow.waitForBoot(serverId);
     await act.applyFirewall(serverId);
     await act.setStatus(serverId, 'active');

@@ -81,9 +81,8 @@ what blocks money first. Items marked "fixed" were corrected in the same commit 
     per tenant VNet, VXLAN or address assignment, so the private IP is never filled and tenants
     can see each other. Build per project VNets with the Proxmox SDN and IPAM, and enable
     `ipfilter` so customers cannot spoof addresses.
-12. **Resize corrupts the VM config.** The resize job resends an empty name and tags and a NIC
-    without its MAC, which wipes usage attribution tags and changes the MAC. Rebuild also drops
-    attached volumes while the database still shows them attached.
+12. **Resize corrupts the VM config.** Fixed: resize sends only cores and memory and grows the
+    disk, and rebuild attaches every volume the database shows attached to the new VM.
 13. **Bandwidth billing is wrong.** Cumulative since boot counters are summed and priced per
     minute rather than per GB, with no included transfer. Meter deltas and bill overage per GB.
 14. **Backups are same cluster snapshots** with no restore path and a fake size, and they die
