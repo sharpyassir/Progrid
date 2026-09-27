@@ -48,3 +48,9 @@ body { @apply bg-white text-slate-900 antialiased; font-family: ui-sans-serif, s
 .prose-docs td { @apply border-b border-slate-100 py-2 pe-4 align-top text-slate-700; }
 .prose-docs strong { @apply font-semibold text-slate-900; }
 .prose-docs-inline code { @apply rounded bg-slate-100 px-1 py-0.5 font-mono text-[12px] text-slate-800; }
+
+/* Arabic pages use IBM Plex Sans Arabic, the closest open typeface to the geometric Saudi telecom style; Latin stays on the system stack. */
+[dir="rtl"] body, [dir="rtl"] { font-family: "IBM Plex Sans Arabic", ui-sans-serif, system-ui, "Segoe UI", Tahoma, sans-serif; }
+[dir="rtl"] .h2, [dir="rtl"] h1, [dir="rtl"] h2, [dir="rtl"] h3 { letter-spacing: 0; font-weight: 700; line-height: 1.35; }
+[dir="rtl"] .eyebrow { letter-spacing: 0; }
+[dir="rtl"] code, [dir="rtl"] pre, [dir="rtl"] .code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }

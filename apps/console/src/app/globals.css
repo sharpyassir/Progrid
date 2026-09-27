@@ -12,3 +12,9 @@ body { @apply bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-10
 .input { @apply w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900; }
 .card { @apply rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900; }
 .badge { @apply inline-block rounded-full px-2 py-0.5 text-xs font-medium; }
+
+/* Arabic pages use IBM Plex Sans Arabic, the closest open typeface to the geometric Saudi telecom style; Latin stays on the system stack. */
+[dir="rtl"] body, [dir="rtl"] { font-family: "IBM Plex Sans Arabic", ui-sans-serif, system-ui, "Segoe UI", Tahoma, sans-serif; }
+[dir="rtl"] .h2, [dir="rtl"] h1, [dir="rtl"] h2, [dir="rtl"] h3 { letter-spacing: 0; font-weight: 700; line-height: 1.35; }
+[dir="rtl"] .eyebrow { letter-spacing: 0; }
+[dir="rtl"] code, [dir="rtl"] pre, [dir="rtl"] .code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
