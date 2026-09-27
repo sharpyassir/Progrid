@@ -5,18 +5,20 @@ import { EventsService } from '../events/events.service';
 import { loadConfig } from '../../config/config';
 import { BOOK_CURRENCY } from './pricing';
 import { FxService } from './fx.service';
+import { TrustService } from '../trust/trust.service';
 import { startOfMonth } from './pricing';
 import type { Actor } from '../../common/auth/actor';
 
 /**
  * Spend controls checked *before* a workflow that adds cost is started:
  *  - team must have credit or a payment method (prepaid credit, or an active account)
+ *  - a new team must top up once before running postpaid (TrustService.assertPrepaidBeforePostpaid)
  *  - project hard limit (`Project.spendLimitMinor`)
  *  - agent token hard cap (`ApiToken.spendCapMinor`)
  */
 @Injectable()
 export class SpendService {
-  constructor(private readonly prisma: PrismaService, private readonly events: EventsService, private readonly fx: FxService) {}
+  constructor(private readonly prisma: PrismaService, private readonly events: EventsService, private readonly fx: FxService, private readonly trust: TrustService) {}
 
   /** Projected monthly cost of a resource in the team currency (USD book, converted at today's rate). */
   async monthlyPriceMinor(resourceType: 'server' | 'public_ip' | 'snapshot' | 'backup' | 'volume' | 'load_balancer' | 'object_storage' | 'database' | 'managed_server' | 'support' | 'kubernetes' | 'app_instance', sku: string, currency: 'USD' | 'SAR') {
@@ -40,6 +42,7 @@ export class SpendService {
     if (team.status === 'pending_verification' && balance <= 0) {
       throw ApiError.spendLimit('Add credit or a payment method before creating billable resources');
     }
+    if (addedMonthlyMinor > 0) await this.trust.assertPrepaidBeforePostpaid(team.id, addedMonthlyMinor);
 
     if (project.spendLimitMinor != null && monthToDate + addedMonthlyMinor > project.spendLimitMinor) {
       await this.events.emit('spend.limit_reached', { projectId, limitMinor: project.spendLimitMinor }, { actor });

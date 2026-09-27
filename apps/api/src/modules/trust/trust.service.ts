@@ -4,6 +4,8 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { ApiError } from '../../common/errors/api-error';
 import { EventsService } from '../events/events.service';
 import { TemporalService } from '../../common/temporal/temporal.service';
+import { loadConfig } from '../../config/config';
+import { startOfMonth } from '../billing/pricing';
 
 /** Prefix of Team.suspensionReason for suspensions that paying lifts automatically. */
 export const BILLING_SUSPENSION = 'billing:';
@@ -34,6 +36,29 @@ export class TrustService {
         throw new ApiError(403, 'verification_required', 'Verify your phone number or add prepaid credit before creating servers.');
       }
     }
+    await this.assertPrepaidBeforePostpaid(teamId);
+  }
+
+  /**
+   * Postpaid needs a track record: a team at KYC level 0 that never topped up may only run up
+   * FREE_ALLOWANCE_MINOR of usage a month (default 0, so nothing billable). A card top up, or
+   * prepaid credit added by staff against a bank transfer, counts as the first top up.
+   * Pass the projected monthly cost being added; 0 only checks that allowance is left.
+   */
+  async assertPrepaidBeforePostpaid(teamId: string, addedMonthlyMinor = 0) {
+    const cfg = loadConfig();
+    if (!cfg.REQUIRE_PREPAID_BEFORE_POSTPAID) return;
+    const team = await this.prisma.team.findUniqueOrThrow({ where: { id: teamId }, select: { kycLevel: true } });
+    if (team.kycLevel > 0) return;
+    const [prepaid, toppedUp] = await Promise.all([
+      this.prisma.credit.count({ where: { teamId, kind: 'prepaid' } }),
+      this.prisma.payment.count({ where: { teamId, invoiceId: null, status: 'succeeded' } }),
+    ]);
+    if (prepaid || toppedUp) return;
+    const used = await this.prisma.usageRecord.aggregate({ where: { project: { teamId }, hourStart: { gte: startOfMonth(new Date()) } }, _sum: { amountMinor: true } });
+    const left = cfg.FREE_ALLOWANCE_MINOR - (used._sum.amountMinor ?? 0);
+    if (left > 0 && addedMonthlyMinor <= left) return;
+    throw new ApiError(402, 'payment_required', `Add credit once before creating billable resources. Top up on the billing page: ${cfg.CONSOLE_URL}/billing`, { billingUrl: `${cfg.CONSOLE_URL}/billing` });
   }
 
   /** Outbound bandwidth cap for accounts with no verification history (anti-spam). */

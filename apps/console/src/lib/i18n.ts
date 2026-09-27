@@ -50,6 +50,8 @@ const en = {
   denyReasonPrompt: 'Tell the agent why (optional):', approveConfirm: (s: string) => `Approve and run now: ${s}?`, deletedToken: 'deleted token',
   // billing
   balance: 'Credit balance', mtd: 'Month to date',
+  paymentRequired: 'Add credit once before creating billable resources. Open Billing and top up any amount; after that, usage is billed monthly.',
+  accountSuspended: 'This account is suspended, so only Billing works. Pay the overdue invoice on the Billing page and your servers power back on automatically.',
   // marketplace and catalog
   oneClick: 'One-click apps', distributions: 'Distributions', comingSoon: 'Coming soon', interest: 'Notify me when this launches', interested: 'Thanks. We will let you know.',
   // agents
@@ -115,6 +117,8 @@ const tr: Dict = {
   requestedByToken: 'İsteyen token', expires: 'Sona erme', server: 'Sunucu', approveRun: 'Onayla ve çalıştır', deny: 'Reddet', history: 'Geçmiş',
   denyReasonPrompt: 'Ajana nedenini söyleyin (isteğe bağlı):', approveConfirm: (s) => `Şimdi onaylanıp çalıştırılsın mı: ${s}?`, deletedToken: 'silinmiş token',
   balance: 'Kredi bakiyesi', mtd: 'Bu ay',
+  paymentRequired: 'Ücretli kaynak oluşturmadan önce bir kez bakiye yükleyin. Faturalama sayfasını açıp istediğiniz tutarı yükleyin; sonrasında kullanım aylık faturalanır.',
+  accountSuspended: 'Bu hesap askıya alındı, yalnızca Faturalama çalışır. Gecikmiş faturayı Faturalama sayfasından ödeyin, sunucularınız otomatik olarak yeniden açılır.',
   oneClick: 'Tek tıkla uygulamalar', distributions: 'Dağıtımlar', comingSoon: 'Çok yakında', interest: 'Yayınlanınca haber ver', interested: 'Teşekkürler. Haber vereceğiz.',
   agentTokens: 'Ajan tokenları', newAgentToken: 'Ajan tokenı oluştur', spendCap: 'Aylık harcama limiti', requireApproval: 'İnsan onayı gerektir',
   scopes: 'Yetkiler', tokenShownOnce: 'Bu tokenı şimdi kopyala. Yalnızca bir kez gösterilir.', revoke: 'İptal et',
@@ -174,6 +178,8 @@ const ar: Dict = {
   requestedByToken: 'طلبه الرمز', expires: 'ينتهي', server: 'الخادم', approveRun: 'موافقة وتشغيل', deny: 'رفض', history: 'السجل',
   denyReasonPrompt: 'أخبر الوكيل بالسبب (اختياري):', approveConfirm: (s) => `الموافقة والتشغيل الآن: ${s}؟`, deletedToken: 'رمز محذوف',
   balance: 'الرصيد', mtd: 'هذا الشهر',
+  paymentRequired: 'لازم تشحن رصيد مرة وحدة قبل ما تنشئ موارد مدفوعة. افتح صفحة الفوترة واشحن أي مبلغ، وبعدها يصير الاستخدام يتفوتر كل شهر.',
+  accountSuspended: 'الحساب موقوف، فما يشتغل إلا صفحة الفوترة. سدّد الفاتورة المتأخرة من صفحة الفوترة وترجع خوادمك تشتغل تلقائيًا.',
   oneClick: 'تطبيقات بنقرة واحدة', distributions: 'التوزيعات', comingSoon: 'قريبًا', interest: 'أعلمني عند الإطلاق', interested: 'شكرًا. سنعلمك.',
   agentTokens: 'رموز الوكلاء', newAgentToken: 'إنشاء رمز وكيل', spendCap: 'حد الإنفاق الشهري', requireApproval: 'يتطلب موافقة بشرية لـ',
   scopes: 'الصلاحيات', tokenShownOnce: 'انسخ هذا الرمز الآن. يُعرض مرة واحدة فقط.', revoke: 'إلغاء',
