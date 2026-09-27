@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,9 +38,25 @@ type Agent struct {
 	log     *slog.Logger
 	version string
 
-	seen   map[string]time.Time // job de-dup
-	seenMu sync.Mutex
+	jobs   map[string]*jobEntry // job de-dup by id
+	jobsMu sync.Mutex
+
+	// netOut is the last outbound byte counter seen per vmid, so bandwidth usage is sent as
+	// the delta per tick. Only the tick loop touches it.
+	netOut map[int]int64
 }
+
+// jobEntry tracks one job id. done closes when the job finishes; res is valid after that.
+// Successful results are kept for jobRetention so a retried request with the same id gets
+// the stored answer instead of running the job again (a second clone would orphan a VM).
+type jobEntry struct {
+	done     chan struct{}
+	res      protocol.JobResult
+	finished time.Time
+}
+
+// jobRetention is how long a completed job's result is kept for repeated ids.
+const jobRetention = time.Hour
 
 func New(cfg *config.Config, pve *proxmox.Client, version string, log *slog.Logger) (*Agent, error) {
 	opts := []nats.Option{
@@ -57,7 +74,7 @@ func New(cfg *config.Config, pve *proxmox.Client, version string, log *slog.Logg
 	if err != nil {
 		return nil, fmt.Errorf("nats: %w", err)
 	}
-	return &Agent{cfg: cfg, pve: pve, nc: nc, log: log.With("node", cfg.Proxmox.Node), version: version, seen: map[string]time.Time{}}, nil
+	return &Agent{cfg: cfg, pve: pve, nc: nc, log: log.With("node", cfg.Proxmox.Node), version: version, jobs: map[string]*jobEntry{}, netOut: map[int]int64{}}, nil
 }
 
 func (a *Agent) Run(ctx context.Context) error {
@@ -108,10 +125,12 @@ func (a *Agent) tick(ctx context.Context) {
 		hb.TotalDiskGb = st.Total >> 30
 		hb.UsedDiskGb = st.Used >> 30
 	}
+	seen := map[int]bool{}
 	for _, vm := range vms {
 		if vm.Template == 1 {
 			continue
 		}
+		seen[vm.VMID] = true
 		ref := refFromTags(vm.VMID, a.cfg.Proxmox.Node, vm.Tags)
 		refJSON, _ := json.Marshal(ref)
 		hb.Vms = append(hb.Vms, protocol.VmBrief{VmRef: string(refJSON), Power: vm.Status})
@@ -129,15 +148,36 @@ func (a *Agent) tick(ctx context.Context) {
 				CpuPercent: vm.CPU * 100, MemoryUsedMb: vm.Mem >> 20, MemoryTotalMb: vm.MaxMem >> 20,
 				NetInBytes: vm.NetIn, NetOutBytes: vm.NetOut, DiskReadBytes: vm.DiskRead, DiskWriteBytes: vm.DiskWrite,
 			})
-			if vm.NetOut > 0 {
+			if delta := a.netOutDelta(vm.VMID, vm.NetOut); delta > 0 {
 				a.publish("pgcloud.usage", protocol.UsageEvent{
 					V: 1, At: now.Format(time.RFC3339), ResourceType: "bandwidth", ResourceID: ref.ServerID, ProjectID: ref.ProjectID,
-					HostID: a.cfg.HostID, Quantity: float64(vm.NetOut), Unit: "byte", Meta: map[string]interface{}{"cumulative": true},
+					HostID: a.cfg.HostID, Quantity: float64(delta), Unit: "byte", Meta: map[string]interface{}{"delta": true},
 				})
 			}
 		}
 	}
+	for vmid := range a.netOut {
+		if !seen[vmid] {
+			delete(a.netOut, vmid)
+		}
+	}
 	a.publish("pgcloud.host."+a.cfg.HostID+".heartbeat", hb)
+}
+
+// netOutDelta returns the outbound bytes since the previous tick. The counter restarts at
+// zero when the VM boots again, so a smaller value than last time is all new traffic. The
+// first reading only sets the baseline, so an agent restart never bills since boot bytes twice.
+func (a *Agent) netOutDelta(vmid int, counter int64) int64 {
+	last, known := a.netOut[vmid]
+	a.netOut[vmid] = counter
+	switch {
+	case !known:
+		return 0
+	case counter < last:
+		return counter
+	default:
+		return counter - last
+	}
 }
 
 func (a *Agent) publish(subject string, v interface{}) {
@@ -155,10 +195,24 @@ func (a *Agent) handle(ctx context.Context, m *nats.Msg) {
 		a.reply(m, protocol.JobResult{OK: false, Error: &protocol.JobError{Code: "bad_job", Message: err.Error()}})
 		return
 	}
-	if a.duplicate(job.ID) {
-		a.log.Info("duplicate job ignored", "id", job.ID, "kind", job.Kind)
+	entry, first := a.claim(job.ID)
+	if !first {
+		// A repeated id waits for the running job, or gets the stored result of a finished one.
+		a.log.Info("repeated job id, answering with its result", "id", job.ID, "kind", job.Kind)
+		select {
+		case <-entry.done:
+			a.reply(m, entry.res)
+		case <-ctx.Done():
+		}
 		return
 	}
+	res := a.run(ctx, job)
+	a.finish(job.ID, entry, res)
+	a.reply(m, res)
+}
+
+// run executes one job and turns its outcome into a JobResult.
+func (a *Agent) run(ctx context.Context, job protocol.Job) protocol.JobResult {
 	log := a.log.With("job", job.ID, "kind", job.Kind)
 	log.Info("job start")
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Minute)
@@ -178,11 +232,10 @@ func (a *Agent) handle(ctx context.Context, m *nats.Msg) {
 			je.Retryable = false
 		}
 		log.Error("job failed", "err", err, "retryable", je.Retryable)
-		a.reply(m, protocol.JobResult{JobID: job.ID, OK: false, Error: je})
-		return
+		return protocol.JobResult{JobID: job.ID, OK: false, Error: je}
 	}
 	log.Info("job done")
-	a.reply(m, protocol.JobResult{JobID: job.ID, OK: true, Result: res})
+	return protocol.JobResult{JobID: job.ID, OK: true, Result: res}
 }
 
 func (a *Agent) reply(m *nats.Msg, r protocol.JobResult) {
@@ -192,19 +245,35 @@ func (a *Agent) reply(m *nats.Msg, r protocol.JobResult) {
 	}
 }
 
-func (a *Agent) duplicate(id string) bool {
-	a.seenMu.Lock()
-	defer a.seenMu.Unlock()
-	for k, t := range a.seen {
-		if time.Since(t) > time.Hour {
-			delete(a.seen, k)
+// claim registers a job id. It returns the entry and true when this caller must run the
+// job, or the existing entry and false when the id is running or finished already.
+func (a *Agent) claim(id string) (*jobEntry, bool) {
+	a.jobsMu.Lock()
+	defer a.jobsMu.Unlock()
+	for k, e := range a.jobs {
+		if !e.finished.IsZero() && time.Since(e.finished) > jobRetention {
+			delete(a.jobs, k)
 		}
 	}
-	if _, ok := a.seen[id]; ok {
-		return true
+	if e, ok := a.jobs[id]; ok {
+		return e, false
 	}
-	a.seen[id] = time.Now()
-	return false
+	e := &jobEntry{done: make(chan struct{})}
+	a.jobs[id] = e
+	return e, true
+}
+
+// finish stores the result and wakes requests waiting on the same id. Failed jobs are
+// forgotten once the waiters have their answer, so a retry with the same id runs again.
+func (a *Agent) finish(id string, e *jobEntry, res protocol.JobResult) {
+	a.jobsMu.Lock()
+	defer a.jobsMu.Unlock()
+	e.res = res
+	e.finished = time.Now()
+	if !res.OK {
+		delete(a.jobs, id)
+	}
+	close(e.done)
 }
 
 type permanent struct {
@@ -261,6 +330,15 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 			return a.status(ctx, ref.VMID)
 		}
 
+	case protocol.JobFindByTag:
+		var p struct {
+			Tag string `json:"tag"`
+		}
+		if err := json.Unmarshal(job.Params, &p); err != nil || p.Tag == "" {
+			return nil, permanent{"bad_params", fmt.Errorf("tag is required")}
+		}
+		return a.findByTag(ctx, p.Tag)
+
 	case protocol.JobResize:
 		var p struct {
 			VmRef    string `json:"vmRef"`
@@ -273,8 +351,13 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 		if err != nil {
 			return nil, err
 		}
-		if err := a.pve.Configure(ctx, ref.VMID, proxmox.VMConfig{Cores: p.Vcpu, MemoryMb: p.MemoryMb, Bridge: a.cfg.Proxmox.Bridge, PrivateIP: "dhcp"}); err != nil {
+		// Only cores, memory and the disk change. Resending name, tags or net0 would wipe the
+		// attribution tags and give the NIC a new MAC address.
+		if err := a.pve.SetResources(ctx, ref.VMID, p.Vcpu, p.MemoryMb); err != nil {
 			return nil, err
+		}
+		if p.DiskGb <= 0 {
+			return nil, nil
 		}
 		return nil, a.pve.ResizeDisk(ctx, ref.VMID, p.DiskGb)
 
@@ -292,23 +375,34 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 		if err := a.pve.Snapshot(ctx, ref.VMID, name); err != nil {
 			return nil, err
 		}
-		sref, _ := json.Marshal(map[string]interface{}{"vmid": ref.VMID, "node": ref.Node, "name": name})
-		st, _ := a.pve.Status(ctx, ref.VMID)
-		var sizeGb float64
-		if st != nil {
-			sizeGb = float64(st.Mem>>30) + 1 // TODO: read actual RBD snapshot size via `rbd du`
+		sref, _ := json.Marshal(protocol.SnapshotRef{VMID: ref.VMID, Node: ref.Node, Name: name})
+		return map[string]interface{}{"snapshotRef": string(sref), "sizeGb": a.snapshotSizeGb(ctx, ref.VMID, name, log)}, nil
+
+	case protocol.JobRollback:
+		var p struct {
+			VmRef       string `json:"vmRef"`
+			SnapshotRef string `json:"snapshotRef"`
 		}
-		return map[string]interface{}{"snapshotRef": string(sref), "sizeGb": sizeGb}, nil
+		json.Unmarshal(job.Params, &p)
+		ref, err := parseRef(p.VmRef)
+		if err != nil {
+			return nil, err
+		}
+		var snap protocol.SnapshotRef
+		if err := json.Unmarshal([]byte(p.SnapshotRef), &snap); err != nil || snap.Name == "" {
+			return nil, permanent{"bad_ref", fmt.Errorf("invalid snapshotRef %q", p.SnapshotRef)}
+		}
+		if snap.VMID != ref.VMID {
+			return nil, permanent{"bad_ref", fmt.Errorf("snapshot %s belongs to vm %d, not %d", snap.Name, snap.VMID, ref.VMID)}
+		}
+		return nil, a.pve.Rollback(ctx, ref.VMID, snap.Name)
 
 	case protocol.JobSnapshotDel:
 		var p struct {
 			SnapshotRef string `json:"snapshotRef"`
 		}
 		json.Unmarshal(job.Params, &p)
-		var s struct {
-			VMID int    `json:"vmid"`
-			Name string `json:"name"`
-		}
+		var s protocol.SnapshotRef
 		if err := json.Unmarshal([]byte(p.SnapshotRef), &s); err != nil {
 			return nil, permanent{"bad_ref", err}
 		}
@@ -398,9 +492,26 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 		}
 
 	case protocol.JobAttachIP, protocol.JobDetachIP:
-		// Public IPs are configured at create time via cloud-init (ipconfig1). Floating
-		// IP moves are phase 2 and need a config + guest-agent network reload here.
-		return nil, permanent{"not_implemented", fmt.Errorf("%s: floating IPs are phase 2", job.Kind)}
+		var p struct {
+			VmRef   string             `json:"vmRef"`
+			IP      *protocol.PublicIP `json:"ip"`
+			Address string             `json:"address"`
+		}
+		json.Unmarshal(job.Params, &p)
+		ref, err := parseRef(p.VmRef)
+		if err != nil {
+			return nil, err
+		}
+		if job.Kind == protocol.JobAttachIP {
+			if p.IP == nil || p.IP.Address == "" || p.IP.Prefix == 0 {
+				return nil, permanent{"bad_params", fmt.Errorf("ip with address, gateway and prefix is required")}
+			}
+			return nil, a.attachIP(ctx, ref.VMID, *p.IP)
+		}
+		if p.Address == "" {
+			return nil, permanent{"bad_params", fmt.Errorf("address is required")}
+		}
+		return nil, a.detachIP(ctx, ref.VMID, p.Address)
 
 	default:
 		return nil, permanent{"unknown_job", fmt.Errorf("unknown job kind %q", job.Kind)}
@@ -408,26 +519,44 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 }
 
 func (a *Agent) create(ctx context.Context, spec protocol.VmSpec, log *slog.Logger) (interface{}, error) {
+	// A template ref clones the golden image; a snapshot ref clones the source VM's snapshot.
 	var img struct {
-		Template int `json:"template"`
+		Template int    `json:"template"`
+		VMID     int    `json:"vmid"`
+		Node     string `json:"node"`
+		Name     string `json:"name"`
 	}
-	if err := json.Unmarshal([]byte(spec.ImageRef), &img); err != nil || img.Template == 0 {
-		return nil, permanent{"bad_image_ref", fmt.Errorf("imageRef %q is not a template ref", spec.ImageRef)}
+	if err := json.Unmarshal([]byte(spec.ImageRef), &img); err != nil || (img.Template == 0 && (img.VMID == 0 || img.Name == "")) {
+		return nil, permanent{"bad_image_ref", fmt.Errorf("imageRef %q is neither a template nor a snapshot ref", spec.ImageRef)}
+	}
+	if img.Template == 0 && img.Node != "" && img.Node != a.cfg.Proxmox.Node {
+		return nil, permanent{"wrong_node", fmt.Errorf("snapshot %s lives on node %s, not %s", img.Name, img.Node, a.cfg.Proxmox.Node)}
 	}
 	vmid, err := a.pve.NextID(ctx)
 	if err != nil {
 		return nil, err
 	}
 	log = log.With("vmid", vmid)
-	if err := a.pve.Clone(ctx, img.Template, vmid, spec.Name); err != nil {
+	if img.Template != 0 {
+		err = a.pve.Clone(ctx, img.Template, vmid, spec.Name)
+	} else {
+		err = a.pve.CloneSnapshot(ctx, img.VMID, img.Name, vmid, spec.Name)
+	}
+	if err != nil {
 		return nil, err
 	}
 
 	userDataRef := ""
 	if spec.UserData != "" {
+		// The snippet replaces the user-data Proxmox would generate, so it must carry the keys and hostname.
+		userData, err := renderUserData(spec.UserData, spec.Hostname, spec.SshKeys)
+		if err != nil {
+			log.Warn("render user-data", "err", err)
+			userData = spec.UserData
+		}
 		if err := os.MkdirAll(snippetsDir(), 0o755); err == nil {
 			path := filepath.Join(snippetsDir(), fmt.Sprintf("pgcloud-%d-user.yaml", vmid))
-			if err := os.WriteFile(path, []byte(spec.UserData), 0o600); err == nil {
+			if err := os.WriteFile(path, []byte(userData), 0o600); err == nil {
 				userDataRef = a.pve.SnippetRef(vmid)
 			} else {
 				log.Warn("write user-data snippet", "err", err)
@@ -460,6 +589,68 @@ func (a *Agent) create(ctx context.Context, spec protocol.VmSpec, log *slog.Logg
 	return protocol.VmHandle{VmRef: string(ref)}, nil
 }
 
+// attachIP puts a public address on the VM's public NIC (net1) and its cloud-init network
+// config (ipconfig1), keeping the NIC's MAC when it already exists. Proxmox hot plugs the
+// NIC; the guest applies the address from the regenerated cloud-init drive on its next boot.
+func (a *Agent) attachIP(ctx context.Context, vmid int, ip protocol.PublicIP) error {
+	cfg, err := a.pve.Config(ctx, vmid)
+	if err != nil {
+		return err
+	}
+	nic := "virtio,bridge=" + a.cfg.Proxmox.PublicBridge + ",firewall=1"
+	if model := strings.SplitN(cfg["net1"], ",", 2)[0]; strings.HasPrefix(model, "virtio=") {
+		nic = model + ",bridge=" + a.cfg.Proxmox.PublicBridge + ",firewall=1"
+	}
+	ipconfig := fmt.Sprintf("ip=%s/%d", ip.Address, ip.Prefix)
+	if ip.Gateway != "" {
+		ipconfig += ",gw=" + ip.Gateway
+	}
+	if err := a.pve.SetConfig(ctx, vmid, url.Values{"net1": {nic}, "ipconfig1": {ipconfig}}); err != nil {
+		return err
+	}
+	return a.pve.RegenerateCloudInit(ctx, vmid)
+}
+
+// detachIP removes the public NIC when it carries the address. Idempotent: a VM without the
+// address is left alone.
+func (a *Agent) detachIP(ctx context.Context, vmid int, address string) error {
+	cfg, err := a.pve.Config(ctx, vmid)
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(cfg["ipconfig1"], "ip="+address+"/") {
+		return nil
+	}
+	if err := a.pve.DeleteConfig(ctx, vmid, "net1", "ipconfig1"); err != nil {
+		return err
+	}
+	return a.pve.RegenerateCloudInit(ctx, vmid)
+}
+
+// findByTag lists the VMs on this node that carry the tag, as vmRefs. The control plane uses
+// it to find a VM whose create reply never arrived (tag "server-<id>").
+func (a *Agent) findByTag(ctx context.Context, tag string) (interface{}, error) {
+	vms, err := a.pve.ListVMs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	refs := []string{}
+	for _, vm := range vms {
+		if vm.Template == 1 {
+			continue
+		}
+		for _, t := range splitTags(vm.Tags) {
+			if t == tag {
+				ref := refFromTags(vm.VMID, a.cfg.Proxmox.Node, vm.Tags)
+				b, _ := json.Marshal(ref)
+				refs = append(refs, string(b))
+				break
+			}
+		}
+	}
+	return map[string]interface{}{"vmRefs": refs}, nil
+}
+
 func (a *Agent) waitBoot(ctx context.Context, vmid int, timeout time.Duration) (interface{}, error) {
 	if timeout == 0 {
 		timeout = 10 * time.Minute
@@ -488,6 +679,69 @@ func (a *Agent) status(ctx context.Context, vmid int) (interface{}, error) {
 		return nil, err
 	}
 	return protocol.VmStatus{Power: st.Status, CpuPercent: st.CPU * 100, MemoryUsedMb: st.Mem >> 20, UptimeSec: st.Uptime}, nil
+}
+
+// snapshotSizeGb is the space the snapshot uses on Ceph, from `rbd du` on the boot disk image.
+// When that fails (no Ceph CLI, a non RBD disk) it falls back to the old estimate of the used
+// memory in GB plus one, so the snapshot is still billed.
+func (a *Agent) snapshotSizeGb(ctx context.Context, vmid int, snap string, log *slog.Logger) float64 {
+	cfg, err := a.pve.Config(ctx, vmid)
+	if err == nil {
+		volid := strings.SplitN(cfg["scsi0"], ",", 2)[0]
+		image := volid
+		if i := strings.Index(volid, ":"); i >= 0 {
+			image = volid[i+1:]
+		}
+		pool := a.cfg.Proxmox.CephPool
+		if pool == "" {
+			pool = a.cfg.Proxmox.Storage
+		}
+		var bytes int64
+		if bytes, err = rbdDu(ctx, pool, image, snap); err == nil {
+			return float64(bytes) / (1 << 30)
+		}
+	}
+	log.Warn("snapshot size from rbd du failed, using the estimate", "err", err)
+	st, _ := a.pve.Status(ctx, vmid)
+	if st == nil {
+		return 0
+	}
+	return float64(st.Mem>>30) + 1
+}
+
+// rbdDu returns the bytes a snapshot of an RBD image uses. Replaced in tests.
+var rbdDu = func(ctx context.Context, pool, image, snap string) (int64, error) {
+	if pool == "" {
+		pool = "vm-disks"
+	}
+	out, err := exec.CommandContext(ctx, "rbd", "du", "--format", "json", "--pool", pool, image+"@"+snap).Output()
+	if err != nil {
+		return 0, fmt.Errorf("rbd du: %w", err)
+	}
+	var du struct {
+		Images []struct {
+			Name     string `json:"name"`
+			Snapshot string `json:"snapshot"`
+			UsedSize int64  `json:"used_size"`
+		} `json:"images"`
+		TotalUsedSize int64 `json:"total_used_size"`
+	}
+	if err := json.Unmarshal(out, &du); err != nil {
+		return 0, fmt.Errorf("rbd du: %w", err)
+	}
+	for _, im := range du.Images {
+		if im.Name == image && im.Snapshot == snap {
+			return im.UsedSize, nil
+		}
+	}
+	return du.TotalUsedSize, nil
+}
+
+// SetRbdDu swaps the snapshot size implementation (tests). Returns the previous one.
+func SetRbdDu(f func(ctx context.Context, pool, image, snap string) (int64, error)) func(ctx context.Context, pool, image, snap string) (int64, error) {
+	old := rbdDu
+	rbdDu = f
+	return old
 }
 
 // rbdResize grows a detached image with the Ceph CLI on the node. Replaced in tests.
@@ -523,7 +777,7 @@ func parseRef(s string) (*protocol.VmRef, error) {
 // usage need no control-plane lookup.
 func refFromTags(vmid int, node, tags string) protocol.VmRef {
 	r := protocol.VmRef{VMID: vmid, Node: node}
-	for _, t := range strings.Split(tags, ";") {
+	for _, t := range splitTags(tags) {
 		if v, ok := strings.CutPrefix(t, "server-"); ok {
 			r.ServerID = v
 		}
@@ -532,6 +786,11 @@ func refFromTags(vmid int, node, tags string) protocol.VmRef {
 		}
 	}
 	return r
+}
+
+// splitTags splits a Proxmox tag list. The API writes ";" but accepts "," and spaces too.
+func splitTags(tags string) []string {
+	return strings.FieldsFunc(tags, func(r rune) bool { return r == ';' || r == ',' || r == ' ' })
 }
 
 func toPVERules(rules []protocol.FirewallRule) []proxmox.FWRule {

@@ -12,6 +12,8 @@ const (
 	JobDelete        = "vm.delete"
 	JobResize        = "vm.resize"
 	JobStatus        = "vm.status"
+	JobFindByTag     = "vm.find_by_tag"
+	JobRollback      = "vm.rollback"
 	JobSnapshot      = "vm.snapshot"
 	JobSnapshotDel   = "snapshot.delete"
 	JobAttachIP      = "net.attach_ip"
@@ -51,13 +53,15 @@ type PublicIP struct {
 }
 
 type VmSpec struct {
-	ServerID   string    `json:"serverId"`
-	Name       string    `json:"name"`
-	Hostname   string    `json:"hostname"`
-	Vcpu       int       `json:"vcpu"`
-	MemoryMb   int       `json:"memoryMb"`
-	DiskGb     int       `json:"diskGb"`
-	ImageRef   string    `json:"imageRef"` // {"template":9000}
+	ServerID string `json:"serverId"`
+	Name     string `json:"name"`
+	Hostname string `json:"hostname"`
+	Vcpu     int    `json:"vcpu"`
+	MemoryMb int    `json:"memoryMb"`
+	DiskGb   int    `json:"diskGb"`
+	// ImageRef is a template ref {"template":9000} or, to create from a snapshot, the
+	// snapshot ref {"vmid":123,"node":"pve1","name":"pgsnap"}.
+	ImageRef   string    `json:"imageRef"`
 	SshKeys    []string  `json:"sshKeys"`
 	UserData   string    `json:"userData"`
 	NetworkRef string    `json:"networkRef"`
@@ -102,7 +106,15 @@ type VmBrief struct {
 	Power string `json:"power"`
 }
 
+// SnapshotRef is the opaque handle stored in Snapshot.driverRef for the Proxmox driver.
+type SnapshotRef struct {
+	VMID int    `json:"vmid"`
+	Node string `json:"node"`
+	Name string `json:"name"`
+}
+
 // UsageEvent is usage.v1: one per resource per minute.
+// Bandwidth events carry the outbound bytes since the previous tick, not since boot.
 type UsageEvent struct {
 	V            int                    `json:"v"`
 	At           string                 `json:"at"`

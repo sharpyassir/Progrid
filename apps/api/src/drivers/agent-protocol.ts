@@ -12,7 +12,9 @@ export type JobKind =
   | 'vm.delete'
   | 'vm.resize'
   | 'vm.status'
+  | 'vm.find_by_tag'
   | 'vm.snapshot'
+  | 'vm.rollback'
   | 'snapshot.delete'
   | 'net.attach_ip'
   | 'net.detach_ip'
@@ -24,7 +26,7 @@ export type JobKind =
   | 'volume.delete';
 
 export interface Job<P = Record<string, unknown>> {
-  id: string; // uuid, agents dedupe on it
+  id: string; // agents dedupe on it; a repeated id gets the stored result instead of a second run
   kind: JobKind;
   params: P;
   issuedAt: string;
@@ -51,7 +53,6 @@ export interface Heartbeat {
   agentVersion: string;
 }
 
-/** usage.v1 — one per resource per minute. */
 /** metrics.v1: raw counters per VM per minute; network and disk are cumulative bytes. */
 export interface MetricSampleV1 {
   v: 1;
@@ -68,6 +69,7 @@ export interface MetricSampleV1 {
   diskWriteBytes: number;
 }
 
+/** usage.v1: one per resource per minute. Bandwidth carries the outbound bytes since the previous tick. */
 export interface UsageEventV1 {
   v: 1;
   at: string; // minute-aligned ISO timestamp

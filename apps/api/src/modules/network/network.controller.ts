@@ -60,4 +60,25 @@ export class NetworkController {
     const p = await this.iam.resolveProject(actor, project);
     return { data: await this.ips.list(p.id) };
   }
+
+  /** Moves the address onto the server. The server must not have a public address already. */
+  @Post('public-ips/:id/attach') @RequireScopes('network:write')
+  async attachIp(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: AttachServerDto, @Query('project') project?: string) {
+    const p = await this.iam.resolveProject(actor, project);
+    return this.ips.attach(actor, p.id, id, dto.serverId);
+  }
+
+  /** Takes the address off its server; it stays reserved for the project. */
+  @Post('public-ips/:id/detach') @RequireScopes('network:write')
+  async detachIp(@CurrentActor() actor: Actor, @Param('id') id: string, @Query('project') project?: string) {
+    const p = await this.iam.resolveProject(actor, project);
+    return this.ips.detach(actor, p.id, id);
+  }
+
+  /** Releases a detached address back to the pool. */
+  @Delete('public-ips/:id') @RequireScopes('network:write') @HttpCode(204)
+  async releaseIp(@CurrentActor() actor: Actor, @Param('id') id: string, @Query('project') project?: string) {
+    const p = await this.iam.resolveProject(actor, project);
+    await this.ips.releaseReserved(actor, p.id, id);
+  }
 }

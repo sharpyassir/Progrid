@@ -3,6 +3,7 @@ package agent_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -64,6 +65,8 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	t.Cleanup(nc.Close)
+	old := agent.SetRbdDu(sim.RbdDu)
+	t.Cleanup(func() { agent.SetRbdDu(old) })
 	h := &harness{t: t, nc: nc, sim: sim, cfg: cfg, subj: "pgcloud.host.host_test.jobs"}
 	// Wait until the agent's subscription is live.
 	deadline := time.Now().Add(3 * time.Second)
@@ -140,7 +143,7 @@ func TestCreateConfiguresCloneAndBoots(t *testing.T) {
 	if !strings.Contains(vm.Tags, "server-srv_1") || !strings.Contains(vm.Tags, "project-proj_1") {
 		t.Fatalf("tags not set for attribution: %q", vm.Tags)
 	}
-	if vm.Config["net1"] != "virtio,bridge=vmbr0,firewall=1" || !strings.HasPrefix(vm.Config["ipconfig1"], "ip=203.0.113.10/24,gw=203.0.113.1") {
+	if !strings.HasPrefix(vm.Config["net1"], "virtio=BC:24:11:") || !strings.HasSuffix(vm.Config["net1"], ",bridge=vmbr0,firewall=1") || !strings.HasPrefix(vm.Config["ipconfig1"], "ip=203.0.113.10/24,gw=203.0.113.1") {
 		t.Fatalf("public network not configured: %v", vm.Config)
 	}
 	if !strings.HasPrefix(vm.Config["cicustom"], "user=local:snippets/pgcloud-") {
@@ -148,6 +151,11 @@ func TestCreateConfiguresCloneAndBoots(t *testing.T) {
 	}
 	if b, err := os.ReadFile(filepath.Join(os.Getenv("PGCLOUD_SNIPPETS_DIR"), "pgcloud-"+itoa(vmid)+"-user.yaml")); err != nil || !strings.Contains(string(b), "hostname: web-1") {
 		t.Fatalf("user-data snippet not written: %v", err)
+	} else if !strings.Contains(string(b), "ssh-ed25519 AAAA test") || !strings.Contains(string(b), "fqdn: web-1") {
+		t.Fatalf("user-data snippet lacks the SSH key or hostname: %s", b)
+	}
+	if k := vm.Config["sshkeys"]; k != "ssh-ed25519%20AAAA%20test" {
+		t.Fatalf("sshkeys not encoded with %%20: %q", k)
 	}
 
 	// wait_boot answers once the guest agent pings, which the simulator delays after start.
@@ -180,6 +188,17 @@ func TestPowerSnapshotFirewallResizeDelete(t *testing.T) {
 	if !strings.Contains(res["snapshotRef"].(string), `"name":"pgsnap1"`) || len(h.sim.VM(vmid).Snaps) != 1 {
 		t.Fatalf("snapshot not taken: %v / %v", res, h.sim.VM(vmid).Snaps)
 	}
+	if res["sizeGb"] != float64(pvesim.SnapshotBytes)/(1<<30) {
+		t.Fatalf("snapshot size not read from rbd du: %v", res["sizeGb"])
+	}
+	// Without the Ceph CLI the size falls back to the estimate (used memory in GB plus one).
+	old := agent.SetRbdDu(func(context.Context, string, string, string) (int64, error) { return 0, errors.New("rbd: not found") })
+	r = h.mustOK(h.job(protocol.JobSnapshot, map[string]interface{}{"vmRef": ref, "snapshotId": "SNAP2"}))
+	agent.SetRbdDu(old)
+	if got := r.Result.(map[string]interface{})["sizeGb"]; got != float64(3) {
+		t.Fatalf("fallback size wrong: %v", got)
+	}
+	h.mustOK(h.job(protocol.JobSnapshotDel, map[string]interface{}{"snapshotRef": r.Result.(map[string]interface{})["snapshotRef"]}))
 	h.mustOK(h.job(protocol.JobSnapshotDel, map[string]interface{}{"snapshotRef": res["snapshotRef"]}))
 	if len(h.sim.VM(vmid).Snaps) != 0 {
 		t.Fatal("snapshot not deleted")
@@ -227,6 +246,129 @@ func TestPowerSnapshotFirewallResizeDelete(t *testing.T) {
 	}
 }
 
+func TestResizeKeepsNameTagsAndMAC(t *testing.T) {
+	h := newHarness(t)
+	vmid, ref := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_rs")})))
+	before := h.sim.VM(vmid)
+	h.mustOK(h.job(protocol.JobResize, map[string]interface{}{"vmRef": ref, "vcpu": 4, "memoryMb": 8192, "diskGb": 160}))
+	after := h.sim.VM(vmid)
+	if after.Cores != 4 || after.MemoryMb != 8192 || after.DiskGb != 160 {
+		t.Fatalf("resize not applied: %+v", after)
+	}
+	if after.Name != before.Name || after.Tags != before.Tags {
+		t.Fatalf("resize changed name or tags: %q %q, was %q %q", after.Name, after.Tags, before.Name, before.Tags)
+	}
+	for _, k := range []string{"net0", "net1", "ipconfig0", "ipconfig1", "sshkeys", "cicustom"} {
+		if after.Config[k] != before.Config[k] {
+			t.Fatalf("resize changed %s: %q, was %q", k, after.Config[k], before.Config[k])
+		}
+	}
+}
+
+// Rebuild deletes the VM and clones a new one; volumes live on and plug into the new VM.
+func TestVolumeSurvivesRebuild(t *testing.T) {
+	h := newHarness(t)
+	_, ref := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_rb")})))
+	volRef := h.mustOK(h.job(protocol.JobVolumeCreate, map[string]interface{}{"volumeId": "VOLRB", "sizeGb": 50})).Result.(map[string]interface{})["volumeRef"].(string)
+	h.mustOK(h.job(protocol.JobVolumeAttach, map[string]interface{}{"vmRef": ref, "volumeRef": volRef, "serial": "volrb"}))
+
+	h.mustOK(h.job(protocol.JobDelete, map[string]interface{}{"vmRef": ref}))
+	if h.sim.Volumes["vm-900000-vol-volrb"] != 50 {
+		t.Fatalf("deleting the VM destroyed the volume: %v", h.sim.Volumes)
+	}
+	newID, newRef := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_rb")})))
+	r := h.mustOK(h.job(protocol.JobVolumeAttach, map[string]interface{}{"vmRef": newRef, "volumeRef": volRef, "serial": "volrb"}))
+	if r.Result.(map[string]interface{})["device"] != "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_volrb" {
+		t.Fatalf("reattach result wrong: %v", r.Result)
+	}
+	if cfg := h.sim.VM(newID).Config["scsi1"]; !strings.Contains(cfg, "vm-900000-vol-volrb") {
+		t.Fatalf("volume not attached to the rebuilt VM: %q", cfg)
+	}
+}
+
+func TestRollbackAndCreateFromSnapshot(t *testing.T) {
+	h := newHarness(t)
+	vmid, ref := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_snap")})))
+	snapRef := h.mustOK(h.job(protocol.JobSnapshot, map[string]interface{}{"vmRef": ref, "snapshotId": "S1"})).Result.(map[string]interface{})["snapshotRef"].(string)
+
+	// Restore: the control plane stops the VM, rolls back, and starts it again.
+	h.mustOK(h.job(protocol.JobStop, map[string]interface{}{"vmRef": ref, "force": true}))
+	h.mustOK(h.job(protocol.JobRollback, map[string]interface{}{"vmRef": ref, "snapshotRef": snapRef}))
+	if h.sim.VM(vmid).RolledBackTo != "pgs1" {
+		t.Fatalf("rollback not done: %+v", h.sim.VM(vmid))
+	}
+	h.mustOK(h.job(protocol.JobStart, map[string]interface{}{"vmRef": ref}))
+
+	// A snapshot of another VM is refused before Proxmox is called.
+	r := h.job(protocol.JobRollback, map[string]interface{}{"vmRef": `{"vmid":999,"node":"pve1"}`, "snapshotRef": snapRef})
+	if r.OK || r.Error.Code != "bad_ref" || r.Error.Retryable {
+		t.Fatalf("expected bad_ref for a foreign snapshot, got %+v", r)
+	}
+	// A snapshot that does not exist is a Proxmox error.
+	r = h.job(protocol.JobRollback, map[string]interface{}{"vmRef": ref, "snapshotRef": strings.Replace(snapRef, "pgs1", "pgnope", 1)})
+	if r.OK || !strings.Contains(r.Error.Message, "does not exist") {
+		t.Fatalf("expected a missing snapshot error, got %+v", r)
+	}
+
+	// Create from the snapshot: a full clone of the source VM at that snapshot.
+	sp := spec("srv_from_snap")
+	sp.ImageRef = snapRef
+	newID, _ := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": sp})))
+	if src := h.sim.VM(newID).Source; src != itoa(vmid)+"@pgs1" {
+		t.Fatalf("new vm cloned from %q, want %d@pgs1", src, vmid)
+	}
+	if !strings.Contains(h.sim.VM(newID).Tags, "server-srv_from_snap") {
+		t.Fatalf("clone from snapshot not configured: %+v", h.sim.VM(newID))
+	}
+	// A snapshot on another node cannot be cloned here.
+	sp.ImageRef = strings.Replace(snapRef, `"node":"pve1"`, `"node":"pve9"`, 1)
+	if r := h.job(protocol.JobCreate, map[string]interface{}{"spec": sp}); r.OK || r.Error.Code != "wrong_node" {
+		t.Fatalf("expected wrong_node, got %+v", r)
+	}
+}
+
+// A floating IP moves from one server to another: detach from the first, attach to the second.
+func TestFloatingIPMoves(t *testing.T) {
+	h := newHarness(t)
+	idA, refA := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_fa")})))
+	sb := spec("srv_fb")
+	sb.PublicIP = nil
+	idB, refB := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": sb})))
+	if _, has := h.sim.VM(idB).Config["net1"]; has {
+		t.Fatal("server B should start without a public NIC")
+	}
+
+	// Detaching an address the VM does not carry changes nothing.
+	h.mustOK(h.job(protocol.JobDetachIP, map[string]interface{}{"vmRef": refA, "address": "198.51.100.7"}))
+	if h.sim.VM(idA).Config["net1"] == "" {
+		t.Fatal("detach of another address removed the NIC")
+	}
+	h.mustOK(h.job(protocol.JobDetachIP, map[string]interface{}{"vmRef": refA, "address": "203.0.113.10"}))
+	a := h.sim.VM(idA)
+	if _, has := a.Config["net1"]; has || a.Config["ipconfig1"] != "" || a.CloudInitRegens != 1 {
+		t.Fatalf("address not removed from A: %v (regens %d)", a.Config, a.CloudInitRegens)
+	}
+
+	ip := protocol.PublicIP{Address: "203.0.113.10", Gateway: "203.0.113.1", Prefix: 24}
+	h.mustOK(h.job(protocol.JobAttachIP, map[string]interface{}{"vmRef": refB, "ip": ip}))
+	b := h.sim.VM(idB)
+	if !strings.HasPrefix(b.Config["net1"], "virtio=") || !strings.HasSuffix(b.Config["net1"], ",bridge=vmbr0,firewall=1") || b.Config["ipconfig1"] != "ip=203.0.113.10/24,gw=203.0.113.1" || b.CloudInitRegens != 1 {
+		t.Fatalf("address not configured on B: %v (regens %d)", b.Config, b.CloudInitRegens)
+	}
+	// Attaching again keeps the NIC's MAC.
+	mac := strings.SplitN(b.Config["net1"], ",", 2)[0]
+	h.mustOK(h.job(protocol.JobAttachIP, map[string]interface{}{"vmRef": refB, "ip": ip}))
+	if got := strings.SplitN(h.sim.VM(idB).Config["net1"], ",", 2)[0]; got != mac {
+		t.Fatalf("reattach changed the MAC: %s, was %s", got, mac)
+	}
+	// And back to A, which gets a NIC again.
+	h.mustOK(h.job(protocol.JobDetachIP, map[string]interface{}{"vmRef": refB, "address": "203.0.113.10"}))
+	h.mustOK(h.job(protocol.JobAttachIP, map[string]interface{}{"vmRef": refA, "ip": ip}))
+	if h.sim.VM(idA).Config["ipconfig1"] != "ip=203.0.113.10/24,gw=203.0.113.1" || h.sim.VM(idB).Config["ipconfig1"] != "" {
+		t.Fatalf("address did not move back: A %v, B %v", h.sim.VM(idA).Config, h.sim.VM(idB).Config)
+	}
+}
+
 func TestErrorsAreClassified(t *testing.T) {
 	h := newHarness(t)
 
@@ -263,24 +405,83 @@ func TestErrorsAreClassified(t *testing.T) {
 		t.Fatalf("expected bad_image_ref, got %+v", r)
 	}
 	r = h.job(protocol.JobAttachIP, map[string]interface{}{"vmRef": `{"vmid":9000,"node":"pve1"}`})
-	if r.OK || r.Error.Code != "not_implemented" || r.Error.Retryable {
-		t.Fatalf("expected not_implemented, got %+v", r)
+	if r.OK || r.Error.Code != "bad_params" || r.Error.Retryable {
+		t.Fatalf("expected bad_params, got %+v", r)
 	}
 }
 
-func TestDuplicateJobIsIgnored(t *testing.T) {
+func TestRepeatedJobIDReturnsStoredResult(t *testing.T) {
 	h := newHarness(t)
-	r := h.mustOK(h.jobID("dup_1", protocol.JobCreate, map[string]interface{}{"spec": spec("srv_5")}))
-	vmid, _ := vmidOf(t, r)
-	// Same id again: the agent must not create a second VM, and answers nothing (the
-	// control plane's request times out and re-reads state instead).
-	p, _ := json.Marshal(map[string]interface{}{"spec": spec("srv_5")})
-	body, _ := json.Marshal(protocol.Job{ID: "dup_1", Kind: protocol.JobCreate, Params: p})
-	if _, err := h.nc.Request(h.subj, body, 700*time.Millisecond); err == nil {
-		t.Fatal("duplicate job produced a reply")
+	// Two requests with the same id while the clone runs: one VM, both get the same answer.
+	type reply struct {
+		r   protocol.JobResult
+		err error
 	}
-	if h.sim.VM(vmid+1) != nil {
-		t.Fatal("duplicate job created a second vm")
+	p, _ := json.Marshal(map[string]interface{}{"spec": spec("srv_5")})
+	body, _ := json.Marshal(protocol.Job{ID: "vm.create:srv_5", Kind: protocol.JobCreate, Params: p})
+	replies := make(chan reply, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			msg, err := h.nc.Request(h.subj, body, 15*time.Second)
+			var r protocol.JobResult
+			if err == nil {
+				err = json.Unmarshal(msg.Data, &r)
+			}
+			replies <- reply{r, err}
+		}()
+	}
+	var refs []string
+	for i := 0; i < 2; i++ {
+		rp := <-replies
+		if rp.err != nil {
+			t.Fatalf("no reply: %v", rp.err)
+		}
+		_, ref := vmidOf(t, h.mustOK(rp.r))
+		refs = append(refs, ref)
+	}
+	if refs[0] != refs[1] {
+		t.Fatalf("repeated id got different VMs: %v", refs)
+	}
+	clones := 0
+	for _, c := range h.sim.Calls() {
+		if strings.HasSuffix(c, "/clone") {
+			clones++
+		}
+	}
+	if clones != 1 {
+		t.Fatalf("expected one clone, got %d", clones)
+	}
+
+	// A retry after completion gets the stored result, not a second VM.
+	r := h.mustOK(h.jobID("vm.create:srv_5", protocol.JobCreate, map[string]interface{}{"spec": spec("srv_5")}))
+	if _, ref := vmidOf(t, r); ref != refs[0] {
+		t.Fatalf("retry after completion returned %s, want %s", ref, refs[0])
+	}
+
+	// A failed job is not stored: a retry with the same id runs again and succeeds.
+	h.sim.FailNext("clone", 1)
+	if r := h.jobID("vm.create:srv_5b", protocol.JobCreate, map[string]interface{}{"spec": spec("srv_5b")}); r.OK {
+		t.Fatal("expected the injected clone failure")
+	}
+	h.mustOK(h.jobID("vm.create:srv_5b", protocol.JobCreate, map[string]interface{}{"spec": spec("srv_5b")}))
+}
+
+func TestFindByTag(t *testing.T) {
+	h := newHarness(t)
+	_, ref := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_orphan")})))
+	h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_other")}))
+
+	r := h.mustOK(h.job(protocol.JobFindByTag, map[string]interface{}{"tag": "server-srv_orphan"}))
+	refs := r.Result.(map[string]interface{})["vmRefs"].([]interface{})
+	if len(refs) != 1 || refs[0] != ref {
+		t.Fatalf("find_by_tag returned %v, want [%s]", refs, ref)
+	}
+	r = h.mustOK(h.job(protocol.JobFindByTag, map[string]interface{}{"tag": "server-nothing"}))
+	if refs := r.Result.(map[string]interface{})["vmRefs"].([]interface{}); len(refs) != 0 {
+		t.Fatalf("expected no match, got %v", refs)
+	}
+	if r := h.job(protocol.JobFindByTag, map[string]interface{}{}); r.OK || r.Error.Code != "bad_params" {
+		t.Fatalf("expected bad_params, got %+v", r)
 	}
 }
 
@@ -360,6 +561,74 @@ haveHeartbeat:
 		case <-mdeadline:
 			t.Fatal("no metric sample for srv_6")
 		}
+	}
+}
+
+func TestBandwidthIsSentAsDelta(t *testing.T) {
+	h := newHarness(t)
+	hb := make(chan *nats.Msg, 256)
+	usage := make(chan *nats.Msg, 1024)
+	sub1, _ := h.nc.ChanSubscribe("pgcloud.host.host_test.heartbeat", hb)
+	sub2, _ := h.nc.ChanSubscribe("pgcloud.usage", usage)
+	defer sub1.Unsubscribe()
+	defer sub2.Unsubscribe()
+
+	vmid, _ := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_bw")})))
+	// Wait for a heartbeat that lists the VM: the agent has its baseline counter then.
+	deadline := time.After(3 * time.Second)
+	for listed := false; !listed; {
+		select {
+		case m := <-hb:
+			listed = strings.Contains(string(m.Data), `\"serverId\":\"srv_bw\"`)
+		case <-deadline:
+			t.Fatal("no heartbeat listing the vm")
+		}
+	}
+	// The baseline reading itself is never billed.
+	drain := func() {
+		for {
+			select {
+			case m := <-usage:
+				var u protocol.UsageEvent
+				_ = json.Unmarshal(m.Data, &u)
+				if u.ResourceType == "bandwidth" && u.ResourceID == "srv_bw" {
+					t.Fatalf("baseline billed as bandwidth: %+v", u)
+				}
+			default:
+				return
+			}
+		}
+	}
+	drain()
+
+	next := func() protocol.UsageEvent {
+		t.Helper()
+		deadline := time.After(3 * time.Second)
+		for {
+			select {
+			case m := <-usage:
+				var u protocol.UsageEvent
+				_ = json.Unmarshal(m.Data, &u)
+				if u.ResourceType == "bandwidth" && u.ResourceID == "srv_bw" {
+					return u
+				}
+			case <-deadline:
+				t.Fatal("no bandwidth event")
+			}
+		}
+	}
+	h.sim.SetNetOut(vmid, 5000)
+	if u := next(); u.Quantity != 3000 || u.Unit != "byte" || u.ProjectID != "proj_1" {
+		t.Fatalf("expected a 3000 byte delta, got %+v", u)
+	}
+	// A smaller counter means the VM rebooted: the new value is all new traffic.
+	h.sim.SetNetOut(vmid, 700)
+	if u := next(); u.Quantity != 700 {
+		t.Fatalf("expected 700 bytes after the reboot, got %+v", u)
+	}
+	h.sim.SetNetOut(vmid, 1700)
+	if u := next(); u.Quantity != 1000 {
+		t.Fatalf("expected a 1000 byte delta, got %+v", u)
 	}
 }
 

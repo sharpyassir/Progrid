@@ -376,6 +376,8 @@ model Server {
   diskGb    Int
   privateIp String?
   userData  String? // cloud-init user-data
+  /// Set when the server was created from a snapshot: the VM clones that snapshot instead of the image.
+  sourceSnapshotId String?
   sshKeyIds String[]     @default([])
   tags      String[]     @default([])
   backupsEnabled Boolean @default(false)
@@ -425,6 +427,7 @@ enum ActionType {
   resize
   rebuild
   snapshot
+  restore
   delete
 }
 
@@ -636,7 +639,7 @@ model UsageEvent {
   resourceId   String
   projectId    String
   hostId       String?
-  quantity     Float // 1 for server-minute, GB for snapshots, bytes for bandwidth
+  quantity     Float // 1 for server-minute, GB for snapshots, bytes since the previous minute for bandwidth
   unit         String // "minute" | "gb_minute" | "byte"
   meta         Json         @default("{}")
 

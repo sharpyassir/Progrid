@@ -23,6 +23,8 @@ Every server gets one public IPv4 address and one private address on your team's
 
 A reserved IP belongs to your team rather than to a server. Move it between servers to switch traffic without changing DNS. Reserved IPs cost the same as a server address while attached and a small hourly fee while parked.
 
+Move an address with `POST /v1/public-ips/{id}/detach`, then `POST /v1/public-ips/{id}/attach` with `{"serverId": "..."}`. The target server must not have a public address of its own, so detach that one first. A detached address stays reserved for your project until you release it with `DELETE /v1/public-ips/{id}`. The new address is live on the server after its next reboot.
+
 ## Reverse DNS
 
 Set the reverse record for any of your addresses under **Core Cloud, Public IPs**. Mail servers need this to be accepted by other providers.

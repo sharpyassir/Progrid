@@ -69,26 +69,27 @@ what blocks money first. Items marked "fixed" were corrected in the same commit 
    node or the clone must pass a target node.
 8. **NATS authentication.** Fixed: the production NATS server required a token that neither the
    API, the worker nor the host agent sent. All three now send `NATS_TOKEN`.
-9. **Create retries leave orphan VMs.** The NATS request times out after 3 minutes while a clone
-   can take 10, and each retry uses a new job id, so the agent cannot deduplicate. Use the server
-   id as the job id and write the driver reference before the clone finishes.
-10. **SSH access on real Proxmox.** Any cloud-init user-data (marketplace, managed tier, platform
-    nodes) replaces the Proxmox generated user-data, so SSH keys and hostname are dropped unless
-    the rendered user-data carries them. The `sshkeys` field is also URL encoded with plus signs
-    for spaces, which Proxmox may not decode. Both need a real node test and a fix.
+9. **Create retries leave orphan VMs.** Fixed: the create job id is derived from the server and
+   the workflow, the agent answers a repeated id with the stored result (or waits for the run in
+   progress), the request waits up to 10 minutes, and a failed create finds and deletes any VM
+   tagged `server-<id>`.
+10. **SSH access on real Proxmox.** Fixed in code: when user-data is supplied, the agent renders
+    the SSH keys, hostname and default user into it (merged into a cloud-config, or as an extra
+    part of a multipart document), and `sshkeys` is encoded with %20 and %0A. Still needs a
+    real node test.
 11. **Private network and tenant isolation.** Every VM sits on one shared bridge with DHCP and no
     per tenant VNet, VXLAN or address assignment, so the private IP is never filled and tenants
     can see each other. Build per project VNets with the Proxmox SDN and IPAM, and enable
     `ipfilter` so customers cannot spoof addresses.
-12. **Resize corrupts the VM config.** The resize job resends an empty name and tags and a NIC
-    without its MAC, which wipes usage attribution tags and changes the MAC. Rebuild also drops
-    attached volumes while the database still shows them attached.
-13. **Bandwidth billing is wrong.** Cumulative since boot counters are summed and priced per
-    minute rather than per GB, with no included transfer. Meter deltas and bill overage per GB.
-14. **Backups are same cluster snapshots** with no restore path and a fake size, and they die
-    with the VM. Add a restore workflow and an off host copy (Proxmox Backup Server or the Hetzner
-    Storage Box) before advertising backups.
-15. **IP blocks and images have no admin API.** Only the seed inserts the documentation range.
+12. **Resize corrupts the VM config.** Fixed: resize sends only cores and memory and grows the
+    disk, and rebuild attaches every volume the database shows attached to the new VM.
+13. **Bandwidth billing is wrong.** Fixed: the agent sends outbound bytes since the previous
+    tick, and rating charges per GB above the size's included transfer in each calendar month.
+14. **Backups are same cluster snapshots** and they die with the VM. The restore workflow
+    (`POST /v1/servers/{id}/restore`) and create from snapshot now exist; an off host copy (Proxmox
+    Backup Server or the Hetzner Storage Box) is still needed before advertising backups.
+15. **IP blocks and images have no admin API.** Fixed: `admin/v1/ip-blocks` and `admin/v1/images`, with
+    back office pages.
 
 ## C. Blocks the managed products (build before selling each one)
 

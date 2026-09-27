@@ -49,6 +49,17 @@ export class RatingService {
 
       // Per-GB and per-node resources are priced per unit-month; scale monthly price by the average quantity in the hour.
       // Percent prices (backups, managed tier) are a share of the server's own plan price.
+      if (g.resourceType === 'bandwidth') {
+        const amountMinor = price ? await this.rateBandwidth(g.resourceId, hourStart, quantity, price.monthlyMinor * fx) : 0;
+        await this.prisma.usageRecord.upsert({
+          where: { resourceType_resourceId_hourStart: { resourceType: g.resourceType, resourceId: g.resourceId, hourStart } },
+          create: { projectId: g.projectId, resourceType: g.resourceType, resourceId: g.resourceId, hourStart, quantity, unit: g.unit, priceId: price?.id, amountMinor, currency },
+          update: { quantity, priceId: price?.id, amountMinor },
+        });
+        written++;
+        continue;
+      }
+
       let monthlyMinor = 0;
       if (price && price.unit === 'percent') monthlyMinor = Math.round(((await this.planPriceFor(g.resourceId, hourEnd)) * fx * price.monthlyMinor) / 100);
       else if (price) monthlyMinor = Math.round((g.unit === 'gb_minute' || g.unit === 'node_minute' || g.unit === 'instance_minute' ? price.monthlyMinor * (quantity / Math.max(minutes, 1)) : price.monthlyMinor) * fx);
@@ -69,6 +80,24 @@ export class RatingService {
     }
     this.log.log(`rated ${written} resources for hour ${hourStart.toISOString()}`);
     return written;
+  }
+
+  /**
+   * Outbound transfer of one server in one hour. Each size includes `transferTb` per calendar
+   * month; bytes beyond it are charged per GB. The charge is the difference of the overage
+   * cost after and before this hour, so it depends only on earlier hours and re-rating an
+   * hour writes the same amount.
+   */
+  private async rateBandwidth(serverId: string, hourStart: Date, bytes: number, perGbMinor: number) {
+    const server = await this.prisma.server.findUnique({ where: { id: serverId }, select: { size: { select: { transferTb: true } } } });
+    const includedBytes = (server?.size.transferTb ?? 0) * 1e12;
+    const before = await this.prisma.usageRecord.aggregate({
+      where: { resourceType: 'bandwidth', resourceId: serverId, hourStart: { gte: startOfMonth(hourStart), lt: hourStart } },
+      _sum: { quantity: true },
+    });
+    const prior = before._sum.quantity ?? 0;
+    const cost = (total: number) => Math.round((Math.max(0, total - includedBytes) / 1e9) * perGbMinor);
+    return cost(prior + bytes) - cost(prior);
   }
 
   private async skuFor(type: ResourceType, resourceId: string): Promise<string | null> {

@@ -13,6 +13,8 @@ export interface PlacementRequest {
   /** Server IDs this server must not share a host with (anti-affinity). */
   avoidServerIds?: string[];
   family?: string;
+  /** Place only on this host (a clone of a snapshot runs on the node that holds it). */
+  onlyHostId?: string;
 }
 
 /**
@@ -36,7 +38,7 @@ export class SchedulerService {
         : [];
 
       const hosts = await this.prisma.host.findMany({
-        where: { regionId: req.regionId, status: 'active', id: { notIn: avoidHostIds } },
+        where: { regionId: req.regionId, status: 'active', id: req.onlyHostId ? { equals: req.onlyHostId, notIn: avoidHostIds } : { notIn: avoidHostIds } },
       });
 
       const staleAfter = Date.now() - 3 * 60_000;
@@ -72,7 +74,11 @@ export class SchedulerService {
     });
   }
 
-  /** Subscribes to host heartbeats; authoritative capacity comes from the agent. */
+  /**
+   * Subscribes to host heartbeats; authoritative capacity comes from the agent. A heartbeat
+   * brings a host that was marked down back to active, but never overrides a status an admin
+   * set (draining, maintenance).
+   */
   listenHeartbeats() {
     this.nats.subscribe<Heartbeat>(Subjects.hostHeartbeat, async (hb) => {
       await this.prisma.host.update({
@@ -85,9 +91,9 @@ export class SchedulerService {
           usedMemoryMb: hb.usedMemoryMb,
           usedDiskGb: hb.usedDiskGb,
           lastHeartbeatAt: new Date(hb.at),
-          status: 'active',
         },
       }).catch((e) => this.log.warn(`heartbeat for unknown host ${hb.hostId}: ${e.message}`));
+      await this.prisma.host.updateMany({ where: { id: hb.hostId, status: 'down' }, data: { status: 'active' } });
     });
   }
 

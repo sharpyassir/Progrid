@@ -28,9 +28,14 @@ export class ProxmoxDriver implements HypervisorDriver {
 
   constructor(private readonly nats: NatsService) {}
 
-  private async job<R = Record<string, unknown>>(hostRef: string, kind: JobKind, params: Record<string, unknown>, timeoutMs = 120_000): Promise<R> {
+  /**
+   * Sends one job. `jobId` defaults to a random id; pass a deterministic one for jobs that
+   * must not run twice when the request is retried (the agent answers a repeated id with the
+   * stored result, or waits for the run in progress).
+   */
+  private async job<R = Record<string, unknown>>(hostRef: string, kind: JobKind, params: Record<string, unknown>, timeoutMs = 120_000, jobId?: string): Promise<R> {
     const host = JSON.parse(hostRef) as ProxmoxHostRef;
-    const job: Job = { id: randomUUID(), kind, params: { node: host.node, ...params }, issuedAt: new Date().toISOString() };
+    const job: Job = { id: jobId ?? randomUUID(), kind, params: { node: host.node, ...params }, issuedAt: new Date().toISOString() };
     this.log.debug(`→ ${host.node} ${kind} ${job.id}`);
     const res = await this.nats.request<Job, JobResult<R>>(Subjects.hostJobs(host.hostId), job, timeoutMs);
     if (!res.ok) {
@@ -56,8 +61,11 @@ export class ProxmoxDriver implements HypervisorDriver {
     await this.job(hostRef, 'volume.delete', { volumeRef }, 300_000);
   }
 
+  /** A full clone can take 10 minutes; the id is derived from the server so retries never clone twice. */
   createVm(hostRef: string, spec: VmSpec): Promise<VmHandle> {
-    return this.job<VmHandle>(hostRef, 'vm.create', { spec }, 180_000);
+    const { requestKey, ...rest } = spec;
+    const id = `vm.create:${spec.serverId}${requestKey ? `:${requestKey}` : ''}`;
+    return this.job<VmHandle>(hostRef, 'vm.create', { spec: rest }, 600_000, id);
   }
   waitForBoot(hostRef: string, vmRef: string, timeoutMs: number): Promise<VmStatus> {
     return this.job<VmStatus>(hostRef, 'vm.wait_boot', { vmRef, timeoutMs }, timeoutMs + 10_000);
@@ -80,11 +88,17 @@ export class ProxmoxDriver implements HypervisorDriver {
   getVmStatus(hostRef: string, vmRef: string): Promise<VmStatus> {
     return this.job<VmStatus>(hostRef, 'vm.status', { vmRef }, 15_000);
   }
+  async findVmsByTag(hostRef: string, tag: string): Promise<string[]> {
+    return (await this.job<{ vmRefs: string[] }>(hostRef, 'vm.find_by_tag', { tag }, 30_000)).vmRefs ?? [];
+  }
   snapshotVm(hostRef: string, vmRef: string, snapshotId: string) {
     return this.job<{ snapshotRef: string; sizeGb: number }>(hostRef, 'vm.snapshot', { vmRef, snapshotId }, 600_000);
   }
   async deleteSnapshot(hostRef: string, snapshotRef: string) {
     await this.job(hostRef, 'snapshot.delete', { snapshotRef });
+  }
+  async rollbackVm(hostRef: string, vmRef: string, snapshotRef: string) {
+    await this.job(hostRef, 'vm.rollback', { vmRef, snapshotRef }, 600_000);
   }
   async attachPublicIp(hostRef: string, vmRef: string, ip: { address: string; gateway: string; prefix: number }) {
     await this.job(hostRef, 'net.attach_ip', { vmRef, ip });

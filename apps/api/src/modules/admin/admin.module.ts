@@ -4,6 +4,7 @@ import { BillingModule } from '../billing/billing.module';
 import { EventsModule } from '../events/events.module';
 import { TrustModule } from '../trust/trust.module';
 import { AdminController } from './admin.controller';
+import { AdminCatalogController } from './catalog.controller';
 
-@Module({ imports: [EventsModule, TrustModule, BillingModule, StorageModule], controllers: [AdminController] })
+@Module({ imports: [EventsModule, TrustModule, BillingModule, StorageModule], controllers: [AdminController, AdminCatalogController] })
 export class AdminModule {}

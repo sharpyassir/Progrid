@@ -6,7 +6,10 @@ export class CreateServerDto {
   name: string;
 
   @IsString() size: string; // "s-2vcpu-4gb"
-  @IsString() image: string; // "ubuntu-24-04" or marketplace "app-wordpress"
+  /** "ubuntu-24-04" or marketplace "app-wordpress". Required unless snapshotId is given. */
+  @IsOptional() @IsString() image?: string;
+  /** Create a copy of a server from one of its snapshots instead of an image. */
+  @IsOptional() @IsString() snapshotId?: string;
   @IsOptional() @IsString() region?: string; // default sa1
   @IsOptional() @IsString() project?: string; // id or slug, default "default"
   @IsOptional() @IsArray() @IsString({ each: true }) sshKeys?: string[]; // SshKey ids
@@ -28,6 +31,10 @@ export class ServerActionDto {
   @IsOptional() @IsString() image?: string; // rebuild
   @IsOptional() @IsString() @Length(1, 60) name?: string; // snapshot
   @IsOptional() @IsBoolean() force?: boolean; // stop
+}
+
+export class RestoreServerDto {
+  @IsString() snapshotId: string;
 }
 
 export class UpdateServerDto {

@@ -88,6 +88,11 @@ const en = {
   inviteAcceptTitle: 'Team invitation', inviteLead: (team: string, role: string) => `You are invited to join ${team} as ${role}.`, inviteFor: (email: string) => `This invitation is for ${email}.`,
   acceptInvite: 'Accept invitation', signInToAccept: 'Sign in with this address to accept.', createToAccept: 'Choose your name and a password to create your account and join.',
   inviteInvalid: 'This invitation link is no longer valid. Ask the team for a new one.', inviteWrongUser: (email: string) => `You are signed in with another address. Sign out, open this link again and sign in as ${email}.`,
+  // back office: IP blocks and images
+  admIpBlocks: 'IP blocks', admIpBlocksNote: 'Each block is split into one public IPv4 address per usable address. The network, broadcast and gateway addresses are skipped. A block with allocated addresses cannot be deleted.',
+  admCidr: 'CIDR', admGateway: 'Gateway', admFree: 'Free', admAllocated: 'Allocated', admAddBlock: 'Add block', admDeleteBlockConfirm: (cidr: string) => `Delete ${cidr} and its free addresses?`,
+  admImages: 'Images', admImagesNote: 'An image clones from a Proxmox template VMID. The template must exist on every node of the region.',
+  admSlug: 'Slug', admDistribution: 'Distribution', admVersion: 'Version', admTemplateId: 'Template VMID', admAvailable: 'Available', admHidden: 'Hidden', admAllRegions: 'All regions', admAddImage: 'Add image', admServersUsing: 'Servers', admMakeAvailable: 'Make available', admHide: 'Hide',
 };
 
 type Dict = { [K in keyof typeof en]: (typeof en)[K] };
@@ -165,6 +170,10 @@ const tr: Dict = {
   inviteAcceptTitle: 'Ekip daveti', inviteLead: (team, role) => `${team} ekibine ${role} olarak katılmaya davet edildiniz.`, inviteFor: (email) => `Bu davet ${email} içindir.`,
   acceptInvite: 'Daveti kabul et', signInToAccept: 'Kabul etmek için bu adresle giriş yapın.', createToAccept: 'Hesabınızı oluşturup katılmak için adınızı ve bir parola seçin.',
   inviteInvalid: 'Bu davet bağlantısı artık geçerli değil. Ekipten yeni bir davet isteyin.', inviteWrongUser: (email) => `Başka bir adresle giriş yaptınız. Çıkış yapın, bu bağlantıyı yeniden açın ve ${email} ile giriş yapın.`,
+  admIpBlocks: 'IP blokları', admIpBlocksNote: 'Her blok, kullanılabilir her adres için bir genel IPv4 adresine bölünür. Ağ, yayın ve ağ geçidi adresleri atlanır. Kullanımda adresi olan bir blok silinemez.',
+  admCidr: 'CIDR', admGateway: 'Ağ geçidi', admFree: 'Boş', admAllocated: 'Kullanımda', admAddBlock: 'Blok ekle', admDeleteBlockConfirm: (cidr) => `${cidr} ve boş adresleri silinsin mi?`,
+  admImages: 'İmajlar', admImagesNote: 'Bir imaj, Proxmox şablon VMID’sinden klonlanır. Şablon bölgedeki her düğümde bulunmalıdır.',
+  admSlug: 'Kısa ad', admDistribution: 'Dağıtım', admVersion: 'Sürüm', admTemplateId: 'Şablon VMID', admAvailable: 'Kullanılabilir', admHidden: 'Gizli', admAllRegions: 'Tüm bölgeler', admAddImage: 'İmaj ekle', admServersUsing: 'Sunucular', admMakeAvailable: 'Kullanıma aç', admHide: 'Gizle',
 };
 
 const ar: Dict = {
@@ -240,6 +249,10 @@ const ar: Dict = {
   inviteAcceptTitle: 'دعوة للفريق', inviteLead: (team, role) => `انت مدعو تنضم لفريق ${team} بدور ${role}.`, inviteFor: (email) => `هالدعوة لـ ${email}.`,
   acceptInvite: 'اقبل الدعوة', signInToAccept: 'سجّل دخول بهالإيميل عشان تقبل.', createToAccept: 'اختر اسمك وكلمة مرور عشان نسوي حسابك وتنضم.',
   inviteInvalid: 'رابط الدعوة هذا ما عاد يشتغل. اطلب من الفريق دعوة جديدة.', inviteWrongUser: (email) => `انت داخل بإيميل ثاني. اطلع، وافتح الرابط مرة ثانية، وادخل بـ ${email}.`,
+  admIpBlocks: 'نطاقات IP', admIpBlocksNote: 'كل نطاق ينقسم لعناوين IPv4 عامة، عنوان لكل عنوان صالح. نتخطى عنوان الشبكة والبث والبوابة. النطاق اللي فيه عناوين مستخدمة ما ينحذف.',
+  admCidr: 'CIDR', admGateway: 'البوابة', admFree: 'فاضية', admAllocated: 'مستخدمة', admAddBlock: 'أضف نطاق', admDeleteBlockConfirm: (cidr) => `تبي تحذف ${cidr} وعناوينه الفاضية؟`,
+  admImages: 'الصور', admImagesNote: 'الصورة تنسخ من قالب Proxmox برقم VMID، ولازم يكون القالب موجود على كل عقدة في المنطقة.',
+  admSlug: 'المعرّف', admDistribution: 'التوزيعة', admVersion: 'الإصدار', admTemplateId: 'رقم القالب VMID', admAvailable: 'متاحة', admHidden: 'مخفية', admAllRegions: 'كل المناطق', admAddImage: 'أضف صورة', admServersUsing: 'الخوادم', admMakeAvailable: 'خلّها متاحة', admHide: 'اخفها',
 };
 
 const dict: Record<Locale, Dict> = { en, tr, ar };

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -133,8 +134,17 @@ func (c *Client) NextID(ctx context.Context) (int, error) {
 
 // Clone does a full clone of a template onto the Ceph storage.
 func (c *Client) Clone(ctx context.Context, template, newid int, name string) error {
+	return c.CloneSnapshot(ctx, template, "", newid, name)
+}
+
+// CloneSnapshot does a full clone of a VM's snapshot (qm clone --snapname). An empty
+// snapname clones the current state, which is what template clones use.
+func (c *Client) CloneSnapshot(ctx context.Context, source int, snapname string, newid int, name string) error {
 	f := url.Values{"newid": {fmt.Sprint(newid)}, "name": {name}, "full": {"1"}, "storage": {c.cfg.Storage}}
-	return c.post(ctx, c.vmPath(template, "/clone"), f, 10*time.Minute)
+	if snapname != "" {
+		f.Set("snapname", snapname)
+	}
+	return c.post(ctx, c.vmPath(source, "/clone"), f, 10*time.Minute)
 }
 
 // Configure sets CPU/RAM, cloud-init and network. Snippets for user-data live on a
@@ -170,12 +180,48 @@ func (c *Client) Configure(ctx context.Context, vmid int, v VMConfig) error {
 		f.Set("ipconfig1", "ip="+v.PublicIP+",gw="+v.Gateway)
 	}
 	if len(v.SSHKeys) > 0 {
-		f.Set("sshkeys", url.QueryEscape(strings.Join(v.SSHKeys, "\n")))
+		f.Set("sshkeys", EncodeSSHKeys(v.SSHKeys))
 	}
 	if v.UserData != "" {
 		f.Set("cicustom", "user="+v.UserData)
 	}
 	return c.do(ctx, http.MethodPost, c.vmPath(vmid, "/config"), f, nil)
+}
+
+// EncodeSSHKeys renders the sshkeys config value. Proxmox expects the keys URL encoded
+// with %20 for spaces and %0A for newlines, and decodes it without turning "+" into a
+// space. url.QueryEscape writes spaces as "+" (and a literal "+" as %2B), so every "+" left
+// in its output was a space. The form encoding of the request wraps the value once more.
+func EncodeSSHKeys(keys []string) string {
+	return strings.ReplaceAll(url.QueryEscape(strings.Join(keys, "\n")), "+", "%20")
+}
+
+// SetResources changes only cores and memory. Name, tags and network stay untouched so
+// a resize never rewrites the MAC address or the attribution tags.
+func (c *Client) SetResources(ctx context.Context, vmid int, cores, memoryMb int) error {
+	f := url.Values{"cores": {fmt.Sprint(cores)}, "memory": {fmt.Sprint(memoryMb)}}
+	return c.do(ctx, http.MethodPost, c.vmPath(vmid, "/config"), f, nil)
+}
+
+// SetConfig posts arbitrary config keys (used for floating IP NICs).
+func (c *Client) SetConfig(ctx context.Context, vmid int, f url.Values) error {
+	return c.do(ctx, http.MethodPost, c.vmPath(vmid, "/config"), f, nil)
+}
+
+// DeleteConfig removes config keys (comma separated list, as Proxmox accepts it).
+func (c *Client) DeleteConfig(ctx context.Context, vmid int, keys ...string) error {
+	return c.do(ctx, http.MethodPost, c.vmPath(vmid, "/config"), url.Values{"delete": {strings.Join(keys, ",")}}, nil)
+}
+
+// RegenerateCloudInit rebuilds the cloud-init drive so a changed ipconfig reaches the
+// guest on its next cloud-init run. Older nodes without the endpoint are tolerated.
+func (c *Client) RegenerateCloudInit(ctx context.Context, vmid int) error {
+	err := c.do(ctx, http.MethodPut, c.vmPath(vmid, "/cloudinit"), url.Values{}, nil)
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && (apiErr.Status == 501 || apiErr.Status == 404) {
+		return nil
+	}
+	return err
 }
 
 func (c *Client) ResizeDisk(ctx context.Context, vmid int, diskGb int) error {
@@ -248,6 +294,11 @@ func (c *Client) AgentPing(ctx context.Context, vmid int) error {
 
 func (c *Client) Snapshot(ctx context.Context, vmid int, name string) error {
 	return c.post(ctx, c.vmPath(vmid, "/snapshot"), url.Values{"snapname": {name}, "vmstate": {"0"}}, 10*time.Minute)
+}
+
+// Rollback restores the VM disks to the snapshot (qm rollback). The VM must be stopped.
+func (c *Client) Rollback(ctx context.Context, vmid int, name string) error {
+	return c.post(ctx, c.vmPath(vmid, "/snapshot/"+name+"/rollback"), url.Values{}, 10*time.Minute)
 }
 
 func (c *Client) DeleteSnapshot(ctx context.Context, vmid int, name string) error {

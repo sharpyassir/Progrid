@@ -87,6 +87,9 @@ export class FakeDriver implements HypervisorDriver {
     if (!vm) return { power: 'unknown' };
     return { power: vm.power, cpuPercent: Math.random() * 10, memoryUsedMb: Math.floor(vm.spec.memoryMb * 0.3) };
   }
+  async findVmsByTag(_h: string, tag: string) {
+    return [...this.vms.entries()].filter(([, vm]) => `server-${vm.spec.serverId}` === tag).map(([ref]) => ref);
+  }
   async snapshotVm(_h: string, vmRef: string, snapshotId: string) {
     // A worker restart forgets in memory VMs; snapshots of unknown refs still succeed so daily backups keep working in dev.
     const vm = this.vms.get(vmRef);
@@ -94,6 +97,11 @@ export class FakeDriver implements HypervisorDriver {
     return { snapshotRef: JSON.stringify({ fake: true, vmRef, snapshotId }), sizeGb: (vm?.spec.diskGb ?? 25) * 0.4 };
   }
   async deleteSnapshot() {}
+  async rollbackVm(_h: string, vmRef: string) {
+    await sleep(500);
+    const vm = this.vms.get(vmRef);
+    if (vm) vm.power = 'stopped';
+  }
   // These three are called from the API process, which does not share memory with the
   // worker that created the VM. Unknown refs are accepted so the dev console stays usable.
   async attachPublicIp(_h: string, vmRef: string, ip: { address: string }) {

@@ -67,7 +67,7 @@ export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageReco
     doc.font(regular).fontSize(10);
     for (const [type, g] of groups) {
       // Metering counts minutes; people read hours.
-      const usage = g.unit === 'minute' ? `${(g.qty / 60).toFixed(1)} hours` : g.unit === 'gb_minute' ? `${(g.qty / 60).toFixed(1)} GB hours` : `${Math.round(g.qty * 100) / 100} ${g.unit}`;
+      const usage = g.unit === 'minute' ? `${(g.qty / 60).toFixed(1)} hours` : g.unit === 'gb_minute' ? `${(g.qty / 60).toFixed(1)} GB hours` : g.unit === 'byte' ? `${(g.qty / 1e9).toFixed(2)} GB` : `${Math.round(g.qty * 100) / 100} ${g.unit}`;
       doc.text(LABEL[type] ?? type, col.desc + 6, y).text(usage, col.qty, y, { width: 120, align: 'right' }).text(money(g.amount), 400, y, { width: 145, align: 'right' });
       y += 18;
     }

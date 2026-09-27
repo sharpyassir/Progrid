@@ -36,7 +36,7 @@ export async function createServer(input: CreateServerInput): Promise<void> {
     await act.placeServer(serverId, input.avoid);
     placed = true;
     await act.reserveIp(serverId);
-    await act.createVm(serverId);
+    await slow.createVm(serverId);
     await slow.waitForBoot(serverId);
     await act.applyFirewall(serverId);
     await act.startMeter(serverId);
@@ -105,13 +105,14 @@ export interface RebuildInput {
   imageId: string;
 }
 
-/** Rebuild = delete VM, create from the new image on the same host, keep IPs and firewalls. */
+/** Rebuild = delete VM, create from the new image on the same host, keep IPs, firewalls and volumes. */
 export async function rebuildServer(input: RebuildInput): Promise<void> {
   const { serverId, actionId, imageId } = input;
   try {
     await act.deleteVm(serverId);
     await act.setImage(serverId, imageId);
-    await act.createVm(serverId);
+    await slow.createVm(serverId);
+    await act.reattachVolumes(serverId);
     await slow.waitForBoot(serverId);
     await act.applyFirewall(serverId);
     await act.setStatus(serverId, 'active');
@@ -142,6 +143,35 @@ export async function snapshotServer(input: SnapshotInput): Promise<void> {
   } catch (err) {
     const message = describe(err);
     await act.failSnapshot(snapshotId, message);
+    await act.failAction(actionId, message);
+    throw ApplicationFailure.nonRetryable(message);
+  }
+}
+
+export interface RestoreInput {
+  serverId: string;
+  actionId: string;
+  snapshotId: string;
+}
+
+/**
+ * Restore = power off, roll the VM back to one of its own snapshots, plug the volumes in
+ * again (the rollback also restores the VM config of that moment), power on.
+ */
+export async function restoreServer(input: RestoreInput): Promise<void> {
+  const { serverId, actionId, snapshotId } = input;
+  try {
+    if (await act.isRunning(serverId)) await act.powerOp(serverId, 'stop', false);
+    await slow.rollbackVm(serverId, snapshotId);
+    await act.reattachVolumes(serverId);
+    await act.powerOp(serverId, 'start', false);
+    await act.applyFirewall(serverId);
+    await act.setStatus(serverId, 'active');
+    await act.completeAction(actionId);
+    await act.emit('server.restored', serverId, { snapshotId });
+  } catch (err) {
+    const message = describe(err);
+    await act.syncStatusFromHypervisor(serverId, message);
     await act.failAction(actionId, message);
     throw ApplicationFailure.nonRetryable(message);
   }

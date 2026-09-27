@@ -148,8 +148,9 @@ DNS       domains [ls | add NAME [--ip A.B.C.D] | get NAME | zone-file NAME | de
           domains rdns PUBLIC_IP_ID HOSTNAME|--clear
 VOLUMES   volumes [ls | create NAME --size GB [--server ID] | attach ID SERVER_ID | detach ID | resize ID --size GB | delete ID]
 MONITOR   servers metrics ID [--period 1h|6h|24h|7d|30d] · alerts [ls | incidents | create NAME --metric cpu --above 90 | mute ID | delete ID]
-SERVERS   servers ls | create NAME [--size s-2vcpu-4gb] [--image ubuntu-24-04|wordpress] [--key ID] [--wait]
-                  | get ID | start|stop|reboot|delete ID | resize ID --size S | snapshot ID | backups ID on|off | managed ID on|off|status | rename ID NAME
+SERVERS   servers ls | create NAME [--size s-2vcpu-4gb] [--image ubuntu-24-04|wordpress | --snapshot SNAPSHOT_ID] [--key ID] [--wait]
+                  | get ID | start|stop|reboot|delete ID | resize ID --size S | snapshot ID | restore ID SNAPSHOT_ID
+                  | backups ID on|off | managed ID on|off|status | rename ID NAME
           ssh NAME|ID [-- command]
 DEPLOY    deploy REPO_URL [--branch main] [--port 3000] [--size S] [--env K=V ...] [--name N] [--wait]
           deploys ls | get ID | redeploy ID | logs ID [--follow]
@@ -564,16 +565,22 @@ func cmdServers(args []string) error {
 		return cmdList("/v1/servers", nil, serverCols)
 	case "create":
 		if len(rest) == 0 {
-			return errors.New("usage: servers create NAME [--size S] [--image I] [--key ID] [--user-data FILE] [--managed] [--wait]")
+			return errors.New("usage: servers create NAME [--size S] [--image I | --snapshot ID] [--key ID] [--user-data FILE] [--managed] [--wait]")
 		}
 		name := rest[0]
 		size, rest := flag(rest[1:], "--size")
 		image, rest := flag(rest, "--image")
+		snapshot, rest := flag(rest, "--snapshot")
 		keys, rest := multi(rest, "--key")
 		userData, rest := flag(rest, "--user-data")
 		managed, rest := has(rest, "--managed")
 		wait, _ := has(rest, "--wait")
-		body := map[string]any{"name": name, "size": or(size, "s-1vcpu-2gb"), "image": or(image, "ubuntu-24-04")}
+		body := map[string]any{"name": name, "size": or(size, "s-1vcpu-2gb")}
+		if snapshot != "" {
+			body["snapshotId"] = snapshot
+		} else {
+			body["image"] = or(image, "ubuntu-24-04")
+		}
 		if project != "" {
 			body["project"] = project
 		}
@@ -702,6 +709,23 @@ func cmdServers(args []string) error {
 			return err
 		}
 		fmt.Fprintf(stdout, "✓ %s queued (action %s)\n", sub, a["id"])
+		return nil
+	case "restore":
+		if len(rest) < 2 {
+			return errors.New("usage: pgcloud servers restore ID SNAPSHOT_ID")
+		}
+		id, err := resolveServer(rest)
+		if err != nil {
+			return err
+		}
+		if y, _ := has(rest, "--yes"); !y && strings.ToLower(prompt(fmt.Sprintf("Roll server %s back to snapshot %s? Data written since is lost. [y/N] ", id, rest[1]), false)) != "y" {
+			return errors.New("aborted")
+		}
+		var a map[string]any
+		if err := call(http.MethodPost, "/v1/servers/"+id+"/restore", map[string]any{"snapshotId": rest[1]}, &a); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "✓ restore queued (action %s)\n", a["id"])
 		return nil
 	case "delete", "rm":
 		id, err := resolveServer(rest)
