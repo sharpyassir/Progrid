@@ -88,7 +88,8 @@ what blocks money first. Items marked "fixed" were corrected in the same commit 
 14. **Backups are same cluster snapshots** with no restore path and a fake size, and they die
     with the VM. Add a restore workflow and an off host copy (Proxmox Backup Server or the Hetzner
     Storage Box) before advertising backups.
-15. **IP blocks and images have no admin API.** Only the seed inserts the documentation range.
+15. **IP blocks and images have no admin API.** Fixed: `admin/v1/ip-blocks` and `admin/v1/images`, with
+    back office pages.
 
 ## C. Blocks the managed products (build before selling each one)
 

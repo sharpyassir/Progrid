@@ -7,7 +7,7 @@ import { api } from '@/lib/api';
 
 const TABS = [
   ['/admin', 'Overview'], ['/admin/teams', 'Teams'], ['/admin/servers', 'Servers'], ['/admin/hosts', 'Hosts'],
-  ['/admin/abuse', 'Abuse'], ['/admin/support', 'Support'], ['/admin/finance', 'Finance'], ['/admin/audit', 'Audit'],
+  ['/admin/ip-blocks', 'IP blocks'], ['/admin/images', 'Images'], ['/admin/abuse', 'Abuse'], ['/admin/support', 'Support'], ['/admin/finance', 'Finance'], ['/admin/audit', 'Audit'],
 ] as const;
 
 /** Back office frame: staff only (the API also enforces the admin scope on every call). */

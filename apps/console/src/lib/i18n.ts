@@ -58,6 +58,11 @@ const en = {
   // network and storage
   firewalls: 'Firewalls', rules: 'rules', attachedServers: 'servers', newFirewall: 'Create firewall',
   snapshots: 'Snapshots', publicIps: 'Public IPs', webhooks: 'Webhooks', newWebhook: 'Add webhook', events: 'Events', url: 'URL',
+  // back office: IP blocks and images
+  admIpBlocks: 'IP blocks', admIpBlocksNote: 'Each block is split into one public IPv4 address per usable address. The network, broadcast and gateway addresses are skipped. A block with allocated addresses cannot be deleted.',
+  admCidr: 'CIDR', admGateway: 'Gateway', admFree: 'Free', admAllocated: 'Allocated', admAddBlock: 'Add block', admDeleteBlockConfirm: (cidr: string) => `Delete ${cidr} and its free addresses?`,
+  admImages: 'Images', admImagesNote: 'An image clones from a Proxmox template VMID. The template must exist on every node of the region.',
+  admSlug: 'Slug', admDistribution: 'Distribution', admVersion: 'Version', admTemplateId: 'Template VMID', admAvailable: 'Available', admHidden: 'Hidden', admAllRegions: 'All regions', admAddImage: 'Add image', admServersUsing: 'Servers', admMakeAvailable: 'Make available', admHide: 'Hide',
 };
 
 type Dict = { [K in keyof typeof en]: (typeof en)[K] };
@@ -107,6 +112,10 @@ const tr: Dict = {
   scopes: 'Yetkiler', tokenShownOnce: 'Bu tokenı şimdi kopyala. Yalnızca bir kez gösterilir.', revoke: 'İptal et',
   firewalls: 'Güvenlik duvarları', rules: 'kural', attachedServers: 'sunucu', newFirewall: 'Güvenlik duvarı oluştur',
   snapshots: 'Anlık görüntüler', publicIps: 'Genel IP’ler', webhooks: 'Webhook’lar', newWebhook: 'Webhook ekle', events: 'Olaylar', url: 'URL',
+  admIpBlocks: 'IP blokları', admIpBlocksNote: 'Her blok, kullanılabilir her adres için bir genel IPv4 adresine bölünür. Ağ, yayın ve ağ geçidi adresleri atlanır. Kullanımda adresi olan bir blok silinemez.',
+  admCidr: 'CIDR', admGateway: 'Ağ geçidi', admFree: 'Boş', admAllocated: 'Kullanımda', admAddBlock: 'Blok ekle', admDeleteBlockConfirm: (cidr) => `${cidr} ve boş adresleri silinsin mi?`,
+  admImages: 'İmajlar', admImagesNote: 'Bir imaj, Proxmox şablon VMID’sinden klonlanır. Şablon bölgedeki her düğümde bulunmalıdır.',
+  admSlug: 'Kısa ad', admDistribution: 'Dağıtım', admVersion: 'Sürüm', admTemplateId: 'Şablon VMID', admAvailable: 'Kullanılabilir', admHidden: 'Gizli', admAllRegions: 'Tüm bölgeler', admAddImage: 'İmaj ekle', admServersUsing: 'Sunucular', admMakeAvailable: 'Kullanıma aç', admHide: 'Gizle',
 };
 
 const ar: Dict = {
@@ -154,6 +163,10 @@ const ar: Dict = {
   scopes: 'الصلاحيات', tokenShownOnce: 'انسخ هذا الرمز الآن. يُعرض مرة واحدة فقط.', revoke: 'إلغاء',
   firewalls: 'جدران الحماية', rules: 'قواعد', attachedServers: 'خوادم', newFirewall: 'إنشاء جدار حماية',
   snapshots: 'اللقطات', publicIps: 'عناوين IP العامة', webhooks: 'Webhooks', newWebhook: 'إضافة webhook', events: 'الأحداث', url: 'الرابط',
+  admIpBlocks: 'نطاقات IP', admIpBlocksNote: 'كل نطاق ينقسم لعناوين IPv4 عامة، عنوان لكل عنوان صالح. نتخطى عنوان الشبكة والبث والبوابة. النطاق اللي فيه عناوين مستخدمة ما ينحذف.',
+  admCidr: 'CIDR', admGateway: 'البوابة', admFree: 'فاضية', admAllocated: 'مستخدمة', admAddBlock: 'أضف نطاق', admDeleteBlockConfirm: (cidr) => `تبي تحذف ${cidr} وعناوينه الفاضية؟`,
+  admImages: 'الصور', admImagesNote: 'الصورة تنسخ من قالب Proxmox برقم VMID، ولازم يكون القالب موجود على كل عقدة في المنطقة.',
+  admSlug: 'المعرّف', admDistribution: 'التوزيعة', admVersion: 'الإصدار', admTemplateId: 'رقم القالب VMID', admAvailable: 'متاحة', admHidden: 'مخفية', admAllRegions: 'كل المناطق', admAddImage: 'أضف صورة', admServersUsing: 'الخوادم', admMakeAvailable: 'خلّها متاحة', admHide: 'اخفها',
 };
 
 const dict: Record<Locale, Dict> = { en, tr, ar };
