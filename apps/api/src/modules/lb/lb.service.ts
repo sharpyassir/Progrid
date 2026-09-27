@@ -15,7 +15,7 @@ import { FirewallsService } from '../network/firewalls.service';
 import { IpsService } from '../network/ips.service';
 import { renderHaproxyConfig, renderKeepalivedConfig } from './haproxy';
 import { renderLbCloudInit } from './cloud-init';
-import { agentHost, vrrpPass } from '../../common/platform-agent';
+import { agentFetch, agentHost, vrrpPass } from '../../common/platform-agent';
 import { CreateCertificateDto, CreateLoadBalancerDto, TargetsDto, UpdateLoadBalancerDto } from './lb.dto';
 import { DEFAULT_HEALTH_CHECK, ForwardingRule, HealthCheck, StickySessions } from './lb.types';
 
@@ -220,7 +220,7 @@ export class LoadBalancersService {
       const peers = lb.nodeServers.filter((o) => o.id !== n.id && o.server.privateIp).map((o) => o.server.privateIp!);
       const keepalived = lb.publicIp ? renderKeepalivedConfig({ lbId: lb.id, index: n.index, vip: lb.publicIp.address, prefix: IpsService.prefixOf(lb.publicIp.block.cidr), authPass: vrrpPass(lb.vmSecret), peers }) : undefined;
       try {
-        const r = await fetch(`http://${ip}:9009/config`, { method: 'POST', headers: { 'X-Pgcloud-Secret': lb.vmSecret, 'content-type': 'application/json' }, body: JSON.stringify({ ...body, keepalived }), signal: AbortSignal.timeout(8000) });
+        const r = await agentFetch(ip, { method: 'POST', path: '/config', secret: lb.vmSecret, body: { ...body, keepalived }, timeoutMs: 8000 });
         if (r.ok) {
           applied++;
           await this.prisma.loadBalancerNode.update({ where: { id: n.id }, data: { appliedVersion: lb.configVersion, lastSeenAt: new Date() } });
@@ -249,7 +249,7 @@ export class LoadBalancersService {
         const ip = agentHost(n.server);
         if (!ip || n.server.status !== 'active') continue;
         try {
-          const r = await fetch(`http://${ip}:9009/status`, { headers: { 'X-Pgcloud-Secret': lb.vmSecret }, signal: AbortSignal.timeout(4000) }).then((x) => x.json() as Promise<{ version: number; backends: Record<string, Record<string, string>> }>);
+          const r = await agentFetch(ip, { path: '/status', secret: lb.vmSecret, timeoutMs: 4000 }).then((x) => x.json() as Promise<{ version: number; backends: Record<string, Record<string, string>> }>);
           await this.prisma.loadBalancerNode.update({ where: { id: n.id }, data: { lastSeenAt: new Date(), appliedVersion: r.version } });
           for (const servers of Object.values(r.backends ?? {})) for (const [name, status] of Object.entries(servers)) {
             const sid = name.replace(/^srv_/, '');

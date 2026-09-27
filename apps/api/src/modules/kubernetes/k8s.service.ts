@@ -17,7 +17,7 @@ import { VolumesService } from '../storage/volumes.service';
 import { OBJECT_STORAGE_PROVIDER, ObjectStorageProvider, emptyAndDeleteBucket } from '../storage/objects/objects.provider';
 import { renderKubeCloudInit } from './cloud-init';
 import { loadConfig } from '../../config/config';
-import { agentHost, vipNetworkFor, vrrpPass } from '../../common/platform-agent';
+import { agentFetch, agentHost, vipNetworkFor, vrrpPass } from '../../common/platform-agent';
 import { CreateClusterDto, DEFAULT_CONTROL_SIZE, KUBE_VERSIONS, MAX_POOLS, NodePoolDto, ScalePoolDto, UpdateClusterDto } from './k8s.dto';
 
 const NODE_IMAGE = 'ubuntu-24-04';
@@ -253,7 +253,7 @@ export class KubernetesService {
       }
       const body = this.configFor(c, n);
       try {
-        const r = await fetch(`http://${ip}:9009/config`, { method: 'POST', headers: { 'X-Pgcloud-Secret': c.vmSecret, 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(20 * 60_000) });
+        const r = await agentFetch(ip, { method: 'POST', path: '/config', secret: c.vmSecret, body, timeoutMs: 20 * 60_000 });
         if (r.ok) {
           applied++;
           await this.prisma.kubeNode.update({ where: { id: n.id }, data: { appliedVersion: c.configVersion, lastSeenAt: new Date() } });
@@ -443,7 +443,7 @@ export class KubernetesService {
   private async fetchStatus(c: { vmSecret: string }, n: { server: { id: string; name: string; privateIp: string | null; publicIps: { address: string }[]; status: string } }): Promise<NodeStatus | null> {
     const ip = agentHost(n.server);
     if (!ip || n.server.status !== 'active') return null;
-    const r = await fetch(`http://${ip}:9009/status`, { headers: { 'X-Pgcloud-Secret': c.vmSecret }, signal: AbortSignal.timeout(8000) });
+    const r = await agentFetch(ip, { path: '/status', secret: c.vmSecret, timeoutMs: 8000 });
     if (!r.ok) return null;
     return (await r.json()) as NodeStatus;
   }
@@ -454,7 +454,7 @@ export class KubernetesService {
     const node0 = c.nodes.find((n) => n.role === 'control' && n.index === 0);
     const ip = node0 && node0.server.status === 'active' ? agentHost(node0.server) : null;
     if (!ip) throw ApiError.invalidState('The first control plane node is not reachable; try again in a minute');
-    const r = await fetch(`http://${ip}:9009/join-token`, { method: 'POST', headers: { 'X-Pgcloud-Secret': c.vmSecret }, signal: AbortSignal.timeout(30_000) }).catch(() => null);
+    const r = await agentFetch(ip, { method: 'POST', path: '/join-token', secret: c.vmSecret, timeoutMs: 30_000 }).catch(() => null);
     const token = r?.ok ? ((await r.json()) as { token?: string }).token : undefined;
     if (!token || !/^[a-z0-9]{6}\.[a-z0-9]{16}$/.test(token)) throw ApiError.invalidState('The control plane could not issue a join token; try again in a minute');
     await this.prisma.kubeCluster.update({ where: { id: c.id }, data: { joinToken: token } });

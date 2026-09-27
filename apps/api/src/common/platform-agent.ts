@@ -113,3 +113,36 @@ export function agentHost(s: { id?: string; name?: string; privateIp?: string | 
   }
   return pub;
 }
+
+/** One request to a platform agent on :9009. Every agent checks the shared secret in X-Pgcloud-Secret. */
+export interface AgentRequest {
+  method?: 'GET' | 'POST';
+  /** Path with query string, e.g. "/status" or "/logs?app=…". */
+  path: string;
+  secret: string;
+  /** JSON body for POST. */
+  body?: unknown;
+  timeoutMs: number;
+}
+
+/** Something that answers agent requests in place of HTTP (the simulator used with the fake driver). */
+export type AgentTransport = (host: string, req: AgentRequest) => Promise<Response>;
+
+let transport: AgentTransport | null = null;
+
+/** Routes every agent call through `t` instead of HTTP; null restores HTTP. Only the fake driver sets this. */
+export function setAgentTransport(t: AgentTransport | null) {
+  transport = t;
+}
+
+/** Calls a platform agent. All callers go through here so the fake driver can stand in for the VMs. */
+export function agentFetch(host: string, req: AgentRequest): Promise<Response> {
+  if (transport) return transport(host, req);
+  const hasBody = req.body !== undefined;
+  return fetch(`http://${host}:9009${req.path}`, {
+    method: req.method ?? 'GET',
+    headers: { 'X-Pgcloud-Secret': req.secret, ...(hasBody ? { 'content-type': 'application/json' } : {}) },
+    body: hasBody ? JSON.stringify(req.body) : undefined,
+    signal: AbortSignal.timeout(req.timeoutMs),
+  });
+}
