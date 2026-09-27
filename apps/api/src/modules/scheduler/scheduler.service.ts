@@ -72,7 +72,11 @@ export class SchedulerService {
     });
   }
 
-  /** Subscribes to host heartbeats; authoritative capacity comes from the agent. */
+  /**
+   * Subscribes to host heartbeats; authoritative capacity comes from the agent. A heartbeat
+   * brings a host that was marked down back to active, but never overrides a status an admin
+   * set (draining, maintenance).
+   */
   listenHeartbeats() {
     this.nats.subscribe<Heartbeat>(Subjects.hostHeartbeat, async (hb) => {
       await this.prisma.host.update({
@@ -85,9 +89,9 @@ export class SchedulerService {
           usedMemoryMb: hb.usedMemoryMb,
           usedDiskGb: hb.usedDiskGb,
           lastHeartbeatAt: new Date(hb.at),
-          status: 'active',
         },
       }).catch((e) => this.log.warn(`heartbeat for unknown host ${hb.hostId}: ${e.message}`));
+      await this.prisma.host.updateMany({ where: { id: hb.hostId, status: 'down' }, data: { status: 'active' } });
     });
   }
 
