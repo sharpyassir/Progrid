@@ -12,9 +12,10 @@ locally is in the repository README.
 
 `pnpm test:integration` drives the public HTTP API end to end: accounts, sessions and API
 tokens, the prepaid gate and card top ups, servers (power, resize, snapshots, restore,
-volumes, moving public addresses), load balancers, one and three node Postgres, Valkey and
-MySQL, Kubernetes, App Platform and Git Deploy, hourly rating, the monthly invoice, dunning,
-and limited staff with two factor sign in. The suite lives in `test/integration` and has its
+volumes, moving public addresses), load balancers, one and three node Postgres (with
+failover), Valkey and MySQL, Kubernetes (scaling, the cloud controller), App Platform (custom
+domains, host failure) and Git Deploy, hourly rating, the monthly invoice, dunning, and limited
+staff with two factor sign in. The suite lives in `test/integration` and has its
 own vitest config, so `pnpm test` stays fast.
 
 It boots the API and a Temporal worker with the real workflows and activities in the test

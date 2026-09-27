@@ -153,14 +153,15 @@ what blocks money first. Items marked "fixed" were corrected in the same commit 
     (`apps/api/test/integration`, `pnpm test:integration`, the `integration` job in CI) boots the
     API and the Temporal worker with the real workflows against Postgres, Redis and Temporal, and
     covers signup, sessions, scoped API tokens, the prepaid gate and card top ups, servers,
-    snapshots, volumes and public addresses, load balancers, one and three node Postgres,
-    Valkey, MySQL, Kubernetes with scaling and join tokens, App Platform with custom domains, Git
-    Deploy, rating, invoices with VAT, dunning and reinstatement, and limited staff with two
-    factor sign in. It found and fixed two bugs (a scaled up Kubernetes node drained under a
-    reused name, and the system actor breaking the audit log on the first app host). Still
-    missing: the Proxmox driver and the host agent against a real node, the real Python agents
-    (the simulator follows their code but does not run it), Moyasar, PowerDNS and RGW, and the
-    console.
+    snapshots, volumes and public addresses, load balancers, one and three node Postgres with
+    failover, Valkey, MySQL, Kubernetes with scaling, join tokens and the cloud controller, App
+    Platform with custom domains and host failure, Git Deploy, rating, invoices with VAT,
+    dunning and reinstatement, and limited staff with two factor sign in. It found and fixed
+    four bugs: a scaled up Kubernetes node drained under a reused name, the volume of a deleted
+    claim never released, a dead Postgres primary kept as primary after failover, and the
+    system actor breaking the audit log on the first app host. Still missing: the Proxmox
+    driver and the host agent against a real node, the real Python agents (the simulator
+    follows their code but does not run it), Moyasar, PowerDNS and RGW, and the console.
 
 ## E. Claims to correct on the website until built
 
