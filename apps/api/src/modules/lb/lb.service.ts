@@ -14,11 +14,14 @@ import { FirewallsService } from '../network/firewalls.service';
 import { IpsService } from '../network/ips.service';
 import { renderHaproxyConfig, renderKeepalivedConfig } from './haproxy';
 import { renderLbCloudInit } from './cloud-init';
+import { agentHost, vrrpPass } from '../../common/platform-agent';
 import { CreateCertificateDto, CreateLoadBalancerDto, TargetsDto, UpdateLoadBalancerDto } from './lb.dto';
 import { DEFAULT_HEALTH_CHECK, ForwardingRule, HealthCheck, StickySessions } from './lb.types';
 
 const NODE_SIZE = 's-1vcpu-2gb';
 const NODE_IMAGE = 'ubuntu-24-04';
+/** Project networks; VRRP between the nodes runs over it. */
+const PRIVATE_NET = '10.0.0.0/8';
 
 const lbInclude = {
   publicIp: { select: { address: true } },
@@ -72,7 +75,7 @@ export class LoadBalancersService {
     await this.spend.assertCanSpend(actor, project.id, (await this.spend.monthlyPriceMinor('load_balancer', 'lb_node', team.currency)) * nodes);
 
     const vip = await this.ips.reserve(region.id, project.id);
-    const fw = await this.firewalls.create(actor, project.id, { name: `lb-${dto.name}`, rules: firewallRules(rules) });
+    const fw = await this.firewalls.create(actor, project.id, { name: `lb-${dto.name}`, rules: firewallRules(rules, nodes) });
     const lb = await this.prisma.loadBalancer.create({
       data: {
         projectId: project.id, regionId: region.id, name: dto.name, nodes, algorithm: dto.algorithm ?? 'round_robin',
@@ -88,8 +91,8 @@ export class LoadBalancersService {
     for (let i = 0; i < nodes; i++) {
       const s = await this.servers.create(actor, {
         name: `lb-${dto.name}-${i}`, size: NODE_SIZE, image: NODE_IMAGE, project: project.id, region: region.id, firewalls: [fw.id], tags: ['load-balancer'],
-        userData: renderLbCloudInit({ vmSecret: lb.vmSecret, keepalived: renderKeepalivedConfig({ lbId: lb.id, index: i, vip: lb.publicIp!.address, prefix: IpsService.prefixOf(lb.publicIp!.block.cidr) }) }),
-      });
+        userData: renderLbCloudInit({ vmSecret: lb.vmSecret, vipNetwork: 'public' }),
+      }, { spreadGroup: `lb:${lb.id}` });
       await this.prisma.server.update({ where: { id: s.id }, data: { managedBy: `lb:${lb.id}` } });
       await this.prisma.loadBalancerNode.create({ data: { loadBalancerId: lb.id, serverId: s.id, index: i } });
     }
@@ -114,7 +117,7 @@ export class LoadBalancersService {
         status: 'updating', statusMessage: null, configVersion: { increment: 1 },
       },
     });
-    if (dto.forwardingRules && lb.firewallId) await this.firewalls.replaceRules(actor, lb.projectId, lb.firewallId, firewallRules(rules)).catch((err) => this.log.warn(`firewall update for ${id} failed: ${(err as Error).message}`));
+    if (dto.forwardingRules && lb.firewallId) await this.firewalls.replaceRules(actor, lb.projectId, lb.firewallId, firewallRules(rules, lb.nodes)).catch((err) => this.log.warn(`firewall update for ${id} failed: ${(err as Error).message}`));
     await this.pushLater(id, actor);
     return present(await this.prisma.loadBalancer.findUniqueOrThrow({ where: { id }, include: lbInclude }));
   }
@@ -189,7 +192,7 @@ export class LoadBalancersService {
 
   /** Renders and POSTs the config to every node. Returns how many nodes accepted it. */
   async pushConfig(id: string): Promise<{ applied: number; nodes: number; version: number }> {
-    const lb = await this.prisma.loadBalancer.findUnique({ where: { id }, include: lbInclude });
+    const lb = await this.prisma.loadBalancer.findUnique({ where: { id }, include: { ...lbInclude, publicIp: { select: { address: true, block: { select: { cidr: true } } } } } });
     if (!lb || lb.deletedAt) return { applied: 0, nodes: 0, version: 0 };
     const targets = await this.effectiveTargets(lb);
     const rules = lb.forwardingRules as unknown as ForwardingRule[];
@@ -208,10 +211,13 @@ export class LoadBalancersService {
     };
     let applied = 0;
     for (const n of lb.nodeServers) {
-      const ip = n.server.publicIps[0]?.address;
+      const ip = agentHost(n.server);
       if (!ip || n.server.status !== 'active') continue;
+      // keepalived per node: its priority and the other nodes' private addresses for unicast VRRP.
+      const peers = lb.nodeServers.filter((o) => o.id !== n.id && o.server.privateIp).map((o) => o.server.privateIp!);
+      const keepalived = lb.publicIp ? renderKeepalivedConfig({ lbId: lb.id, index: n.index, vip: lb.publicIp.address, prefix: IpsService.prefixOf(lb.publicIp.block.cidr), authPass: vrrpPass(lb.vmSecret), peers }) : undefined;
       try {
-        const r = await fetch(`http://${ip}:9009/config`, { method: 'POST', headers: { 'X-Pgcloud-Secret': lb.vmSecret, 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(8000) });
+        const r = await fetch(`http://${ip}:9009/config`, { method: 'POST', headers: { 'X-Pgcloud-Secret': lb.vmSecret, 'content-type': 'application/json' }, body: JSON.stringify({ ...body, keepalived }), signal: AbortSignal.timeout(8000) });
         if (r.ok) {
           applied++;
           await this.prisma.loadBalancerNode.update({ where: { id: n.id }, data: { appliedVersion: lb.configVersion, lastSeenAt: new Date() } });
@@ -237,10 +243,10 @@ export class LoadBalancersService {
       if (stale) await this.pushConfig(lb.id).catch((err) => this.log.warn(`push for ${lb.id}: ${(err as Error).message}`));
       const health = new Map<string, boolean>();
       for (const n of lb.nodeServers) {
-        const ip = n.server.publicIps[0]?.address;
+        const ip = agentHost(n.server);
         if (!ip || n.server.status !== 'active') continue;
         try {
-          const r = await fetch(`http://${ip}:9009/status`, { signal: AbortSignal.timeout(4000) }).then((x) => x.json() as Promise<{ version: number; backends: Record<string, Record<string, string>> }>);
+          const r = await fetch(`http://${ip}:9009/status`, { headers: { 'X-Pgcloud-Secret': lb.vmSecret }, signal: AbortSignal.timeout(4000) }).then((x) => x.json() as Promise<{ version: number; backends: Record<string, Record<string, string>> }>);
           await this.prisma.loadBalancerNode.update({ where: { id: n.id }, data: { lastSeenAt: new Date(), appliedVersion: r.version } });
           for (const servers of Object.values(r.backends ?? {})) for (const [name, status] of Object.entries(servers)) {
             const sid = name.replace(/^srv_/, '');
@@ -328,11 +334,13 @@ export class LoadBalancersService {
   }
 }
 
-function firewallRules(rules: ForwardingRule[]) {
+function firewallRules(rules: ForwardingRule[], nodes: number) {
+  const cp = loadConfig().CONTROL_PLANE_CIDR;
   return [
-    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '22', cidrs: ['0.0.0.0/0'] },
+    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '22', cidrs: [cp], description: 'platform ssh' },
     ...rules.map((r) => ({ direction: 'inbound' as const, protocol: 'tcp' as const, ports: String(r.entryPort), cidrs: ['0.0.0.0/0', '::/0'] })),
-    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '9009', cidrs: [process.env.CONTROL_PLANE_CIDR ?? '0.0.0.0/0'], description: 'pgcloud load balancer agent' },
+    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '9009', cidrs: [cp], description: 'pgcloud load balancer agent' },
+    ...(nodes > 1 ? [{ direction: 'inbound' as const, protocol: 'vrrp' as const, cidrs: [PRIVATE_NET], description: 'keepalived between load balancer nodes' }] : []),
     { direction: 'outbound' as const, protocol: 'any' as const, cidrs: ['0.0.0.0/0'] },
   ];
 }

@@ -1,3 +1,5 @@
+import { agentNetPy } from '../../common/platform-agent';
+
 /**
  * cloud-init for a managed database node. Installs the engine, its HA tooling and
  * `pgcloud-dbd`: an HTTP agent on :9009 that receives the whole node configuration from
@@ -9,6 +11,12 @@
 export interface DbNodeInit {
   engine: 'postgres' | 'valkey' | 'mysql';
   vmSecret: string;
+  /**
+   * Network the cluster VIP lives on: private for a private address, public for the public
+   * address customers connect to today (see vipNetworkFor). VRRP itself always runs over the
+   * private network.
+   */
+  vipNetwork: 'public' | 'private';
 }
 
 const PACKAGES: Record<DbNodeInit['engine'], string> = {
@@ -31,6 +39,8 @@ write_files:
     content: '${d.vmSecret}'
   - path: /opt/pgcloud/engine
     content: '${d.engine}'
+  - path: /opt/pgcloud/vip.network
+    content: '${d.vipNetwork}'
   - path: /opt/pgcloud/dbd.py
     permissions: '0755'
     content: |
@@ -41,6 +51,8 @@ write_files:
       ENGINE = open('/opt/pgcloud/engine').read().strip()
       STATE = '/opt/pgcloud/db.json'
       lock = threading.Lock()
+
+${agentNetPy(6)}
 
       def state():
           try: return json.load(open(STATE))
@@ -165,7 +177,13 @@ write_files:
           return len(body)
 
       def keepalived(c, me, check):
-          write('/etc/keepalived/keepalived.conf', "vrrp_script chk_primary {\\n  script \\"%s\\"\\n  interval 2\\n  fall 2\\n  rise 2\\n}\\nvrrp_instance VI_db {\\n  state BACKUP\\n  interface eth0\\n  virtual_router_id %d\\n  priority %d\\n  advert_int 1\\n  nopreempt\\n  authentication { auth_type PASS auth_pass pgclouddb }\\n  virtual_ipaddress { %s/%d }\\n  track_script { chk_primary }\\n}\\n" % (check, c['cluster']['vrid'], 100 - me['index'], c['cluster']['vip'], c['cluster']['prefix']))
+          # VRRP runs unicast between the nodes over the private network; the VIP sits on the
+          # interface named by /opt/pgcloud/vip.network.
+          peers = [n['ip'] for n in c['cluster']['nodes'] if not n['isSelf']]
+          uni = ("  unicast_src_ip %s\\n  unicast_peer { %s }\\n" % (private_ipv4() or me['ip'], ' '.join(peers))) if peers else ''
+          text = "vrrp_script chk_primary {\\n  script \\"%s\\"\\n  interval 2\\n  fall 2\\n  rise 2\\n}\\nvrrp_instance VI_db {\\n  state BACKUP\\n  interface %s\\n  virtual_router_id %d\\n  priority %d\\n  advert_int 1\\n  nopreempt\\n%s  authentication { auth_type PASS auth_pass %s }\\n  virtual_ipaddress { %s/%d dev %s }\\n  track_script { chk_primary }\\n}\\n" % (check, private_iface() or 'eth0', c['cluster']['vrid'], 100 - me['index'], uni, c['cluster']['vrrpPass'], c['cluster']['vip'], c['cluster']['prefix'], vip_iface())
+          if os.path.exists('/etc/keepalived/keepalived.conf') and open('/etc/keepalived/keepalived.conf').read() == text: return
+          write('/etc/keepalived/keepalived.conf', text)
           sh('systemctl enable --now keepalived && systemctl restart keepalived', check=False)
 
       # ---- valkey: replication plus sentinel on three nodes, ACL users, RDB backups ----
@@ -270,6 +288,7 @@ write_files:
       class H(http.server.BaseHTTPRequestHandler):
           def log_message(self, *a): pass
           def do_GET(self):
+              if self.headers.get('X-Pgcloud-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
               if self.path != '/status': return self._send(404, {})
               st = state()
               self._send(200, {'version': st.get('version', 0), 'engine': ENGINE, 'backups': st.get('backups', []), **STATUS[ENGINE]()})
@@ -293,7 +312,7 @@ write_files:
               self._send(404, {})
           def _send(self, code, body):
               b = json.dumps(body).encode(); self.send_response(code); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
-      http.server.ThreadingHTTPServer(('0.0.0.0', 9009), H).serve_forever()
+      http.server.ThreadingHTTPServer((bind_address(), 9009), H).serve_forever()
   - path: /etc/systemd/system/pgcloud-dbd.service
     content: |
       [Unit]

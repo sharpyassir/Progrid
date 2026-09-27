@@ -15,6 +15,7 @@ import { FirewallsService } from '../network/firewalls.service';
 import { IpsService } from '../network/ips.service';
 import { OBJECT_STORAGE_PROVIDER, ObjectStorageProvider } from '../storage/objects/objects.provider';
 import { renderDbCloudInit } from './cloud-init';
+import { agentHost, vipNetworkFor, vrrpPass } from '../../common/platform-agent';
 import { CreateDatabaseDto, DbNameDto, ENGINE_PORTS, ENGINE_VERSIONS, UpdateDatabaseDto } from './db.dto';
 
 const NODE_IMAGE = 'ubuntu-24-04';
@@ -85,7 +86,7 @@ export class DatabasesService {
 
     const vip = await this.ips.reserve(region.id, project.id);
     const port = ENGINE_PORTS[dto.engine];
-    const fw = await this.firewalls.create(actor, project.id, { name: `db-${dto.name}`, rules: firewallRules(dto.engine, port, trusted) });
+    const fw = await this.firewalls.create(actor, project.id, { name: `db-${dto.name}`, rules: firewallRules(dto.engine, port, trusted, nodes) });
     const vmSecret = randomBytes(24).toString('base64url');
     const cluster = await this.prisma.dbCluster.create({
       data: {
@@ -106,7 +107,7 @@ export class DatabasesService {
       this.log.warn(`backup bucket for ${cluster.id} not ready: ${(err as Error).message}`);
     }
     for (let i = 0; i < nodes; i++) {
-      const s = await this.servers.create(actor, { name: `db-${dto.name}-${i}`, size: size.id, image: NODE_IMAGE, project: project.id, region: region.id, firewalls: [fw.id], tags: ['managed-database'], userData: renderDbCloudInit({ engine: dto.engine, vmSecret }) });
+      const s = await this.servers.create(actor, { name: `db-${dto.name}-${i}`, size: size.id, image: NODE_IMAGE, project: project.id, region: region.id, firewalls: [fw.id], tags: ['managed-database'], userData: renderDbCloudInit({ engine: dto.engine, vmSecret, vipNetwork: vipNetworkFor(vip.address) }) }, { spreadGroup: `db:${cluster.id}` });
       await this.prisma.server.update({ where: { id: s.id }, data: { managedBy: `db:${cluster.id}` } });
       await this.prisma.dbNode.create({ data: { clusterId: cluster.id, serverId: s.id, index: i } });
     }
@@ -120,7 +121,7 @@ export class DatabasesService {
     if (!['active', 'updating', 'failed'].includes(c.status)) throw ApiError.invalidState(`Database is ${c.status}; wait for it to settle`);
     const trusted = dto.trustedSources !== undefined ? validateCidrs(dto.trustedSources) : undefined;
     await this.prisma.dbCluster.update({ where: { id }, data: { trustedSources: trusted, backupHourUtc: dto.backupHourUtc, status: 'updating', statusMessage: null, configVersion: { increment: 1 } } });
-    if (trusted && c.firewallId) await this.firewalls.replaceRules(actor, c.projectId, c.firewallId, firewallRules(c.engine, c.port, trusted)).catch((err) => this.log.warn(`firewall update for ${id}: ${(err as Error).message}`));
+    if (trusted && c.firewallId) await this.firewalls.replaceRules(actor, c.projectId, c.firewallId, firewallRules(c.engine, c.port, trusted, c.nodes)).catch((err) => this.log.warn(`firewall update for ${id}: ${(err as Error).message}`));
     await this.pushLater(id, actor);
     return this.get(actor, id, project);
   }
@@ -197,7 +198,7 @@ export class DatabasesService {
     if (await this.prisma.dbBackup.findFirst({ where: { clusterId: id, status: 'running', startedAt: { gt: new Date(Date.now() - 6 * 3600_000) } } })) throw ApiError.invalidState('A backup is already running');
     const b = await this.prisma.dbBackup.create({ data: { clusterId: id, kind, label: `${kind}-${new Date().toISOString().slice(0, 16)}` } });
     const primary = c.nodeServers.find((n) => n.role === 'primary') ?? c.nodeServers[0];
-    const ip = primary?.server.publicIps[0]?.address;
+    const ip = primary ? agentHost(primary.server) : null;
     if (!ip) return { id: b.id, status: 'running' };
     try {
       const r = await fetch(`http://${ip}:9009/backup`, { method: 'POST', headers: { 'X-Pgcloud-Secret': c.vmSecret, 'content-type': 'application/json' }, body: JSON.stringify({ id: b.id }), signal: AbortSignal.timeout(8000) });
@@ -220,12 +221,12 @@ export class DatabasesService {
     const nodes = c.nodeServers.map((n) => ({ index: n.index, name: `${c.name}-${n.index}`, ip: n.server.privateIp ?? n.server.publicIps[0]?.address ?? '127.0.0.1' }));
     let applied = 0;
     for (const n of c.nodeServers) {
-      const ip = n.server.publicIps[0]?.address;
+      const ip = agentHost(n.server);
       if (!ip || n.server.status !== 'active') continue;
       const body = {
         version: c.configVersion,
         engine: c.engine,
-        cluster: { name: `db-${c.name}-${c.id.slice(-6)}`, vrid: (hash(c.id) % 254) + 1, vip: c.publicIp?.address, prefix: c.publicIp ? IpsService.prefixOf(c.publicIp.block.cidr) : 24, nodes: nodes.map((x) => ({ ...x, isSelf: x.index === n.index })) },
+        cluster: { name: `db-${c.name}-${c.id.slice(-6)}`, vrid: (hash(c.id) % 254) + 1, vrrpPass: vrrpPass(c.vmSecret), vip: c.publicIp?.address, prefix: c.publicIp ? IpsService.prefixOf(c.publicIp.block.cidr) : 24, nodes: nodes.map((x) => ({ ...x, isSelf: x.index === n.index })) },
         admin: { user: c.adminUser, password: c.adminPassword },
         replicationPassword: c.vmSecret,
         users: c.users.map((u) => ({ name: u.name, password: u.password })),
@@ -260,10 +261,10 @@ export class DatabasesService {
       const previousPrimary = c.nodeServers.find((n) => n.role === 'primary')?.index;
       let newPrimary: number | undefined;
       for (const n of c.nodeServers) {
-        const ip = n.server.publicIps[0]?.address;
+        const ip = agentHost(n.server);
         if (!ip || n.server.status !== 'active') continue;
         try {
-          const r = await fetch(`http://${ip}:9009/status`, { signal: AbortSignal.timeout(4000) }).then((x) => x.json() as Promise<{ version: number; role: string; lagBytes: number | null; backups: { id: string; status: string; sizeBytes?: number; completedAt?: number; error?: string | null }[] }>);
+          const r = await fetch(`http://${ip}:9009/status`, { headers: { 'X-Pgcloud-Secret': c.vmSecret }, signal: AbortSignal.timeout(4000) }).then((x) => x.json() as Promise<{ version: number; role: string; lagBytes: number | null; backups: { id: string; status: string; sizeBytes?: number; completedAt?: number; error?: string | null }[] }>);
           await this.prisma.dbNode.update({ where: { id: n.id }, data: { role: r.role, lagBytes: r.lagBytes ?? null, lastSeenAt: new Date(), appliedVersion: r.version } });
           if (r.role === 'primary') newPrimary = n.index;
           for (const b of r.backups ?? []) {
@@ -346,17 +347,19 @@ export class DatabasesService {
   }
 }
 
-function firewallRules(engine: 'postgres' | 'valkey' | 'mysql', port: number, trusted: string[]) {
+function firewallRules(engine: 'postgres' | 'valkey' | 'mysql', port: number, trusted: string[], nodes: number) {
   const cidrs = trusted.length ? trusted : ['0.0.0.0/0', '::/0'];
+  const cp = loadConfig().CONTROL_PLANE_CIDR;
   const internal: Record<string, [string, string][]> = { postgres: [['2379-2380', 'cluster consensus'], ['8008', 'cluster api'], ['6432', 'pooler']], valkey: [['26379', 'sentinel'], ['6380', 'tls replication']], mysql: [] };
   return [
-    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '22', cidrs: [process.env.CONTROL_PLANE_CIDR ?? '0.0.0.0/0'], description: 'platform ssh' },
+    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '22', cidrs: [cp], description: 'platform ssh' },
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: String(port), cidrs },
     ...(engine === 'postgres' ? [{ direction: 'inbound' as const, protocol: 'tcp' as const, ports: '6432', cidrs, description: 'connection pooler' }] : []),
     ...(engine === 'valkey' ? [{ direction: 'inbound' as const, protocol: 'tcp' as const, ports: '6380', cidrs, description: 'tls port' }] : []),
     ...internal[engine].map(([ports, description]) => ({ direction: 'inbound' as const, protocol: 'tcp' as const, ports, cidrs: [PRIVATE_NET], description })),
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: String(port), cidrs: [PRIVATE_NET], description: 'replication' },
-    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '9009', cidrs: [process.env.CONTROL_PLANE_CIDR ?? '0.0.0.0/0'], description: 'pgcloud database agent' },
+    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '9009', cidrs: [cp], description: 'pgcloud database agent' },
+    ...(nodes > 1 ? [{ direction: 'inbound' as const, protocol: 'vrrp' as const, cidrs: [PRIVATE_NET], description: 'keepalived between database nodes' }] : []),
     { direction: 'outbound' as const, protocol: 'any' as const, cidrs: ['0.0.0.0/0'] },
   ];
 }

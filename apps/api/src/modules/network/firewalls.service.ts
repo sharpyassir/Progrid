@@ -102,6 +102,7 @@ export class FirewallsService {
 }
 
 function toRow(r: FirewallRuleDto) {
+  if (r.ports && !['tcp', 'udp'].includes(r.protocol)) throw ApiError.invalid(`Ports apply to tcp and udp rules only, not ${r.protocol}`);
   return {
     direction: r.direction,
     protocol: r.protocol,

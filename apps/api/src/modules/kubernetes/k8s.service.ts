@@ -14,6 +14,8 @@ import { IpsService } from '../network/ips.service';
 import { LoadBalancersService } from '../lb/lb.service';
 import { VolumesService } from '../storage/volumes.service';
 import { renderKubeCloudInit } from './cloud-init';
+import { loadConfig } from '../../config/config';
+import { agentHost, vipNetworkFor, vrrpPass } from '../../common/platform-agent';
 import { CreateClusterDto, DEFAULT_CONTROL_SIZE, KUBE_VERSIONS, MAX_POOLS, NodePoolDto, ScalePoolDto, UpdateClusterDto } from './k8s.dto';
 
 const NODE_IMAGE = 'ubuntu-24-04';
@@ -119,7 +121,7 @@ export class KubernetesService {
     if (freeIps < control + workers + 1) throw ApiError.quota('Not enough public addresses in the region for this cluster right now');
 
     const vip = await this.ips.reserve(region.id, project.id);
-    const fw = await this.firewalls.create(actor, project.id, { name: `k8s-${dto.name}`, rules: firewallRules() });
+    const fw = await this.firewalls.create(actor, project.id, { name: `k8s-${dto.name}`, rules: firewallRules(!!dto.ha) });
     const version = dto.version ?? KUBE_VERSIONS[0];
     const cluster = await this.prisma.kubeCluster.create({
       data: {
@@ -222,7 +224,7 @@ export class KubernetesService {
     const ordered = [...c.nodes].sort((a, b) => (a.role === b.role ? a.index - b.index : a.role === 'control' ? -1 : 1));
     let applied = 0;
     for (const n of ordered) {
-      const ip = n.server.publicIps[0]?.address;
+      const ip = agentHost(n.server);
       if (!ip || n.server.status !== 'active') continue;
       if (!c.caHash && !(n.role === 'control' && n.index === 0)) {
         // Learn the CA hash from node 0 before asking anyone to join.
@@ -407,7 +409,7 @@ export class KubernetesService {
     return {
       version: c.configVersion,
       kubeVersion: c.version,
-      cluster: { name: `k8s-${c.name}-${c.id.slice(-6)}`, vip, prefix: c.publicIp ? IpsService.prefixOf(c.publicIp.block.cidr) : 24, vrid: (hash(c.id) % 254) + 1, endpoint: `${vip}:${API_PORT}`, nodes },
+      cluster: { name: `k8s-${c.name}-${c.id.slice(-6)}`, vip, vrrpPass: vrrpPass(c.vmSecret), prefix: c.publicIp ? IpsService.prefixOf(c.publicIp.block.cidr) : 24, vrid: (hash(c.id) % 254) + 1, endpoint: `${vip}:${API_PORT}`, nodes },
       joinToken: c.joinToken, certKey: c.certKey, caHash: c.caHash, podCidr: c.podCidr, serviceCidr: c.serviceCidr,
       services: Object.fromEntries(Object.entries(state.services ?? {}).map(([k, v]) => [k, { ip: v.ip ?? null }])),
       volumes: volumesHere,
@@ -417,8 +419,8 @@ export class KubernetesService {
     };
   }
 
-  private async fetchStatus(c: { vmSecret: string }, n: { server: { publicIps: { address: string }[]; status: string } }): Promise<NodeStatus | null> {
-    const ip = n.server.publicIps[0]?.address;
+  private async fetchStatus(c: { vmSecret: string }, n: { server: { id: string; name: string; privateIp: string | null; publicIps: { address: string }[]; status: string } }): Promise<NodeStatus | null> {
+    const ip = agentHost(n.server);
     if (!ip || n.server.status !== 'active') return null;
     const r = await fetch(`http://${ip}:9009/status`, { headers: { 'X-Pgcloud-Secret': c.vmSecret }, signal: AbortSignal.timeout(8000) });
     if (!r.ok) return null;
@@ -428,7 +430,10 @@ export class KubernetesService {
   // ---- helpers ----
 
   private async addNode(actor: Actor, clusterId: string, n: { name: string; role: 'control' | 'worker'; index: number; poolId?: string; sizeId: string; projectId: string; regionId: string; firewallId: string; version: string; vmSecret: string }) {
-    const s = await this.servers.create(actor, { name: n.name, size: n.sizeId, image: NODE_IMAGE, project: n.projectId, region: n.regionId, firewalls: [n.firewallId], tags: ['managed-kubernetes', n.role === 'control' ? 'control-plane' : 'worker', `k8s-${clusterId}`], userData: renderKubeCloudInit({ version: n.version, vmSecret: n.vmSecret }) });
+    const vip = await this.prisma.kubeCluster.findUnique({ where: { id: clusterId }, select: { publicIp: { select: { address: true } } } });
+    // Control plane nodes spread across hosts, and so do the workers of each pool.
+    const spreadGroup = n.role === 'control' ? `k8s:${clusterId}:control` : `k8s:${clusterId}:pool:${n.poolId}`;
+    const s = await this.servers.create(actor, { name: n.name, size: n.sizeId, image: NODE_IMAGE, project: n.projectId, region: n.regionId, firewalls: [n.firewallId], tags: ['managed-kubernetes', n.role === 'control' ? 'control-plane' : 'worker', `k8s-${clusterId}`], userData: renderKubeCloudInit({ version: n.version, vmSecret: n.vmSecret, vipNetwork: vipNetworkFor(vip?.publicIp?.address) }) }, { spreadGroup });
     await this.prisma.server.update({ where: { id: s.id }, data: { managedBy: `k8s:${clusterId}` } });
     await this.prisma.kubeNode.create({ data: { clusterId, poolId: n.poolId, serverId: s.id, index: n.index, role: n.role } });
   }
@@ -516,8 +521,8 @@ export class KubernetesService {
   }
 }
 
-function firewallRules() {
-  const cp = process.env.CONTROL_PLANE_CIDR ?? '0.0.0.0/0';
+function firewallRules(ha: boolean) {
+  const cp = loadConfig().CONTROL_PLANE_CIDR;
   return [
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '22', cidrs: [cp], description: 'platform ssh' },
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: String(API_PORT), cidrs: ['0.0.0.0/0', '::/0'], description: 'kubernetes api' },
@@ -527,6 +532,7 @@ function firewallRules() {
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '10250-10260', cidrs: [PRIVATE_NET], description: 'kubelet and controllers' },
     { direction: 'inbound' as const, protocol: 'udp' as const, ports: '8472', cidrs: [PRIVATE_NET], description: 'flannel vxlan' },
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '9009', cidrs: [cp], description: 'pgcloud node agent' },
+    ...(ha ? [{ direction: 'inbound' as const, protocol: 'vrrp' as const, cidrs: [PRIVATE_NET], description: 'keepalived between control plane nodes' }] : []),
     { direction: 'outbound' as const, protocol: 'any' as const, cidrs: ['0.0.0.0/0'] },
   ];
 }

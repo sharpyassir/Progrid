@@ -295,7 +295,9 @@ func (c *Client) SetFirewall(ctx context.Context, vmid int, rules []FWRule) erro
 		if r.Proto != "" && r.Proto != "any" {
 			f.Set("proto", r.Proto)
 		}
-		if r.Dport != "" {
+		// Ports only mean something for tcp and udp; Proxmox rejects dport on other
+		// protocols such as icmp or vrrp (IP protocol 112, used by keepalived).
+		if r.Dport != "" && (r.Proto == "tcp" || r.Proto == "udp") {
 			f.Set("dport", strings.ReplaceAll(r.Dport, "-", ":"))
 		}
 		if r.Source != "" {

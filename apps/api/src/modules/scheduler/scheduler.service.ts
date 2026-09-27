@@ -12,6 +12,13 @@ export interface PlacementRequest {
   diskGb: number;
   /** Server IDs this server must not share a host with (anti-affinity). */
   avoidServerIds?: string[];
+  /**
+   * Anti-affinity as a preference (cluster nodes): share a host with an avoided server only
+   * when the region has no other live host at all. Without it anti-affinity is strict.
+   */
+  softAvoid?: boolean;
+  /** Written to this server inside the lock, so siblings placed right after see the host. */
+  serverId?: string;
   family?: string;
 }
 
@@ -26,29 +33,36 @@ export class SchedulerService {
 
   constructor(private readonly prisma: PrismaService, private readonly redis: RedisService, private readonly nats: NatsService) {}
 
-  async place(req: PlacementRequest): Promise<{ hostId: string; driverRef: string }> {
+  async place(req: PlacementRequest): Promise<{ hostId: string; driverRef: string; sharedWithAvoided: boolean }> {
     const release = await this.waitLock(`sched:${req.regionId}`, 10_000);
     try {
-      const avoidHostIds = req.avoidServerIds?.length
-        ? (await this.prisma.server.findMany({ where: { id: { in: req.avoidServerIds } }, select: { hostId: true } }))
-            .map((s) => s.hostId)
-            .filter((h): h is string => !!h)
-        : [];
+      const avoidHostIds = new Set(
+        req.avoidServerIds?.length
+          ? (await this.prisma.server.findMany({ where: { id: { in: req.avoidServerIds } }, select: { hostId: true } }))
+              .map((s) => s.hostId)
+              .filter((h): h is string => !!h)
+          : [],
+      );
 
-      const hosts = await this.prisma.host.findMany({
-        where: { regionId: req.regionId, status: 'active', id: { notIn: avoidHostIds } },
-      });
-
+      const hosts = await this.prisma.host.findMany({ where: { regionId: req.regionId, status: 'active' } });
       const staleAfter = Date.now() - 3 * 60_000;
-      const candidates = hosts
-        .filter((h) => !h.lastHeartbeatAt || h.lastHeartbeatAt.getTime() > staleAfter || h.driver === 'fake')
-        .filter((h) => h.usedMemoryMb + req.memoryMb <= h.totalMemoryMb)
-        .filter((h) => h.usedVcpu + req.vcpu <= h.totalVcpu * h.overcommitCpu)
-        .filter((h) => h.usedDiskGb + req.diskGb <= h.totalDiskGb)
-        .filter((h) => !req.family || req.family === 'shared' || (h.labels as Record<string, unknown>)?.family === req.family)
-        .sort((a, b) => a.usedMemoryMb / a.totalMemoryMb - b.usedMemoryMb / b.totalMemoryMb);
+      const live = hosts.filter((h) => !h.lastHeartbeatAt || h.lastHeartbeatAt.getTime() > staleAfter || h.driver === 'fake');
+      const fits = (list: typeof live) =>
+        list
+          .filter((h) => h.usedMemoryMb + req.memoryMb <= h.totalMemoryMb)
+          .filter((h) => h.usedVcpu + req.vcpu <= h.totalVcpu * h.overcommitCpu)
+          .filter((h) => h.usedDiskGb + req.diskGb <= h.totalDiskGb)
+          .filter((h) => !req.family || req.family === 'shared' || (h.labels as Record<string, unknown>)?.family === req.family)
+          .sort((a, b) => a.usedMemoryMb / a.totalMemoryMb - b.usedMemoryMb / b.totalMemoryMb);
 
-      const host = candidates[0];
+      const apart = live.filter((h) => !avoidHostIds.has(h.id));
+      let host = fits(apart)[0];
+      let sharedWithAvoided = false;
+      // Too few hosts in the region to keep the nodes apart: place anyway and say so.
+      if (!host && req.softAvoid && !apart.length) {
+        host = fits(live)[0];
+        sharedWithAvoided = !!host;
+      }
       if (!host) {
         this.log.warn(`no capacity in ${req.regionId} for ${req.vcpu}vcpu/${req.memoryMb}MB`);
         throw ApiError.quota('No capacity available in this region right now', { region: req.regionId, code: 'no_capacity' });
@@ -58,7 +72,8 @@ export class SchedulerService {
         where: { id: host.id },
         data: { usedVcpu: { increment: req.vcpu }, usedMemoryMb: { increment: req.memoryMb }, usedDiskGb: { increment: req.diskGb } },
       });
-      return { hostId: host.id, driverRef: host.driverRef };
+      if (req.serverId) await this.prisma.server.update({ where: { id: req.serverId }, data: { hostId: host.id } });
+      return { hostId: host.id, driverRef: host.driverRef, sharedWithAvoided };
     } finally {
       await release();
     }

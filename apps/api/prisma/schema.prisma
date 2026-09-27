@@ -508,6 +508,8 @@ enum FirewallProtocol {
   tcp
   udp
   icmp
+  /// IP protocol 112, keepalived between cluster members
+  vrrp
   any
 }
 

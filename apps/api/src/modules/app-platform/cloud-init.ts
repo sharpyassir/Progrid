@@ -9,6 +9,8 @@
  * Python (requirements.txt or pyproject.toml), Go (go.mod) or static (index.html) project
  * gets a generated Dockerfile. Compose files are not supported on shared hosts.
  */
+import { agentNetPy } from '../../common/platform-agent';
+
 export interface AppHostInit {
   vmSecret: string;
   acmeEmail: string;
@@ -53,6 +55,8 @@ write_files:
       lock = threading.Lock()
       state = {'version': 0, 'apps': {}}
       building = set()
+
+${agentNetPy(6)}
 
       def sh(cmd, check=True, timeout=1800, cwd=None, log=None):
           r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout, cwd=cwd)
@@ -219,7 +223,7 @@ write_files:
               b = json.dumps(body).encode(); self.send_response(code); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
 
       load_state()
-      http.server.ThreadingHTTPServer(('0.0.0.0', 9009), H).serve_forever()
+      http.server.ThreadingHTTPServer((bind_address(), 9009), H).serve_forever()
 runcmd:
   - echo '${d.acmeEmail}' > /opt/pgcloud/acme.email
   - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg

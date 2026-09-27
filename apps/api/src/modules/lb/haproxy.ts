@@ -84,8 +84,14 @@ export function renderHaproxyConfig(lb: RenderInput): string {
   return lines.join('\n');
 }
 
-/** keepalived.conf: every node runs VRRP for the VIP; node 0 is the preferred master. */
-export function renderKeepalivedConfig(o: { lbId: string; index: number; vip: string; prefix: number; iface?: string }): string {
+/**
+ * keepalived.conf: every node runs VRRP for the VIP; node 0 is the preferred master.
+ * Advertisements go unicast between the nodes' private addresses (VRRP is allowed between
+ * cluster members by the firewall); the VIP itself sits on the interface the node agent
+ * resolves for @VIP_IFACE@. The agent also fills in @PRIVATE_IFACE@ and @PRIVATE_IP@, which
+ * only the node knows.
+ */
+export function renderKeepalivedConfig(o: { lbId: string; index: number; vip: string; prefix: number; authPass: string; peers: string[] }): string {
   const vrid = (hash(o.lbId) % 254) + 1;
   return [
     'vrrp_script chk_haproxy {',
@@ -95,13 +101,14 @@ export function renderKeepalivedConfig(o: { lbId: string; index: number; vip: st
     '}',
     'vrrp_instance VI_pgcloud {',
     `  state ${o.index === 0 ? 'MASTER' : 'BACKUP'}`,
-    `  interface ${o.iface ?? 'eth0'}`,
+    '  interface @PRIVATE_IFACE@',
     `  virtual_router_id ${vrid}`,
     `  priority ${150 - o.index * 40}`,
     '  advert_int 1',
     '  nopreempt',
-    '  authentication { auth_type PASS auth_pass pgcloud }',
-    `  virtual_ipaddress { ${o.vip}/${o.prefix} }`,
+    ...(o.peers.length ? ['  unicast_src_ip @PRIVATE_IP@', `  unicast_peer { ${o.peers.join(' ')} }`] : []),
+    `  authentication { auth_type PASS auth_pass ${o.authPass} }`,
+    `  virtual_ipaddress { ${o.vip}/${o.prefix} dev @VIP_IFACE@ }`,
     '  track_script { chk_haproxy }',
     '}',
     '',

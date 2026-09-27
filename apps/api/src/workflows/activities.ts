@@ -130,9 +130,19 @@ export function createActivities(app: INestApplicationContext): Activities {
     async placeServer(serverId, avoid) {
       const s = await load(serverId);
       if (s.hostId) return; // already placed (retry)
-      const placement = await wrap(scheduler.place({ regionId: s.regionId, vcpu: s.vcpu, memoryMb: s.memoryMb, diskGb: s.diskGb, avoidServerIds: avoid, family: s.size.family }));
+      // Cluster nodes (load balancer, database, Kubernetes) carry a spread group: keep them on different hosts.
+      const create = await prisma.serverAction.findFirst({ where: { serverId, type: 'create' }, orderBy: { startedAt: 'asc' }, select: { params: true } });
+      const group = (create?.params as { spreadGroup?: string } | null)?.spreadGroup;
+      const siblings = group
+        ? (await prisma.serverAction.findMany({ where: { type: 'create', params: { path: ['spreadGroup'], equals: group } }, select: { serverId: true } })).map((a) => a.serverId).filter((id) => id !== serverId)
+        : [];
+      const placement = await wrap(scheduler.place({ regionId: s.regionId, vcpu: s.vcpu, memoryMb: s.memoryMb, diskGb: s.diskGb, avoidServerIds: [...new Set([...avoid, ...siblings])], softAvoid: !!group, serverId, family: s.size.family }));
       await prisma.server.update({ where: { id: serverId }, data: { hostId: placement.hostId } });
       log.log(`placed ${serverId} on host ${placement.hostId}`);
+      if (placement.sharedWithAvoided) {
+        log.warn(`${serverId} shares host ${placement.hostId} with another node of ${group}: the region has too few hosts`);
+        await events.emit('server.placement_shared_host', { serverId, name: s.name, group, hostId: placement.hostId, reason: 'the region has too few hosts to keep cluster nodes apart' }, { teamId: s.project.teamId, resource: `server:${serverId}` });
+      }
     },
 
     async reserveIp(serverId) {
@@ -603,7 +613,7 @@ export function createActivities(app: INestApplicationContext): Activities {
       const deadline = Date.now() + 25 * 60_000;
       for (;;) {
         Context.current().heartbeat();
-        const a = await prisma.platformApp.findUnique({ where: { id: appId }, include: { host: { include: { server: { select: { status: true, publicIps: { select: { address: true } } } } } }, deploys: { where: { id: deployId } } } });
+        const a = await prisma.platformApp.findUnique({ where: { id: appId }, include: { host: { include: { server: { select: { id: true, name: true, status: true, privateIp: true, publicIps: { select: { address: true } } } } } }, deploys: { where: { id: deployId } } } });
         if (!a || !a.host) throw nonRetryable('app or host vanished');
         const st = await apps.hostStatus(a.host).catch(() => null);
         if (st) await apps.applyReport({ id: a.id, status: a.status, deploys: a.deploys }, st.apps[a.id]);

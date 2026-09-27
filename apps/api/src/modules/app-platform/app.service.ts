@@ -12,6 +12,7 @@ import { SpendService } from '../billing/spend.service';
 import { FirewallsService } from '../network/firewalls.service';
 import { GithubService } from '../github/github.service';
 import { renderAppHostCloudInit } from './cloud-init';
+import { agentHost } from '../../common/platform-agent';
 import { APP_SIZES, AppSizeId, CreateAppDto, DomainDto, MAX_DOMAINS, UpdateAppDto } from './app.dto';
 
 const HOST_MANAGED = 'apps:host';
@@ -23,11 +24,11 @@ const HOST_RESERVE_MB = 1536;
 
 const appInclude = {
   region: { select: { id: true, name: true } },
-  host: { include: { server: { select: { status: true, publicIps: { select: { address: true } } } } } },
+  host: { include: { server: { select: { id: true, name: true, status: true, privateIp: true, publicIps: { select: { address: true } } } } } },
   deploys: { orderBy: { startedAt: 'desc' as const }, take: 10, select: { id: true, status: true, trigger: true, commit: true, startedAt: true, finishedAt: true } },
 } satisfies Prisma.PlatformAppInclude;
 type AppRow = Prisma.PlatformAppGetPayload<{ include: typeof appInclude }>;
-type HostRow = Prisma.AppHostGetPayload<{ include: { server: { select: { status: true; publicIps: { select: { address: true } } } }; apps: { include: { deploys: { orderBy: { startedAt: 'desc' }; take: 1 }; installation: true } } } }>;
+type HostRow = Prisma.AppHostGetPayload<{ include: { server: { select: { id: true; name: true; status: true; privateIp: true; publicIps: { select: { address: true } } } }; apps: { include: { deploys: { orderBy: { startedAt: 'desc' }; take: 1 }; installation: true } } } }>;
 
 interface HostStatus {
   version: number;
@@ -167,7 +168,7 @@ export class AppPlatformService {
   /** Build log (from the host, cached on the app) or the runtime log of the first instance. */
   async logs(actor: Actor, id: string, type: 'build' | 'runtime' = 'build', project?: string) {
     const app = await this.own(actor, id, project);
-    const ip = app.host?.server.publicIps[0]?.address;
+    const ip = app.host ? agentHost(app.host.server) : null;
     if (ip && app.host?.server.status === 'active') {
       try {
         const r = await fetch(`http://${ip}:9009/logs?app=${app.id}&type=${type}`, { headers: { 'X-Pgcloud-Secret': app.host.vmSecret }, signal: AbortSignal.timeout(6000) }).then((x) => x.json() as Promise<{ log: string }>);
@@ -227,11 +228,11 @@ export class AppPlatformService {
     const fw = await this.prisma.firewall.findFirst({ where: { projectId: project.id, name: 'app-hosts' } }) ?? (await this.firewalls.create(await this.platformActor(), project.id, {
       name: 'app-hosts',
       rules: [
-        { direction: 'inbound', protocol: 'tcp', ports: '22', cidrs: [process.env.CONTROL_PLANE_CIDR ?? '0.0.0.0/0'], description: 'platform ssh' },
+        { direction: 'inbound', protocol: 'tcp', ports: '22', cidrs: [cfg.CONTROL_PLANE_CIDR], description: 'platform ssh' },
         { direction: 'inbound', protocol: 'tcp', ports: '80', cidrs: ['0.0.0.0/0', '::/0'], description: 'http' },
         { direction: 'inbound', protocol: 'tcp', ports: '443', cidrs: ['0.0.0.0/0', '::/0'], description: 'https' },
         { direction: 'inbound', protocol: 'udp', ports: '443', cidrs: ['0.0.0.0/0', '::/0'], description: 'http3' },
-        { direction: 'inbound', protocol: 'tcp', ports: '9009', cidrs: [process.env.CONTROL_PLANE_CIDR ?? '0.0.0.0/0'], description: 'pgcloud app agent' },
+        { direction: 'inbound', protocol: 'tcp', ports: '9009', cidrs: [cfg.CONTROL_PLANE_CIDR], description: 'pgcloud app agent' },
         { direction: 'outbound', protocol: 'any', cidrs: ['0.0.0.0/0'] },
       ],
     }));
@@ -268,9 +269,9 @@ export class AppPlatformService {
 
   /** Push the desired state of every app on a host to its agent. */
   async pushHost(hostId: string) {
-    const host = await this.prisma.appHost.findUnique({ where: { id: hostId }, include: { server: { select: { status: true, publicIps: { select: { address: true } } } }, apps: { where: { deletedAt: null, status: { notIn: ['deleted'] } }, include: { deploys: { orderBy: { startedAt: 'desc' }, take: 1 }, installation: true } } } });
+    const host = await this.prisma.appHost.findUnique({ where: { id: hostId }, include: { server: { select: { id: true, name: true, status: true, privateIp: true, publicIps: { select: { address: true } } } }, apps: { where: { deletedAt: null, status: { notIn: ['deleted'] } }, include: { deploys: { orderBy: { startedAt: 'desc' }, take: 1 }, installation: true } } } });
     if (!host) return { ok: false };
-    const ip = host.server.publicIps[0]?.address;
+    const ip = agentHost(host.server);
     if (!ip || host.server.status !== 'active') throw ApiError.invalidState('App host is not active yet');
     const cfg = loadConfig();
     const apps = [] as Record<string, unknown>[];
@@ -297,7 +298,7 @@ export class AppPlatformService {
       if (h.server.status === 'active') await this.prisma.appHost.update({ where: { id: h.id }, data: { status: 'active' } });
       else if (h.server.status === 'failed') await this.prisma.appHost.update({ where: { id: h.id }, data: { status: 'failed' } });
     }
-    const hosts = await this.prisma.appHost.findMany({ where: { status: 'active' }, include: { server: { select: { status: true, publicIps: { select: { address: true } } } }, apps: { where: { deletedAt: null }, include: { deploys: { orderBy: { startedAt: 'desc' }, take: 1 } } } } });
+    const hosts = await this.prisma.appHost.findMany({ where: { status: 'active' }, include: { server: { select: { id: true, name: true, status: true, privateIp: true, publicIps: { select: { address: true } } } }, apps: { where: { deletedAt: null }, include: { deploys: { orderBy: { startedAt: 'desc' }, take: 1 } } } } });
     for (const h of hosts) {
       const st = await this.hostStatus(h).catch(() => null);
       if (!st) continue;
@@ -305,8 +306,8 @@ export class AppPlatformService {
     }
   }
 
-  async hostStatus(h: { vmSecret: string; server: { status: string; publicIps: { address: string }[] } }): Promise<HostStatus | null> {
-    const ip = h.server.publicIps[0]?.address;
+  async hostStatus(h: { vmSecret: string; server: { id: string; name: string; status: string; privateIp: string | null; publicIps: { address: string }[] } }): Promise<HostStatus | null> {
+    const ip = agentHost(h.server);
     if (!ip || h.server.status !== 'active') return null;
     const r = await fetch(`http://${ip}:9009/status`, { headers: { 'X-Pgcloud-Secret': h.vmSecret }, signal: AbortSignal.timeout(8000) });
     if (!r.ok) return null;

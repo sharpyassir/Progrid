@@ -89,7 +89,8 @@ export class ServersService {
     return present(server);
   }
 
-  async create(actor: Actor, dto: CreateServerDto) {
+  /** `opts.spreadGroup` (platform callers only): nodes of one cluster, placed on different hosts where the region allows. */
+  async create(actor: Actor, dto: CreateServerDto, opts: { spreadGroup?: string } = {}) {
     const cfg = loadConfig();
     const project = await this.iam.resolveProject(actor, dto.project);
     await this.trust.assertCanProvision(actor.teamId);
@@ -170,7 +171,7 @@ export class ServersService {
         managedToken,
         managedHealth: dto.managed ? 'pending' : null,
         firewalls: dto.firewalls?.length ? { create: dto.firewalls.map((firewallId) => ({ firewallId })) } : undefined,
-        actions: { create: { type: 'create', params: { avoid: dto.avoid ?? [] }, requestedBy: actor.tokenId ?? actor.userId } },
+        actions: { create: { type: 'create', params: { avoid: dto.avoid ?? [], ...(opts.spreadGroup ? { spreadGroup: opts.spreadGroup } : {}) }, requestedBy: actor.tokenId ?? actor.userId } },
       },
       include: { ...serverInclude, actions: true },
     });

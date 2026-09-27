@@ -1,3 +1,5 @@
+import { agentNetPy } from '../../common/platform-agent';
+
 /**
  * cloud-init for a managed Kubernetes node (control plane or worker; the role comes with
  * the first config push). Installs containerd, kubeadm, kubelet and kubectl from the
@@ -24,6 +26,11 @@
 export interface KubeNodeInit {
   version: string; // "1.31"
   vmSecret: string;
+  /**
+   * Network the API VIP lives on: private for a private address, public for the public
+   * address in kubeconfig today (see vipNetworkFor). VRRP always runs over the private network.
+   */
+  vipNetwork: 'public' | 'private';
 }
 
 export function renderKubeCloudInit(d: KubeNodeInit): string {
@@ -46,6 +53,8 @@ write_files:
     content: '${d.vmSecret}'
   - path: /opt/pgcloud/kube.version
     content: '${d.version}'
+  - path: /opt/pgcloud/vip.network
+    content: '${d.vipNetwork}'
   - path: /etc/systemd/system/pgcloud-k8sd.service
     content: |
       [Unit]
@@ -74,6 +83,8 @@ write_files:
           return r.stdout
       def write(path, content, mode=0o644):
           os.makedirs(os.path.dirname(path), exist_ok=True); open(path, 'w').write(content); os.chmod(path, mode)
+${agentNetPy(6)}
+
       def state():
           try: return json.load(open(STATE))
           except Exception: return {'version': 0}
@@ -86,7 +97,13 @@ write_files:
       def initialized(): return os.path.exists('/etc/kubernetes/kubelet.conf')
 
       def keepalived(c, m):
-          write('/etc/keepalived/keepalived.conf', "vrrp_script chk_api {\\n  script \\"/usr/bin/curl -sfk https://127.0.0.1:6443/healthz\\"\\n  interval 2\\n  fall 3\\n  rise 2\\n}\\nvrrp_instance VI_k8s {\\n  state BACKUP\\n  interface eth0\\n  virtual_router_id %d\\n  priority %d\\n  advert_int 1\\n  authentication { auth_type PASS auth_pass pgcloudk8 }\\n  virtual_ipaddress { %s/%d }\\n  track_script { chk_api }\\n}\\n" % (c['cluster']['vrid'], 100 - m['index'], c['cluster']['vip'], c['cluster']['prefix']))
+          # VRRP runs unicast between the control plane nodes over the private network; the VIP
+          # sits on the interface named by /opt/pgcloud/vip.network.
+          peers = [n['ip'] for n in c['cluster']['nodes'] if n['role'] == 'control' and not n['isSelf']]
+          uni = ("  unicast_src_ip %s\\n  unicast_peer { %s }\\n" % (private_ipv4() or m['ip'], ' '.join(peers))) if peers else ''
+          text = "vrrp_script chk_api {\\n  script \\"/usr/bin/curl -sfk https://127.0.0.1:6443/healthz\\"\\n  interval 2\\n  fall 3\\n  rise 2\\n}\\nvrrp_instance VI_k8s {\\n  state BACKUP\\n  interface %s\\n  virtual_router_id %d\\n  priority %d\\n  advert_int 1\\n%s  authentication { auth_type PASS auth_pass %s }\\n  virtual_ipaddress { %s/%d dev %s }\\n  track_script { chk_api }\\n}\\n" % (private_iface() or 'eth0', c['cluster']['vrid'], 100 - m['index'], uni, c['cluster']['vrrpPass'], c['cluster']['vip'], c['cluster']['prefix'], vip_iface())
+          if os.path.exists('/etc/keepalived/keepalived.conf') and open('/etc/keepalived/keepalived.conf').read() == text: return
+          write('/etc/keepalived/keepalived.conf', text)
           sh('systemctl enable --now keepalived && systemctl restart keepalived', check=False)
 
       def init_control(c, m):
@@ -221,7 +238,7 @@ write_files:
               self._send(404, {})
           def _send(self, code, body):
               b = json.dumps(body).encode(); self.send_response(code); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
-      http.server.ThreadingHTTPServer(('0.0.0.0', 9009), H).serve_forever()
+      http.server.ThreadingHTTPServer((bind_address(), 9009), H).serve_forever()
 runcmd:
   - modprobe overlay && modprobe br_netfilter && sysctl --system
   - swapoff -a && sed -i '/ swap / s/^/#/' /etc/fstab
