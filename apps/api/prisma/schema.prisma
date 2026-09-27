@@ -969,6 +969,10 @@ enum AlertMetric {
   disk
   net_in
   net_out
+  /// Event based: a managed database node unreachable for five minutes. Threshold and window are ignored.
+  db_node_unreachable
+  /// Event based: an App Platform deploy failed. Threshold and window are ignored.
+  app_deploy_failed
 }
 
 enum AlertComparator {

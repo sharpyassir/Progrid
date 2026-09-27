@@ -138,6 +138,18 @@ function bucketHourly<T extends { at: Date; cpuPercent: number; memoryUsedMb: nu
   });
 }
 
+/**
+ * Disk usage reported from inside a VM (managed care reporter, database agents): the host
+ * agent cannot see the guest's filesystem. The value goes onto the samples of the last five
+ * minutes, or a sample of its own when there are none, so the disk alert has something to average.
+ */
+export async function recordDiskUsage(prisma: PrismaService, serverId: string, percent: number | undefined | null, at = new Date()) {
+  if (typeof percent !== 'number' || !Number.isFinite(percent)) return;
+  const value = round(clamp(percent, 0, 100));
+  const r = await prisma.metricSample.updateMany({ where: { serverId, at: { gte: new Date(at.getTime() - 5 * 60_000) } }, data: { diskUsedPercent: value } });
+  if (!r.count) await prisma.metricSample.createMany({ data: [{ serverId, at: minute(at), diskUsedPercent: value }], skipDuplicates: true });
+}
+
 const minute = (d: Date) => new Date(Math.floor(d.getTime() / 60_000) * 60_000);
 const round = (n: number) => Math.round(n * 100) / 100;
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));

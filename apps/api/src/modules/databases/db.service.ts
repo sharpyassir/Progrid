@@ -15,6 +15,7 @@ import { FirewallsService } from '../network/firewalls.service';
 import { IpsService } from '../network/ips.service';
 import { OBJECT_STORAGE_PROVIDER, ObjectStorageProvider, emptyAndDeleteBucket } from '../storage/objects/objects.provider';
 import { renderDbCloudInit } from './cloud-init';
+import { recordDiskUsage } from '../monitoring/metrics.service';
 import { agentHost, vipNetworkFor, vrrpPass } from '../../common/platform-agent';
 import { CreateDatabaseDto, DbNameDto, ENGINE_PORTS, ENGINE_VERSIONS, RestoreDatabaseDto, UpdateDatabaseDto } from './db.dto';
 
@@ -390,6 +391,7 @@ export class DatabasesService {
             return x.json() as Promise<NodeReport>;
           });
           await this.prisma.dbNode.update({ where: { id: n.id }, data: { role: r.role, lagBytes: r.lagBytes ?? null, lastSeenAt: new Date(), appliedVersion: r.version } });
+          await recordDiskUsage(this.prisma, n.serverId, r.diskUsedPercent);
           if (this.unreachable.delete(n.id)) await this.emit('database.node_recovered', c, { node: n.index, serverId: n.serverId });
           if (r.role === 'primary') newPrimary = n.index;
           for (const b of r.backups ?? []) {

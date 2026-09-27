@@ -8,7 +8,7 @@ import { useShell } from '@/components/shell';
 interface Policy { id: string; name: string; metric: string; comparator: 'above' | 'below'; threshold: number; windowMinutes: number; serverIds: string[]; tags: string[]; emails: string[]; enabled: boolean; createdAt: string; _count: { incidents: number } }
 interface Incident { id: string; serverId: string; value: number; peakValue: number; startedAt: string; resolvedAt: string | null; policy: { name: string; metric: string; comparator: string; threshold: number; windowMinutes: number } }
 
-const METRICS: [string, string, string][] = [['cpu', 'CPU', '%'], ['memory', 'Memory', '%'], ['disk', 'Disk used', '%'], ['net_in', 'Inbound bandwidth', 'Mbps'], ['net_out', 'Outbound bandwidth', 'Mbps']];
+const METRICS: [string, string, string][] = [['cpu', 'CPU', '%'], ['memory', 'Memory', '%'], ['disk', 'Disk used', '%'], ['net_in', 'Inbound bandwidth', 'Mbps'], ['net_out', 'Outbound bandwidth', 'Mbps'], ['db_node_unreachable', 'Database node unreachable (any database)', ''], ['app_deploy_failed', 'App deploy failed (any app)', '']];
 const unit = (m: string) => METRICS.find((x) => x[0] === m)?.[2] ?? '';
 const label = (m: string) => METRICS.find((x) => x[0] === m)?.[1] ?? m;
 

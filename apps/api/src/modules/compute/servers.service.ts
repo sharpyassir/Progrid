@@ -15,6 +15,7 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import type { Approval } from '@prisma/client';
 import { CreateServerDto, ListServersQuery, ServerActionDto, UpdateServerDto } from './compute.dto';
 import { randomBytes } from 'node:crypto';
+import { recordDiskUsage } from '../monitoring/metrics.service';
 import { hasManagedAgent, healthOf, renderManagedInstallScript, withManagedAgent, type ManagedReport } from './managed-agent';
 
 /** Transitions allowed from each state. Everything else is `invalid_state`. */
@@ -386,6 +387,7 @@ export class ManagedCareService {
     const now = new Date();
     const { health, issues } = healthOf(report, now, now);
     await this.prisma.server.update({ where: { id: server.id }, data: { managedReport: report as object, managedReportedAt: now, managedHealth: health } });
+    await recordDiskUsage(this.prisma, server.id, report.diskUsedPct, now);
     if (health === 'warn' && server.managedHealth !== 'warn') await this.events.emit('server.managed_warning', { serverId: server.id, name: server.name, issues }, { resource: `server:${server.id}`, teamId: server.project.teamId });
     if (health === 'ok' && server.managedHealth === 'warn') await this.events.emit('server.managed_recovered', { serverId: server.id, name: server.name }, { resource: `server:${server.id}`, teamId: server.project.teamId });
     return { ok: true, health, issues };
