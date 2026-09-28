@@ -24,7 +24,7 @@ In DigitalOcean: **Create, Droplets**.
 |---|---|
 | Region | Frankfurt (FRA1) |
 | Image | Ubuntu 24.04 (LTS) x64 |
-| Size | Basic, Regular, 4 vCPU, 8 GB, 160 GB |
+| Size | Basic, Regular, 2 vCPU, 4 GB, 80 GB to start (4 vCPU, 8 GB once customers arrive) |
 | Authentication | SSH key: paste `~/.ssh/progrid.pub` |
 | Backups | On, weekly |
 | Monitoring | On |

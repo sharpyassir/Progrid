@@ -3,6 +3,21 @@
     name: [ca-certificates, curl, gnupg, ufw, unattended-upgrades, fail2ban]
     update_cache: true
 
+# Swap as a safety margin for memory spikes on small hosts. Created once; skipped when swap exists.
+- name: Swap file
+  shell: |
+    fallocate -l {{ swap_size | default('2G') }} /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile
+    grep -q '^/swapfile ' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  args: { creates: /swapfile }
+  when: ansible_swaptotal_mb | int == 0
+
+- name: Prefer memory over swap
+  copy: { dest: /etc/sysctl.d/60-swappiness.conf, content: "vm.swappiness = 10\n", mode: "0644" }
+  notify: apply sysctl
+
 - name: Docker apt key
   shell: |
     install -m 0755 -d /etc/apt/keyrings
