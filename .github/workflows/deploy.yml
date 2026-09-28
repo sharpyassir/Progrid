@@ -6,7 +6,9 @@ name: deploy
 #
 # Secrets (repository settings):
 #   DEPLOY_HOST   management host address        DEPLOY_USER  ssh user (the Ansible user)
-#   DEPLOY_SSH_KEY  private key for that user    NEXT_PUBLIC_API_URL  https://api.<domain>
+#   DEPLOY_SSH_KEY  private key for that user
+# The public addresses baked into the website and console default to progrid.sa. Override them with
+# repository variables PUBLIC_API_URL, PUBLIC_CONSOLE_URL and PUBLIC_WWW_URL for another domain.
 # Set the `production` environment to require a reviewer if you want a manual gate.
 # Images are only built after the ci workflow succeeded for the same commit, so a failing
 # commit never reaches the host.
@@ -45,6 +47,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/pgcloud-${{ matrix.app }}
           tags: |
+            type=raw,value=${{ github.event.workflow_run.head_sha || github.sha }}
             type=sha,prefix=,format=short
             type=ref,event=tag
             type=raw,value=latest,enable={{is_default_branch}}
@@ -55,7 +58,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL || 'http://localhost:4000' }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.PUBLIC_API_URL || 'https://api.progrid.sa' }}
+            NEXT_PUBLIC_CONSOLE_URL=${{ vars.PUBLIC_CONSOLE_URL || 'https://console.progrid.sa' }}
+            NEXT_PUBLIC_WWW_URL=${{ vars.PUBLIC_WWW_URL || 'https://progrid.sa' }}
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}
 

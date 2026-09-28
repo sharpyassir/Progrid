@@ -63,6 +63,24 @@ services:
     restart: "no"
     profiles: [ops]
 
+  # One shot: region, plans, prices, images and marketplace apps. Safe to rerun; never adds demo data here.
+  seed:
+    <<: *api
+    command: ["node_modules/.bin/ts-node", "--transpile-only", "prisma/seed.ts"]
+    environment:
+      DATABASE_URL: postgresql://pgcloud:${POSTGRES_PASSWORD}@postgres:5432/pgcloud
+      SEED_DEMO: "false"
+    restart: "no"
+    profiles: [ops]
+
+  # One shot: promote a signed up account to full staff.  run --rm staff you@progrid.sa
+  staff:
+    <<: *api
+    entrypoint: ["node_modules/.bin/ts-node", "--transpile-only", "prisma/make-staff.ts"]
+    command: []
+    restart: "no"
+    profiles: [ops]
+
   console:
     image: ${REGISTRY:-ghcr.io/sharpyassir}/pgcloud-console:${IMAGE_TAG:-latest}
     restart: unless-stopped

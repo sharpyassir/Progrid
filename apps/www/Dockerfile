@@ -10,8 +10,11 @@ COPY packages/mcp-server/package.json packages/mcp-server/
 RUN pnpm install --frozen-lockfile --filter @pgcloud/www...
 COPY apps/www apps/www
 COPY packages/openapi/openapi.yaml packages/openapi/openapi.yaml
+# Public addresses are baked into the browser bundle at build time.
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL NEXT_TELEMETRY_DISABLED=1
+ARG NEXT_PUBLIC_CONSOLE_URL=http://localhost:3000
+ARG NEXT_PUBLIC_WWW_URL=http://localhost:3001
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL NEXT_PUBLIC_CONSOLE_URL=$NEXT_PUBLIC_CONSOLE_URL NEXT_PUBLIC_WWW_URL=$NEXT_PUBLIC_WWW_URL NEXT_TELEMETRY_DISABLED=1
 RUN pnpm --filter @pgcloud/www build
 
 FROM node:22-bookworm-slim

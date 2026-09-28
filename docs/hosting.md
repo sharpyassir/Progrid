@@ -32,7 +32,8 @@ Goal: a public demo and the first design partners, before our own hardware is ra
    if there is no Proxmox yet, or install Proxmox on the same box and point the agent at it.
 4. `ansible-playbook -i inventory.ini site.yml --ask-vault-pass`. The role installs Docker, copies the
    compose bundle to `/opt/pgcloud`, writes `/etc/pgcloud/pgcloud.env`, opens the firewall and starts everything.
-5. Add the GitHub secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `NEXT_PUBLIC_API_URL`).
+5. Add the GitHub secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`). The public addresses baked into the
+   website and console default to progrid.sa; see `docs/deploy-digitalocean.md` for a full first deploy.
    From then on every push to `main` builds images and rolls the host.
 
 Everything is on one machine, so a disk failure means restoring from the nightly dump. Acceptable for a demo,

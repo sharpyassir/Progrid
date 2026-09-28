@@ -8,6 +8,7 @@ sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${TAG}/" /etc/pgcloud/pgcloud.env
 COMPOSE="docker compose --env-file /etc/pgcloud/pgcloud.env -f docker-compose.yml"
 $COMPOSE pull api worker console www
 $COMPOSE run --rm migrate
+$COMPOSE run --rm seed
 $COMPOSE up -d --remove-orphans
 $COMPOSE ps
 curl -fsS --retry 10 --retry-delay 3 --retry-all-errors http://127.0.0.1:4000/healthz >/dev/null 2>&1 || \

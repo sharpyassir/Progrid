@@ -107,6 +107,14 @@ async function main() {
     });
   }
 
+  // Everything below is demo data for development and CI: a fake host, a documentation IP range and a
+  // staff user with a known password. It never runs in production unless SEED_DEMO=true is set on purpose.
+  const demo = (process.env.SEED_DEMO ?? (process.env.NODE_ENV === 'production' ? 'false' : 'true')) === 'true';
+  if (!demo) {
+    console.log('catalog seed complete (no demo data)');
+    return;
+  }
+
   // A fake host + a /28 of public IPs so the fake driver can provision.
   const host = await prisma.host.upsert({
     where: { name: 'fake1' },
