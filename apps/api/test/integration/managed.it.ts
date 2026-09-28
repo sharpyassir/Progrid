@@ -5,6 +5,7 @@ import { ManagedAlertsService } from '../../src/modules/managed/alerts/alerts.se
 import { ManagedBillingService } from '../../src/modules/managed/billing-hooks/managed-billing.service';
 import { InvoicesService } from '../../src/modules/billing/invoices.service';
 import { startOfMonth } from '../../src/modules/billing/pricing';
+import { MaintenanceService } from '../../src/modules/managed/maintenance/maintenance.service';
 
 const DAY = 86_400_000;
 
@@ -358,5 +359,50 @@ describe('managed cloud billing', () => {
     const pdf = await owner.client.get(`/v1/billing/invoices/${inv.id}/pdf`);
     expect(pdf.status).toBe(200);
     expect(pdf.headers.get('content-type')).toBe('application/pdf');
+  });
+});
+
+describe('managed cloud maintenance', () => {
+  it('runs playbooks with the fake runner and opens a ticket when a run fails', async () => {
+    const now = Date.now();
+    await s.prisma.onCallShift.deleteMany({ where: { userId: engineer.userId } });
+    await lead.client.ok('POST', '/admin/managed/oncall/shifts', { userId: engineer.userId, role: 'PRIMARY', startsAt: new Date(now - 3600_000), endsAt: new Date(now + 86_400_000) }, 201);
+    const { owner, contractId } = await activeContract('ESSENTIAL');
+    const asset = await lead.client.ok('POST', `/admin/managed/contracts/${contractId}/assets`, { kind: 'EXTERNAL_SERVER', name: 'web-9', address: '203.0.113.70', managementAddress: '10.8.0.9', os: 'Ubuntu 24.04' }, 201);
+
+    expect((await engineer.client.post('/admin/managed/maintenance/tasks', { contractId, kind: 'PATCHING', cron: 'every friday' })).status).toBe(422);
+    const patching = await engineer.client.ok('POST', '/admin/managed/maintenance/tasks', { contractId, assetId: asset.id, kind: 'PATCHING', cron: '0 3 * * 5' }, 201);
+    expect(patching).toMatchObject({ playbook: 'patching.yml', timezone: 'Asia/Riyadh', enabled: true });
+    expect(new Date(patching.nextRunAt).getTime()).toBeGreaterThan(now);
+
+    const run = await engineer.client.ok('POST', `/admin/managed/maintenance/tasks/${patching.id}/run`, {}, 202);
+    const done = await waitFor(async () => {
+      const r = await engineer.client.ok('GET', `/admin/managed/maintenance/runs/${run.id}`);
+      return ['SUCCEEDED', 'FAILED'].includes(r.status) && r;
+    }, { what: 'the patching run to finish', timeoutMs: 60_000 });
+    expect(done).toMatchObject({ status: 'SUCCEEDED', runner: 'fake', trigger: 'manual' });
+    expect(done.log).toContain('web-9');
+    expect(done.log).toContain('PLAY RECAP');
+
+    // The schedule starts due runs by itself.
+    await s.prisma.maintenanceTask.update({ where: { id: patching.id }, data: { nextRunAt: new Date(now - 60_000) } });
+    expect(await s.get(MaintenanceService).startDue()).toBeGreaterThanOrEqual(1);
+    const scheduled = await s.prisma.maintenanceRun.findFirstOrThrow({ where: { taskId: patching.id, trigger: 'schedule' } });
+    expect(scheduled).toBeTruthy();
+    expect((await s.prisma.maintenanceTask.findUniqueOrThrow({ where: { id: patching.id } })).nextRunAt!.getTime()).toBeGreaterThan(now);
+
+    // A failing run opens a P3 ticket for the on call engineer.
+    const broken = await engineer.client.ok('POST', '/admin/managed/maintenance/tasks', { contractId, kind: 'CUSTOM', name: 'Rotate logs', playbook: 'rotate-logs.yml', cron: '0 4 1 * *', vars: { simulateFailure: true } }, 201);
+    const failedRun = await engineer.client.ok('POST', `/admin/managed/maintenance/tasks/${broken.id}/run`, {}, 202);
+    const failed = await waitFor(async () => {
+      const r = await s.prisma.maintenanceRun.findUniqueOrThrow({ where: { id: failedRun.id } });
+      return r.ticketId ? r : null;
+    }, { what: 'the failed run to open a ticket', timeoutMs: 60_000 });
+    expect(failed.status).toBe('FAILED');
+    const ticket = await s.prisma.ticket.findUniqueOrThrow({ where: { id: failed.ticketId! }, include: { messages: true } });
+    expect(ticket).toMatchObject({ managedPriority: 'P3', assigneeId: engineer.userId, source: 'maintenance', contractId });
+    expect(ticket.messages.some((m) => m.internal && m.body.includes('simulated failure'))).toBe(true);
+    const customerView = await owner.client.ok('GET', `/v1/managed/tickets/${ticket.id}`);
+    expect(JSON.stringify(customerView)).not.toContain('PLAY RECAP');
   });
 });

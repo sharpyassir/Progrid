@@ -23,6 +23,7 @@ import { TeamService } from '../modules/team/team.service';
 import { ManagedAlertsService } from '../modules/managed/alerts/alerts.service';
 import { ContractsService } from '../modules/managed/contracts/contracts.service';
 import { ManagedBillingService } from '../modules/managed/billing-hooks/managed-billing.service';
+import { MaintenanceService } from '../modules/managed/maintenance/maintenance.service';
 
 /**
  * Periodic jobs. Each takes a Redis lock so only one API replica runs it.
@@ -56,6 +57,7 @@ export class JobsService {
     private readonly managedAlerts: ManagedAlertsService,
     private readonly managedContracts: ContractsService,
     private readonly managedBilling: ManagedBillingService,
+    private readonly maintenance: MaintenanceService,
   ) {}
 
   @Cron('50 * * * * *') // every minute at :50: database roles, lag, backup results, config retries
@@ -170,6 +172,11 @@ export class JobsService {
   @Cron('15 * * * * *') // every minute at :15: external servers whose heartbeat went quiet
   managedHeartbeats() {
     return this.locked('managed-heartbeats', 50_000, () => this.managedAlerts.checkHeartbeats());
+  }
+
+  @Cron('5 * * * * *') // every minute at :05: start maintenance runs that are due
+  managedMaintenance() {
+    return this.locked('managed-maintenance', 50_000, () => this.maintenance.startDue());
   }
 
   @Cron('0 40 * * * *') // forty past every hour: managed contracts follow the team's billing suspension

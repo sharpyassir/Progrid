@@ -1,0 +1,87 @@
+# Managed cloud: operating system patching.
+#
+# Run by the maintenance runner (MAINTENANCE_RUNNER=ansible) for PATCHING tasks:
+#   ansible-playbook -i <inventory built per run> -e @<task vars> patching.yml
+# The inventory has one group, `managed`, with each asset's management address (WireGuard or
+# private IP) as ansible_host and ansible_user from MAINTENANCE_SSH_USER.
+#
+# Debian and Ubuntu: apt dist-upgrade, reboot when /var/run/reboot-required exists.
+# RHEL family (Rocky, Alma, RHEL, CentOS Stream): dnf upgrade, reboot when needs-restarting -r says so.
+#
+# Task vars (all optional):
+#   patch_reboot: true           reboot when the update needs it (default true)
+#   patch_reboot_timeout: 900    seconds to wait for the host to come back
+#   patch_exclude: []            packages to hold back, e.g. ["postgresql*"]
+#   patch_security_only: false   RHEL family only: apply security errata only
+- name: Patch managed servers
+  hosts: managed
+  become: true
+  gather_facts: true
+  serial: 1
+  vars:
+    patch_reboot: true
+    patch_reboot_timeout: 900
+    patch_exclude: []
+    patch_security_only: false
+  tasks:
+    - name: Debian family
+      when: ansible_facts.os_family == "Debian"
+      block:
+        - name: Hold back excluded packages
+          ansible.builtin.dpkg_selections:
+            name: "{{ item }}"
+            selection: hold
+          loop: "{{ patch_exclude }}"
+
+        - name: Upgrade packages
+          ansible.builtin.apt:
+            update_cache: true
+            cache_valid_time: 600
+            upgrade: dist
+            autoremove: true
+          register: apt_result
+
+        - name: Check whether a reboot is required
+          ansible.builtin.stat:
+            path: /var/run/reboot-required
+          register: reboot_flag
+
+        - name: Reboot when required
+          ansible.builtin.reboot:
+            reboot_timeout: "{{ patch_reboot_timeout }}"
+            msg: "Progrid maintenance: reboot after patching"
+          when: patch_reboot and reboot_flag.stat.exists
+
+    - name: RHEL family
+      when: ansible_facts.os_family == "RedHat"
+      block:
+        - name: Upgrade packages
+          ansible.builtin.dnf:
+            name: "*"
+            state: latest
+            security: "{{ patch_security_only }}"
+            exclude: "{{ patch_exclude }}"
+            update_cache: true
+          register: dnf_result
+
+        - name: Make sure needs-restarting is available
+          ansible.builtin.dnf:
+            name: dnf-utils
+            state: present
+
+        - name: Check whether a reboot is required
+          ansible.builtin.command: needs-restarting -r
+          register: needs_restarting
+          changed_when: false
+          failed_when: needs_restarting.rc not in [0, 1]
+
+        - name: Reboot when required
+          ansible.builtin.reboot:
+            reboot_timeout: "{{ patch_reboot_timeout }}"
+            msg: "Progrid maintenance: reboot after patching"
+          when: patch_reboot and needs_restarting.rc == 1
+
+    - name: Refuse other operating systems
+      ansible.builtin.fail:
+        msg: "Patching supports the Debian and RHEL families; this host is {{ ansible_facts.os_family }}"
+      when: ansible_facts.os_family not in ["Debian", "RedHat"]

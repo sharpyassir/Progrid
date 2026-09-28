@@ -1,0 +1,76 @@
+# Managed cloud: backup restore test (STARTER PLACEHOLDER).
+#
+# Run by the maintenance runner for BACKUP_TEST tasks. It proves two things on every host:
+#   1. the latest backup exists and is recent enough, and
+#   2. a known test file can be restored from it and matches the original checksum.
+#
+# This starter version assumes a restic repository (the common setup for external servers).
+# Adapt the three marked tasks to the backup tool each customer uses (restic, borg, Proxmox
+# Backup Server, a cloud snapshot API) and record the choice in the customer's runbook.
+#
+# Task vars:
+#   backup_repo:          restic repository, e.g. "sftp:backup@10.8.0.2:/srv/restic/customer"
+#   backup_password_file: file on the host with the repository password (default /etc/restic/password)
+#   backup_max_age_hours: newest snapshot must be younger than this (default 26)
+#   backup_test_file:     file that is part of every backup (default /etc/hostname)
+- name: Test that backups exist and restore
+  hosts: managed
+  become: true
+  gather_facts: false
+  vars:
+    backup_repo: ""
+    backup_password_file: /etc/restic/password
+    backup_max_age_hours: 26
+    backup_test_file: /etc/hostname
+    restore_dir: "/tmp/prgd-restore-test-{{ prgd_run_id | default('manual') }}"
+  tasks:
+    - name: Require a backup repository
+      ansible.builtin.fail:
+        msg: "Set backup_repo in the maintenance task vars"
+      when: backup_repo | length == 0
+
+    # ADAPT: list snapshots with the customer's backup tool.
+    - name: Find the latest snapshot
+      ansible.builtin.command: restic -r {{ backup_repo }} --password-file {{ backup_password_file }} snapshots --latest 1 --json
+      register: snapshots
+      changed_when: false
+
+    - name: Check the latest snapshot is recent
+      vars:
+        latest: "{{ (snapshots.stdout | from_json) | last }}"
+        age_hours: "{{ ((now(utc=true) - (latest.time[:19] | to_datetime('%Y-%m-%dT%H:%M:%S'))).total_seconds() / 3600) | round(1) }}"
+      ansible.builtin.assert:
+        that: (age_hours | float) <= (backup_max_age_hours | float)
+        fail_msg: "Latest backup {{ latest.short_id }} is {{ age_hours }} hours old (limit {{ backup_max_age_hours }})"
+        success_msg: "Latest backup {{ latest.short_id }} is {{ age_hours }} hours old"
+
+    # ADAPT: restore one file with the customer's backup tool.
+    - name: Restore the test file
+      ansible.builtin.command: restic -r {{ backup_repo }} --password-file {{ backup_password_file }} restore latest --target {{ restore_dir }} --include {{ backup_test_file }}
+      changed_when: true
+
+    - name: Checksum of the live file
+      ansible.builtin.stat:
+        path: "{{ backup_test_file }}"
+        checksum_algorithm: sha256
+      register: live
+
+    - name: Checksum of the restored file
+      ansible.builtin.stat:
+        path: "{{ restore_dir }}{{ backup_test_file }}"
+        checksum_algorithm: sha256
+      register: restored
+
+    # ADAPT: a file that changes often will differ from the backup; pick a stable one.
+    - name: Compare
+      ansible.builtin.assert:
+        that:
+          - restored.stat.exists
+          - restored.stat.checksum == live.stat.checksum
+        fail_msg: "The restored {{ backup_test_file }} does not match the live file"
+        success_msg: "Restored {{ backup_test_file }} matches the live file"
+
+    - name: Clean up
+      ansible.builtin.file:
+        path: "{{ restore_dir }}"
+        state: absent

@@ -4,6 +4,8 @@ import { loadConfig } from '../../config/config';
 import { OnboardingService } from '../../modules/managed/onboarding/onboarding.service';
 import { ManagedTicketsService } from '../../modules/managed/tickets/tickets.service';
 import { PagingService } from '../../modules/managed/oncall/paging.service';
+import { MaintenanceService } from '../../modules/managed/maintenance/maintenance.service';
+import { Context } from '@temporalio/activity';
 
 /**
  * Activities of the managed cloud workflows. Thin wrappers over the managed module services so
@@ -17,12 +19,16 @@ export interface ManagedActivities {
   managedSlaBreach(ticketId: string, kind: 'response' | 'resolve', priority: ManagedPriority): Promise<'done' | 'breached'>;
   managedPageAckTimeout(): Promise<number>;
   managedEscalatePage(pageId: string): Promise<string>;
+  managedMaintenanceExecute(runId: string): Promise<'SUCCEEDED' | 'FAILED'>;
+  managedMaintenanceMarkFailed(runId: string, error: string): Promise<void>;
+  managedMaintenanceFailureTicket(runId: string): Promise<string | null>;
 }
 
 export function createManagedActivities(app: INestApplicationContext): ManagedActivities {
   const onboarding = app.get(OnboardingService);
   const tickets = app.get(ManagedTicketsService);
   const paging = app.get(PagingService);
+  const maintenance = app.get(MaintenanceService);
 
   return {
     async managedEnsureChecklist(contractId) {
@@ -42,5 +48,18 @@ export function createManagedActivities(app: INestApplicationContext): ManagedAc
     },
 
     managedEscalatePage: (pageId) => paging.escalate(pageId),
+
+    async managedMaintenanceExecute(runId) {
+      // Playbooks can be quiet for minutes; heartbeat on a timer so Temporal knows the worker is alive.
+      const beat = setInterval(() => Context.current().heartbeat(), 30_000);
+      try {
+        return await maintenance.execute(runId);
+      } finally {
+        clearInterval(beat);
+      }
+    },
+
+    managedMaintenanceMarkFailed: (runId, error) => maintenance.markFailed(runId, error),
+    managedMaintenanceFailureTicket: (runId) => maintenance.openFailureTicket(runId),
   };
 }
