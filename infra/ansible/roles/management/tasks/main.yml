@@ -38,8 +38,10 @@
   file: { path: "{{ item }}", state: directory, mode: "0750" }
   loop: [/opt/pgcloud, /etc/pgcloud, /var/backups/pgcloud]
 
+# No secrets in these files (those live in /etc/pgcloud/pgcloud.env); containers that run as a
+# normal user, such as Temporal, must be able to read the files mounted into them.
 - name: Compose bundle
-  copy: { src: "{{ playbook_dir }}/../prod/{{ item }}", dest: "/opt/pgcloud/{{ item }}", mode: "0640" }
+  copy: { src: "{{ playbook_dir }}/../prod/{{ item }}", dest: "/opt/pgcloud/{{ item }}", mode: "0644" }
   loop: [docker-compose.yml, Caddyfile, backup.sh, temporal-dynamicconfig.yaml]
   notify: compose up
 
