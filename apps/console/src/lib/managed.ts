@@ -86,16 +86,40 @@ export interface Alert {
 export interface Shift { id: string; userId: string; user?: StaffRef; role: 'PRIMARY' | 'SECONDARY'; startsAt: string; endsAt: string; note: string | null }
 export interface StaffMember extends StaffRef { phone: string | null; pagingChannel: 'SMS' | 'WHATSAPP' | 'PUSH' | 'EMAIL' | null; staffRoles: string[] }
 
-export interface MaintenanceTask {
+/** Team and plan names staff responses carry next to a contract id. */
+export interface ContractRef { teamId?: string; teamName?: string; planName?: string; planCode?: string }
+
+export interface MaintenanceTask extends ContractRef {
   id: string; contractId: string; assetId: string | null; asset?: { id: string; name: string }; kind: 'PATCHING' | 'BACKUP_TEST' | 'CUSTOM'; name: string; cron: string; timezone: string;
   playbook: string | null; vars: Record<string, unknown> | null; enabled: boolean; lastRunAt: string | null; nextRunAt: string | null;
 }
 export interface MaintenanceRun {
-  id: string; taskId: string; task?: { id: string; name: string; kind: string; contractId: string }; status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'; trigger: string; runner: string | null;
+  id: string; taskId: string; task?: { id: string; name: string; kind: string; contractId: string } & ContractRef; status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'; trigger: string; runner: string | null;
   startedAt: string | null; finishedAt: string | null; error: string | null; ticketId: string | null; createdAt: string; log?: string | null;
 }
 
 export interface WorkLog { id: string; contractId: string; ticketId: string | null; userId: string; user?: { id: string; name: string }; minutes: number; billable: boolean; note: string | null; workedAt: string; billedPeriod: string | null; billedInvoiceId: string | null }
+
+/** Counted (approved or paid) minutes per contract or per engineer for the filtered worklogs. */
+export interface WorkLogTotals {
+  billableMinutes: number; nonBillableMinutes: number;
+  byContract: { contractId: string; teamId: string | null; teamName: string | null; planName: string | null; includedMinutes: number | null; overageMinutes: number; billableMinutes: number; nonBillableMinutes: number; entries: number }[];
+  byUser: { userId: string; name: string | null; billableMinutes: number; nonBillableMinutes: number; entries: number }[];
+}
+
+/** GET /v1/managed/summary: what every team member may see about the managed cloud contract. */
+export interface ManagedSummary {
+  hasContract: boolean;
+  contract: { id: string; status: ContractStatus; planName: string; planCode: string; coverage: Coverage; calendar: 'SA' | 'TR'; sla: Sla; onboarding: { done: number; total: number } | null; createdAt: string; activatedAt: string | null } | null;
+  openTickets: number;
+  previous: { planName: string; cancelledAt: string | null } | null;
+}
+
+/** GET /admin/managed/teams: a team for the create contract picker (no billing data). */
+export interface TeamHit { id: string; name: string; slug: string; country: string; ownerName: string | null }
+
+/** Full staff: empty roles. Engineers and support leads only read plans. */
+export const isFullStaffRoles = (roles: string[]) => roles.length === 0;
 
 export interface Runbook { id: string; slug: string; title: string; tags: string[]; body?: string; excerpt?: string; updatedBy?: { id: string; name: string }; updatedAt: string }
 
@@ -109,7 +133,7 @@ export interface ReportData {
   backupTests: { runs: number; succeeded: number; failed: number };
   hours: { billableMinutes: number; nonBillableMinutes: number; includedMinutes: number; overageMinutes: number };
 }
-export interface Report { id: string; contractId: string; period: string; status: 'DRAFT' | 'SENT'; data: ReportData | null; recommendations: string | null; hasPdf: boolean; generatedAt: string | null; sentAt: string | null; pdfUrl?: string }
+export interface Report extends ContractRef { id: string; contractId: string; period: string; status: 'DRAFT' | 'SENT'; data: ReportData | null; recommendations: string | null; hasPdf: boolean; generatedAt: string | null; sentAt: string | null; pdfUrl?: string }
 
 export interface Page<T> { data: T[]; meta?: { next_cursor: string | null; count: number } }
 

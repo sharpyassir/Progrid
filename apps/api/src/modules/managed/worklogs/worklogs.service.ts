@@ -48,12 +48,58 @@ export class WorkLogsService {
       ...(q.billable ? { billable: q.billable === 'true' } : {}),
       ...(q.from || q.to ? { workedAt: { ...(q.from ? { gte: q.from } : {}), ...(q.to ? { lt: q.to } : {}) } } : {}),
     };
-    const [rows, totals] = await Promise.all([
+    const counted = { ...where, status: { in: COUNTED_WORKLOG } };
+    const [rows, totals, perContract, perUser] = await Promise.all([
       this.prisma.workLog.findMany({ where, include: { user: { select: { id: true, name: true } } }, orderBy: [{ workedAt: 'desc' }, { id: 'desc' }], ...cursorArgs({ limit: q.limit, cursor: q.cursor }) }),
-      this.prisma.workLog.groupBy({ by: ['billable'], where: { ...where, status: { in: COUNTED_WORKLOG } }, _sum: { minutes: true } }),
+      this.prisma.workLog.groupBy({ by: ['billable'], where: counted, _sum: { minutes: true } }),
+      this.prisma.workLog.groupBy({ by: ['contractId', 'billable'], where: counted, _sum: { minutes: true }, _count: { _all: true } }),
+      this.prisma.workLog.groupBy({ by: ['userId', 'billable'], where: counted, _sum: { minutes: true }, _count: { _all: true } }),
     ]);
     const page = toPage(rows.map(presentWorkLog), q.limit);
-    return { ...page, totals: { billableMinutes: totals.find((t) => t.billable)?._sum.minutes ?? 0, nonBillableMinutes: totals.find((t) => !t.billable)?._sum.minutes ?? 0 } };
+    return {
+      ...page,
+      totals: {
+        billableMinutes: totals.find((t) => t.billable)?._sum.minutes ?? 0,
+        nonBillableMinutes: totals.find((t) => !t.billable)?._sum.minutes ?? 0,
+        byContract: await this.contractTotals(perContract),
+        byUser: await this.userTotals(perUser),
+      },
+    };
+  }
+
+  /** Grouped rows (one per key and billable flag) folded into one row per key. */
+  private fold<K extends string>(rows: ({ billable: boolean; _sum: { minutes: number | null }; _count: { _all: number } } & Record<K, string>)[], key: K) {
+    const m = new Map<string, { billableMinutes: number; nonBillableMinutes: number; entries: number }>();
+    for (const r of rows) {
+      const x = m.get(r[key]) ?? { billableMinutes: 0, nonBillableMinutes: 0, entries: 0 };
+      if (r.billable) x.billableMinutes += r._sum.minutes ?? 0;
+      else x.nonBillableMinutes += r._sum.minutes ?? 0;
+      x.entries += r._count._all;
+      m.set(r[key], x);
+    }
+    return m;
+  }
+
+  /** Counted minutes per contract with its team, plan and included minutes, most billable first. */
+  private async contractTotals(rows: { contractId: string; billable: boolean; _sum: { minutes: number | null }; _count: { _all: number } }[]) {
+    const m = this.fold(rows, 'contractId');
+    const contracts = await this.prisma.managedContract.findMany({ where: { id: { in: [...m.keys()] } }, select: { id: true, includedMinutesOverride: true, team: { select: { id: true, name: true } }, plan: { select: { name: true, includedEngineerMinutes: true } } } });
+    return [...m.entries()]
+      .map(([contractId, v]) => {
+        const c = contracts.find((x) => x.id === contractId);
+        const includedMinutes = c ? c.includedMinutesOverride ?? c.plan.includedEngineerMinutes : null;
+        return { contractId, teamId: c?.team.id ?? null, teamName: c?.team.name ?? null, planName: c?.plan.name ?? null, includedMinutes, overageMinutes: includedMinutes === null ? 0 : Math.max(0, v.billableMinutes - includedMinutes), ...v };
+      })
+      .sort((a, b) => b.billableMinutes - a.billableMinutes || b.nonBillableMinutes - a.nonBillableMinutes);
+  }
+
+  /** Counted minutes per engineer, most time first. */
+  private async userTotals(rows: { userId: string; billable: boolean; _sum: { minutes: number | null }; _count: { _all: number } }[]) {
+    const m = this.fold(rows, 'userId');
+    const users = await this.prisma.user.findMany({ where: { id: { in: [...m.keys()] } }, select: { id: true, name: true } });
+    return [...m.entries()]
+      .map(([userId, v]) => ({ userId, name: users.find((u) => u.id === userId)?.name ?? null, ...v }))
+      .sort((a, b) => b.billableMinutes + b.nonBillableMinutes - (a.billableMinutes + a.nonBillableMinutes));
   }
 
   async create(actor: Actor, dto: WorkLogInput) {

@@ -83,3 +83,8 @@ export function periodBounds(period: string) {
   const end = new Date(Date.UTC(+m[1], +m[2], 1));
   return { start, end };
 }
+
+/** The contract fields staff responses carry so pages can name the team and plan without loading contracts. */
+export const CONTRACT_REF = { select: { teamId: true, team: { select: { name: true } }, plan: { select: { name: true, code: true } } } } as const;
+export type ContractRef = { teamId: string; team: { name: string }; plan: { name: string; code: string } };
+export const contractRef = (c: ContractRef) => ({ teamId: c.teamId, teamName: c.team.name, planName: c.plan.name, planCode: c.plan.code });

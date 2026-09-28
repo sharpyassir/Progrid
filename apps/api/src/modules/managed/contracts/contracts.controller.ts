@@ -32,6 +32,38 @@ class UpdateResponsibilityDto {
   @IsOptional() @IsInt() sortOrder?: number;
 }
 
+class TeamSearchQuery {
+  /** Part of the team name, slug or id, or the owner's name or email. */
+  @IsOptional() @IsString() @Length(0, 120) q?: string;
+}
+
+/** Customer: the managed cloud summary every team member may read (no prices or liability terms). */
+@ApiTags('managed')
+@ApiBearerAuth()
+@Controller('v1/managed/summary')
+export class ManagedSummaryController {
+  constructor(private readonly contracts: ContractsService) {}
+
+  @Get() @RequireScopes('managed:read')
+  summary(@CurrentActor() actor: Actor) {
+    return this.contracts.summaryForTeam(actor);
+  }
+}
+
+/** Back office: team search for the create contract form (support leads and full staff; no billing data). */
+@ApiTags('admin')
+@ApiBearerAuth()
+@Controller('admin/managed/teams')
+export class AdminManagedTeamsController {
+  constructor(private readonly contracts: ContractsService) {}
+
+  @StaffAreas('support_lead')
+  @Get() @RequireScopes('admin')
+  search(@Query() q: TeamSearchQuery) {
+    return this.contracts.searchTeams(q.q ?? '');
+  }
+}
+
 /** Customer: request and read managed cloud contracts. Team owners only. */
 @ApiTags('managed')
 @ApiBearerAuth()

@@ -24,6 +24,7 @@ const TABS: Tab[] = [
   { href: '/admin/managed/worklogs', label: 'Worklogs', key: 'admMcTabWorklogs', areas: MANAGED },
   { href: '/admin/managed/runbooks', label: 'Runbooks', key: 'admMcTabRunbooks', areas: MANAGED },
   { href: '/admin/managed/reports', label: 'Reports', key: 'admMcTabReports', areas: MANAGED },
+  { href: '/admin/managed/plans', label: 'Plans', key: 'admMcTabPlans', areas: MANAGED },
 ];
 
 /** Back office frame: staff only (the API also enforces the admin scope on every call). */
@@ -41,7 +42,7 @@ export function AdminShell({ title, children, actions }: { title: string; childr
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
-        <span className="badge bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Back office</span>
+        <span className="badge bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">{t(locale, 'backOffice')}</span>
         <nav className="flex flex-wrap gap-1 text-sm">
           {tabs.map(({ href, label, key }, i) => {
             const active = href === '/admin' ? pathname === '/admin' : pathname.startsWith(href);

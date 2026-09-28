@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { api, getToken, setToken } from '@/lib/api';
 import { getLocale, Locale, RTL, t } from '@/lib/i18n';
-import { DesktopNav, MobileNav } from './main-nav';
+import { AccountMenu, LanguageSelect, MobileNav, ProductsMenu, TopLinks, type Me } from './main-nav';
 
 interface Ctx {
   locale: Locale;
@@ -25,6 +25,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [authed, setAuthed] = useState(false);
   const [ready, setReady] = useState(false);
   const [isStaff, setIsStaff] = useState(false);
+  const [me, setMe] = useState<Me | null>(null);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -32,7 +33,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
     setLocaleState(getLocale());
     setAuthed(!!getToken());
     setReady(true);
-    if (getToken()) api<{ isStaff: boolean }>('/v1/account').then((m) => setIsStaff(!!m.isStaff)).catch(() => setIsStaff(false));
+    if (getToken()) {
+      api<{ isStaff: boolean; user?: { name: string; email: string }; team?: { name: string } }>('/v1/account')
+        .then((m) => { setIsStaff(!!m.isStaff); setMe(m.user ? { name: m.user.name, email: m.user.email, teamName: m.team?.name ?? '' } : null); })
+        .catch(() => setIsStaff(false));
+    }
   }, [pathname]);
 
   useEffect(() => {
@@ -61,41 +66,25 @@ export function Shell({ children }: { children: React.ReactNode }) {
     router.replace('/login');
   };
 
-  const account = (
-    <div className="flex items-center gap-3 text-sm">
-      {isStaff && <Link href="/admin" className={pathname.startsWith('/admin') ? 'font-medium text-amber-700' : 'text-amber-700 hover:text-amber-900'}>Back office</Link>}
-      <Link href="/managed" className={pathname.startsWith('/managed') ? 'font-medium' : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100'}>{t(locale, 'mcNav')}</Link>
-      <Link href="/support" className={pathname.startsWith('/support') ? 'font-medium' : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100'}>{t(locale, 'support')}</Link>
-      <Link href="/billing" className={pathname.startsWith('/billing') ? 'font-medium' : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100'}>{t(locale, 'billing')}</Link>
-      <Link href="/team" className={pathname.startsWith('/team') ? 'font-medium' : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100'}>{t(locale, 'teamNav')}</Link>
-      <select className="input w-auto py-1" value={locale} onChange={(e) => setLocale(e.target.value as Locale)} aria-label="Language">
-        <option value="en">EN</option>
-        <option value="tr">TR</option>
-        <option value="ar">AR</option>
-      </select>
-      <button className="btn-ghost" onClick={signOut}>{t(locale, 'signOut')}</button>
-    </div>
-  );
-
   return (
     <ShellCtx.Provider value={{ locale, setLocale, authed, signOut }}>
       <header className="border-b border-neutral-200 dark:border-neutral-800">
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-2.5">
-          <Link href="/servers" className="me-2 flex items-center gap-2 font-semibold tracking-tight"><img src="/brand/progrid-mark.svg" width="19" height="24" alt="" aria-hidden className="dark:hidden" /><img src="/brand/progrid-mark-white.svg" width="19" height="24" alt="" aria-hidden className="hidden dark:block" /> Progrid</Link>
-          {authed && <DesktopNav />}
+          <Link href="/servers" className="me-2 flex shrink-0 items-center gap-2 font-semibold tracking-tight"><img src="/brand/progrid-mark.svg" width="19" height="24" alt="" aria-hidden className="dark:hidden" /><img src="/brand/progrid-mark-white.svg" width="19" height="24" alt="" aria-hidden className="hidden dark:block" /> Progrid</Link>
+          {authed && (
+            <nav className="hidden min-w-0 items-center gap-0.5 lg:flex" aria-label={t(locale, 'mainNavigation')}>
+              <ProductsMenu />
+              <span aria-hidden className="mx-1 h-5 border-s border-neutral-200 dark:border-neutral-700" />
+              <TopLinks isStaff={isStaff} />
+            </nav>
+          )}
           <div className="ms-auto flex items-center gap-2">
             {authed ? (
               <>
-                <div className="hidden lg:block">{account}</div>
-                <MobileNav extra={account} />
+                <div className="hidden lg:block"><AccountMenu me={me} /></div>
+                <MobileNav isStaff={isStaff} me={me} />
               </>
-            ) : (
-              <select className="input w-auto py-1" value={locale} onChange={(e) => setLocale(e.target.value as Locale)} aria-label="Language">
-                <option value="en">EN</option>
-                <option value="tr">TR</option>
-                <option value="ar">AR</option>
-              </select>
-            )}
+            ) : <LanguageSelect />}
           </div>
         </div>
       </header>

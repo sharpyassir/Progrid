@@ -62,6 +62,40 @@ export class ContractsService {
     return this.present(await this.owned(actor, id), { detail: true });
   }
 
+  /**
+   * What every team member may know about the team's managed cloud contract: whether there is
+   * one, its plan, status, coverage and SLA targets, and how many tickets are open. No prices,
+   * overrides or liability terms (those stay on the owner only contract endpoints).
+   */
+  async summaryForTeam(actor: Actor) {
+    const rows = await this.prisma.managedContract.findMany({ where: { teamId: actor.teamId }, include: { plan: true }, orderBy: { createdAt: 'desc' } });
+    const current = rows.find((c) => c.status !== 'CANCELLED') ?? null;
+    const cancelled = rows.find((c) => c.status === 'CANCELLED') ?? null;
+    const openTickets = await this.prisma.ticket.count({ where: { teamId: actor.teamId, contractId: { not: null }, status: { notIn: ['closed', 'resolved_pending_pm'] } } });
+    let contract = null;
+    if (current) {
+      const onboarding = current.status === 'ONBOARDING' ? await this.onboarding.list(current.id) : null;
+      contract = {
+        id: current.id,
+        status: current.status,
+        planName: current.plan.name,
+        planCode: current.plan.code,
+        coverage: current.plan.coverage,
+        calendar: current.calendar,
+        sla: this.terms.sla(current),
+        onboarding: onboarding ? { done: onboarding.done, total: onboarding.total } : null,
+        createdAt: current.createdAt,
+        activatedAt: current.activatedAt,
+      };
+    }
+    return {
+      hasContract: !!current,
+      contract,
+      openTickets,
+      previous: !current && cancelled ? { planName: cancelled.plan.name, cancelledAt: cancelled.cancelledAt } : null,
+    };
+  }
+
   /** A contract of the actor's team; any role (members may use it to scope tickets and assets). */
   async owned(actor: Actor, id: string) {
     const c = await this.prisma.managedContract.findFirst({ where: { id, teamId: actor.teamId }, include: { plan: true } });
@@ -76,6 +110,27 @@ export class ContractsService {
     if (!team) throw ApiError.notFound('team', dto.teamId);
     const c = await this.createDraft(actor, team.id, dto, { priceOverrideMinor: dto.priceOverrideMinor, includedMinutesOverride: dto.includedMinutesOverride, maxAssetsOverride: dto.maxAssetsOverride, termMonths: dto.termMonths });
     return this.present(c, { detail: true, staff: true });
+  }
+
+  /** Teams matching `q` for the create contract form: id, name, slug, country and owner name only. */
+  async searchTeams(q: string) {
+    const term = q.trim();
+    const rows = await this.prisma.team.findMany({
+      where: term
+        ? {
+            OR: [
+              { id: term },
+              { name: { contains: term, mode: 'insensitive' } },
+              { slug: { contains: term, mode: 'insensitive' } },
+              { members: { some: { role: 'owner', user: { OR: [{ name: { contains: term, mode: 'insensitive' } }, { email: { contains: term, mode: 'insensitive' } }] } } } },
+            ],
+          }
+        : {},
+      select: { id: true, name: true, slug: true, country: true, members: { where: { role: 'owner' }, select: { user: { select: { name: true } } }, take: 1 } },
+      orderBy: { name: 'asc' },
+      take: 20,
+    });
+    return { data: rows.map((t) => ({ id: t.id, name: t.name, slug: t.slug, country: t.country, ownerName: t.members[0]?.user.name ?? null })) };
   }
 
   async adminList(q: AdminListContractsQuery) {
