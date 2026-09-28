@@ -48,6 +48,15 @@
 - name: Managed cloud maintenance playbooks (mounted into the worker)
   copy: { src: "{{ playbook_dir }}/maintenance/", dest: /opt/prgd/maintenance/, mode: "0644", directory_mode: "0755" }
 
+- name: Terminal gateway directory (mounted read only at /etc/prgd-gateway)
+  file: { path: /opt/prgd/gateway, state: directory, mode: "0755" }
+
+# Host keys of the managed assets, OpenSSH known_hosts format. After a change:
+#   docker compose --env-file /etc/prgd/prgd.env -f docker-compose.yml kill -s HUP gateway
+- name: Terminal gateway known_hosts
+  copy: { content: "{{ prgd_gateway_known_hosts }}", dest: /opt/prgd/gateway/known_hosts, mode: "0644" }
+  when: prgd_gateway_known_hosts is defined
+
 - name: Deploy script
   copy: { src: "{{ playbook_dir }}/../prod/deploy.sh", dest: /opt/prgd/deploy.sh, mode: "0750" }
 

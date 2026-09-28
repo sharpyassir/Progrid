@@ -58,6 +58,9 @@ export interface SessionEvent {
   recordingKey?: string;
   recordingSize?: number;
   error?: string;
+  /** On started: the asset's SSH host key (OpenSSH line) and its SHA256 fingerprint, kept in the audit log. */
+  hostKey?: string;
+  hostKeyFingerprint?: string;
 }
 
 /**
@@ -213,7 +216,7 @@ export class SessionsService implements OnModuleInit {
     }
     await this.prisma.terminalSession.update({ where: { id: s.id }, data });
     if (dto.type !== 'heartbeat') {
-      await this.audit.emit(`ops.session_${dto.type}`, null, { contractId: s.contractId, assetId: s.assetId, ticketId: s.ticketId, sessionId: s.id, grantId: s.grantId, reason: dto.reason ?? dto.error ?? null, recordingSize: dto.recordingSize ?? null }, `terminal_session:${s.id}`);
+      await this.audit.emit(`ops.session_${dto.type}`, null, { contractId: s.contractId, assetId: s.assetId, ticketId: s.ticketId, sessionId: s.id, grantId: s.grantId, reason: dto.reason ?? dto.error ?? null, recordingSize: dto.recordingSize ?? null, ...(dto.hostKey ? { hostKey: dto.hostKey, hostKeyFingerprint: dto.hostKeyFingerprint ?? null } : {}) }, `terminal_session:${s.id}`);
     }
     await this.timers.activity(s.userId);
     const g = s.grant;

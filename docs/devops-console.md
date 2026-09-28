@@ -639,3 +639,52 @@ certificates, extension, revocation on ticket close, the full gateway contract (
 and revoked grants, secrets, events, kills, recordings), shifts and handovers, postmortems and
 runbooks, payouts with the night multiplier, offboarding, maintenance with the live log, alert
 acknowledgement, escalation and settings.
+
+## Running the gateway
+
+The gateway is `services/prgd-gateway` (package `@prgd/gateway`, image `prgd-gateway`). Its
+WebSocket protocol, configuration and limits are in `services/prgd-gateway/README.md`. In short:
+the ops app opens `wss://gateway.progrid.sa/v1/terminal?session=<id>`, sends
+`{"type":"auth","token"}` first, then `input`, `resize` and `ping` frames; the gateway answers
+`ready`, `output` (base64), `notice`, `pong` and a final `closed` with the reason.
+
+**Contract addition.** The `started` event also carries `hostKey` (the asset's SSH host key as an
+OpenSSH line) and `hostKeyFingerprint`; the API writes both into the `ops.session_started` audit
+entry.
+
+**Production.** The `gateway` service in `infra/prod/docker-compose.yml` is on the internal
+network and gets only its own settings (`PRGD_GATEWAY_SECRET`, `PRGD_GATEWAY_ID`,
+`PRGD_GATEWAY_ALLOWED_ORIGINS`, `PRGD_GATEWAY_KNOWN_HOSTS`, `PRGD_GATEWAY_MAX_SESSIONS`, the NATS
+token), never the whole `prgd.env`. It calls the API at `http://api:4000/internal/gateway`, which
+Caddy does not publish; Caddy publishes only `/v1/terminal` at `gateway.{$DOMAIN}`. Recordings
+wait in the `gateway-spool` volume until uploaded. The gateway must also reach the recordings bucket
+through its presigned URLs (`S3_ENDPOINT`, for example `https://s3.sa1.progrid.sa`).
+
+**Reaching the assets.** The gateway opens SSH to each asset's management address (`10.8.0.x`),
+which lives on the WireGuard management network. The management host must therefore be a
+WireGuard peer of every managed customer network, and route that range out of `wg0`; containers
+on the compose bridge reach it through the host's routing and NAT, so the SSH connections leave
+from the host's WireGuard address. Set `PRGD_GATEWAY_SOURCE_ADDRESSES` to that address (for example
+`10.8.0.2/32`) so certificates only work from there, and make sure each asset's firewall allows
+port 22 from it. The Ansible role does not set WireGuard up yet; configure `wg0` on the host (and
+the peers on the customer side) before the first terminal session.
+
+**Host keys.** Without `PRGD_GATEWAY_KNOWN_HOSTS` the gateway trusts the first host key an asset
+presents and pins it in memory until it restarts (the key is in the audit log either way). That is
+a development setting: in production collect each asset's host key when it is provisioned, put
+them in the Ansible variable `prgd_gateway_known_hosts` (known_hosts format, `[10.8.0.70]:22` or
+`10.8.0.70`), which writes `/opt/prgd/gateway/known_hosts` and sets
+`PRGD_GATEWAY_KNOWN_HOSTS=/etc/prgd-gateway/known_hosts`, and reload it with
+`docker compose kill -s HUP gateway`. SSH host certificates from step-ca would remove the list,
+but the gateway's SSH library cannot verify host certificates yet.
+
+**Sudo passwords.** The gateway answers sudo's own prompt for the login user with the asset's
+stored `sudo_password` and redacts the value from the terminal and the recording. A program the
+engineer runs can imitate the prompt and capture what the gateway types, so the stored password
+must be treated as reachable by anyone holding a grant on the asset: use a password only for
+this, rotate it (offboarding opens rotate secrets tasks), and prefer `NOPASSWD` rules for specific
+commands where the customer allows it.
+
+**Scaling.** Each gateway holds its sessions in memory. Several gateways can run behind Caddy
+(each with its own `PRGD_GATEWAY_ID`); kills reach all of them over NATS and each ignores sessions
+it does not hold. `PRGD_GATEWAY_MAX_SESSIONS` (50) caps one instance.

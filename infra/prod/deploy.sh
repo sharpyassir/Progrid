@@ -6,7 +6,7 @@ TAG="${1:-latest}"
 cd /opt/prgd
 sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${TAG}/" /etc/prgd/prgd.env
 COMPOSE="docker compose --env-file /etc/prgd/prgd.env -f docker-compose.yml"
-$COMPOSE pull api worker console www
+$COMPOSE pull api worker console www gateway
 $COMPOSE run --rm migrate
 $COMPOSE run --rm seed
 $COMPOSE up -d --remove-orphans
