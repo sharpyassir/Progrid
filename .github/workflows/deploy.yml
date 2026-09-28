@@ -1,6 +1,6 @@
 name: deploy
 
-# Every push to main builds the three control plane images and tags them with the commit sha
+# Every push to main builds the control plane images and tags them with the commit sha
 # (and `latest`). A tag `v*` also tags them with the version. The deploy job then rolls the
 # management host over SSH, which pulls the images, runs migrations and restarts.
 #
@@ -34,7 +34,12 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        app: [api, console, www]
+        # app names the image (prgd-<app>); dockerfile is relative to the workspace root.
+        include:
+          - { app: api, dockerfile: apps/api/Dockerfile }
+          - { app: console, dockerfile: apps/console/Dockerfile }
+          - { app: www, dockerfile: apps/www/Dockerfile }
+          - { app: gateway, dockerfile: services/prgd-gateway/Dockerfile }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,7 +59,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/${{ matrix.app }}/Dockerfile
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

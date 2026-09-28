@@ -38,3 +38,24 @@ api.{$DOMAIN} {
         header_up X-Forwarded-For {remote_host}
     }
 }
+
+# Terminal gateway: WebSockets from the ops console only (the gateway checks Origin). Nothing
+# but /v1/terminal is published; no compression on upgraded connections.
+gateway.{$DOMAIN} {
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options nosniff
+        -Server
+    }
+    @terminal path /v1/terminal
+    handle @terminal {
+        reverse_proxy gateway:4100 {
+            header_up X-Forwarded-For {remote_host}
+            # Keep terminals open across Caddy config reloads.
+            stream_close_delay 4h
+        }
+    }
+    handle {
+        respond 404
+    }
+}

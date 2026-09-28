@@ -1,6 +1,6 @@
 # Production control plane. One management host (phase 0) or one VM per role (phase 1) runs this.
 # Secrets and settings come from /etc/prgd/prgd.env, rendered by Ansible. Nothing here is
-# customer facing except through Caddy, which terminates TLS for the three hostnames.
+# customer facing except through Caddy, which terminates TLS for the public hostnames.
 #
 #   docker compose --env-file /etc/prgd/prgd.env -f docker-compose.yml up -d
 name: prgd
@@ -36,7 +36,7 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     networks: [internal]
-    depends_on: [api, console, www]
+    depends_on: [api, console, www, gateway]
 
   api:
     <<: *api
@@ -93,6 +93,42 @@ services:
   www:
     image: ${REGISTRY:-ghcr.io/sharpyassir}/prgd-www:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    networks: [internal]
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
+
+  # Terminal gateway of the DevOps console (services/prgd-gateway). Caddy publishes only its
+  # WebSocket endpoint at gateway.$DOMAIN; it calls the API's /internal/gateway on this network.
+  # It also opens SSH to asset management addresses over WireGuard: the host must route the
+  # management network (docs/devops-console.md, "Running the gateway").
+  gateway:
+    image: ${REGISTRY:-ghcr.io/sharpyassir}/prgd-gateway:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    # Only its own settings (from --env-file), not the whole prgd.env: the gateway faces the
+    # internet and needs no database, mail or payment secrets.
+    environment:
+      PRGD_API_URL: http://api:4000
+      PRGD_GATEWAY_SECRET: ${PRGD_GATEWAY_SECRET}
+      PRGD_GATEWAY_ID: ${PRGD_GATEWAY_ID:-gw-1}
+      PRGD_GATEWAY_ALLOWED_ORIGINS: ${PRGD_GATEWAY_ALLOWED_ORIGINS:-https://ops.progrid.sa}
+      PRGD_GATEWAY_KNOWN_HOSTS: ${PRGD_GATEWAY_KNOWN_HOSTS:-}
+      PRGD_GATEWAY_MAX_SESSIONS: ${PRGD_GATEWAY_MAX_SESSIONS:-50}
+      NATS_URL: nats://nats:4222
+      NATS_TOKEN: ${NATS_TOKEN}
+    volumes:
+      # Recordings are spooled here until uploaded; a failed upload stays for an operator.
+      - gateway-spool:/var/lib/prgd-gateway/spool
+      # Optional known_hosts (PRGD_GATEWAY_KNOWN_HOSTS=/etc/prgd-gateway/known_hosts).
+      - ./gateway:/etc/prgd-gateway:ro
+    depends_on:
+      api: { condition: service_started }
+      nats: { condition: service_started }
+    # Time to end sessions and upload their recordings on a restart.
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4100/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks: [internal]
     logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
 
@@ -205,3 +241,4 @@ volumes:
   nats-data:
   caddy-data:
   caddy-config:
+  gateway-spool:
