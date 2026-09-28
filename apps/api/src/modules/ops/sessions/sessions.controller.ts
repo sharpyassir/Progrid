@@ -48,6 +48,10 @@ class SessionEventDto {
   @IsOptional() @IsString() recordingKey?: string;
   @IsOptional() @IsInt() @Min(0) recordingSize?: number;
   @IsOptional() @IsString() @Length(0, 2000) error?: string;
+  /** On started: the asset's SSH host key as an OpenSSH line ("ssh-ed25519 AAAA..."). */
+  @IsOptional() @IsString() @Length(0, 2000) hostKey?: string;
+  /** SHA256 fingerprint of hostKey, as ssh-keygen prints it. */
+  @IsOptional() @IsString() @Length(0, 100) hostKeyFingerprint?: string;
 }
 
 class SecretRequestDto {
