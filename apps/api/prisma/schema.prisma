@@ -82,6 +82,7 @@ model User {
   engineerProfile     EngineerProfile?
   webAuthnCredentials WebAuthnCredential[]
   workTimers          WorkTimer[]
+  accessGrants        AccessGrant[]
 
   @@map("prgd_users")
 }
@@ -1811,6 +1812,7 @@ model Ticket {
   workLogs WorkLog[]
   maintenanceRuns MaintenanceRun[]
   workTimers WorkTimer[]
+  accessGrants AccessGrant[]
 
   @@index([contractId, status])
   @@index([assigneeId, status])
@@ -2275,6 +2277,7 @@ model ManagedContract {
   team     Team        @relation(fields: [teamId], references: [id])
   plan     ManagedPlan @relation(fields: [planId], references: [id])
   engineerAssignments EngineerAssignment[]
+  accessGrants        AccessGrant[]
   signedBy User?       @relation(fields: [signedById], references: [id], onDelete: SetNull)
   onboardingItems  OnboardingItem[]
   assets           ManagedAsset[]
@@ -2348,6 +2351,7 @@ model ManagedAsset {
   alerts   Alert[]
   tickets  Ticket[]
   maintenanceTasks MaintenanceTask[]
+  accessGrants AccessGrant[]
 
   @@index([contractId, status])
   @@index([status, kind, lastHeartbeatAt])
@@ -2513,6 +2517,7 @@ model MaintenanceRun {
   ticket Ticket?         @relation(fields: [ticketId], references: [id], onDelete: SetNull)
   workLogs WorkLog[]
   timers   WorkTimer[]
+  accessGrants AccessGrant[]
 
   @@index([taskId, createdAt])
   @@index([status])
@@ -2783,4 +2788,110 @@ model WorkTimer {
 
   @@index([userId, stoppedAt])
   @@map("prgd_work_timers")
+}
+
+enum AccessGrantStatus {
+  /// Waiting for a support lead.
+  REQUESTED
+  /// Approved; the access grant workflow activates it at once.
+  APPROVED
+  /// Usable until expiresAt: terminal sessions get certificates valid until then.
+  ACTIVE
+  DENIED
+  EXPIRED
+  REVOKED
+
+  @@map("prgd_access_grant_status")
+}
+
+/**
+ * Time limited access for one engineer to one asset, bound to one ticket or maintenance run.
+ * There is no standing access: terminal sessions need an ACTIVE grant (docs/devops-console.md).
+ */
+model AccessGrant {
+  id               String            @id @default(cuid())
+  userId           String
+  /// Engineer profile; null for internal staff without one.
+  engineerId       String?
+  contractId       String
+  assetId          String
+  ticketId         String?
+  maintenanceRunId String?
+  reason           String
+  requestedMinutes Int
+  status           AccessGrantStatus @default(REQUESTED)
+  /// Approved by the rule (P1 or P2 ticket, engineer on call, asset assigned) instead of a lead.
+  auto             Boolean           @default(false)
+  /// P1 or P2 work: the grant survives the end of the engineer's shift.
+  emergency        Boolean           @default(false)
+  /// Minutes granted (the rule's fixed duration, or what the lead approved).
+  grantedMinutes   Int?
+  approvedById     String?
+  approvedAt       DateTime?
+  deniedById       String?
+  denyReason       String?
+  startsAt         DateTime?
+  expiresAt        DateTime?
+  extensions       Int               @default(0)
+  extendedAt       DateTime?
+  extensionReason  String?
+  revokedAt        DateTime?
+  revokedById      String?
+  /// staff | ticket_closed | shift_end | offboarded | suspended | unassigned | residency, or the staff member's reason.
+  revokeReason     String?
+  /// Serial of the latest certificate issued under this grant.
+  certSerial       String?
+  /// SSH principals the certificates carry (the asset's principal only).
+  principals       String[]          @default([])
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contract     ManagedContract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  asset        ManagedAsset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  ticket       Ticket?          @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  run          MaintenanceRun?  @relation(fields: [maintenanceRunId], references: [id], onDelete: SetNull)
+  certificates SshCertificate[]
+
+  @@index([userId, status])
+  @@index([status, expiresAt])
+  @@index([ticketId])
+  @@index([assetId, startsAt])
+  @@map("prgd_access_grants")
+}
+
+/// The development certificate authority (PRGD_SSH_CA=local). The private key is sealed with the secretbox key.
+model SshCaKey {
+  id         String   @id @default(cuid())
+  name       String   @unique
+  /// OpenSSH public key line; hosts trust it with TrustedUserCAKeys.
+  publicKey  String
+  privateKey String
+  createdAt  DateTime @default(now())
+
+  @@map("prgd_ssh_ca_keys")
+}
+
+/// Every SSH user certificate the platform signed, so each can be revoked by serial.
+model SshCertificate {
+  id          String    @id @default(cuid())
+  grantId     String
+  sessionId   String?
+  /// uint64 serial, decimal.
+  serial      String    @unique
+  keyId       String
+  principals  String[]
+  /// SHA256 fingerprint of the certified public key (the gateway's ephemeral key).
+  fingerprint String
+  validAfter  DateTime
+  validBefore DateTime
+  /// local | step-ca
+  ca          String
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  grant AccessGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+
+  @@index([grantId])
+  @@map("prgd_ssh_certificates")
 }

@@ -46,6 +46,7 @@ export interface SystemTicket {
 @Injectable()
 export class ManagedTicketsService {
   private readonly log = new Logger(ManagedTicketsService.name);
+  private readonly closedListeners: ((ticketId: string) => Promise<void>)[] = [];
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventsService,
@@ -55,6 +56,15 @@ export class ManagedTicketsService {
     private readonly workflows: ManagedWorkflows,
     private readonly notify: ManagedNotify,
   ) {}
+
+  /** Called after a managed ticket is closed by anyone (the ops module revokes its access grants). */
+  onClosed(fn: (ticketId: string) => Promise<void>) {
+    this.closedListeners.push(fn);
+  }
+
+  private async closed(ticketId: string) {
+    for (const fn of this.closedListeners) await fn(ticketId).catch((e) => this.log.error(`ticket ${ticketId} close listener: ${(e as Error).message}`));
+  }
 
   // ---- customer ----
 
@@ -105,6 +115,7 @@ export class ManagedTicketsService {
     const updated = await this.prisma.ticket.update({ where: { id }, data: { status: 'closed', closedAt: new Date() }, include: ticketInclude });
     await this.stopTimers(updated);
     await this.events.emit('ticket.closed', { ticketId: id, number: t.number, by: 'customer', contractId: t.contractId }, { actor, resource: `ticket:${id}` });
+    await this.closed(id);
     return this.present(updated, false);
   }
 
@@ -187,7 +198,10 @@ export class ManagedTicketsService {
     const updated = await this.prisma.ticket.update({ where: { id }, data, include: ticketInclude });
     await this.events.emit('managed.ticket_updated', { ticketId: id, number: t.number, changes }, { teamId: t.teamId, actor, resource: `ticket:${id}` });
     if (newPriority) await this.startTimers(updated);
-    if (updated.status === 'closed') await this.stopTimers(updated);
+    if (updated.status === 'closed') {
+      await this.stopTimers(updated);
+      await this.closed(id);
+    }
     if (changes.assigneeId && dto.assigneeId && dto.assigneeId !== actor.userId) {
       const u = await this.prisma.user.findUnique({ where: { id: dto.assigneeId }, select: { email: true } });
       if (u) await this.notify.send({ to: u.email, subject: `Assigned to you: [#${t.number}] [${updated.managedPriority}] ${t.subject}`, text: `${loadConfig().CONSOLE_URL}/admin/managed/tickets/${id}\nResponse due ${updated.responseDueAt?.toISOString()}` });
@@ -221,6 +235,7 @@ export class ManagedTicketsService {
     if (!internal) {
       await this.stopTimers(updated);
       await this.notifyCustomer(updated, dto.body);
+      if (close) await this.closed(id);
     }
     return this.adminGet(id);
   }

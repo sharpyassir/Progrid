@@ -33,7 +33,7 @@ export type OpsRequest = { ops?: OpsContext; actor?: Actor; params: Record<strin
 export const Ops = createParamDecorator((_: unknown, ctx: ExecutionContext): OpsContext => ctx.switchToHttp().getRequest<OpsRequest>().ops!);
 
 /** Kinds of objects an ops request can reference; each resolves to one contract. */
-export type OpsRefKind = 'contract' | 'asset' | 'ticket' | 'alert' | 'task' | 'run' | 'page';
+export type OpsRefKind = 'contract' | 'asset' | 'ticket' | 'alert' | 'task' | 'run' | 'page' | 'grant';
 
 export const OPS_REFS_KEY = 'prgd:ops-refs';
 /**
@@ -57,6 +57,7 @@ export const BODY_REFS: Record<string, OpsRefKind> = {
   taskId: 'task',
   maintenanceRunId: 'run',
   runId: 'run',
+  grantId: 'grant',
 };
 
 /** True when the engineer may see objects of `contractId`. */

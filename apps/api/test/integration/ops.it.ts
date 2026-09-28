@@ -4,6 +4,8 @@ import { isoCBOR } from '@simplewebauthn/server/helpers';
 import { Client, signup, sleep, sut, totp, waitFor, type Sut, type Team } from './harness';
 import { ManagedBillingService } from '../../src/modules/managed/billing-hooks/managed-billing.service';
 import { periodBounds, periodKey } from '../../src/modules/managed/managed.constants';
+import { GrantsService } from '../../src/modules/ops/access/grants.service';
+import { ed25519Line, parseCertificate, rawEd25519 } from '../../src/modules/ops/access/ca/openssh';
 
 /**
  * DevOps console backend (/ops/v1 and /admin/ops): engineers and assignments, residency, data
@@ -395,5 +397,104 @@ describe('ops console timers and timesheets', () => {
     const rows = await s.prisma.workLog.findMany({ where: { contractId: c.contractId } });
     expect(rows.filter((w) => w.billedPeriod).map((w) => w.id).sort()).toEqual(approved.map((a) => a.id).sort());
     expect(rows.find((w) => w.id === pending.id)!.billedPeriod).toBeNull();
+  });
+});
+
+/** Puts a user on call now as PRIMARY for a few hours (their own shift, never overlapping). */
+async function onCall(userId: string, role: 'PRIMARY' | 'SECONDARY' = 'PRIMARY') {
+  const now = Date.now();
+  await s.prisma.onCallShift.deleteMany({ where: { userId } });
+  return lead.client.ok('POST', '/admin/managed/oncall/shifts', { userId, role, startsAt: new Date(now - 600_000), endsAt: new Date(now + 4 * 3600_000) }, 201);
+}
+
+/** A gateway style ephemeral ed25519 key pair. */
+function ephemeralKey() {
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  return { line: ed25519Line(rawEd25519(publicKey), 'gateway'), privateKey };
+}
+
+describe('ops console access grants', () => {
+  it('auto approves P1 work by the on call engineer and certifies keys for the asset until expiry', async () => {
+    const c = await contractWithAsset();
+    const eng = await externalEngineer({ contractIds: [c.contractId] });
+    await onCall(eng.userId);
+    const t = await customerTicket(c.owner, c.assetId, 'P1', 'Production is down');
+    const requested = await eng.client.ok('POST', '/ops/v1/access/grants', { assetId: c.assetId, ticketId: t.id, reason: 'Investigate the outage', durationMin: 30 }, 201);
+    expect(requested).toMatchObject({ auto: true, emergency: true, grantedMinutes: 120, principals: [`prgd-asset-${c.assetId}`] });
+    const active = await waitFor(async () => {
+      const g = await eng.client.ok('GET', `/ops/v1/access/grants/${requested.id}`);
+      return g.status === 'ACTIVE' && g;
+    }, { what: 'the grant to become ACTIVE', timeoutMs: 20_000 });
+    const lifetime = new Date(active.expiresAt).getTime() - new Date(active.startsAt).getTime();
+    expect(lifetime).toBe(120 * 60_000);
+    expect((await eng.client.ok('GET', '/ops/v1/me')).activeGrants.map((g: { id: string }) => g.id)).toContain(active.id);
+
+    // The local CA signs the gateway's key with the asset principal only, valid until the grant expires.
+    const grant = await s.prisma.accessGrant.findUniqueOrThrow({ where: { id: active.id } });
+    const key = ephemeralKey();
+    const issued = await s.get(GrantsService).issueCertificate(grant, key.line, 'it-session');
+    const cert = parseCertificate(issued.certificate);
+    expect(cert.signatureValid).toBe(true);
+    expect(cert.certType).toBe(1);
+    expect(cert.principals).toEqual([`prgd-asset-${c.assetId}`]);
+    expect(cert.validBefore.getTime()).toBe(Math.floor(grant.expiresAt!.getTime() / 1000) * 1000);
+    expect(cert.validAfter.getTime()).toBeLessThan(Date.now());
+    expect(cert.extensions).toEqual(['permit-pty']);
+    expect(cert.publicKey.equals(rawEd25519(key.privateKey))).toBe(true);
+    const ca = await lead.client.ok('GET', '/admin/ops/access/ca');
+    expect(ca.ca).toBe('local');
+    expect(Buffer.from(ca.publicKey.split(' ')[1], 'base64').subarray(-32).equals(cert.signatureKey)).toBe(true);
+    const audit = await s.prisma.auditLog.findMany({ where: { resource: `access_grant:${active.id}` } });
+    expect(audit.map((a) => a.action)).toEqual(expect.arrayContaining(['ops.grant_requested', 'ops.grant_approved', 'ops.grant_active', 'ops.certificate_issued']));
+  });
+
+  it('waits for a support lead when the engineer is not on call, never self approved, and extends once', async () => {
+    const c = await contractWithAsset();
+    const eng = await externalEngineer({ contractIds: [c.contractId] });
+    const t = await customerTicket(c.owner, c.assetId, 'P1', 'Down again');
+    const g = await eng.client.ok('POST', '/ops/v1/access/grants', { assetId: c.assetId, ticketId: t.id, reason: 'Look at the logs', durationMin: 90 }, 201);
+    expect(g).toMatchObject({ status: 'REQUESTED', auto: false });
+    expect(s.outbox.some((m) => m.subject.startsWith(`Access request: `) && m.text.includes(g.id))).toBe(true);
+    expect((await eng.client.post('/ops/v1/access/grants', { assetId: c.assetId, ticketId: t.id, reason: 'Again please', durationMin: 90 })).status).toBe(409);
+    expect((await eng.client.post('/ops/v1/access/grants', { assetId: c.assetId, ticketId: t.id, reason: 'Too long a window', durationMin: 300 })).status).toBe(422);
+    // An engineer cannot approve anything, and nobody approves their own access.
+    expect((await eng.client.post(`/admin/ops/access/grants/${g.id}/approve`, {})).status).toBe(401);
+    const leadOps = await opsLogin({ email: lead.email, password: lead.password, totpSecret: lead.totpSecret });
+    const own = await leadOps.client.ok('POST', '/ops/v1/access/grants', { assetId: c.assetId, ticketId: t.id, reason: 'Lead checking himself', durationMin: 30 }, 201);
+    expect(own.status).toBe('REQUESTED');
+    expect((await lead.client.post(`/admin/ops/access/grants/${own.id}/approve`, {})).status).toBe(403);
+    await admin.client.ok('POST', `/admin/ops/access/grants/${own.id}/deny`, { reason: 'Not needed' }, 200);
+
+    const pending = await lead.client.ok('GET', '/admin/ops/access/grants?status=REQUESTED');
+    expect(pending.data.map((x: { id: string }) => x.id)).toContain(g.id);
+    await lead.client.ok('POST', `/admin/ops/access/grants/${g.id}/approve`, { minutes: 60 }, 200);
+    const active = await waitFor(async () => {
+      const x = await eng.client.ok('GET', `/ops/v1/access/grants/${g.id}`);
+      return x.status === 'ACTIVE' && x;
+    }, { what: 'the approved grant to become ACTIVE', timeoutMs: 20_000 });
+    expect(new Date(active.expiresAt).getTime() - new Date(active.startsAt).getTime()).toBe(60 * 60_000);
+
+    const extended = await eng.client.ok('POST', `/ops/v1/access/grants/${g.id}/extend`, { reason: 'Database restore still running', minutes: 30 }, 200);
+    expect(new Date(extended.expiresAt).getTime() - new Date(active.expiresAt).getTime()).toBe(30 * 60_000);
+    expect(extended).toMatchObject({ extensions: 1, extensionReason: 'Database restore still running' });
+    const again = await eng.client.post(`/ops/v1/access/grants/${g.id}/extend`, { reason: 'One more time please', minutes: 30 });
+    expect(again.status).toBe(409);
+    expect(again.body.error.code).toBe('extension_used');
+  });
+
+  it('revokes the grant and its certificates when the ticket is closed', async () => {
+    const c = await contractWithAsset();
+    const eng = await externalEngineer({ contractIds: [c.contractId] });
+    await onCall(eng.userId);
+    const t = await customerTicket(c.owner, c.assetId, 'P2', 'Slow checkout');
+    const g = await eng.client.ok('POST', '/ops/v1/access/grants', { assetId: c.assetId, ticketId: t.id, reason: 'Profile the database', durationMin: 60 }, 201);
+    await waitFor(async () => (await s.prisma.accessGrant.findUniqueOrThrow({ where: { id: g.id } })).status === 'ACTIVE', { what: 'grant ACTIVE', timeoutMs: 20_000 });
+    await s.get(GrantsService).issueCertificate(await s.prisma.accessGrant.findUniqueOrThrow({ where: { id: g.id } }), ephemeralKey().line, 'it-close');
+    await eng.client.ok('PATCH', `/ops/v1/tickets/${t.id}`, { status: 'closed', rootCause: 'A missing index on the orders table.' });
+    const after = await s.prisma.accessGrant.findUniqueOrThrow({ where: { id: g.id }, include: { certificates: true } });
+    expect(after).toMatchObject({ status: 'REVOKED', revokeReason: 'ticket_closed' });
+    expect(after.certificates.every((x) => x.revokedAt)).toBe(true);
+    expect((await eng.client.post(`/ops/v1/access/grants/${g.id}/extend`, { reason: 'Need more time', minutes: 10 })).status).toBe(409);
+    expect(await s.prisma.auditLog.count({ where: { resource: `access_grant:${g.id}`, action: 'ops.grant_revoked' } })).toBe(1);
   });
 });

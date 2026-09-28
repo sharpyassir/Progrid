@@ -15,6 +15,8 @@ import { TimersService } from './timers/timers.service';
 import { OpsTimersController } from './timers/timers.controller';
 import { TimesheetsService } from './timesheets/timesheets.service';
 import { AdminOpsTimesheetsController } from './timesheets/admin-timesheets.controller';
+import { GrantsService } from './access/grants.service';
+import { AdminOpsAccessController, OpsAccessController } from './access/access.controller';
 
 /**
  * DevOps console backend: /ops/v1 for engineers (apps/ops), /admin/ops for support leads and
@@ -24,8 +26,8 @@ import { AdminOpsTimesheetsController } from './timesheets/admin-timesheets.cont
  */
 @Module({
   imports: [EventsModule, ManagedModule],
-  controllers: [OpsAuthController, OpsDeskController, OpsTimersController, AdminOpsEngineersController, AdminOpsTimesheetsController],
-  providers: [OpsAudit, OpsHooks, OpsScopeService, EngineerGuard, AssignmentGuard, ResidencyGuard, OpsAuthService, EngineersService, OffboardingService, DeskService, TimersService, TimesheetsService],
-  exports: [OpsAudit, OpsHooks, TimersService, TimesheetsService],
+  controllers: [OpsAuthController, OpsDeskController, OpsTimersController, OpsAccessController, AdminOpsEngineersController, AdminOpsTimesheetsController, AdminOpsAccessController],
+  providers: [OpsAudit, OpsHooks, OpsScopeService, EngineerGuard, AssignmentGuard, ResidencyGuard, OpsAuthService, EngineersService, OffboardingService, DeskService, TimersService, TimesheetsService, GrantsService],
+  exports: [OpsAudit, OpsHooks, TimersService, TimesheetsService, GrantsService],
 })
 export class OpsModule {}

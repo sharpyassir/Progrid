@@ -27,6 +27,8 @@ export class OpsScopeService {
         return (await this.prisma.maintenanceTask.findUnique({ where: { id }, select: { contractId: true } }))?.contractId ?? null;
       case 'run':
         return (await this.prisma.maintenanceRun.findUnique({ where: { id }, select: { task: { select: { contractId: true } } } }))?.task.contractId ?? null;
+      case 'grant':
+        return (await this.prisma.accessGrant.findUnique({ where: { id }, select: { contractId: true } }))?.contractId ?? null;
       case 'page': {
         const p = await this.prisma.page.findUnique({ where: { id }, select: { alert: { select: { contractId: true } }, ticket: { select: { contractId: true } } } });
         return p?.alert?.contractId ?? p?.ticket?.contractId ?? null;

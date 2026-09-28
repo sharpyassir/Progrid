@@ -145,6 +145,21 @@ const schema = z.object({
   /** Defaults for the ops settings (PATCH /admin/ops/settings overrides them). Seconds so tests can use short values. */
   PRGD_OPS_TIMER_IDLE_PROMPT_SECONDS: z.coerce.number().int().min(1).default(3600),
   PRGD_OPS_TIMER_AUTO_STOP_SECONDS: z.coerce.number().int().min(1).default(5400),
+  /** SSH certificate authority for terminal sessions: local (development, key in the database) or step-ca. */
+  PRGD_SSH_CA: z.enum(['local', 'step-ca']).default('local'),
+  PRGD_STEPCA_URL: z.string().url().optional(),
+  /** Name of the step-ca JWK provisioner that signs SSH user certificates. */
+  PRGD_STEPCA_PROVISIONER: z.string().optional(),
+  /** The provisioner's private JWK as JSON, or its encrypted key from ca.json (compact JWE) with PRGD_STEPCA_PASSWORD. */
+  PRGD_STEPCA_JWK: z.string().optional(),
+  PRGD_STEPCA_PASSWORD: z.string().optional(),
+  /** SHA256 fingerprint of the step-ca root certificate, sent in the one time tokens. */
+  PRGD_STEPCA_ROOT_FINGERPRINT: z.string().optional(),
+  /** CIDRs the gateway reaches assets from; when set, certificates carry them as source-address. */
+  PRGD_GATEWAY_SOURCE_ADDRESSES: z.string().optional(),
+  /** Unix user the gateway logs in as on managed assets (its AuthorizedPrincipalsFile lists the asset principal). */
+  PRGD_SSH_LOGIN_USER: z.string().default('prgd'),
+  PRGD_SSH_PORT: z.coerce.number().int().min(1).max(65535).default(22),
 });
 
 export type AppConfig = z.infer<typeof schema>;
