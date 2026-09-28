@@ -43,6 +43,8 @@ tags:
   - name: marketplace
   - name: billing
   - name: support
+  - name: managed-cloud
+    description: Managed cloud contracts. Progrid engineers operate your servers and sites under an SLA. Contracts and reports are for team owners; members can open and read tickets and see assets.
   - name: webhooks
 
 paths:
@@ -700,6 +702,95 @@ paths:
       summary: Close a ticket
       parameters: [{ $ref: "#/components/parameters/id" }]
       responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Ticket" } } } } }
+  /managed/plans:
+    get:
+      tags: [managed-cloud]
+      summary: Active managed cloud plans
+      description: Prices exclude VAT. `priceMinor` is null for a custom plan. Targets are minutes per priority; on BUSINESS_HOURS plans they count working minutes (09:00 to 17:00 on working days of the contract calendar, public holidays excluded).
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/ManagedCloudPlan" } } } } } } } }
+  /managed/contracts:
+    get:
+      tags: [managed-cloud]
+      summary: The team's contracts
+      description: Team owners only.
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/ManagedCloudContract" } } } } } } }, "403": { $ref: "#/components/responses/Forbidden" } }
+    post:
+      tags: [managed-cloud]
+      summary: Request a managed cloud plan
+      description: Team owners only. Creates a DRAFT contract with the default responsibility matrix. A support lead reviews it, signs it and starts onboarding; the contract becomes ACTIVE, and billing starts, when onboarding is complete. One pending request per team.
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [plan], properties: { plan: { type: string, example: ESSENTIAL }, calendar: { type: string, enum: [SA, TR], description: Business hours calendar; defaults from the team country }, notes: { type: string, maxLength: 4000 } } } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ManagedCloudContract" } } } }, "409": { description: A request is already pending (`request_pending`) }, "422": { $ref: "#/components/responses/Invalid" } }
+  /managed/contracts/{id}:
+    get:
+      tags: [managed-cloud]
+      summary: Contract detail with SLA, responsibility matrix, onboarding progress and this month's engineer time
+      description: Team owners only.
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ManagedCloudContract" } } } }, "404": { $ref: "#/components/responses/NotFound" } }
+  /managed/contracts/{id}/assets:
+    get:
+      tags: [managed-cloud]
+      summary: Assets under management with health
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/ManagedCloudAsset" } } } } } } }, "404": { $ref: "#/components/responses/NotFound" } }
+    post:
+      tags: [managed-cloud]
+      summary: Ask for an asset to be managed
+      description: Team owners only. The asset stays PENDING until an engineer approves it. PLATFORM_SERVER needs `serverId`; EXTERNAL_SERVER and SITE need `address`. Limited by the plan's `maxAssets`.
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [kind, name], properties: { kind: { type: string, enum: [PLATFORM_SERVER, EXTERNAL_SERVER, SITE] }, name: { type: string }, serverId: { type: string }, address: { type: string, description: "Public IP, hostname or site URL" }, provider: { type: string }, os: { type: string }, notes: { type: string } } } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ManagedCloudAsset" } } } }, "403": { description: "Not an owner, or the plan's asset limit is reached (`quota_exceeded`)" } }
+  /managed/assets:
+    get:
+      tags: [managed-cloud]
+      summary: Every managed asset of the team
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/ManagedCloudAsset" } } } } } } } }
+  /managed/contracts/{id}/reports:
+    get:
+      tags: [managed-cloud]
+      summary: Monthly reports that were sent
+      description: Team owners only. Reports are drafted on the 1st and sent by the 3rd.
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/ManagedCloudMonthlyReport" } } } } } } } }
+  /managed/contracts/{id}/reports/{reportId}/pdf:
+    get:
+      tags: [managed-cloud]
+      summary: Download a monthly report as PDF
+      parameters: [{ $ref: "#/components/parameters/id" }, { name: reportId, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK, content: { application/pdf: { schema: { type: string, format: binary } } } }, "404": { $ref: "#/components/responses/NotFound" } }
+  /managed/tickets:
+    get:
+      tags: [managed-cloud]
+      summary: Managed cloud tickets
+      parameters: [{ name: status, in: query, schema: { type: string, enum: [open, answered, closed, all], default: all } }, { name: priority, in: query, schema: { $ref: "#/components/schemas/ManagedPriority" } }, { name: contractId, in: query, schema: { type: string } }, { $ref: "#/components/parameters/limit" }, { $ref: "#/components/parameters/cursor" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/ManagedCloudTicket" } }, meta: { $ref: "#/components/schemas/PageMeta" } } } } } } }
+    post:
+      tags: [managed-cloud]
+      summary: Open a ticket
+      description: Due times come from the plan's targets and the contract calendar. P1 and P2 page the engineer on call. `contractId` is needed only when the team has more than one contract; `assetId` implies it. Not allowed while the contract is suspended.
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [subject, body], properties: { subject: { type: string, minLength: 3, maxLength: 140 }, body: { type: string }, priority: { allOf: [{ $ref: "#/components/schemas/ManagedPriority" }], default: P3 }, contractId: { type: string }, assetId: { type: string } } } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ManagedCloudTicket" } } } }, "409": { description: The contract is not onboarding or active (`invalid_state`) } }
+  /managed/tickets/{id}:
+    get:
+      tags: [managed-cloud]
+      summary: A ticket with its messages
+      description: Internal engineer notes are never included.
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ManagedCloudTicket" } } } }, "404": { $ref: "#/components/responses/NotFound" } }
+  /managed/tickets/{id}/messages:
+    post:
+      tags: [managed-cloud]
+      summary: Reply on a ticket
+      description: Reopens a closed ticket for up to 14 days after it was closed.
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [body], properties: { body: { type: string } } } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ManagedCloudTicket" } } } } }
+  /managed/tickets/{id}/close:
+    post:
+      tags: [managed-cloud]
+      summary: Close a ticket
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ManagedCloudTicket" } } } } }
   /databases:
     get: { tags: [databases], summary: List managed database clusters, parameters: [{ $ref: "#/components/parameters/project" }], responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/DatabaseCluster" } } } } } } } } }
     post:
@@ -901,7 +992,7 @@ components:
         expiresInDays: { type: integer }
     Scope:
       type: string
-      enum: [servers:read, servers:write, servers:delete, images:read, snapshots:read, snapshots:write, volumes:read, volumes:write, dns:read, dns:write, storage:read, storage:write, databases:read, databases:write, network:read, network:write, apps:read, billing:read, billing:write, iam:read, iam:write]
+      enum: [servers:read, servers:write, servers:delete, images:read, snapshots:read, snapshots:write, volumes:read, volumes:write, dns:read, dns:write, storage:read, storage:write, databases:read, databases:write, network:read, network:write, apps:read, billing:read, billing:write, managed:read, managed:write, iam:read, iam:write]
     Size:
       type: object
       properties:
@@ -1258,6 +1349,119 @@ components:
         reportedAt: { type: [string, "null"], format: date-time }
         report: { oneOf: [{ $ref: "#/components/schemas/ManagedReport" }, { type: "null" }] }
         installCommand: { type: [string, "null"], description: Present while the agent is not reporting }
+    ManagedPriority:
+      type: string
+      enum: [P1, P2, P3, P4]
+      description: P1 production down, P2 degraded service, P3 normal request, P4 question or low impact.
+    ManagedTargets:
+      type: object
+      description: Minutes per priority.
+      properties: { P1: { type: number }, P2: { type: number }, P3: { type: number }, P4: { type: number } }
+    ManagedCloudPlan:
+      type: object
+      properties:
+        id: { type: string }
+        code: { type: string, example: ESSENTIAL }
+        name: { type: string }
+        description: { type: [string, "null"] }
+        priceMinor: { type: [integer, "null"], description: "Monthly fee excluding VAT; null for a custom price" }
+        currency: { type: string, enum: [SAR, USD] }
+        custom: { type: boolean }
+        maxAssets: { type: [integer, "null"] }
+        coverage: { type: string, enum: [BUSINESS_HOURS, TWENTY_FOUR_SEVEN] }
+        includedEngineerMinutes: { type: integer }
+        hourlyRateMinor: { type: integer, description: "Engineer time beyond the included minutes, per hour" }
+        responseTargets: { $ref: "#/components/schemas/ManagedTargets" }
+        resolveTargets: { $ref: "#/components/schemas/ManagedTargets" }
+        active: { type: boolean }
+    ManagedCloudContract:
+      type: object
+      properties:
+        id: { type: string }
+        teamId: { type: string }
+        status: { type: string, enum: [DRAFT, ONBOARDING, ACTIVE, SUSPENDED, CANCELLED] }
+        plan: { $ref: "#/components/schemas/ManagedCloudPlan" }
+        calendar: { type: string, enum: [SA, TR] }
+        currency: { type: string, enum: [SAR, USD] }
+        monthlyFeeMinor: { type: [integer, "null"], description: "In the contract currency, excluding VAT" }
+        hourlyRateMinor: { type: integer }
+        includedEngineerMinutes: { type: integer }
+        maxAssets: { type: [integer, "null"] }
+        liabilityCapMinor: { type: [integer, "null"] }
+        signedByName: { type: [string, "null"] }
+        signedAt: { type: [string, "null"], format: date-time }
+        termMonths: { type: integer }
+        termEndsAt: { type: [string, "null"], format: date-time }
+        notes: { type: [string, "null"] }
+        activatedAt: { type: [string, "null"], format: date-time, description: Billing starts here }
+        suspendedAt: { type: [string, "null"], format: date-time }
+        cancelledAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        sla:
+          type: object
+          properties:
+            coverage: { type: string, enum: [BUSINESS_HOURS, TWENTY_FOUR_SEVEN] }
+            calendar: { type: string, enum: [SA, TR] }
+            timeZone: { type: string, example: Asia/Riyadh }
+            businessHours: { type: [object, "null"], properties: { workdays: { type: array, items: { type: integer }, description: 0 is Sunday }, start: { type: string, example: "09:00" }, end: { type: string, example: "17:00" } } }
+            responseTargets: { $ref: "#/components/schemas/ManagedTargets" }
+            resolveTargets: { $ref: "#/components/schemas/ManagedTargets" }
+        onboarding: { type: object, description: On a single contract, properties: { done: { type: integer }, total: { type: integer }, items: { type: array, items: { type: object, properties: { key: { type: string }, title: { type: string }, done: { type: boolean }, doneAt: { type: [string, "null"], format: date-time } } } } } }
+        responsibilities: { type: array, description: On a single contract, items: { type: object, properties: { id: { type: string }, area: { type: string }, owner: { type: string, enum: [PROGRID, CUSTOMER, SHARED] }, notes: { type: [string, "null"] } } } }
+        assets: { type: object, description: "Asset counts by status, on a single contract", additionalProperties: { type: integer } }
+        usage: { type: object, description: "Engineer time this calendar month, on a single contract", properties: { periodStart: { type: string, format: date-time }, billableMinutes: { type: integer }, nonBillableMinutes: { type: integer }, includedMinutes: { type: integer }, overageMinutes: { type: integer } } }
+    ManagedCloudAsset:
+      type: object
+      properties:
+        id: { type: string }
+        contractId: { type: string }
+        kind: { type: string, enum: [PLATFORM_SERVER, EXTERNAL_SERVER, SITE] }
+        serverId: { type: [string, "null"] }
+        name: { type: string }
+        address: { type: [string, "null"] }
+        provider: { type: [string, "null"] }
+        os: { type: [string, "null"] }
+        status: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+        monitoringEnabled: { type: boolean }
+        backupEnabled: { type: boolean }
+        health: { type: string, enum: [UNKNOWN, HEALTHY, DEGRADED, UNHEALTHY] }
+        lastHeartbeatAt: { type: [string, "null"], format: date-time }
+        openAlerts: { type: integer }
+        rejectedReason: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+    ManagedCloudTicket:
+      type: object
+      properties:
+        id: { type: string }
+        number: { type: integer }
+        subject: { type: string }
+        status: { type: string, enum: [open, answered, closed], description: "open waits on us, answered waits on you" }
+        priority: { $ref: "#/components/schemas/ManagedPriority" }
+        contractId: { type: string }
+        assetId: { type: [string, "null"] }
+        source: { type: [string, "null"], enum: [customer, alert, maintenance, null] }
+        responseDueAt: { type: string, format: date-time }
+        resolveDueAt: { type: string, format: date-time }
+        firstRespondedAt: { type: [string, "null"], format: date-time }
+        closedAt: { type: [string, "null"], format: date-time }
+        responseBreached: { type: boolean }
+        resolveBreached: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        messageCount: { type: integer }
+        messages: { type: array, description: Present on a single ticket, items: { type: object, properties: { id: { type: string }, fromSupport: { type: boolean }, author: { type: string }, body: { type: string }, createdAt: { type: string, format: date-time } } } }
+    ManagedCloudMonthlyReport:
+      type: object
+      properties:
+        id: { type: string }
+        contractId: { type: string }
+        period: { type: string, example: "2026-09" }
+        status: { type: string, enum: [DRAFT, SENT] }
+        recommendations: { type: string }
+        data: { type: object, description: "Uptime per asset, incidents, SLA met and breached, patch runs, backup tests and hours", additionalProperties: true }
+        generatedAt: { type: string, format: date-time }
+        sentAt: { type: [string, "null"], format: date-time }
+        pdfUrl: { type: string, description: Path of the PDF download }
     ServerAction:
       type: object
       properties:
