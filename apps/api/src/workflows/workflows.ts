@@ -8,6 +8,8 @@ import type { Activities } from './activities';
 
 // Managed cloud workflows live in ./managed; the worker loads this one file, so they are re-exported here.
 export * from './managed';
+// DevOps console workflows (timers, access grants, shifts, payouts) live in ./ops.
+export * from './ops';
 
 const act = proxyActivities<Activities>({
   startToCloseTimeout: '5 minutes',

@@ -18,9 +18,10 @@ import { AppPlatformModule } from './modules/app-platform/app.module';
 import { ApprovalsModule } from './modules/approvals/approvals.module';
 import { ManagedModule } from './modules/managed/managed.module';
 import { OpsSettingsModule } from './modules/ops/settings/ops-settings.service';
+import { OpsModule } from './modules/ops/ops.module';
 
 /** Dependency graph for the worker process: no HTTP, no controllers. */
 @Module({
-  imports: [PrismaModule, NatsModule, RedisModule, MailModule, DriversModule, IamModule, EventsModule, SchedulerModule, NetworkModule, BillingModule, MonitoringModule, TemporalModule, ApprovalsModule, LbModule, DatabasesModule, KubernetesModule, AppPlatformModule, OpsSettingsModule, ManagedModule],
+  imports: [PrismaModule, NatsModule, RedisModule, MailModule, DriversModule, IamModule, EventsModule, SchedulerModule, NetworkModule, BillingModule, MonitoringModule, TemporalModule, ApprovalsModule, LbModule, DatabasesModule, KubernetesModule, AppPlatformModule, OpsSettingsModule, ManagedModule, OpsModule],
 })
 export class WorkerModule {}

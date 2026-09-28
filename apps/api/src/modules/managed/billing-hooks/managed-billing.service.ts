@@ -4,6 +4,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { EventsService } from '../../events/events.service';
 import { startOfMonth } from '../../billing/pricing';
 import { ContractTermsService } from '../contracts/contract-terms.service';
+import { COUNTED_WORKLOG } from '../worklogs/worklogs.service';
 
 type ContractWithPlan = ManagedContract & { plan: ManagedPlan; team: { id: string; currency: ManagedContract['currency'] } };
 
@@ -43,7 +44,9 @@ export function billableFraction(period: { start: Date; end: Date }, active: { f
  *
  *   managed_plan     the monthly fee, prorated by the time the contract was ACTIVE in the month:
  *                    from activation (first month), minus suspensions, up to cancellation.
- *   managed_overage  billable engineer minutes beyond the included minutes, at the hourly rate.
+ *   managed_overage  billable APPROVED engineer minutes beyond the included minutes, at the hourly
+ *                    rate. Draft, submitted and rejected time never counts; contractor payouts
+ *                    read the same APPROVED rows, so the two can never disagree.
  *
  * Both are keyed by (contract, month) so re-running the hook is safe; a month that is already
  * invoiced is never touched. Worklogs counted for a month get `billedPeriod`, and the invoice
@@ -102,8 +105,8 @@ export class ManagedBillingService {
     const fraction = billableFraction({ start, end }, { from: c.activatedAt!, to: c.cancelledAt }, suspensions);
     const planMinor = terms.monthlyFeeMinor ? await toInvoice(Math.round(terms.monthlyFeeMinor * fraction)) : 0;
 
-    // Overage: billable minutes counted for this month (and late entries for earlier months).
-    const logs = await this.prisma.workLog.findMany({ where: { contractId: c.id, billable: true, billedInvoiceId: null, workedAt: { lt: end }, OR: [{ billedPeriod: null }, { billedPeriod: start }] }, select: { id: true, minutes: true } });
+    // Overage: approved billable minutes counted for this month (and late approvals for earlier months).
+    const logs = await this.prisma.workLog.findMany({ where: { contractId: c.id, billable: true, status: { in: COUNTED_WORKLOG }, billedInvoiceId: null, workedAt: { lt: end }, OR: [{ billedPeriod: null }, { billedPeriod: start }] }, select: { id: true, minutes: true } });
     const minutes = logs.reduce((s, l) => s + l.minutes, 0);
     const overageMinutes = Math.max(0, minutes - terms.includedEngineerMinutes);
     const overageMinor = await toInvoice(Math.round((overageMinutes / 60) * terms.hourlyRateMinor));
@@ -129,13 +132,16 @@ export class ManagedBillingService {
   async usage(contractId: string, start: Date, end: Date) {
     const c = await this.prisma.managedContract.findUniqueOrThrow({ where: { id: contractId }, include: { plan: true } });
     const terms = await this.terms.terms(c, end);
-    const agg = await this.prisma.workLog.groupBy({ by: ['billable'], where: { contractId, workedAt: { gte: start, lt: end } }, _sum: { minutes: true } });
+    const agg = await this.prisma.workLog.groupBy({ by: ['billable'], where: { contractId, workedAt: { gte: start, lt: end }, status: { in: COUNTED_WORKLOG } }, _sum: { minutes: true } });
+    const pending = await this.prisma.workLog.aggregate({ where: { contractId, workedAt: { gte: start, lt: end }, billable: true, status: { in: ['DRAFT', 'SUBMITTED'] } }, _sum: { minutes: true } });
     const billable = agg.find((a) => a.billable)?._sum.minutes ?? 0;
     const overageMinutes = Math.max(0, billable - terms.includedEngineerMinutes);
     const lines = await this.prisma.usageRecord.findMany({ where: { resourceType: { in: ['managed_plan', 'managed_overage'] }, resourceId: contractId, hourStart: start }, select: { resourceType: true, amountMinor: true, currency: true, quantity: true, invoiceId: true } });
     return {
       period: start.toISOString().slice(0, 7), currency: terms.currency, monthlyFeeMinor: terms.monthlyFeeMinor, hourlyRateMinor: terms.hourlyRateMinor,
       includedMinutes: terms.includedEngineerMinutes, billableMinutes: billable, nonBillableMinutes: agg.find((a) => !a.billable)?._sum.minutes ?? 0,
+      /** Billable time engineers logged that is not approved yet (not billed until it is). */
+      pendingApprovalMinutes: pending._sum.minutes ?? 0,
       overageMinutes, estimatedOverageMinor: Math.round((overageMinutes / 60) * terms.hourlyRateMinor), lines,
     };
   }

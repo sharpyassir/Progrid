@@ -81,6 +81,7 @@ model User {
   // DevOps console
   engineerProfile     EngineerProfile?
   webAuthnCredentials WebAuthnCredential[]
+  workTimers          WorkTimer[]
 
   @@map("prgd_users")
 }
@@ -1809,6 +1810,7 @@ model Ticket {
   pages    Page[]
   workLogs WorkLog[]
   maintenanceRuns MaintenanceRun[]
+  workTimers WorkTimer[]
 
   @@index([contractId, status])
   @@index([assigneeId, status])
@@ -2509,6 +2511,8 @@ model MaintenanceRun {
 
   task   MaintenanceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
   ticket Ticket?         @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  workLogs WorkLog[]
+  timers   WorkTimer[]
 
   @@index([taskId, createdAt])
   @@index([status])
@@ -2516,7 +2520,8 @@ model MaintenanceRun {
   @@map("prgd_maintenance_runs")
 }
 
-/// Engineer time. Billable minutes beyond the plan's included minutes are billed as overage at month end.
+/// Engineer time. Only APPROVED (and later PAID) entries count: billable minutes beyond the plan's included
+/// minutes are billed as overage at month end, and contractor payouts are computed from the same rows.
 model WorkLog {
   id         String    @id @default(cuid())
   contractId String
@@ -2526,6 +2531,25 @@ model WorkLog {
   billable   Boolean   @default(true)
   note       String?
   workedAt   DateTime  @default(now())
+  /// DRAFT (timer stopped or manual entry) to SUBMITTED to APPROVED or REJECTED, then PAID with a contractor payout.
+  /// Back office entries by staff are APPROVED at once.
+  status     WorkLogStatus @default(DRAFT)
+  source     WorkLogSource @default(MANUAL)
+  /// The engineer profile, for contractor pay; null for staff without one.
+  engineerId String?
+  maintenanceRunId String?
+  /// Work window: the timer's start and stop, or the start an engineer gave for a manual entry.
+  startedAt  DateTime?
+  endedAt    DateTime?
+  /// Why a manual entry was needed; manual entries are flagged for review.
+  reason     String?
+  flagged    Boolean   @default(false)
+  /// Minutes of terminal sessions of the engineer inside the work window, shown next to the entry.
+  sessionMinutes Int   @default(0)
+  submittedAt  DateTime?
+  reviewedById String?
+  reviewedAt   DateTime?
+  reviewComment String?
   /// Month (UTC start) whose overage calculation counted this entry; set by the billing hook.
   billedPeriod    DateTime?
   /// Invoice that carried that month's managed lines.
@@ -2537,9 +2561,14 @@ model WorkLog {
   ticket        Ticket?         @relation(fields: [ticketId], references: [id], onDelete: SetNull)
   user          User            @relation(fields: [userId], references: [id])
   billedInvoice Invoice?        @relation(fields: [billedInvoiceId], references: [id], onDelete: SetNull)
+  engineer      EngineerProfile? @relation(fields: [engineerId], references: [id], onDelete: SetNull)
+  maintenanceRun MaintenanceRun? @relation(fields: [maintenanceRunId], references: [id], onDelete: SetNull)
+  timer         WorkTimer?
 
   @@index([contractId, workedAt])
   @@index([contractId, billedPeriod])
+  @@index([userId, workedAt])
+  @@index([status, userId])
 
   @@map("prgd_work_logs")
 }
@@ -2656,6 +2685,7 @@ model EngineerProfile {
 
   user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   assignments EngineerAssignment[]
+  workLogs    WorkLog[]
 
   @@index([status])
   @@map("prgd_engineer_profiles")
@@ -2706,4 +2736,51 @@ model OpsSettings {
   updatedAt   DateTime @updatedAt
 
   @@map("prgd_ops_settings")
+}
+
+enum WorkLogStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  PAID
+
+  @@map("prgd_work_log_status")
+}
+
+enum WorkLogSource {
+  TIMER
+  MANUAL
+
+  @@map("prgd_work_log_source")
+}
+
+/// A running (or stopped) work timer. One running timer per engineer (partial unique index on userId
+/// where stoppedAt is null). Stopping it creates a DRAFT worklog.
+model WorkTimer {
+  id               String    @id @default(cuid())
+  userId           String
+  engineerId       String?
+  contractId       String
+  ticketId         String?
+  maintenanceRunId String?
+  note             String?
+  startedAt        DateTime  @default(now())
+  /// Ticket actions, terminal session events and heartbeats from the ops console move this forward.
+  lastActivityAt   DateTime  @default(now())
+  /// When the idle prompt went out; cleared by the next activity.
+  promptedAt       DateTime?
+  stoppedAt        DateTime?
+  /// manual | idle | ticket_closed | offboarded
+  stopReason       String?
+  workLogId        String?   @unique
+  createdAt        DateTime  @default(now())
+
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticket  Ticket?         @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  run     MaintenanceRun? @relation(fields: [maintenanceRunId], references: [id], onDelete: SetNull)
+  workLog WorkLog?        @relation(fields: [workLogId], references: [id], onDelete: SetNull)
+
+  @@index([userId, stoppedAt])
+  @@map("prgd_work_timers")
 }

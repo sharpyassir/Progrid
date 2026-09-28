@@ -1,7 +1,9 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createHash, generateKeyPairSync, randomBytes, sign as edSign, type KeyObject } from 'node:crypto';
 import { isoCBOR } from '@simplewebauthn/server/helpers';
-import { Client, signup, sut, totp, waitFor, type Sut, type Team } from './harness';
+import { Client, signup, sleep, sut, totp, waitFor, type Sut, type Team } from './harness';
+import { ManagedBillingService } from '../../src/modules/managed/billing-hooks/managed-billing.service';
+import { periodBounds, periodKey } from '../../src/modules/managed/managed.constants';
 
 /**
  * DevOps console backend (/ops/v1 and /admin/ops): engineers and assignments, residency, data
@@ -292,5 +294,106 @@ describe('ops console assignments, residency and masking', () => {
     // Staff still see the original text.
     const staffView = await lead.client.ok('GET', `/admin/managed/tickets/${t.id}`);
     expect(staffView.messages[0].body).toContain(c.owner.email);
+  });
+});
+
+describe('ops console timers and timesheets', () => {
+  it('stops an idle timer after the configured time and prompts first', async () => {
+    const c = await contractWithAsset();
+    const eng = await externalEngineer({ contractIds: [c.contractId] });
+    const t = await customerTicket(c.owner, c.assetId);
+    const started = await eng.client.ok('POST', '/ops/v1/timers/start', { ticketId: t.id }, 201);
+    expect(started.ticketId).toBe(t.id);
+    const second = await eng.client.post('/ops/v1/timers/start', { ticketId: t.id });
+    expect(second.status).toBe(409);
+    expect(second.body.error.code).toBe('timer_running');
+    expect((await eng.client.ok('GET', '/ops/v1/me')).runningTimer.id).toBe(started.id);
+
+    const stopped = await waitFor(async () => {
+      const row = await s.prisma.workTimer.findUniqueOrThrow({ where: { id: started.id } });
+      return row.stoppedAt && row;
+    }, { what: 'the idle timer to stop', timeoutMs: 30_000 });
+    expect(stopped.stopReason).toBe('idle');
+    expect(s.outbox.some((m) => m.to === eng.email && m.subject.startsWith('Your work timer is still running'))).toBe(true);
+    const log = await s.prisma.workLog.findUniqueOrThrow({ where: { id: stopped.workLogId! } });
+    expect(log).toMatchObject({ status: 'DRAFT', source: 'TIMER', flagged: true, ticketId: t.id, userId: eng.userId, engineerId: eng.profileId });
+    // Idle time after the last activity is not counted.
+    expect(log.endedAt!.getTime()).toBeLessThanOrEqual(stopped.lastActivityAt.getTime() + 60_000);
+    expect(await s.prisma.auditLog.count({ where: { resource: `timer:${started.id}`, action: 'ops.timer_auto_stopped' } })).toBe(1);
+    expect((await eng.client.ok('GET', '/ops/v1/timers/current')).timer).toBeNull();
+  });
+
+  it('keeps an active timer running and submits, rejects and approves time', async () => {
+    const c = await contractWithAsset();
+    const eng = await externalEngineer({ contractIds: [c.contractId] });
+    const t = await customerTicket(c.owner, c.assetId);
+    const timer = await eng.client.ok('POST', '/ops/v1/timers/start', { ticketId: t.id }, 201);
+    // Heartbeats from the ops console keep it alive past the prompt and stop times.
+    for (let i = 0; i < 7; i++) {
+      await sleep(1000);
+      await eng.client.ok('POST', '/ops/v1/activity', { ticketId: t.id }, 204);
+    }
+    expect((await s.prisma.workTimer.findUniqueOrThrow({ where: { id: timer.id } })).stoppedAt).toBeNull();
+    const stop = await eng.client.ok('POST', '/ops/v1/timers/stop', { note: 'Cleared the disk' }, 200);
+    expect(stop.workLog).toMatchObject({ status: 'DRAFT', minutes: 1 });
+
+    const startedAt = new Date(Date.now() - 3 * 3600_000);
+    expect((await eng.client.post('/ops/v1/timesheet/entries', { ticketId: t.id, minutes: 30, startedAt })).status).toBe(400);
+    const manual = await eng.client.ok('POST', '/ops/v1/timesheet/entries', { ticketId: t.id, minutes: 45, startedAt, reason: 'Worked from the phone during an outage', note: 'Restarted nginx' }, 201);
+    expect(manual).toMatchObject({ status: 'DRAFT', source: 'MANUAL', flagged: true });
+
+    const month = periodKey(startedAt);
+    const sheet = await eng.client.ok('GET', `/ops/v1/timesheet?month=${month}`);
+    expect(sheet.entries.map((e: { id: string }) => e.id)).toEqual(expect.arrayContaining([stop.workLog.id, manual.id]));
+    const submitted = await eng.client.ok('POST', '/ops/v1/timesheet/submit', { month }, 200);
+    expect(submitted.submitted).toBeGreaterThanOrEqual(2);
+    expect((await eng.client.patch(`/ops/v1/timesheet/entries/${manual.id}`, { minutes: 50 })).status).toBe(409);
+
+    const waiting = await lead.client.ok('GET', '/admin/ops/timesheets');
+    expect(waiting.data.find((r: { userId: string }) => r.userId === eng.userId)).toMatchObject({ engineerId: eng.profileId, flagged: 1 });
+    const entries = await lead.client.ok('GET', `/admin/ops/timesheets/${eng.profileId}?month=${month}&status=SUBMITTED`);
+    expect(entries.entries).toHaveLength(2);
+    expect((await lead.client.post(`/admin/ops/timesheets/${eng.profileId}/approve`, { decision: 'REJECTED', workLogIds: [manual.id] })).status).toBe(422);
+    await lead.client.ok('POST', `/admin/ops/timesheets/${eng.profileId}/approve`, { decision: 'REJECTED', workLogIds: [manual.id], comment: 'Use the timer, or split this into the real windows' }, 200);
+    await lead.client.ok('POST', `/admin/ops/timesheets/${eng.userId}/approve`, { decision: 'APPROVED', workLogIds: [stop.workLog.id] }, 200);
+    // Leads cannot approve their own time.
+    expect((await lead.client.post(`/admin/ops/timesheets/${lead.userId}/approve`, { decision: 'APPROVED', month })).status).toBe(403);
+
+    const after = await eng.client.ok('GET', `/ops/v1/timesheet?month=${month}`);
+    const byId = Object.fromEntries(after.entries.map((e: { id: string }) => [e.id, e]));
+    expect(byId[stop.workLog.id].status).toBe('APPROVED');
+    expect(byId[manual.id]).toMatchObject({ status: 'REJECTED', reviewComment: 'Use the timer, or split this into the real windows' });
+    // A rejected entry can be fixed and goes back to DRAFT.
+    expect((await eng.client.ok('PATCH', `/ops/v1/timesheet/entries/${manual.id}`, { minutes: 40 })).status).toBe('DRAFT');
+    const audit = await s.prisma.auditLog.findMany({ where: { resource: `timesheet:${eng.userId}` } });
+    expect(audit.map((a) => a.action)).toEqual(expect.arrayContaining(['ops.timesheet_approved', 'ops.timesheet_rejected']));
+  });
+
+  it('bills customer overage from approved worklogs only', async () => {
+    const c = await contractWithAsset('ESSENTIAL');
+    const eng = await externalEngineer({ contractIds: [c.contractId] });
+    const t = await customerTicket(c.owner, c.assetId);
+    const base = Date.now() - 13 * 3600_000;
+    const entry = (minutes: number, hoursAgo: number) => eng.client.ok('POST', '/ops/v1/timesheet/entries', { ticketId: t.id, minutes, startedAt: new Date(base + hoursAgo * 60_000), reason: 'Long outage handled from the phone' }, 201);
+    const approved = [await entry(300, 0), await entry(60, 310)];
+    const pending = await entry(200, 380);
+    const month = periodKey(new Date(base));
+    const { start, end } = periodBounds(month);
+    const usage = () => lead.client.ok('GET', `/admin/managed/contracts/${c.contractId}/usage?period=${month}`);
+
+    expect(await usage()).toMatchObject({ billableMinutes: 0, overageMinutes: 0, pendingApprovalMinutes: 560 });
+    await eng.client.ok('POST', '/ops/v1/timesheet/submit', { month }, 200);
+    await lead.client.ok('POST', `/admin/ops/timesheets/${eng.profileId}/approve`, { decision: 'APPROVED', workLogIds: approved.map((a) => a.id) }, 200);
+    expect(await usage()).toMatchObject({ includedMinutes: 120, billableMinutes: 360, overageMinutes: 240, pendingApprovalMinutes: 200 });
+
+    const billing = s.get(ManagedBillingService);
+    const contract = await s.prisma.managedContract.findUniqueOrThrow({ where: { id: c.contractId }, include: { plan: true, team: { select: { id: true, currency: true } } } });
+    const r = await billing.accrueContract(contract, start, end);
+    expect(r).toMatchObject({ overageMinutes: 240 });
+    const line = await s.prisma.usageRecord.findUniqueOrThrow({ where: { resourceType_resourceId_hourStart: { resourceType: 'managed_overage', resourceId: c.contractId, hourStart: start } } });
+    expect(line.quantity).toBeCloseTo(4, 5);
+    const rows = await s.prisma.workLog.findMany({ where: { contractId: c.contractId } });
+    expect(rows.filter((w) => w.billedPeriod).map((w) => w.id).sort()).toEqual(approved.map((a) => a.id).sort());
+    expect(rows.find((w) => w.id === pending.id)!.billedPeriod).toBeNull();
   });
 });

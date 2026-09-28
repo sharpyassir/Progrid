@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Ticket, TicketStatus } from '@prisma/client';
 import type { OpsContext } from './guards/ops-context';
+import { TimersService } from './timers/timers.service';
 
 /**
  * Side effects that cross ops areas, in one place so the desk does not depend on every area:
@@ -9,18 +10,23 @@ import type { OpsContext } from './guards/ops-context';
  */
 @Injectable()
 export class OpsHooks {
+  constructor(private readonly timers: TimersService) {}
+
   /** Extra fields of GET /ops/v1/me. */
-  async meExtras(_ops: OpsContext): Promise<Record<string, unknown>> {
-    return {};
+  async meExtras(ops: OpsContext): Promise<Record<string, unknown>> {
+    return { runningTimer: await this.timers.current(ops.userId) };
   }
 
   /** Extra fields of the ticket workspace. */
-  async ticketExtras(_ops: OpsContext, _t: Ticket): Promise<Record<string, unknown>> {
-    return {};
+  async ticketExtras(ops: OpsContext, t: Ticket): Promise<Record<string, unknown>> {
+    const timer = await this.timers.current(ops.userId);
+    return { timer: timer && timer.ticketId === t.id ? timer : null };
   }
 
   /** The engineer did something (ticket action, terminal event, heartbeat from the ops console). */
-  async activity(_userId: string, _ticketId?: string | null): Promise<void> {}
+  async activity(userId: string, _ticketId?: string | null): Promise<void> {
+    await this.timers.activity(userId);
+  }
 
   /** Status a ticket moves to when an engineer closes it. */
   async closingStatus(_t: Ticket): Promise<Exclude<TicketStatus, 'open' | 'answered'>> {

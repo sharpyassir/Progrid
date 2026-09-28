@@ -11,6 +11,10 @@ import { OffboardingService } from './engineers/offboarding.service';
 import { AdminOpsEngineersController } from './engineers/admin-ops.controller';
 import { DeskService } from './desk/desk.service';
 import { OpsDeskController } from './desk/desk.controller';
+import { TimersService } from './timers/timers.service';
+import { OpsTimersController } from './timers/timers.controller';
+import { TimesheetsService } from './timesheets/timesheets.service';
+import { AdminOpsTimesheetsController } from './timesheets/admin-timesheets.controller';
 
 /**
  * DevOps console backend: /ops/v1 for engineers (apps/ops), /admin/ops for support leads and
@@ -20,8 +24,8 @@ import { OpsDeskController } from './desk/desk.controller';
  */
 @Module({
   imports: [EventsModule, ManagedModule],
-  controllers: [OpsAuthController, OpsDeskController, AdminOpsEngineersController],
-  providers: [OpsAudit, OpsHooks, OpsScopeService, EngineerGuard, AssignmentGuard, ResidencyGuard, OpsAuthService, EngineersService, OffboardingService, DeskService],
-  exports: [OpsAudit, OpsHooks],
+  controllers: [OpsAuthController, OpsDeskController, OpsTimersController, AdminOpsEngineersController, AdminOpsTimesheetsController],
+  providers: [OpsAudit, OpsHooks, OpsScopeService, EngineerGuard, AssignmentGuard, ResidencyGuard, OpsAuthService, EngineersService, OffboardingService, DeskService, TimersService, TimesheetsService],
+  exports: [OpsAudit, OpsHooks, TimersService, TimesheetsService],
 })
 export class OpsModule {}

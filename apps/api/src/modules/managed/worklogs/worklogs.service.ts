@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma, WorkLog } from '@prisma/client';
+import type { Prisma, WorkLog, WorkLogStatus } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ApiError } from '../../../common/errors/api-error';
 import { cursorArgs, toPage } from '../../../common/pagination';
@@ -10,6 +10,8 @@ import { isLead } from '../managed.constants';
 export function presentWorkLog(w: WorkLog & { user?: { id: string; name: string } }) {
   return {
     id: w.id, contractId: w.contractId, ticketId: w.ticketId, userId: w.userId, user: w.user, minutes: w.minutes, billable: w.billable, note: w.note, workedAt: w.workedAt,
+    status: w.status, source: w.source, engineerId: w.engineerId, maintenanceRunId: w.maintenanceRunId, startedAt: w.startedAt, endedAt: w.endedAt, reason: w.reason, flagged: w.flagged,
+    sessionMinutes: w.sessionMinutes, submittedAt: w.submittedAt, reviewedById: w.reviewedById, reviewedAt: w.reviewedAt, reviewComment: w.reviewComment,
     billedPeriod: w.billedPeriod, billedInvoiceId: w.billedInvoiceId, createdAt: w.createdAt, updatedAt: w.updatedAt,
   };
 }
@@ -24,10 +26,15 @@ export interface WorkLogInput {
   workedAt?: Date;
 }
 
+/** Worklog states that count for customer overage and contractor pay: both read these same rows. */
+export const COUNTED_WORKLOG: WorkLogStatus[] = ['APPROVED', 'PAID'];
+
 /**
- * Engineer time per contract. Billable minutes beyond the plan's included minutes are billed
- * as overage at month end (ManagedBillingService). An entry the billing run already counted
- * is locked. Engineers edit their own entries; support leads edit anyone's.
+ * Engineer time per contract. Billable APPROVED minutes beyond the plan's included minutes are
+ * billed as overage at month end (ManagedBillingService). Entries staff log here are APPROVED at
+ * once; engineers in the ops console log DRAFT time that a support lead approves. An entry the
+ * billing run already counted, or a paid one, is locked. Engineers edit their own entries;
+ * support leads edit anyone's.
  */
 @Injectable()
 export class WorkLogsService {
@@ -43,7 +50,7 @@ export class WorkLogsService {
     };
     const [rows, totals] = await Promise.all([
       this.prisma.workLog.findMany({ where, include: { user: { select: { id: true, name: true } } }, orderBy: [{ workedAt: 'desc' }, { id: 'desc' }], ...cursorArgs({ limit: q.limit, cursor: q.cursor }) }),
-      this.prisma.workLog.groupBy({ by: ['billable'], where, _sum: { minutes: true } }),
+      this.prisma.workLog.groupBy({ by: ['billable'], where: { ...where, status: { in: COUNTED_WORKLOG } }, _sum: { minutes: true } }),
     ]);
     const page = toPage(rows.map(presentWorkLog), q.limit);
     return { ...page, totals: { billableMinutes: totals.find((t) => t.billable)?._sum.minutes ?? 0, nonBillableMinutes: totals.find((t) => !t.billable)?._sum.minutes ?? 0 } };
@@ -57,7 +64,14 @@ export class WorkLogsService {
     if (userId !== actor.userId && !isLead(actor)) throw ApiError.forbidden('Only a support lead can log time for someone else');
     await this.checkTicket(dto.ticketId, dto.contractId);
     this.checkWhen(dto.workedAt);
-    const w = await this.prisma.workLog.create({ data: { contractId: dto.contractId, ticketId: dto.ticketId ?? null, userId, minutes: dto.minutes, billable: dto.billable ?? true, note: dto.note ?? null, workedAt: dto.workedAt ?? new Date() }, include: { user: { select: { id: true, name: true } } } });
+    const engineer = await this.prisma.engineerProfile.findUnique({ where: { userId }, select: { id: true } });
+    const w = await this.prisma.workLog.create({
+      data: {
+        contractId: dto.contractId, ticketId: dto.ticketId ?? null, userId, engineerId: engineer?.id ?? null, minutes: dto.minutes, billable: dto.billable ?? true, note: dto.note ?? null, workedAt: dto.workedAt ?? new Date(),
+        status: 'APPROVED', source: 'MANUAL', reviewedById: actor.userId, reviewedAt: new Date(),
+      },
+      include: { user: { select: { id: true, name: true } } },
+    });
     await this.events.emit('managed.worklog_created', { workLogId: w.id, contractId: w.contractId, ticketId: w.ticketId, minutes: w.minutes, billable: w.billable }, { teamId: c.teamId, actor, resource: `managed_contract:${c.id}` });
     return presentWorkLog(w);
   }
@@ -83,6 +97,7 @@ export class WorkLogsService {
     if (!w) throw ApiError.notFound('worklog', id);
     if (w.userId !== actor.userId && !isLead(actor)) throw ApiError.forbidden('Only a support lead can change someone else\'s time');
     if (w.billedPeriod || w.billedInvoiceId) throw ApiError.invalidState('This entry was already billed; add a correcting entry instead');
+    if (w.status === 'PAID') throw ApiError.invalidState('This entry was paid to the engineer; add a correcting entry instead');
     return w;
   }
 

@@ -183,7 +183,7 @@ export class ReportsService {
       return { runs: r.length, succeeded: r.filter((x) => x.status === 'SUCCEEDED').length, failed: r.filter((x) => x.status === 'FAILED').length };
     };
 
-    const logs = await this.prisma.workLog.groupBy({ by: ['billable'], where: { contractId: c.id, workedAt: { gte: start, lt: end } }, _sum: { minutes: true } });
+    const logs = await this.prisma.workLog.groupBy({ by: ['billable'], where: { contractId: c.id, workedAt: { gte: start, lt: end }, status: { in: ['APPROVED', 'PAID'] } }, _sum: { minutes: true } });
     const billable = logs.find((l) => l.billable)?._sum.minutes ?? 0;
     const { includedEngineerMinutes } = await this.terms.terms(c, end);
 

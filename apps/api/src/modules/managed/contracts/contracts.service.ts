@@ -336,7 +336,7 @@ export class ContractsService {
   private async usageThisMonth(contractId: string, includedMinutes: number) {
     const now = new Date();
     const periodStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-    const agg = await this.prisma.workLog.groupBy({ by: ['billable'], where: { contractId, workedAt: { gte: periodStart } }, _sum: { minutes: true } });
+    const agg = await this.prisma.workLog.groupBy({ by: ['billable'], where: { contractId, workedAt: { gte: periodStart }, status: { in: ['APPROVED', 'PAID'] } }, _sum: { minutes: true } });
     const billable = agg.find((a) => a.billable)?._sum.minutes ?? 0;
     const nonBillable = agg.find((a) => !a.billable)?._sum.minutes ?? 0;
     return { periodStart, billableMinutes: billable, nonBillableMinutes: nonBillable, includedMinutes, overageMinutes: Math.max(0, billable - includedMinutes) };

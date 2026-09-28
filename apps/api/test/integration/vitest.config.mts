@@ -83,6 +83,9 @@ export default defineConfig({
       MAINTENANCE_RUNNER: 'fake',
       // Drafts are sent automatically from 06:00 UTC on the 1st, so the workflow sends at once in the suite.
       MANAGED_REPORT_AUTOSEND_DAY: '1',
+      // DevOps console: an idle timer prompts after 2 seconds and stops after 5.
+      PRGD_OPS_TIMER_IDLE_PROMPT_SECONDS: '2',
+      PRGD_OPS_TIMER_AUTO_STOP_SECONDS: '5',
     },
   },
 });
