@@ -52,6 +52,7 @@ export const PRODUCTS: Product[] = [
   { slug: 'snapshots', name: 'Snapshots', group: 'Core Cloud', href: '/snapshots', blurb: 'Point-in-time copies of a server.' },
   { slug: 'volumes', name: 'Volumes', group: 'Core Cloud', href: '/volumes', blurb: 'Block storage from 10 GB to 16 TB, attached to any server, grown live.' },
   { slug: 'object-storage', name: 'Object Storage', group: 'Core Cloud', href: '/buckets', blurb: 'S3 compatible buckets on Ceph, any S3 client, per GB pricing.' },
+  { slug: 'managed-cloud', name: 'Managed Cloud', group: 'Core Cloud', href: '/managed', blurb: 'Our engineers run your servers and sites under an SLA: monitoring, patching, backups, incident response and a monthly report.' },
   { slug: 'monitoring', name: 'Monitoring & Alerts', group: 'Core Cloud', href: '/monitoring', blurb: 'Metrics from every server, alert rules to email and webhook.' },
   { slug: 'webhooks', name: 'Webhooks', group: 'Core Cloud', href: '/webhooks', blurb: 'Signed event deliveries: server.active, invoice.issued, spend.limit_reached…' },
 

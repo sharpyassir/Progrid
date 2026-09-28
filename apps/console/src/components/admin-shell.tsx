@@ -2,35 +2,51 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { t } from '@/lib/i18n';
+import { useShell } from '@/components/shell';
 
-// Each tab belongs to a staff area; staff with limited roles only see their areas (the API enforces the same split).
-const TABS = [
-  ['/admin', 'Overview', 'any'], ['/admin/teams', 'Teams', 'support'], ['/admin/servers', 'Servers', 'ops'], ['/admin/hosts', 'Hosts', 'ops'],
-  ['/admin/ip-blocks', 'IP blocks', 'ops'], ['/admin/images', 'Images', 'ops'], ['/admin/abuse', 'Abuse', 'support'], ['/admin/support', 'Support', 'support'],
-  ['/admin/invoices', 'Invoices', 'finance'], ['/admin/finance', 'Finance', 'finance'], ['/admin/audit', 'Audit', 'support'],
-] as const;
+// Each tab belongs to one or more staff areas; staff with limited roles only see their areas (the API enforces the same split).
+// Managed cloud tabs carry an i18n key; the older tabs keep their English labels.
+type Tab = { href: string; label: string; areas: readonly string[]; key?: Parameters<typeof t>[1] };
+const MANAGED = ['engineer', 'support_lead'] as const;
+const TABS: Tab[] = [
+  { href: '/admin', label: 'Overview', areas: ['any'] }, { href: '/admin/teams', label: 'Teams', areas: ['support'] }, { href: '/admin/servers', label: 'Servers', areas: ['ops'] },
+  { href: '/admin/hosts', label: 'Hosts', areas: ['ops'] }, { href: '/admin/ip-blocks', label: 'IP blocks', areas: ['ops'] }, { href: '/admin/images', label: 'Images', areas: ['ops'] },
+  { href: '/admin/abuse', label: 'Abuse', areas: ['support'] }, { href: '/admin/support', label: 'Support', areas: ['support'] },
+  { href: '/admin/invoices', label: 'Invoices', areas: ['finance'] }, { href: '/admin/finance', label: 'Finance', areas: ['finance'] }, { href: '/admin/audit', label: 'Audit', areas: ['support'] },
+  { href: '/admin/managed/contracts', label: 'Managed', key: 'admMcTabContracts', areas: MANAGED },
+  { href: '/admin/managed/tickets', label: 'Tickets queue', key: 'admMcTabTickets', areas: MANAGED },
+  { href: '/admin/managed/alerts', label: 'Alerts', key: 'admMcTabAlerts', areas: MANAGED },
+  { href: '/admin/managed/oncall', label: 'On call', key: 'admMcTabOnCall', areas: MANAGED },
+  { href: '/admin/managed/maintenance', label: 'Maintenance', key: 'admMcTabMaintenance', areas: MANAGED },
+  { href: '/admin/managed/worklogs', label: 'Worklogs', key: 'admMcTabWorklogs', areas: MANAGED },
+  { href: '/admin/managed/runbooks', label: 'Runbooks', key: 'admMcTabRunbooks', areas: MANAGED },
+  { href: '/admin/managed/reports', label: 'Reports', key: 'admMcTabReports', areas: MANAGED },
+];
 
 /** Back office frame: staff only (the API also enforces the admin scope on every call). */
 export function AdminShell({ title, children, actions }: { title: string; children: React.ReactNode; actions?: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { locale } = useShell();
   const [ok, setOk] = useState<boolean | null>(null);
   const [roles, setRoles] = useState<string[]>([]);
   useEffect(() => {
     api<{ isStaff: boolean; staffRoles?: string[] }>('/v1/account').then((m) => { if (m.isStaff) { setRoles(m.staffRoles ?? []); setOk(true); } else router.replace('/servers'); }).catch(() => router.replace('/login'));
   }, [router]);
-  const tabs = TABS.filter(([, , area]) => area === 'any' || roles.length === 0 || roles.includes(area));
+  const tabs = TABS.filter((tab) => tab.areas.includes('any') || roles.length === 0 || tab.areas.some((a) => roles.includes(a)));
   if (!ok) return <p className="text-sm text-neutral-500">Checking access…</p>;
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
         <span className="badge bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Back office</span>
         <nav className="flex flex-wrap gap-1 text-sm">
-          {tabs.map(([href, label]) => {
+          {tabs.map(({ href, label, key }, i) => {
             const active = href === '/admin' ? pathname === '/admin' : pathname.startsWith(href);
-            return <Link key={href} href={href} className={`rounded px-2.5 py-1 ${active ? 'bg-neutral-900 text-white dark:bg-white dark:text-neutral-900' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'}`}>{label}</Link>;
+            const first = key && !tabs[i - 1]?.key && i > 0;
+            return <Fragment key={href}>{first && <span aria-hidden className="mx-1 h-4 self-center border-s border-neutral-300 dark:border-neutral-700" />}<Link href={href} className={`rounded px-2.5 py-1 ${active ? 'bg-neutral-900 text-white dark:bg-white dark:text-neutral-900' : 'text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800'}`}>{key ? t(locale, key) : label}</Link></Fragment>;
           })}
         </nav>
       </div>
