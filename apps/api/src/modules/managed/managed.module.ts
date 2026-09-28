@@ -13,6 +13,11 @@ import { OnboardingService } from './onboarding/onboarding.service';
 import { ResponsibilityService } from './responsibility/responsibility.service';
 import { AssetsService } from './assets/assets.service';
 import { AdminManagedAssetsController, ManagedAssetsController } from './assets/assets.controller';
+import { SlaService } from './sla/sla.service';
+import { OnCallService } from './oncall/oncall.service';
+import { PagingService } from './oncall/paging.service';
+import { ManagedTicketsService } from './tickets/tickets.service';
+import { AdminManagedTicketsController, ManagedTicketsController } from './tickets/tickets.controller';
 
 /**
  * Managed cloud: we operate customer servers (on the platform or elsewhere) under an SLA.
@@ -25,8 +30,9 @@ import { AdminManagedAssetsController, ManagedAssetsController } from './assets/
     ManagedPlansController, AdminManagedPlansController,
     ManagedContractsController, AdminManagedContractsController,
     ManagedAssetsController, AdminManagedAssetsController,
+    ManagedTicketsController, AdminManagedTicketsController,
   ],
-  providers: [ManagedWorkflows, ManagedNotify, ManagedPlansService, ContractTermsService, ManagedAccessService, OnboardingService, ResponsibilityService, ContractsService, AssetsService],
-  exports: [ManagedWorkflows, ManagedNotify, ManagedPlansService, ContractTermsService, OnboardingService, ContractsService, AssetsService],
+  providers: [ManagedWorkflows, ManagedNotify, ManagedPlansService, ContractTermsService, ManagedAccessService, OnboardingService, ResponsibilityService, ContractsService, AssetsService, SlaService, OnCallService, PagingService, ManagedTicketsService],
+  exports: [ManagedWorkflows, ManagedNotify, ManagedPlansService, ContractTermsService, OnboardingService, ContractsService, AssetsService, SlaService, OnCallService, PagingService, ManagedTicketsService],
 })
 export class ManagedModule {}

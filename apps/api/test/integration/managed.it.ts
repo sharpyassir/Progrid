@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Client, signup, sut, totp, waitFor, type Sut, type Team } from './harness';
+import { addSlaMinutes } from '../../src/modules/managed/sla/sla-calculator';
 
 /**
  * Managed cloud: contracts, onboarding, tickets and SLA due times, alerts and paging,
@@ -132,5 +133,72 @@ describe('managed cloud contracts', () => {
     expect(handover?.text).toContain('web-1');
     const after = await s.prisma.managedAsset.findUniqueOrThrow({ where: { id: asset.id } });
     expect(after.monitoringEnabled).toBe(false);
+  });
+});
+
+describe('managed cloud tickets', () => {
+  it('opens a P2 ticket with due times from the plan and the Saudi calendar', async () => {
+    const { owner, contractId } = await activeContract('ESSENTIAL');
+    const t = await owner.client.ok('POST', '/v1/managed/tickets', { subject: 'Site is slow', body: 'Checkout takes 20 seconds', priority: 'P2' }, 201);
+    expect(t).toMatchObject({ priority: 'P2', status: 'open', contractId });
+    const holidays = (await s.prisma.holiday.findMany({ where: { country: 'SA' } })).map((h) => h.date.toISOString().slice(0, 10));
+    const cal = { coverage: 'BUSINESS_HOURS' as const, country: 'SA' as const, holidays };
+    const opened = new Date(t.createdAt);
+    expect(new Date(t.responseDueAt).toISOString()).toBe(addSlaMinutes(opened, 480, cal).toISOString());
+    expect(new Date(t.resolveDueAt).toISOString()).toBe(addSlaMinutes(opened, 960, cal).toISOString());
+    // The general support queue sees it as a high priority ticket.
+    const row = await s.prisma.ticket.findUniqueOrThrow({ where: { id: t.id } });
+    expect(row.priority).toBe('high');
+    expect(row.firstResponseDueAt?.toISOString()).toBe(new Date(t.responseDueAt).toISOString());
+  });
+
+  it('never shows internal notes to the customer', async () => {
+    const { owner } = await activeContract('ESSENTIAL');
+    const m = await member(owner);
+    const t = await m.client.ok('POST', '/v1/managed/tickets', { subject: 'Disk almost full', body: 'On web-1', priority: 'P3' }, 201);
+    await engineer.client.ok('POST', `/admin/managed/tickets/${t.id}/messages`, { body: 'Customer runs an old kernel, see runbook', internal: true }, 201);
+    const afterNote = await s.prisma.ticket.findUniqueOrThrow({ where: { id: t.id } });
+    expect(afterNote.firstRespondedAt).toBeNull();
+    await engineer.client.ok('POST', `/admin/managed/tickets/${t.id}/messages`, { body: 'We are cleaning old logs now.' }, 201);
+
+    for (const c of [owner.client, m.client]) {
+      const view = await c.ok('GET', `/v1/managed/tickets/${t.id}`);
+      expect(view.messages.map((x: { body: string }) => x.body)).toEqual(['On web-1', 'We are cleaning old logs now.']);
+      expect(JSON.stringify(view)).not.toContain('old kernel');
+      expect(view.firstRespondedAt).toBeTruthy();
+      // The general support endpoint hides it too.
+      const general = await c.ok('GET', `/v1/support/tickets/${t.id}`);
+      expect(JSON.stringify(general)).not.toContain('old kernel');
+      const list = await c.ok('GET', '/v1/managed/tickets?status=all');
+      expect(list.data.find((x: { id: string }) => x.id === t.id).messageCount).toBe(2);
+    }
+    const staffView = await engineer.client.ok('GET', `/admin/managed/tickets/${t.id}`);
+    expect(staffView.messages.filter((x: { internal: boolean }) => x.internal).map((x: { body: string }) => x.body)).toEqual(['Customer runs an old kernel, see runbook']);
+    expect(staffView.assigneeId).toBe(engineer.userId);
+
+    // Engineers cannot assign to someone else; a support lead can.
+    expect((await engineer.client.patch(`/admin/managed/tickets/${t.id}`, { assigneeId: lead.userId })).status).toBe(403);
+    expect((await lead.client.ok('PATCH', `/admin/managed/tickets/${t.id}`, { assigneeId: lead.userId })).assigneeId).toBe(lead.userId);
+  });
+
+  it('warns at 75 percent and escalates a breach to the support lead', async () => {
+    const { owner } = await activeContract('ESSENTIAL');
+    const t = await owner.client.ok('POST', '/v1/managed/tickets', { subject: 'Backups failing', body: 'Since yesterday', priority: 'P4' }, 201);
+    await lead.client.ok('PATCH', `/admin/managed/tickets/${t.id}`, { assigneeId: engineer.userId });
+    // Opened a month ago: raising it to P3 recomputes due times in the past, so the new timers warn and breach at once.
+    await s.prisma.ticket.update({ where: { id: t.id }, data: { createdAt: new Date(Date.now() - 30 * 86_400_000) } });
+    const raised = await lead.client.ok('PATCH', `/admin/managed/tickets/${t.id}`, { priority: 'P3' });
+    expect(new Date(raised.responseDueAt).getTime()).toBeLessThan(Date.now());
+    const breached = await waitFor(async () => {
+      const r = await s.prisma.ticket.findUniqueOrThrow({ where: { id: t.id } });
+      return r.responseBreached && r.resolveBreached && r;
+    }, { what: 'the SLA timers to breach', timeoutMs: 60_000 });
+    expect(breached.warnedAt).toBeTruthy();
+    expect(breached.breachedAt).toBeTruthy();
+    const pages = await s.prisma.page.findMany({ where: { ticketId: t.id } });
+    expect(pages.some((p) => p.userId === engineer.userId && p.urgency === 'low')).toBe(true);
+    expect(pages.some((p) => p.userId === lead.userId && p.urgency === 'high')).toBe(true);
+    expect(s.outbox.some((m) => m.to === engineer.email && m.subject.startsWith('SLA warning'))).toBe(true);
+    expect(await s.prisma.auditLog.count({ where: { resource: `ticket:${t.id}`, action: 'managed.sla_breached' } })).toBe(2);
   });
 });

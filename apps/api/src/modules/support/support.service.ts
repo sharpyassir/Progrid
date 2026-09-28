@@ -84,7 +84,7 @@ export class SupportService {
     const status = q.status ?? 'all';
     const rows = await this.prisma.ticket.findMany({
       where: { teamId: actor.teamId, ...(status === 'all' ? {} : { status }) },
-      include: { _count: { select: { messages: true } } },
+      include: { _count: { select: { messages: { where: { internal: false } } } } },
       orderBy: { updatedAt: 'desc' },
       ...cursorArgs(q),
     });
@@ -101,7 +101,8 @@ export class SupportService {
     const priority: Priority = dto.priority ?? 'normal';
     const target = PLAN_CATALOG[plan].targets[priority];
     if (target === null) throw ApiError.invalid(`Priority "${priority}" needs a higher support plan`, { plan, allowed: (Object.keys(PLAN_CATALOG[plan].targets) as Priority[]).filter((p) => PLAN_CATALOG[plan].targets[p] !== null) });
-    const open = await this.prisma.ticket.count({ where: { teamId: team.id, status: { not: 'closed' } } });
+    // Managed cloud tickets are covered by the managed contract, not the support plan.
+    const open = await this.prisma.ticket.count({ where: { teamId: team.id, status: { not: 'closed' }, contractId: null } });
     if (open >= PLAN_CATALOG[plan].maxOpen) throw ApiError.quota(`Your plan allows ${PLAN_CATALOG[plan].maxOpen} open tickets; close one first`);
     if (dto.resource) await this.checkResource(actor, dto.resource);
     const author = await this.authorName(actor);
@@ -201,7 +202,7 @@ export class SupportService {
     const ticket = await this.prisma.ticket.findUnique({ where: { id }, include: ticketInclude });
     if (!ticket) throw ApiError.notFound('ticket', id);
     const team = await this.prisma.team.findUnique({ where: { id: ticket.teamId }, select: { id: true, name: true, slug: true, supportPlan: true, currency: true, country: true, members: { where: { role: 'owner' }, include: { user: { select: { email: true, name: true } } } } } });
-    return { ...this.present(ticket), team };
+    return { ...this.present(ticket, true), team };
   }
 
   /** Staff answer: marks the ticket answered, records the first response, emails the team owners and the opener. */
@@ -223,7 +224,7 @@ export class SupportService {
     });
     await this.events.emit(close ? 'ticket.closed' : 'ticket.answered', { ticketId: id, number: ticket.number, by: 'support' }, { teamId: ticket.teamId, actor, resource: `ticket:${id}` });
     await this.notifyCustomer(updated, dto.body);
-    return this.present(updated);
+    return this.present(updated, true);
   }
 
   async adminClose(actor: Actor, id: string) {
@@ -231,7 +232,7 @@ export class SupportService {
     if (!ticket) throw ApiError.notFound('ticket', id);
     const updated = await this.prisma.ticket.update({ where: { id }, data: { status: 'closed', closedAt: new Date() }, include: ticketInclude });
     await this.events.emit('ticket.closed', { ticketId: id, number: ticket.number, by: 'support' }, { teamId: ticket.teamId, actor, resource: `ticket:${id}` });
-    return this.present(updated);
+    return this.present(updated, true);
   }
 
   /** Open tickets past their first response target; used by the back office overview. */
@@ -295,7 +296,9 @@ export class SupportService {
     };
   }
 
-  private present(t: TicketRow) {
-    return { ...this.summary(t, t.messages.length), messages: t.messages.map((m) => ({ id: m.id, fromSupport: m.fromSupport, author: m.authorName, body: m.body, createdAt: m.createdAt })) };
+  /** Customer view by default: internal notes (managed cloud tickets) are never returned to customers. */
+  private present(t: TicketRow, staff = false) {
+    const messages = t.messages.filter((m) => staff || !m.internal);
+    return { ...this.summary(t, messages.length), messages: messages.map((m) => ({ id: m.id, fromSupport: m.fromSupport, author: m.authorName, body: m.body, createdAt: m.createdAt, ...(staff ? { internal: m.internal } : {}) })) };
   }
 }

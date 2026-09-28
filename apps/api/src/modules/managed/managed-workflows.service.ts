@@ -12,7 +12,7 @@ export class ManagedWorkflows {
   constructor(private readonly temporal: TemporalService) {}
 
   static onboardingId = (contractId: string) => `managed-onboarding-${contractId}`;
-  static slaId = (ticketId: string, kind: 'response' | 'resolve') => `managed-sla-${kind}-${ticketId}`;
+  static slaId = (ticketId: string, kind: 'response' | 'resolve', priority: string) => `managed-sla-${kind}-${ticketId}-${priority}`;
   static pageEscalationId = (pageId: string) => `managed-page-${pageId}`;
   static maintenanceId = (runId: string) => `managed-maintenance-${runId}`;
   static reportId = (contractId: string, period: string) => `managed-report-${contractId}-${period}`;
