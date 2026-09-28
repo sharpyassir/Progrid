@@ -651,7 +651,7 @@ model MarketplaceApp {
   ports       Int[]     @default([])
   variables   Json      @default("[]") // [{name,label,type,required,default}]
   cloudInit   String // rendered with variables at deploy time
-  vendorName  String    @default("prgd")
+  vendorName  String    @default("Progrid")
   vendorRevenueShare Int @default(0) // percent, e.g. 70 for paid vendor apps
   priceMonthlyMinor  Int @default(0) // 0 = free (server cost only)
   status      AppStatus @default(draft)
