@@ -27,11 +27,17 @@ export interface MaintenanceResult {
   error?: string;
 }
 
-/** Runs a maintenance playbook against the targets and reports the outcome with a log. */
+/**
+ * Runs a maintenance playbook against the targets and reports the outcome with a log. Output
+ * is also handed to `onOutput` as it is produced, so the log can be streamed live.
+ */
 export interface MaintenanceRunner {
   readonly name: string;
-  run(job: MaintenanceJob): Promise<MaintenanceResult>;
+  run(job: MaintenanceJob, onOutput?: (chunk: string) => void): Promise<MaintenanceResult>;
 }
+
+/** Pause between lines of the fake runner, so its output streams like a real run. */
+const FAKE_LINE_DELAY_MS = 40;
 
 export const PLAYBOOK_NAME = /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*\.ya?ml$/;
 
@@ -41,7 +47,18 @@ export const PLAYBOOK_NAME = /^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+)*\.ya?ml$/;
  */
 export class FakeMaintenanceRunner implements MaintenanceRunner {
   readonly name = 'fake';
-  async run(job: MaintenanceJob): Promise<MaintenanceResult> {
+  async run(job: MaintenanceJob, onOutput?: (chunk: string) => void): Promise<MaintenanceResult> {
+    const result = this.build(job);
+    if (onOutput) {
+      for (const line of result.log.split('\n')) {
+        onOutput(`${line}\n`);
+        await new Promise((r) => setTimeout(r, FAKE_LINE_DELAY_MS));
+      }
+    }
+    return result;
+  }
+
+  private build(job: MaintenanceJob): MaintenanceResult {
     const fail = job.vars.simulateFailure === true;
     const at = new Date().toISOString();
     const lines = [`PLAY [${job.playbook}] (fake runner, run ${job.runId}, ${at}) ****`];
@@ -66,7 +83,7 @@ export class FakeMaintenanceRunner implements MaintenanceRunner {
 export class AnsibleMaintenanceRunner implements MaintenanceRunner {
   readonly name = 'ansible';
 
-  async run(job: MaintenanceJob): Promise<MaintenanceResult> {
+  async run(job: MaintenanceJob, onOutput?: (chunk: string) => void): Promise<MaintenanceResult> {
     const c = loadConfig();
     if (!PLAYBOOK_NAME.test(job.playbook)) return { ok: false, log: '', error: `bad playbook name ${job.playbook}` };
     const dir = isAbsolute(c.MAINTENANCE_PLAYBOOK_DIR) ? c.MAINTENANCE_PLAYBOOK_DIR : resolve(process.cwd(), c.MAINTENANCE_PLAYBOOK_DIR);
@@ -85,7 +102,10 @@ export class AnsibleMaintenanceRunner implements MaintenanceRunner {
         const cap = 200_000;
         const child = spawn('ansible-playbook', args, { cwd: dir, env: { ...process.env, ANSIBLE_FORCE_COLOR: '0', ANSIBLE_NOCOLOR: '1', ANSIBLE_RETRY_FILES_ENABLED: '0' } });
         const collect = (b: Buffer) => {
-          if (out.length < cap) out += b.toString();
+          if (out.length < cap) {
+            out += b.toString();
+            onOutput?.(b.toString());
+          }
         };
         child.stdout.on('data', collect);
         child.stderr.on('data', collect);

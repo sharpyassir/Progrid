@@ -2518,7 +2518,7 @@ model MaintenanceRun {
   id         String               @id @default(cuid())
   taskId     String
   status     MaintenanceRunStatus @default(QUEUED)
-  /// schedule | manual
+  /// schedule | manual | retry (a failed run started again from the ops console)
   trigger    String               @default("schedule")
   startedById String?
   runner     String?

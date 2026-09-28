@@ -805,3 +805,63 @@ describe('ops console offboarding', () => {
     expect(audit.request).toMatchObject({ grantsRevoked: 1, timerStopped: true, assignmentsRemoved: 1, rotateTickets: [rotate[0].id] });
   });
 });
+
+/** Reads a Server Sent Events stream to the end. */
+async function readSse(url: string, headers: Record<string, string>) {
+  const r = await fetch(url, { headers });
+  const events: { event: string; data: any }[] = [];
+  if (r.status !== 200 || !r.body) return { status: r.status, events };
+  const text = await r.text();
+  for (const block of text.split('\n\n')) {
+    const event = /^event: (.+)$/m.exec(block)?.[1];
+    const data = /^data: (.+)$/m.exec(block)?.[1];
+    if (event && data) events.push({ event, data: JSON.parse(data) });
+  }
+  return { status: r.status, events };
+}
+
+describe('ops console maintenance', () => {
+  it('runs a task from the ops console, streams the live log and retries the failed run', async () => {
+    const c = await contractWithAsset();
+    const other = await contractWithAsset();
+    const eng = await externalEngineer({ contractIds: [c.contractId] });
+    const task = await lead.client.ok('POST', '/admin/managed/maintenance/tasks', { contractId: c.contractId, assetId: c.assetId, kind: 'PATCHING', cron: '0 3 * * 5', vars: { simulateFailure: true } }, 201);
+    const foreign = await lead.client.ok('POST', '/admin/managed/maintenance/tasks', { contractId: other.contractId, kind: 'PATCHING', cron: '0 3 * * 5' }, 201);
+    const tasks = await eng.client.ok('GET', '/ops/v1/maintenance/tasks');
+    expect(tasks.data.map((t: { id: string }) => t.id)).toContain(task.id);
+    expect(tasks.data.map((t: { id: string }) => t.id)).not.toContain(foreign.id);
+    expect((await eng.client.post(`/ops/v1/maintenance/tasks/${foreign.id}/run`)).status).toBe(404);
+
+    const run = await eng.client.ok('POST', `/ops/v1/maintenance/tasks/${task.id}/run`, {}, 202);
+    expect(run.startedById).toBe(eng.userId);
+    const auth = { authorization: `Bearer ${eng.client.token}`, 'x-forwarded-for': eng.client.ip };
+    const streamed = await readSse(`${s.baseUrl}/ops/v1/maintenance/runs/${run.id}/stream`, auth);
+    expect(streamed.status).toBe(200);
+    const log = streamed.events.filter((e) => e.event === 'log').map((e) => e.data.chunk).join('');
+    expect(log).toContain('PLAY [patching.yml]');
+    expect(log).toContain('fatal');
+    expect(streamed.events.filter((e) => e.event === 'status').map((e) => e.data.status)).toContain('FAILED');
+    expect(streamed.events.at(-1)).toMatchObject({ event: 'end', data: { status: 'FAILED', error: 'simulated failure' } });
+    // The stream also takes the HttpOnly session cookie (GET only).
+    const byCookie = await readSse(`${s.baseUrl}/ops/v1/maintenance/runs/${run.id}/stream`, { cookie: `prgd_ops_session=${eng.client.token}`, 'x-forwarded-for': eng.client.ip });
+    expect(byCookie.events.at(-1)?.event).toBe('end');
+    const cookiePost = await fetch(`${s.baseUrl}/ops/v1/maintenance/runs/${run.id}/retry`, { method: 'POST', headers: { cookie: `prgd_ops_session=${eng.client.token}` } });
+    expect(cookiePost.status).toBe(401);
+
+    // The failure ticket goes to the engineer who started the run.
+    const failed = await waitFor(async () => {
+      const r = await s.prisma.maintenanceRun.findUniqueOrThrow({ where: { id: run.id }, include: { ticket: true } });
+      return r.ticket && r;
+    }, { what: 'the failure ticket', timeoutMs: 20_000 });
+    expect(failed.ticket).toMatchObject({ managedPriority: 'P3', assigneeId: eng.userId, source: 'maintenance' });
+
+    const retried = await eng.client.ok('POST', `/ops/v1/maintenance/runs/${run.id}/retry`, {}, 202);
+    expect(retried).toMatchObject({ taskId: task.id, trigger: 'retry' });
+    expect((await eng.client.ok('GET', `/ops/v1/maintenance/runs/${retried.id}`)).log).toBeDefined();
+    await waitFor(async () => (await s.prisma.maintenanceRun.findUniqueOrThrow({ where: { id: retried.id } })).status === 'FAILED', { what: 'the retried run to finish', timeoutMs: 30_000 });
+    expect((await eng.client.post(`/ops/v1/maintenance/runs/${retried.id}/retry`)).status).toBe(202);
+    const done = await s.prisma.maintenanceRun.findFirstOrThrow({ where: { taskId: task.id, status: 'SUCCEEDED' } }).catch(() => null);
+    expect(done).toBeNull();
+    expect(await s.prisma.auditLog.count({ where: { resource: `maintenance_task:${task.id}`, action: { in: ['ops.maintenance_run_started', 'ops.maintenance_run_retried'] } } })).toBe(3);
+  });
+});

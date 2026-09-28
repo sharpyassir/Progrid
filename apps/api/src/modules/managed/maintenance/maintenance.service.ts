@@ -124,12 +124,12 @@ export class MaintenanceService {
 
   // ---- runs ----
 
-  async runNow(actor: Actor, taskId: string) {
+  async runNow(actor: Actor, taskId: string, trigger: 'manual' | 'retry' = 'manual') {
     const t = await this.prisma.maintenanceTask.findUnique({ where: { id: taskId }, include: { contract: true } });
     if (!t) throw ApiError.notFound('maintenance task', taskId);
     if (t.contract.status === 'CANCELLED' || t.contract.status === 'DRAFT') throw ApiError.invalidState(`The contract is ${t.contract.status}`);
-    const run = await this.startRun(t, 'manual', actor.userId);
-    await this.events.emit('managed.maintenance_run_started', { runId: run.id, taskId, trigger: 'manual' }, { teamId: t.contract.teamId, actor, resource: `maintenance_task:${taskId}` });
+    const run = await this.startRun(t, trigger, actor.userId);
+    await this.events.emit('managed.maintenance_run_started', { runId: run.id, taskId, trigger }, { teamId: t.contract.teamId, actor, resource: `maintenance_task:${taskId}` });
     return presentRun(run);
   }
 
@@ -173,8 +173,23 @@ export class MaintenanceService {
     const runner = runnerFor();
     await this.prisma.maintenanceRun.update({ where: { id: runId }, data: { status: 'RUNNING', startedAt: new Date(), runner: runner.name } });
     const targets = await this.targets(run.task);
-    const result = await runner.run({ runId, kind: run.task.kind, playbook: run.task.playbook, vars: (run.task.vars ?? {}) as Record<string, unknown>, targets })
-      .catch((e: Error) => ({ ok: false, log: '', error: e.message }));
+    // The log is written as it grows (about once a second) so the ops console can stream it.
+    let live = '';
+    let written = 0;
+    let writing: Promise<unknown> = Promise.resolve();
+    const flush = () => {
+      if (live.length === written) return;
+      written = live.length;
+      const log = live.slice(0, 500_000);
+      writing = writing.then(() => this.prisma.maintenanceRun.updateMany({ where: { id: runId, status: 'RUNNING' }, data: { log } })).catch(() => undefined);
+    };
+    const ticker = setInterval(flush, 1000);
+    const result = await runner.run({ runId, kind: run.task.kind, playbook: run.task.playbook, vars: (run.task.vars ?? {}) as Record<string, unknown>, targets }, (chunk) => {
+      live += chunk;
+    })
+      .catch((e: Error) => ({ ok: false, log: live, error: e.message }))
+      .finally(() => clearInterval(ticker));
+    await writing;
     const status = result.ok ? 'SUCCEEDED' : 'FAILED';
     await this.prisma.maintenanceRun.update({ where: { id: runId }, data: { status, finishedAt: new Date(), log: result.log.slice(0, 500_000), error: result.error?.slice(0, 2000) ?? null } });
     const teamId = (await this.prisma.managedContract.findUnique({ where: { id: run.task.contractId }, select: { teamId: true } }))?.teamId;
@@ -214,9 +229,9 @@ export class MaintenanceService {
 
   // ---- helpers ----
 
-  private async startRun(t: MaintenanceTask, trigger: 'schedule' | 'manual', startedById: string | null) {
+  private async startRun(t: MaintenanceTask, trigger: 'schedule' | 'manual' | 'retry', startedById: string | null) {
     const run = await this.prisma.maintenanceRun.create({ data: { taskId: t.id, trigger, startedById } });
-    if (trigger === 'manual') await this.prisma.maintenanceTask.update({ where: { id: t.id }, data: { lastRunAt: new Date() } });
+    if (trigger !== 'schedule') await this.prisma.maintenanceTask.update({ where: { id: t.id }, data: { lastRunAt: new Date() } });
     const ok = await this.workflows.start('managedMaintenanceRun', [{ runId: run.id }], ManagedWorkflows.maintenanceId(run.id));
     if (!ok) {
       // Temporal unavailable: run it here so maintenance is not silently skipped.
