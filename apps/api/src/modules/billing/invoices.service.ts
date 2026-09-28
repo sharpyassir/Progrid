@@ -5,6 +5,7 @@ import { EventsService } from '../events/events.service';
 import { invoiceNumber, startOfMonth, taxRateFor } from './pricing';
 import { MailService } from '../../common/mail/mail.service';
 import { loadConfig } from '../../config/config';
+import { linkManagedWorkLogs } from '../managed/billing-hooks/link-worklogs';
 
 /**
  * Monthly invoicing. SAR invoices for Saudi teams (ZATCA Fatoora e-invoicing handed off to a
@@ -83,6 +84,8 @@ export class InvoicesService {
         // Only records nobody else has claimed; a mismatch means a concurrent run, so roll back.
         const linked = await tx.usageRecord.updateMany({ where: { id: { in: records.map((r) => r.id) }, invoiceId: null }, data: { invoiceId: invoice.id } });
         if (linked.count !== records.length) throw new Error(`usage records changed while invoicing (${linked.count} of ${records.length} linked)`);
+        // Managed cloud: the worklogs counted for the managed lines on this invoice point at it.
+        await linkManagedWorkLogs(tx, invoice.id);
         return invoice;
       }, { timeout: 60_000 });
     } catch (err) {

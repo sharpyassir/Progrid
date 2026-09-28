@@ -2,6 +2,11 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { Client, signup, sut, totp, waitFor, type Sut, type Team } from './harness';
 import { addSlaMinutes } from '../../src/modules/managed/sla/sla-calculator';
 import { ManagedAlertsService } from '../../src/modules/managed/alerts/alerts.service';
+import { ManagedBillingService } from '../../src/modules/managed/billing-hooks/managed-billing.service';
+import { InvoicesService } from '../../src/modules/billing/invoices.service';
+import { startOfMonth } from '../../src/modules/billing/pricing';
+
+const DAY = 86_400_000;
 
 /**
  * Managed cloud: contracts, onboarding, tickets and SLA due times, alerts and paging,
@@ -299,5 +304,59 @@ describe('managed cloud alerts and paging', () => {
     // Rotating the token revokes the old one.
     await engineer.client.ok('POST', `/admin/managed/assets/${asset.id}/heartbeat-token`, {}, 201);
     expect((await anon.post('/internal/agents/heartbeat', { status: 'ok' }, { token })).status).toBe(401);
+  });
+});
+
+describe('managed cloud billing', () => {
+  it('bills the prorated plan fee and engineer overage on the monthly invoice with VAT', async () => {
+    const { owner, contractId } = await activeContract('ESSENTIAL');
+    const now = new Date();
+    const periodEnd = startOfMonth(now);
+    const periodStart = startOfMonth(new Date(periodEnd.getTime() - 1));
+    const period = periodStart.toISOString().slice(0, 7);
+    // Activated on the 16th of last month.
+    await s.prisma.managedContract.update({ where: { id: contractId }, data: { activatedAt: new Date(periodStart.getTime() + 15 * DAY) } });
+    const workedAt = new Date(periodStart.getTime() + 20 * DAY).toISOString();
+    const w1 = await engineer.client.ok('POST', '/admin/managed/worklogs', { contractId, minutes: 150, workedAt, note: 'Kernel update and reboot' }, 201);
+    const w2 = await engineer.client.ok('POST', '/admin/managed/worklogs', { contractId, minutes: 50, workedAt }, 201);
+    const w3 = await engineer.client.ok('POST', '/admin/managed/worklogs', { contractId, minutes: 30, billable: false, workedAt }, 201);
+    // Engineers cannot change a colleague's entry; a support lead can.
+    const other = await lead.client.ok('POST', '/admin/managed/worklogs', { contractId, userId: engineer.userId, minutes: 5, billable: false, workedAt }, 201);
+    expect(other.userId).toBe(engineer.userId);
+    const leads = await lead.client.ok('POST', '/admin/managed/worklogs', { contractId, minutes: 5, billable: false, workedAt }, 201);
+    expect((await engineer.client.patch(`/admin/managed/worklogs/${leads.id}`, { minutes: 6 })).status).toBe(403);
+
+    const usage = await engineer.client.ok('GET', `/admin/managed/contracts/${contractId}/usage?period=${period}`);
+    expect(usage).toMatchObject({ includedMinutes: 120, billableMinutes: 200, overageMinutes: 80, hourlyRateMinor: 25_000, currency: 'SAR' });
+
+    const billing = s.get(ManagedBillingService);
+    await billing.accruePreviousMonth(now);
+    await billing.accruePreviousMonth(now); // safe to run twice
+    const days = (periodEnd.getTime() - periodStart.getTime()) / DAY;
+    const planMinor = Math.round(110_000 * ((days - 15) / days));
+    const overageMinor = Math.round((80 / 60) * 25_000);
+
+    await s.get(InvoicesService).issueForPreviousMonth(now);
+    const inv = await s.prisma.invoice.findFirstOrThrow({ where: { teamId: owner.teamId }, include: { records: true } });
+    const byType = Object.fromEntries(inv.records.map((r) => [r.resourceType, r]));
+    expect(Object.keys(byType).sort()).toEqual(['managed_overage', 'managed_plan']);
+    expect(byType.managed_plan.amountMinor).toBe(planMinor);
+    expect(byType.managed_overage.amountMinor).toBe(overageMinor);
+    expect(byType.managed_overage.quantity).toBeCloseTo(80 / 60, 2);
+    expect(inv.subtotalMinor).toBe(planMinor + overageMinor);
+    expect(inv.taxMinor).toBe(Math.round((planMinor + overageMinor) * 0.15));
+    expect(inv.currency).toBe('SAR');
+
+    // Billable entries carry the invoice; nothing can be billed twice or edited afterwards.
+    const logs = await s.prisma.workLog.findMany({ where: { id: { in: [w1.id, w2.id, w3.id] } } });
+    expect(logs.filter((l) => l.billable).every((l) => l.billedInvoiceId === inv.id)).toBe(true);
+    expect(logs.find((l) => !l.billable)?.billedInvoiceId).toBeNull();
+    expect((await engineer.client.patch(`/admin/managed/worklogs/${w1.id}`, { minutes: 10 })).status).toBe(409);
+    await billing.accruePreviousMonth(now);
+    expect(await s.prisma.usageRecord.count({ where: { resourceId: contractId } })).toBe(2);
+
+    const pdf = await owner.client.get(`/v1/billing/invoices/${inv.id}/pdf`);
+    expect(pdf.status).toBe(200);
+    expect(pdf.headers.get('content-type')).toBe('application/pdf');
   });
 });

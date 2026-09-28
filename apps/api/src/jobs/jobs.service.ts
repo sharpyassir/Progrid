@@ -22,6 +22,7 @@ import { AppPlatformService } from '../modules/app-platform/app.service';
 import { TeamService } from '../modules/team/team.service';
 import { ManagedAlertsService } from '../modules/managed/alerts/alerts.service';
 import { ContractsService } from '../modules/managed/contracts/contracts.service';
+import { ManagedBillingService } from '../modules/managed/billing-hooks/managed-billing.service';
 
 /**
  * Periodic jobs. Each takes a Redis lock so only one API replica runs it.
@@ -54,6 +55,7 @@ export class JobsService {
     private readonly team: TeamService,
     private readonly managedAlerts: ManagedAlertsService,
     private readonly managedContracts: ContractsService,
+    private readonly managedBilling: ManagedBillingService,
   ) {}
 
   @Cron('50 * * * * *') // every minute at :50: database roles, lag, backup results, config retries
@@ -109,6 +111,8 @@ export class JobsService {
   @Cron('30 0 1 * *') // 00:30 UTC on the 1st
   monthly() {
     return this.locked('monthly', 30 * 60_000, async () => {
+      // Managed cloud plan fees and overage become usage records first, so they land on the same invoice.
+      await this.managedBilling.accruePreviousMonth();
       await this.invoices.issueForPreviousMonth();
       await this.spend.resetTokenCounters();
     });

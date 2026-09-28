@@ -22,6 +22,9 @@ import { ManagedAlertsService } from './alerts/alerts.service';
 import { AdminManagedAlertsController } from './alerts/alerts.controller';
 import { ManagedInternalController } from './alerts/internal.controller';
 import { AdminManagedOnCallController } from './oncall/oncall.controller';
+import { WorkLogsService } from './worklogs/worklogs.service';
+import { AdminManagedWorkLogsController } from './worklogs/worklogs.controller';
+import { ManagedBillingService } from './billing-hooks/managed-billing.service';
 
 /**
  * Managed cloud: we operate customer servers (on the platform or elsewhere) under an SLA.
@@ -36,8 +39,9 @@ import { AdminManagedOnCallController } from './oncall/oncall.controller';
     ManagedAssetsController, AdminManagedAssetsController,
     ManagedTicketsController, AdminManagedTicketsController,
     AdminManagedAlertsController, ManagedInternalController, AdminManagedOnCallController,
+    AdminManagedWorkLogsController,
   ],
-  providers: [ManagedWorkflows, ManagedNotify, ManagedPlansService, ContractTermsService, ManagedAccessService, OnboardingService, ResponsibilityService, ContractsService, AssetsService, SlaService, OnCallService, PagingService, ManagedTicketsService, ManagedAlertsService],
-  exports: [ManagedWorkflows, ManagedNotify, ManagedPlansService, ContractTermsService, OnboardingService, ContractsService, AssetsService, SlaService, OnCallService, PagingService, ManagedTicketsService, ManagedAlertsService],
+  providers: [ManagedWorkflows, ManagedNotify, ManagedPlansService, ContractTermsService, ManagedAccessService, OnboardingService, ResponsibilityService, ContractsService, AssetsService, SlaService, OnCallService, PagingService, ManagedTicketsService, ManagedAlertsService, WorkLogsService, ManagedBillingService],
+  exports: [ManagedWorkflows, ManagedNotify, ManagedPlansService, ContractTermsService, OnboardingService, ContractsService, AssetsService, SlaService, OnCallService, PagingService, ManagedTicketsService, ManagedAlertsService, WorkLogsService, ManagedBillingService],
 })
 export class ManagedModule {}

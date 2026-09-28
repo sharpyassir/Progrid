@@ -9,7 +9,7 @@ const LOGO = [join(__dirname, '../../../assets/progrid-logo.png'), join(process.
 const FONT = ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/dejavu/DejaVuSans.ttf'].find(existsSync);
 const FONT_BOLD = ['/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf'].find(existsSync);
 
-const LABEL: Record<string, string> = { server: 'Servers', public_ip: 'Public IP addresses', snapshot: 'Snapshots', backup: 'Backups', managed_server: 'Managed servers', support: 'Support plan', kubernetes: 'Kubernetes control plane', app_instance: 'App Platform', volume: 'Volumes', bandwidth: 'Bandwidth', app: 'Marketplace apps' };
+const LABEL: Record<string, string> = { server: 'Servers', public_ip: 'Public IP addresses', snapshot: 'Snapshots', backup: 'Backups', managed_server: 'Managed servers', support: 'Support plan', kubernetes: 'Kubernetes control plane', app_instance: 'App Platform', volume: 'Volumes', bandwidth: 'Bandwidth', app: 'Marketplace apps', managed_plan: 'Managed cloud plan', managed_overage: 'Managed cloud engineer time beyond included hours' };
 
 /** Renders an invoice as a one page PDF. DejaVu Sans covers Latin letters with accents; Helvetica is the fallback. */
 export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageRecord[] }): Promise<Buffer> {
@@ -67,7 +67,7 @@ export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageReco
     doc.font(regular).fontSize(10);
     for (const [type, g] of groups) {
       // Metering counts minutes; people read hours.
-      const usage = g.unit === 'minute' ? `${(g.qty / 60).toFixed(1)} hours` : g.unit === 'gb_minute' ? `${(g.qty / 60).toFixed(1)} GB hours` : g.unit === 'byte' ? `${(g.qty / 1e9).toFixed(2)} GB` : `${Math.round(g.qty * 100) / 100} ${g.unit}`;
+      const usage = g.unit === 'minute' ? `${(g.qty / 60).toFixed(1)} hours` : g.unit === 'gb_minute' ? `${(g.qty / 60).toFixed(1)} GB hours` : g.unit === 'byte' ? `${(g.qty / 1e9).toFixed(2)} GB` : g.unit === 'month' ? `${Math.round(g.qty * 100) / 100} ${g.qty === 1 ? 'month' : 'months'}` : g.unit === 'hour' ? `${g.qty.toFixed(2)} hours` : `${Math.round(g.qty * 100) / 100} ${g.unit}`;
       doc.text(LABEL[type] ?? type, col.desc + 6, y).text(usage, col.qty, y, { width: 120, align: 'right' }).text(money(g.amount), 400, y, { width: 145, align: 'right' });
       y += 18;
     }
