@@ -8,6 +8,7 @@ import { CreateProjectDto, CreateSshKeyDto, CreateTokenDto, LoginDto, SignupDto 
 import { AccountSecurityService } from './account-security.service';
 import { EventsService } from '../events/events.service';
 import type { Actor } from '../../common/auth/actor';
+import { passwordNotSet } from '../oauth/password-not-set';
 
 @Injectable()
 export class IamService {
@@ -21,6 +22,15 @@ export class IamService {
   ) {}
 
   async signup(dto: SignupDto, meta: { ip?: string; userAgent?: string } = {}) {
+    const { user, team } = await this.createAccount(dto);
+    return { user: publicUser(user), team, session: await this.tokens.issueSession(user.id, team.id, meta) };
+  }
+
+  /**
+   * A new user with a new team, the way signup makes them. Social sign up passes no password
+   * and `emailVerified` when the provider vouches for the address, so no confirmation mail goes out.
+   */
+  async createAccount(dto: Omit<SignupDto, 'password'> & { password?: string; emailVerified?: boolean }) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } });
     if (existing) throw ApiError.conflict('email_taken', 'An account with this email already exists');
 
@@ -29,7 +39,8 @@ export class IamService {
     const user = await this.prisma.user.create({
       data: {
         email: dto.email.toLowerCase(),
-        passwordHash: await argon2.hash(dto.password),
+        passwordHash: dto.password ? await argon2.hash(dto.password) : null,
+        emailVerified: dto.emailVerified ? new Date() : undefined,
         name: dto.name,
         locale: dto.locale ?? (country === 'SA' ? 'ar' : country === 'TR' ? 'tr' : 'en'),
         memberships: {
@@ -41,6 +52,7 @@ export class IamService {
                 slug,
                 country,
                 currency: country === 'SA' ? 'SAR' : 'USD',
+                ...(dto.emailVerified ? { status: 'active' as const } : {}),
                 projects: { create: { name: 'Default', slug: 'default' } },
               },
             },
@@ -52,7 +64,7 @@ export class IamService {
     const team = user.memberships[0].team;
     await this.events.emit('team.created', { teamId: team.id, userId: user.id }, { teamId: team.id });
     this.security.sendVerification(user.id).catch((e) => this.log.warn(`verification mail failed: ${e.message}`));
-    return { user: publicUser(user), team, session: await this.tokens.issueSession(user.id, team.id, meta) };
+    return { user, team };
   }
 
   async login(dto: LoginDto, meta: { ip?: string; userAgent?: string } = {}) {
@@ -60,7 +72,8 @@ export class IamService {
       where: { email: dto.email.toLowerCase() },
       include: { memberships: { include: { team: true }, orderBy: { teamId: 'asc' } } , engineerProfile: { select: { kind: true } } },
     });
-    if (!user || !(await argon2.verify(user.passwordHash, dto.password))) throw ApiError.unauthorized('Wrong email or password');
+    if (user && !user.passwordHash) throw await passwordNotSet(this.prisma, user.id);
+    if (!user || !(await argon2.verify(user.passwordHash!, dto.password))) throw ApiError.unauthorized('Wrong email or password');
     // External engineers sign in to the ops console only (POST /ops/v1/auth/login).
     if (user.engineerProfile?.kind === 'EXTERNAL') throw new ApiError(403, 'ops_console_only', 'This account signs in to the ops console only');
     if (user.totpEnabled) {
@@ -175,7 +188,7 @@ export class IamService {
   }
 }
 
-function publicUser(u: { id: string; email: string; name: string; locale: string; totpEnabled: boolean; emailVerified: Date | null; createdAt: Date }) {
+export function publicUser(u: { id: string; email: string; name: string; locale: string; totpEnabled: boolean; emailVerified: Date | null; createdAt: Date }) {
   return { id: u.id, email: u.email, name: u.name, locale: u.locale, totpEnabled: u.totpEnabled, emailVerified: !!u.emailVerified, createdAt: u.createdAt };
 }
 

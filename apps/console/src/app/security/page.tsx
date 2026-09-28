@@ -5,6 +5,7 @@ import { FormEvent, Suspense, useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { useShell } from '@/components/shell';
+import { SignInMethods } from '@/components/sign-in-methods';
 
 interface Me { user: { email: string; totpEnabled: boolean; emailVerified: boolean }; role: string }
 
@@ -63,6 +64,8 @@ function SecurityPage() {
           </div>
         )}
       </section>
+
+      <SignInMethods locale={locale} />
 
       <section className="card space-y-3">
         <h2 className="font-medium">{t(locale, 'twoFactor')}</h2>

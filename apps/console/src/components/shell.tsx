@@ -18,7 +18,7 @@ const ShellCtx = createContext<Ctx>({ locale: 'en', setLocale: () => {}, authed:
 export const useShell = () => useContext(ShellCtx);
 
 /** Pages reachable without a session (links sent by email land here). */
-const PUBLIC_PATHS = ['/login', '/forgot-password', '/reset-password', '/verify', '/github/callback', '/invite'];
+const PUBLIC_PATHS = ['/login', '/forgot-password', '/reset-password', '/verify', '/github/callback', '/invite', '/auth/callback'];
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>('en');

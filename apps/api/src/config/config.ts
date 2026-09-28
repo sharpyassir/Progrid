@@ -182,6 +182,15 @@ const schema = z.object({
   /** Infisical project (workspace) id; secrets live under the folder /assets/<assetId>. */
   PRGD_INFISICAL_PROJECT: z.string().optional(),
   PRGD_INFISICAL_ENV: z.string().default('prod'),
+  // ---- social sign in (docs/social-sign-in.md); a provider shows in the console only when its client id and secret are set ----
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  MICROSOFT_CLIENT_ID: z.string().optional(),
+  MICROSOFT_CLIENT_SECRET: z.string().optional(),
+  /** Entra directory that may sign in: common (work, school and personal accounts), organizations, consumers or a tenant id. */
+  MICROSOFT_TENANT: z.preprocess((v) => (v === '' ? undefined : v), z.string().regex(/^[A-Za-z0-9.-]+$/).default('common')),
+  /** Base of the provider redirect URIs (<base>/v1/auth/oauth/<provider>/callback). Empty uses PUBLIC_API_URL. */
+  OAUTH_REDIRECT_BASE: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
 });
 
 export type AppConfig = z.infer<typeof schema>;

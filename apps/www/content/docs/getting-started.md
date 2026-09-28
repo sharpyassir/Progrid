@@ -11,6 +11,8 @@ Progrid is a developer cloud built for Saudi Arabia. You get servers by the hour
 
 Open the [console](https://console.progrid.sa/login), choose **Create account**, and enter your name, a team name, your email, and a password of ten characters or more. New accounts start with credit so you can try things before adding a card.
 
+You can also choose **Continue with Google** or **Continue with Microsoft** and skip the password. See [Account security](/docs/security) for how linking works.
+
 Confirm your email from the message we send. Servers cannot be created until the team owner has a confirmed address.
 
 ## 2. Add an SSH key

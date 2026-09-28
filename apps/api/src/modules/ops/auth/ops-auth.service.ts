@@ -29,7 +29,7 @@ export interface ClientMeta {
 }
 
 type SignInUser = {
-  id: string; email: string; name: string; locale: string; passwordHash: string; isStaff: boolean; staffRoles: string[];
+  id: string; email: string; name: string; locale: string; passwordHash: string | null; isStaff: boolean; staffRoles: string[];
   totpEnabled: boolean; totpSecret: string | null; totpRecoveryHashes: string[];
   engineerProfile: { id: string; kind: string; status: string; country: string; timezone: string; ipAllowlist: string[] } | null;
   webAuthnCredentials: { id: string; credentialId: string; transports: string[] }[];
@@ -67,7 +67,8 @@ export class OpsAuthService {
 
   async login(email: string, password: string, meta: ClientMeta) {
     const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() }, select: userSelect });
-    if (!user || !(await argon2.verify(user.passwordHash, password))) throw ApiError.unauthorized('Wrong email or password');
+    // The ops console always needs a password plus a second factor; social sign in is for the customer console only.
+    if (!user || !user.passwordHash || !(await argon2.verify(user.passwordHash, password))) throw ApiError.unauthorized('Wrong email or password');
     this.assertEngineer(user, meta);
     const challenge = await this.tokens.issueOpsChallenge(user.id);
     const methods = [...(user.totpEnabled ? ['totp'] : []), ...(user.webAuthnCredentials.length ? ['webauthn'] : [])];

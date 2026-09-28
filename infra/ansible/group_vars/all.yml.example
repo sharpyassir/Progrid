@@ -54,6 +54,10 @@ prgd_secret_store: vault            # vault | infisical
 prgd_vault_addr: https://vault.internal.progrid.sa:8200
 prgd_vault_mount: prgd
 prgd_infisical_project: ""
+# Social sign in (docs/social-sign-in.md); leave a client id empty to hide that button
+google_client_id: ""                # xxxx.apps.googleusercontent.com
+microsoft_client_id: ""             # Application (client) ID from the Entra app registration
+microsoft_tenant: common            # common accepts work, school and personal accounts
 
 # --- vault.yml keys (values with ansible-vault) ---
 # vault_postgres_password: ...
@@ -72,6 +76,8 @@ prgd_infisical_project: ""
 # vault_prgd_stepca_password: ...         # decrypts it
 # vault_prgd_vault_token: ...             # Vault token with read and write on the prgd KV v2 mount
 # vault_prgd_infisical_token: ""          # Infisical machine identity token, when prgd_secret_store is infisical
+# vault_google_client_secret: ""          # social sign in with Google
+# vault_microsoft_client_secret: ""       # social sign in with Microsoft; rotate before it expires
 # vault_pdns_api_key: ...
 # vault_rgw_admin_access_key: ...
 # vault_rgw_admin_secret_key: ...
