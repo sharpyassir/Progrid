@@ -14,6 +14,7 @@ apps/
   api/          Control plane — NestJS + Prisma modular monolith (TypeScript)
   console/      Web console — Next.js (TR / AR / EN, RTL-ready)
   www/          Marketing site — Next.js (progrid.sa), pricing pulled live from the API
+  ops/          Next.js DevOps console for on call engineers (ops.progrid.sa, EN / AR)
 cli/            `prgd` CLI — single Go binary (login, servers, ssh, deploy, tokens); `cli/install.sh`
 agents/
   host-agent/   Go service on every Proxmox node: takes jobs from NATS, calls the
@@ -49,6 +50,7 @@ HYPERVISOR_DRIVER=fake pnpm --filter @prgd/api worker
 # 4. console
 pnpm --filter @prgd/console dev          # http://localhost:3000
 pnpm --filter @prgd/www dev              # http://localhost:3001 (marketing site)
+pnpm --filter @prgd/ops dev              # http://localhost:3002 (DevOps console)
 
 # 5. host agent (real node)
 cd agents/host-agent && go build ./... && ./host-agent --config /etc/prgd/agent.yaml
