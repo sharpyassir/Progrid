@@ -160,6 +160,12 @@ passes it to `/start?intent=link&ticket=…`.
    person joins the inviting team instead, and only when the provider's address is the invited
    one.
 
+When the owner of an unconfirmed address later proves it (a password reset link, or Google or
+Microsoft vouching for it), every identity that was linked with that address without the
+provider vouching for it is removed. That closes account pre hijacking: someone who created an
+account with another person's address through a directory that does not verify addresses loses
+access the moment the real owner shows up.
+
 A social only account has no password. Password sign in tells such a person which button to
 use, and **Forgot password** lets them set one. An account can unlink a provider only while it
 keeps another way to sign in: a password or another linked account.
