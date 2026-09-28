@@ -15,7 +15,8 @@ tokens, the prepaid gate and card top ups, servers (power, resize, snapshots, re
 volumes, moving public addresses), load balancers, one and three node Postgres (with
 failover), Valkey and MySQL, Kubernetes (scaling, the cloud controller), App Platform (custom
 domains, host failure) and Git Deploy, hourly rating, the monthly invoice, dunning, limited
-staff with two factor sign in, and managed cloud (contracts and onboarding, SLA due times and
+staff with two factor sign in, sign in with Google and Microsoft (against a local OpenID
+Connect provider the test runs), and managed cloud (contracts and onboarding, SLA due times and
 timers, internal notes, Alertmanager alerts with paging and escalation, heartbeats, plan fee
 and overage billing, maintenance runs and monthly reports). The suite lives in `test/integration` and has its
 own vitest config, so `pnpm test` stays fast.

@@ -70,7 +70,7 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [email, password], properties: { email: { type: string, format: email }, password: { type: string }, totp: { type: string } } } } } }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Session" } } } }
-        "401": { $ref: "#/components/responses/Unauthorized" }
+        "401": { description: "Wrong email or password, `totp_required`, or `password_not_set` for an account that signs in only with Google or Microsoft (`details.providers` names them)" }
 
   /auth/verify:
     post:
@@ -128,6 +128,91 @@ paths:
       responses:
         "201": { description: OK }
         "401": { description: Code not valid (`totp_invalid`) }
+
+  /auth/providers:
+    get:
+      tags: [auth]
+      security: []
+      summary: Social sign in providers that are configured (the console shows a button for each)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { providers: { type: array, items: { type: object, properties: { id: { type: string, enum: [google, microsoft] }, name: { type: string } } } } } } } } }
+  /auth/oauth/{provider}/start:
+    get:
+      tags: [auth]
+      security: []
+      summary: Start sign in with Google or Microsoft (the browser navigates here)
+      description: |
+        Redirects to the provider with the authorization code flow, PKCE (S256), `state` and `nonce`, scopes
+        `openid email profile`. Sets an HttpOnly, Secure, SameSite=Lax cookie that binds the sign in to this
+        browser; the pending state lives on the server for 10 minutes. `intent=link` needs a `ticket` from
+        `POST /auth/oauth/link-ticket`. Errors redirect to the console `/auth/callback?error=<code>`.
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [google, microsoft] } }
+        - { name: intent, in: query, schema: { type: string, enum: [login, signup, link], default: login } }
+        - { name: return, in: query, description: Console path to land on afterwards, schema: { type: string } }
+        - { name: invite, in: query, description: Invitation token; a new account joins that team instead of creating one, schema: { type: string } }
+        - { name: ticket, in: query, description: One time link ticket (intent link), schema: { type: string } }
+        - { name: locale, in: query, schema: { type: string, enum: [en, tr, ar] } }
+      responses:
+        "302": { description: Redirect to the provider, or to the console with an error code }
+  /auth/oauth/{provider}/callback:
+    get:
+      tags: [auth]
+      security: []
+      summary: Provider redirect URI
+      description: |
+        Checks `state` and the browser cookie, exchanges the code with the PKCE verifier, verifies the id token
+        (signature against the provider key set, audience, issuer, nonce) and redirects to the console
+        `/auth/callback?code=<one time code>` (valid 60 seconds). Session tokens never appear in URLs.
+        Error codes: `state_invalid`, `cancelled`, `provider_error`, `token_invalid`, `link_from_security`,
+        `identity_in_use`, `email_missing`, `account_exists`, `invite_email_mismatch`, `invite_invalid`,
+        `link_session_invalid`.
+      parameters:
+        - { name: provider, in: path, required: true, schema: { type: string, enum: [google, microsoft] } }
+      responses:
+        "302": { description: Redirect to the console }
+  /auth/oauth/exchange:
+    post:
+      tags: [auth]
+      security: []
+      summary: Redeem the one time code from the console callback
+      description: Same answer as `/auth/login`, plus `created` and `returnTo`. Accounts with two factor sign in get `{ totpRequired, ticket }` instead; finish with `/auth/oauth/totp`.
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [code], properties: { code: { type: string } } } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { oneOf: [{ $ref: "#/components/schemas/Session" }, { type: object, properties: { totpRequired: { type: boolean, const: true }, ticket: { type: string } } }] } } } }
+        "400": { description: Code unknown, expired or already used (`code_invalid`) }
+        "403": { description: Staff account without two factor sign in (`totp_setup_required`) }
+  /auth/oauth/totp:
+    post:
+      tags: [auth]
+      security: []
+      summary: Second factor for a social sign in
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [ticket, code], properties: { ticket: { type: string }, code: { type: string } } } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Session" } } } }
+        "400": { description: Ticket expired or used (`ticket_invalid`); five wrong codes end it }
+        "401": { description: Code not valid (`totp_invalid`) }
+  /auth/oauth/link-ticket:
+    post:
+      tags: [auth]
+      summary: One time ticket (60 seconds) to link Google or Microsoft to the signed in user
+      description: Console sessions only; API tokens get 403. Pass it to `/auth/oauth/{provider}/start?intent=link&ticket=…`.
+      responses:
+        "201": { description: OK, content: { application/json: { schema: { type: object, properties: { ticket: { type: string } } } } } }
+  /account/identities:
+    get:
+      tags: [account]
+      summary: Linked Google and Microsoft accounts, whether a password is set, and which providers can be linked
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { hasPassword: { type: boolean }, available: { type: array, items: { type: string } }, data: { type: array, items: { type: object, properties: { id: { type: string }, provider: { type: string, enum: [google, microsoft] }, email: { type: string }, emailVerified: { type: boolean }, tenantId: { type: [string, "null"] }, createdAt: { type: string, format: date-time }, lastUsedAt: { type: [string, "null"], format: date-time } } } } } } } } }
+  /account/identities/{id}:
+    delete:
+      tags: [account]
+      summary: Unlink a Google or Microsoft account
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "204": { description: Unlinked }
+        "409": { description: It is the only way left to sign in (`last_sign_in_method`) }
 
   /account:
     get:

@@ -1,9 +1,17 @@
 ---
 title: Account security
-description: Two factor sign in, recovery codes, password reset, email confirmation and what agents can and cannot do.
+description: Sign in with Google or Microsoft, two factor sign in, recovery codes, password reset, email confirmation and what agents can and cannot do.
 section: Guides
 order: 12
 ---
+
+## Sign in with Google or Microsoft
+
+On the sign in page, choose **Continue with Google** or **Continue with Microsoft** to sign up or sign in without a password. Microsoft sign in works with work, school and personal accounts. A new account gets its own team, the same as signing up with email, and the email address is confirmed when Google or Microsoft has confirmed it.
+
+If you already have a Progrid account with the same email address, it is linked automatically when Google or Microsoft confirms that the address is yours. When they cannot confirm it (some work and school directories), sign in with your password and link the account under **Security, Sign in methods**.
+
+Under **Security, Sign in methods** you can link and unlink Google and Microsoft accounts and see whether a password is set. You always keep at least one way to sign in, so the last one cannot be unlinked. An account without a password can get one with **Forgot password** on the sign in page. Two factor sign in still applies: after Google or Microsoft, Progrid asks for your authenticator code.
 
 ## Two factor sign in
 
