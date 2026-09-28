@@ -7,8 +7,9 @@ name: deploy
 # Secrets (repository settings):
 #   DEPLOY_HOST   management host address        DEPLOY_USER  ssh user (the Ansible user)
 #   DEPLOY_SSH_KEY  private key for that user
-# The public addresses baked into the website and console default to progrid.sa. Override them with
-# repository variables PUBLIC_API_URL, PUBLIC_CONSOLE_URL and PUBLIC_WWW_URL for another domain.
+# The public addresses baked into the website, the console and the ops console default to progrid.sa.
+# Override them with repository variables PUBLIC_API_URL, PUBLIC_CONSOLE_URL, PUBLIC_WWW_URL,
+# PUBLIC_OPS_URL and PUBLIC_GATEWAY_URL (the terminal gateway, wss://) for another domain.
 # Set the `production` environment to require a reviewer if you want a manual gate.
 # Images are only built after the ci workflow succeeded for the same commit, so a failing
 # commit never reaches the host.
@@ -40,6 +41,7 @@ jobs:
           - { app: console, dockerfile: apps/console/Dockerfile }
           - { app: www, dockerfile: apps/www/Dockerfile }
           - { app: gateway, dockerfile: services/prgd-gateway/Dockerfile }
+          - { app: ops, dockerfile: apps/ops/Dockerfile }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -67,6 +69,8 @@ jobs:
             NEXT_PUBLIC_API_URL=${{ vars.PUBLIC_API_URL || 'https://api.progrid.sa' }}
             NEXT_PUBLIC_CONSOLE_URL=${{ vars.PUBLIC_CONSOLE_URL || 'https://console.progrid.sa' }}
             NEXT_PUBLIC_WWW_URL=${{ vars.PUBLIC_WWW_URL || 'https://progrid.sa' }}
+            NEXT_PUBLIC_OPS_URL=${{ vars.PUBLIC_OPS_URL || 'https://ops.progrid.sa' }}
+            NEXT_PUBLIC_GATEWAY_URL=${{ vars.PUBLIC_GATEWAY_URL || 'wss://gateway.progrid.sa' }}
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}
 

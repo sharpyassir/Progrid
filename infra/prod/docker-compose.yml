@@ -36,7 +36,7 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     networks: [internal]
-    depends_on: [api, console, www, gateway]
+    depends_on: [api, console, www, ops, gateway]
 
   api:
     <<: *api
@@ -129,6 +129,14 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    networks: [internal]
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
+
+  # The DevOps console for on call engineers (apps/ops), published by Caddy at ops.$DOMAIN.
+  # It holds no secrets: everything goes through the API with the engineer's own session.
+  ops:
+    image: ${REGISTRY:-ghcr.io/sharpyassir}/prgd-ops:${IMAGE_TAG:-latest}
+    restart: unless-stopped
     networks: [internal]
     logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
 

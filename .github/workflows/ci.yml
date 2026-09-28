@@ -30,6 +30,8 @@ jobs:
       - run: pnpm --filter @prgd/api build
       - run: pnpm --filter @prgd/console build
         env: { NEXT_PUBLIC_API_URL: http://localhost:4000 }
+      - run: pnpm --filter @prgd/ops build
+        env: { NEXT_PUBLIC_API_URL: http://localhost:4000 }
 
   integration:
     # End to end against the fake driver: the API and the Temporal worker in process, a real
