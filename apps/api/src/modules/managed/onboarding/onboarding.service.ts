@@ -37,9 +37,41 @@ export class OnboardingService {
     return this.list(contractId);
   }
 
-  async list(contractId: string) {
+  async list(contractId: string, withChecks = false) {
     const items = await this.prisma.onboardingItem.findMany({ where: { contractId }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] });
-    return { data: items.map(presentOnboardingItem), done: items.filter((i) => i.done).length, total: items.length };
+    const checks = withChecks ? await this.checks(contractId) : null;
+    return { data: items.map((i) => ({ ...presentOnboardingItem(i), ...(checks ? { check: checks[i.key] ?? null } : {}) })), done: items.filter((i) => i.done).length, total: items.length };
+  }
+
+  /**
+   * What the system can see for each default item, shown next to the checklist in the back
+   * office. Advisory only: the engineer ticks the item.
+   */
+  async checks(contractId: string): Promise<Record<string, { ready: boolean; hint: string }>> {
+    const assets = await this.prisma.managedAsset.findMany({ where: { contractId, status: 'APPROVED', removedAt: null } });
+    const servers = assets.filter((a) => a.kind !== 'SITE');
+    const silent = servers.filter((a) => a.kind === 'EXTERNAL_SERVER' && !a.lastHeartbeatAt);
+    const unmonitored = assets.filter((a) => !a.monitoringEnabled);
+    const noBackup = servers.filter((a) => !a.backupEnabled);
+    const noAccess = servers.filter((a) => !a.managementAddress && a.kind === 'EXTERNAL_SERVER');
+    const [restoreTests, runbooks, matrix] = await Promise.all([
+      this.prisma.maintenanceRun.count({ where: { status: 'SUCCEEDED', task: { contractId, kind: 'BACKUP_TEST' } } }),
+      this.prisma.runbook.count({ where: { tags: { has: `contract:${contractId}` } } }),
+      this.prisma.responsibility.count({ where: { contractId } }),
+    ]);
+    const names = (xs: { name: string }[]) => xs.map((x) => x.name).join(', ');
+    return {
+      monitoring: !assets.length ? { ready: false, hint: 'No approved assets yet' }
+        : unmonitored.length ? { ready: false, hint: `Monitoring is off for ${names(unmonitored)}` }
+        : silent.length ? { ready: false, hint: `No heartbeat yet from ${names(silent)}` }
+        : { ready: true, hint: `${assets.length} assets monitored` },
+      backups: noBackup.length ? { ready: false, hint: `Backups are off for ${names(noBackup)}` }
+        : !restoreTests ? { ready: false, hint: 'No successful backup restore test yet' }
+        : { ready: true, hint: `${restoreTests} successful restore tests` },
+      access: noAccess.length ? { ready: false, hint: `No management address for ${names(noAccess)}` } : { ready: servers.length > 0, hint: servers.length ? 'Every server is reachable over the management network' : 'No servers yet' },
+      documentation: runbooks ? { ready: true, hint: `${runbooks} runbooks tagged contract:${contractId}` } : { ready: false, hint: `Write a runbook tagged contract:${contractId}` },
+      responsibility_matrix: { ready: matrix > 0, hint: `${matrix} areas in the matrix` },
+    };
   }
 
   async addItem(actor: Actor, contractId: string, dto: { key: string; title: string }) {

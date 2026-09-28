@@ -127,7 +127,7 @@ export class AdminManagedContractsController {
   @StaffAreas('engineer', 'support_lead')
   @Get(':id/onboarding') @RequireScopes('admin')
   checklist(@Param('id') id: string) {
-    return this.onboarding.list(id);
+    return this.onboarding.list(id, true);
   }
 
   @StaffAreas('support_lead')

@@ -103,7 +103,10 @@ describe('managed cloud contracts', () => {
       return r.status === 'ACTIVE' && r;
     }, { what: 'contract to become ACTIVE', timeoutMs: 30_000 });
     expect(active.activatedAt).toBeTruthy();
-    expect(await s.prisma.auditLog.count({ where: { resource: `managed_contract:${c.id}`, action: 'managed.contract_activated' } })).toBe(1);
+    const activated = await s.prisma.auditLog.findMany({ where: { resource: `managed_contract:${c.id}`, action: 'managed.contract_activated' } });
+    expect(activated).toHaveLength(1);
+    // The onboarding workflow made the move, woken by the checklist signal.
+    expect((activated[0].request as { via: string }).via).toBe('workflow');
   });
 
   it('holds 24/7 plans to the two person on call rule', async () => {
@@ -479,5 +482,31 @@ describe('managed cloud monthly reports', () => {
     } else {
       expect(report.status).toBe('DRAFT');
     }
+  });
+});
+
+describe('managed cloud runbooks', () => {
+  it('keeps searchable markdown runbooks and links them to onboarding', async () => {
+    const owner = await signup(s);
+    const c = await owner.client.ok('POST', '/v1/managed/contracts', { plan: 'ESSENTIAL' }, 201);
+    await lead.client.ok('POST', `/admin/managed/contracts/${c.id}/activate`, { liabilityCapMinor: 500_000, signedByName: 'Owner' }, 200);
+    const before = await engineer.client.ok('GET', `/admin/managed/contracts/${c.id}/onboarding`);
+    expect(before.data.find((i: { key: string }) => i.key === 'documentation').check.ready).toBe(false);
+
+    const rb = await engineer.client.ok('POST', '/admin/managed/runbooks', { title: 'Restart the shop stack', body: '# Restart\n\n1. `systemctl restart shop`', tags: ['Nginx', `contract:${c.id}`] }, 201);
+    expect(rb).toMatchObject({ slug: 'restart-the-shop-stack', tags: ['nginx', `contract:${c.id}`] });
+    expect((await engineer.client.post('/admin/managed/runbooks', { title: 'Restart the shop stack', body: 'again' })).status).toBe(409);
+    expect((await engineer.client.ok('GET', '/admin/managed/runbooks?q=SHOP')).data.map((r: { id: string }) => r.id)).toContain(rb.id);
+    expect((await engineer.client.ok('GET', '/admin/managed/runbooks?q=nginx')).data.map((r: { id: string }) => r.id)).toContain(rb.id);
+    expect((await engineer.client.ok('GET', '/admin/managed/runbooks?tag=postgres')).data.map((r: { id: string }) => r.id)).not.toContain(rb.id);
+    const updated = await engineer.client.ok('PATCH', `/admin/managed/runbooks/${rb.slug}`, { body: '# Restart\n\nUse the deploy user.' });
+    expect(updated.body).toContain('deploy user');
+    expect(updated.updatedById).toBe(engineer.userId);
+    expect((await owner.client.get('/admin/managed/runbooks')).status).toBe(403);
+
+    const after = await engineer.client.ok('GET', `/admin/managed/contracts/${c.id}/onboarding`);
+    expect(after.data.find((i: { key: string }) => i.key === 'documentation').check.ready).toBe(true);
+    expect(after.data.find((i: { key: string }) => i.key === 'responsibility_matrix').check.ready).toBe(true);
+    expect((await engineer.client.ok('DELETE', `/admin/managed/runbooks/${rb.id}`)).deleted).toBe(true);
   });
 });

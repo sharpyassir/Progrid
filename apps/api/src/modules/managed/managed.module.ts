@@ -29,6 +29,8 @@ import { MaintenanceService } from './maintenance/maintenance.service';
 import { AdminManagedMaintenanceController } from './maintenance/maintenance.controller';
 import { ReportsService } from './reports/reports.service';
 import { AdminManagedReportsController, ManagedReportsController } from './reports/reports.controller';
+import { RunbooksService } from './runbooks/runbooks.service';
+import { AdminManagedRunbooksController } from './runbooks/runbooks.controller';
 
 /**
  * Managed cloud: we operate customer servers (on the platform or elsewhere) under an SLA.
@@ -45,8 +47,9 @@ import { AdminManagedReportsController, ManagedReportsController } from './repor
     AdminManagedAlertsController, ManagedInternalController, AdminManagedOnCallController,
     AdminManagedWorkLogsController, AdminManagedMaintenanceController,
     ManagedReportsController, AdminManagedReportsController,
+    AdminManagedRunbooksController,
   ],
-  providers: [ManagedWorkflows, ManagedNotify, ManagedPlansService, ContractTermsService, ManagedAccessService, OnboardingService, ResponsibilityService, ContractsService, AssetsService, SlaService, OnCallService, PagingService, ManagedTicketsService, ManagedAlertsService, WorkLogsService, ManagedBillingService, MaintenanceService, ReportsService],
-  exports: [ManagedWorkflows, ManagedNotify, ManagedPlansService, ContractTermsService, OnboardingService, ContractsService, AssetsService, SlaService, OnCallService, PagingService, ManagedTicketsService, ManagedAlertsService, WorkLogsService, ManagedBillingService, MaintenanceService, ReportsService],
+  providers: [ManagedWorkflows, ManagedNotify, ManagedPlansService, ContractTermsService, ManagedAccessService, OnboardingService, ResponsibilityService, ContractsService, AssetsService, SlaService, OnCallService, PagingService, ManagedTicketsService, ManagedAlertsService, WorkLogsService, ManagedBillingService, MaintenanceService, ReportsService, RunbooksService],
+  exports: [ManagedWorkflows, ManagedNotify, ManagedPlansService, ContractTermsService, OnboardingService, ContractsService, AssetsService, SlaService, OnCallService, PagingService, ManagedTicketsService, ManagedAlertsService, WorkLogsService, ManagedBillingService, MaintenanceService, ReportsService, RunbooksService],
 })
 export class ManagedModule {}
