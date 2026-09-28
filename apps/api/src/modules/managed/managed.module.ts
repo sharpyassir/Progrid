@@ -8,7 +8,7 @@ import { AdminManagedPlansController, ManagedPlansController } from './plans/pla
 import { ContractsService } from './contracts/contracts.service';
 import { ContractTermsService } from './contracts/contract-terms.service';
 import { ManagedAccessService } from './contracts/access.service';
-import { AdminManagedContractsController, ManagedContractsController } from './contracts/contracts.controller';
+import { AdminManagedContractsController, AdminManagedTeamsController, ManagedContractsController, ManagedSummaryController } from './contracts/contracts.controller';
 import { OnboardingService } from './onboarding/onboarding.service';
 import { ResponsibilityService } from './responsibility/responsibility.service';
 import { AssetsService } from './assets/assets.service';
@@ -41,7 +41,7 @@ import { AdminManagedRunbooksController } from './runbooks/runbooks.controller';
   imports: [EventsModule, BillingModule],
   controllers: [
     ManagedPlansController, AdminManagedPlansController,
-    ManagedContractsController, AdminManagedContractsController,
+    ManagedContractsController, AdminManagedContractsController, ManagedSummaryController, AdminManagedTeamsController,
     ManagedAssetsController, AdminManagedAssetsController,
     ManagedTicketsController, AdminManagedTicketsController,
     AdminManagedAlertsController, ManagedInternalController, AdminManagedOnCallController,
