@@ -4,8 +4,8 @@ Two roles, one playbook.
 
 | Role | Runs on | Does |
 |---|---|---|
-| `management` | the management host or VM | Docker, `/opt/pgcloud` with the compose bundle, `/etc/pgcloud/pgcloud.env` from the vault, ufw, nightly backups, first `deploy.sh` |
-| `pve_node` | every Proxmox node | `host-agent` binary from the GitHub release, `/etc/pgcloud/agent.yaml`, systemd unit, `pgcloud@pve` API token check |
+| `management` | the management host or VM | Docker, `/opt/prgd` with the compose bundle, `/etc/prgd/prgd.env` from the vault, ufw, nightly backups, first `deploy.sh` |
+| `pve_node` | every Proxmox node | `host-agent` binary from the GitHub release, `/etc/prgd/agent.yaml`, systemd unit, `prgd@pve` API token check |
 
 ```sh
 pip install ansible-core
@@ -17,4 +17,4 @@ ansible-vault create group_vars/all/vault.yml          # secrets (see all.yml.ex
 ansible-playbook -i inventory.ini site.yml --ask-vault-pass
 ```
 
-Re-running is safe. To roll only the control plane images use the GitHub deploy workflow or `sudo /opt/pgcloud/deploy.sh vX.Y.Z` on the host.
+Re-running is safe. To roll only the control plane images use the GitHub deploy workflow or `sudo /opt/prgd/deploy.sh vX.Y.Z` on the host.

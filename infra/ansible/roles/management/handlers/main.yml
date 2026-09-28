@@ -1,5 +1,5 @@
 - name: compose up
-  shell: cd /opt/pgcloud && docker compose --env-file /etc/pgcloud/pgcloud.env -f docker-compose.yml up -d --remove-orphans
+  shell: cd /opt/prgd && docker compose --env-file /etc/prgd/prgd.env -f docker-compose.yml up -d --remove-orphans
 
 - name: apply sysctl
   command: sysctl --system

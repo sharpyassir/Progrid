@@ -19,7 +19,7 @@ snapshotVm · restoreSnapshot · getVmStatus · attachPublicIp · applyFirewall
 
 Implementations:
 
-- `ProxmoxDriver` — talks to the host agent over NATS (`pgcloud.host.<hostId>.jobs`);
+- `ProxmoxDriver` — talks to the host agent over NATS (`prgd.host.<hostId>.jobs`);
   the agent calls the Proxmox REST API locally. The control plane never calls Proxmox
   directly, so the data plane keeps working if the control plane is down.
 - `FakeDriver` — in-memory, used for local dev and tests. Provisions "VMs" in ~2 s.

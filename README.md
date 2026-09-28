@@ -1,9 +1,9 @@
-# pgcloud — AI-Native Developer Cloud
+# prgd — AI-Native Developer Cloud
 
 API-first control plane on top of Proxmox VE (KVM) + Ceph. The same API powers the
 web console, CLI, Terraform, SDKs and AI agents.
 
-> `pgcloud` is a working name (the brand/domain is still an open decision — see
+> `prgd` is a working name (the brand/domain is still an open decision — see
 > `docs/architecture.md`). It is used for package scopes, the CLI binary name and
 > the NATS subject prefix, and is trivial to rename later.
 
@@ -14,13 +14,13 @@ apps/
   api/          Control plane — NestJS + Prisma modular monolith (TypeScript)
   console/      Web console — Next.js (TR / AR / EN, RTL-ready)
   www/          Marketing site — Next.js (progrid.sa), pricing pulled live from the API
-cli/            `pgcloud` CLI — single Go binary (login, servers, ssh, deploy, tokens); `cli/install.sh`
+cli/            `prgd` CLI — single Go binary (login, servers, ssh, deploy, tokens); `cli/install.sh`
 agents/
   host-agent/   Go service on every Proxmox node: takes jobs from NATS, calls the
                 Proxmox API, reports health + usage every minute
 packages/
   openapi/      OpenAPI v1 spec, source of truth for SDKs, CLI and docs
-  mcp-server/   pgcloud-mcp: MCP server for AI agents (npx -y pgcloud-mcp)
+  mcp-server/   prgd-mcp: MCP server for AI agents (npx -y prgd-mcp)
 infra/
   dev/          docker-compose for local development (Postgres+Timescale, Redis,
                 NATS, Temporal)
@@ -38,27 +38,27 @@ docker compose -f infra/dev/docker-compose.yml up -d
 # 2. control plane
 pnpm install
 cp .env.example .env
-pnpm --filter @pgcloud/api prisma:migrate   # creates schema + Timescale hypertable
-pnpm --filter @pgcloud/api seed             # region sa1, sizes, images, price book, dev user
-pnpm --filter @pgcloud/api dev              # API on http://localhost:4000  (Swagger at /docs)
-pnpm --filter @pgcloud/api worker           # Temporal worker (provisioning workflows)
+pnpm --filter @prgd/api prisma:migrate   # creates schema + Timescale hypertable
+pnpm --filter @prgd/api seed             # region sa1, sizes, images, price book, dev user
+pnpm --filter @prgd/api dev              # API on http://localhost:4000  (Swagger at /docs)
+pnpm --filter @prgd/api worker           # Temporal worker (provisioning workflows)
 
 # 3. a fake "host" so servers can actually be created without Proxmox
-HYPERVISOR_DRIVER=fake pnpm --filter @pgcloud/api worker
+HYPERVISOR_DRIVER=fake pnpm --filter @prgd/api worker
 
 # 4. console
-pnpm --filter @pgcloud/console dev          # http://localhost:3000
-pnpm --filter @pgcloud/www dev              # http://localhost:3001 (marketing site)
+pnpm --filter @prgd/console dev          # http://localhost:3000
+pnpm --filter @prgd/www dev              # http://localhost:3001 (marketing site)
 
 # 5. host agent (real node)
-cd agents/host-agent && go build ./... && ./host-agent --config /etc/pgcloud/agent.yaml
+cd agents/host-agent && go build ./... && ./host-agent --config /etc/prgd/agent.yaml
 ```
 
 Create a server with the seeded dev token:
 
 ```bash
 curl -X POST localhost:4000/v1/servers \
-  -H "Authorization: Bearer $PGCLOUD_TOKEN" \
+  -H "Authorization: Bearer $PRGD_TOKEN" \
   -H "Idempotency-Key: $(uuidgen)" \
   -H "Content-Type: application/json" \
   -d '{"name":"web-1","size":"s-2vcpu-4gb","image":"ubuntu-24-04","region":"sa1","project":"default"}'
@@ -96,15 +96,15 @@ start / resize / rebuild / snapshot / delete; metering → hourly rating → inv
 | Approval queue: parked agent requests, owner email and webhook, approve or deny in console, CLI or API | ✅ |
 | Compute: servers, sizes, images, lifecycle actions as Temporal workflows, quotas | ✅ |
 | **Git Deploy**: repo → server → build → GitHub push redeploys (`POST /v1/deploys`); GitHub App installations, repo picker, build logs | ✅ |
-| **CLI** `pgcloud`: login, servers create/ssh/actions, deploy, tokens, `--json` | ✅ |
-| **MCP server** `pgcloud-mcp`: 12 tools for Claude Code, Cursor and other agents, behind a capped agent token | ✅ |
+| **CLI** `prgd`: login, servers create/ssh/actions, deploy, tokens, `--json` | ✅ |
+| **MCP server** `prgd-mcp`: 12 tools for Claude Code, Cursor and other agents, behind a capped agent token | ✅ |
 | Scheduler: least-loaded placement, anti-affinity, capacity from heartbeats | ✅ |
 | Network: public IP pool, host-enforced firewalls | ✅ (VPCs, LBs, DNS: phase 2) |
 | Storage: snapshots | ✅ (backups: phase 2) |
 | Managed databases: PostgreSQL (Patroni failover, pgBouncer, pgBackRest with WAL archiving), Valkey (Sentinel, ACL users, RDB backups) and MySQL (GTID replication, XtraBackup); 1 or 3 nodes, VIP that follows the primary, TLS, users and databases, trusted sources, nightly backups to object storage, per node pricing, console, CLI, SDKs, Terraform | ✅ |
 | Managed servers: opt in care tier with an in VM agent (unattended updates with reboot at 04:00, fail2ban, sshd and sysctl hardening, five minute health reports with warning and recovery events), daily backups included, sold as Managed Start, Business and Pro plans on top of Standard, Pro and Business hardware, console, CLI, SDKs, Terraform | ✅ |
 | Support plans: free, developer, standard and premium with first response targets per priority, ticket system with email to owners, back office queue sorted by due time, billed monthly through the meter, console, CLI, SDKs, MCP | ✅ |
-| Managed Kubernetes: kubeadm clusters on platform owned nodes, 1 or 3 control plane nodes behind a shared address, worker pools with labels and taints that scale, node agent that bootstraps and joins, cloud controller turning LoadBalancer Services into platform load balancers and pgcloud-block claims into attached volumes, kubeconfig download, console, CLI, SDKs, MCP, Terraform | ✅ |
+| Managed Kubernetes: kubeadm clusters on platform owned nodes, 1 or 3 control plane nodes behind a shared address, worker pools with labels and taints that scale, node agent that bootstraps and joins, cloud controller turning LoadBalancer Services into platform load balancers and prgd-block claims into attached volumes, kubeconfig download, console, CLI, SDKs, MCP, Terraform | ✅ |
 | App Platform: push code, get a URL; shared platform owned hosts with an agent that builds from the repository (Dockerfile or detected Node, Python, Go, static), runs sized instances with Docker limits behind Caddy with TLS, rolling deploys with health checks, GitHub App push redeploys, env vars, custom domains, build and runtime logs, stop and start, per instance pricing, console, CLI, SDKs, MCP, Terraform | ✅ |
 | Object storage: S3 compatible buckets on Ceph RGW (fake in dev), access keys, presigned upload and download, bucket browser in the console, per GB pricing, CLI, SDKs, Terraform | ✅ |
 | DNS: hosted zones with every record type, PowerDNS backend with a fake for dev, zone file export, reverse DNS for public IPs, CLI, SDKs, Terraform | ✅ |

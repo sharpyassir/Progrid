@@ -1,16 +1,16 @@
 # Production control plane. One management host (phase 0) or one VM per role (phase 1) runs this.
-# Secrets and settings come from /etc/pgcloud/pgcloud.env, rendered by Ansible. Nothing here is
+# Secrets and settings come from /etc/prgd/prgd.env, rendered by Ansible. Nothing here is
 # customer facing except through Caddy, which terminates TLS for the three hostnames.
 #
-#   docker compose --env-file /etc/pgcloud/pgcloud.env -f docker-compose.yml up -d
-name: pgcloud
+#   docker compose --env-file /etc/prgd/prgd.env -f docker-compose.yml up -d
+name: prgd
 
 x-api: &api
-  image: ${REGISTRY:-ghcr.io/sharpyassir}/pgcloud-api:${IMAGE_TAG:-latest}
+  image: ${REGISTRY:-ghcr.io/sharpyassir}/prgd-api:${IMAGE_TAG:-latest}
   restart: unless-stopped
-  env_file: [/etc/pgcloud/pgcloud.env]
+  env_file: [/etc/prgd/prgd.env]
   environment:
-    DATABASE_URL: postgresql://pgcloud:${POSTGRES_PASSWORD}@postgres:5432/pgcloud
+    DATABASE_URL: postgresql://prgd:${POSTGRES_PASSWORD}@postgres:5432/prgd
     REDIS_URL: redis://redis:6379
     NATS_URL: nats://nats:4222
     NATS_TOKEN: ${NATS_TOKEN}
@@ -68,7 +68,7 @@ services:
     <<: *api
     command: ["node_modules/.bin/ts-node", "--transpile-only", "prisma/seed.ts"]
     environment:
-      DATABASE_URL: postgresql://pgcloud:${POSTGRES_PASSWORD}@postgres:5432/pgcloud
+      DATABASE_URL: postgresql://prgd:${POSTGRES_PASSWORD}@postgres:5432/prgd
       SEED_DEMO: "false"
     restart: "no"
     profiles: [ops]
@@ -82,13 +82,13 @@ services:
     profiles: [ops]
 
   console:
-    image: ${REGISTRY:-ghcr.io/sharpyassir}/pgcloud-console:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/sharpyassir}/prgd-console:${IMAGE_TAG:-latest}
     restart: unless-stopped
     networks: [internal]
     logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
 
   www:
-    image: ${REGISTRY:-ghcr.io/sharpyassir}/pgcloud-www:${IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/sharpyassir}/prgd-www:${IMAGE_TAG:-latest}
     restart: unless-stopped
     networks: [internal]
     logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
@@ -97,13 +97,13 @@ services:
     image: timescale/timescaledb:2.17.2-pg16
     restart: unless-stopped
     environment:
-      POSTGRES_USER: pgcloud
+      POSTGRES_USER: prgd
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: pgcloud
-    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=512MB", "-c", "wal_level=replica", "-c", "archive_mode=on", "-c", "archive_command=test ! -f /var/backups/pgcloud/wal/%f && cp %p /var/backups/pgcloud/wal/%f", "-c", "archive_timeout=300"]
+      POSTGRES_DB: prgd
+    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=512MB", "-c", "wal_level=replica", "-c", "archive_mode=on", "-c", "archive_command=test ! -f /var/backups/prgd/wal/%f && cp %p /var/backups/prgd/wal/%f", "-c", "archive_timeout=300"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pgcloud"]
+      test: ["CMD-SHELL", "pg_isready -U prgd"]
       interval: 10s
       retries: 10
     networks: [internal]
@@ -132,7 +132,7 @@ services:
     environment:
       DB: postgres12
       DB_PORT: 5432
-      POSTGRES_USER: pgcloud
+      POSTGRES_USER: prgd
       POSTGRES_PWD: ${POSTGRES_PASSWORD}
       POSTGRES_SEEDS: postgres
       DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/progrid.yaml
@@ -142,7 +142,7 @@ services:
 
   # Authoritative nameserver. Runs on the management host in phase 0; in phase 1 run one on
   # each of two hosts (ns1, ns2) against the same schema, both pointed at the API through
-  # PDNS_API_URL. Load the schema once: docker compose exec postgres psql -U pgcloud -d pdns
+  # PDNS_API_URL. Load the schema once: docker compose exec postgres psql -U prgd -d pdns
   #   -f /usr/local/share/doc/pdns/schema.pgsql.sql (copy it out of the pdns image).
   pdns:
     image: powerdns/pdns-auth-49:4.9.4
@@ -153,7 +153,7 @@ services:
       PDNS_AUTH_API_KEY: ${PDNS_API_KEY}
       PDNS_launch: gpgsql
       PDNS_gpgsql_host: postgres
-      PDNS_gpgsql_user: pgcloud
+      PDNS_gpgsql_user: prgd
       PDNS_gpgsql_password: ${POSTGRES_PASSWORD}
       PDNS_gpgsql_dbname: pdns
       PDNS_api: "yes"
@@ -175,7 +175,7 @@ services:
     ports: ["127.0.0.1:8080:8080"]
     networks: [internal]
 
-  # Nightly logical backup of Postgres to /var/backups/pgcloud (and to S3 compatible storage when configured).
+  # Nightly logical backup of Postgres to /var/backups/prgd (and to S3 compatible storage when configured).
   backup:
     image: timescale/timescaledb:2.17.2-pg16
     restart: unless-stopped
@@ -188,7 +188,7 @@ services:
       AWS_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET:-}
     volumes:
       - ./backup.sh:/backup.sh:ro
-      - /var/backups/pgcloud:/backups
+      - /var/backups/prgd:/backups
     depends_on:
       postgres: { condition: service_healthy }
     networks: [internal]

@@ -52,8 +52,8 @@ for h in progrid.sa www.progrid.sa console.progrid.sa api.progrid.sa; do dig +sh
 
 ## 4. Images on GitHub
 
-The droplet pulls three images that GitHub Actions builds: `pgcloud-api`, `pgcloud-console`,
-`pgcloud-www`.
+The droplet pulls three images that GitHub Actions builds: `prgd-api`, `prgd-console`,
+`prgd-www`.
 
 1. In the repository, **Actions**: the latest `ci` run on main must be green, and a `deploy` run
    must have finished its `images` job after it. If not, open **deploy**, **Run workflow** on main.
@@ -124,7 +124,7 @@ makes stored two factor seeds unreadable.
 ansible-playbook -i inventory.ini site.yml --ask-vault-pass
 ```
 
-About ten minutes. It installs Docker, writes `/etc/pgcloud/pgcloud.env`, turns on the firewall,
+About ten minutes. It installs Docker, writes `/etc/prgd/prgd.env`, turns on the firewall,
 pulls the images, runs migrations, loads the catalog (plans, prices, images) and starts everything.
 Caddy fetches TLS certificates on the first request.
 
@@ -134,17 +134,17 @@ Caddy fetches TLS certificates on the first request.
 - https://console.progrid.sa shows the sign in page
 - `curl https://api.progrid.sa/healthz` answers `"status":"ok"`
 
-On the droplet, `cd /opt/pgcloud && docker compose --env-file /etc/pgcloud/pgcloud.env ps` should
+On the droplet, `cd /opt/prgd && docker compose --env-file /etc/prgd/prgd.env ps` should
 list every service as running or healthy.
 
 ## 8. Your staff account
 
 Sign up in the console with your own email. With `mail_provider: log` the confirmation link is in
-the API log: `docker compose --env-file /etc/pgcloud/pgcloud.env logs api | grep verify`. Then:
+the API log: `docker compose --env-file /etc/prgd/prgd.env logs api | grep verify`. Then:
 
 ```bash
 ssh -i ~/.ssh/progrid root@PUBLIC_IP
-cd /opt/pgcloud && docker compose --env-file /etc/pgcloud/pgcloud.env run --rm staff you@progrid.sa
+cd /opt/prgd && docker compose --env-file /etc/prgd/prgd.env run --rm staff you@progrid.sa
 ```
 
 Sign out and in again, turn on two factor sign in under **Security**, and the back office opens.
@@ -174,4 +174,4 @@ passes CI builds the images and rolls the droplet.
 ## If something fails
 
 Copy the failing task and its error from the Ansible output, or the output of
-`docker compose --env-file /etc/pgcloud/pgcloud.env logs --tail 100 api`, and send it over.
+`docker compose --env-file /etc/prgd/prgd.env logs --tail 100 api`, and send it over.

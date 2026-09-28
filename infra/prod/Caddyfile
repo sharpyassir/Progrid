@@ -1,4 +1,4 @@
-# TLS from Let's Encrypt, automatic renewal. DOMAIN and ACME_EMAIL come from pgcloud.env.
+# TLS from Let's Encrypt, automatic renewal. DOMAIN and ACME_EMAIL come from prgd.env.
 {
     email {$ACME_EMAIL}
 }

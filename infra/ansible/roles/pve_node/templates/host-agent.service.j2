@@ -1,11 +1,11 @@
 [Unit]
-Description=pgcloud host agent (Proxmox node {{ pve_node_name }})
+Description=prgd host agent (Proxmox node {{ pve_node_name }})
 After=network-online.target pve-cluster.service
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/host-agent -config /etc/pgcloud/agent.yaml
-EnvironmentFile=/etc/pgcloud/agent.env
+ExecStart=/usr/local/bin/host-agent -config /etc/prgd/agent.yaml
+EnvironmentFile=/etc/prgd/agent.env
 Restart=always
 RestartSec=5
 User=root

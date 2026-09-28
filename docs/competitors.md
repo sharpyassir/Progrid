@@ -12,7 +12,7 @@ developer experience and pricing shape; the local comparison set is the Saudi ho
 
 ### Pricing shape (what we copied)
 
-| Concept | DigitalOcean | pgcloud |
+| Concept | DigitalOcean | prgd |
 |---|---|---|
 | Billing | Hourly, capped at the monthly price; **672 h/month** | Same (`BILLING_HOURS_PER_MONTH=672`) |
 | Basic (regular) sizes | $4 · 1 vCPU/512 MB/10 GB/500 GB · $6 · 1/1 GB/25/1 TB · $12 · 1/2 GB/50/2 TB · $18 · 2/2 GB/60/3 TB · $24 · 2/4 GB/80/4 TB · $48 · 4/8 GB/160/5 TB · $96 · 8/16 GB/320/6 TB | Same ladder, `s-<vcpu>vcpu-<ram>` ids; SAR book ≈ ×40 placeholder |
@@ -29,7 +29,7 @@ developer experience and pricing shape; the local comparison set is the Saudi ho
 ### Developer experience (what we copied)
 
 - One public REST API (`api.digitalocean.com/v2`), bearer tokens with **read/write
-  scopes** (fine-grained scopes since 2024) → ours: `pgc_` tokens with `servers:write`-style
+  scopes** (fine-grained scopes since 2024) → ours: `prgd_` tokens with `servers:write`-style
   scopes, plus agent-safe caps DO does not have.
 - Resources: `droplets`, `images`, `sizes`, `regions`, `ssh_keys`, `firewalls`,
   `reserved_ips`, `snapshots`, `volumes`, `load_balancers`, `domains`, `projects`,

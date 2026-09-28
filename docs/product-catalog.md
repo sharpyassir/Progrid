@@ -8,7 +8,7 @@ Legend: ✅ shipped in repo · 🔨 MVP scope · 2️⃣ phase 2 · 3️⃣ phas
 
 ## Compute
 
-| DigitalOcean | pgcloud | Phase | How we do it / why better |
+| DigitalOcean | prgd | Phase | How we do it / why better |
 |---|---|---|---|
 | Droplet | **Servers** | ✅ | Same shape; richer live status set; agent-safe creation with spend caps. |
 | GPU Droplet | GPU servers | 3️⃣ | Hourly GPU nodes once revenue funds GPUs; `Size.family = gpu` exists. |
@@ -18,7 +18,7 @@ Legend: ✅ shipped in repo · 🔨 MVP scope · 2️⃣ phase 2 · 3️⃣ phas
 
 ## AI (our differentiator)
 
-| DigitalOcean | pgcloud | Phase | How we do it / why better |
+| DigitalOcean | prgd | Phase | How we do it / why better |
 |---|---|---|---|
 | Agent Runtime ("Harness Runtime") | **Agent workspace**: agent-safe tokens + MCP server | 🔨→2️⃣ | Tokens already carry scopes, monthly spend cap and `requireApprovalFor`. MCP server exposes the API as tools. **Recommendation: pull MCP into the MVP** (open decision #7) — it is the headline. |
 | Action Gateway | **Approval queue** | 2️⃣ | Destructive actions from agents park in a queue a human approves in console/Slack/Telegram; DO has no per-token spend caps. |
@@ -31,7 +31,7 @@ Legend: ✅ shipped in repo · 🔨 MVP scope · 2️⃣ phase 2 · 3️⃣ phas
 
 ## Data
 
-| DigitalOcean | pgcloud | Phase | Notes |
+| DigitalOcean | prgd | Phase | Notes |
 |---|---|---|---|
 | Managed Database | Managed PostgreSQL, MySQL, Redis | 3️⃣ | Operator-driven VMs with automated backups; PITR. |
 | Caching | Managed Redis/Valkey | 3️⃣ | Same product line. |
@@ -39,7 +39,7 @@ Legend: ✅ shipped in repo · 🔨 MVP scope · 2️⃣ phase 2 · 3️⃣ phas
 
 ## Networking
 
-| DigitalOcean | pgcloud | Phase | Notes |
+| DigitalOcean | prgd | Phase | Notes |
 |---|---|---|---|
 | Firewall | **Firewalls** (host-enforced) | ✅ | Rules applied on the Proxmox host; customer cannot bypass from inside the VM. |
 | Reserved IP | Floating IPs | ✅ model / 2️⃣ moves | `PublicIp.floating` exists; live re-attach via agent job in phase 2. Idle-IP charge like DO's $4. |
@@ -51,7 +51,7 @@ Legend: ✅ shipped in repo · 🔨 MVP scope · 2️⃣ phase 2 · 3️⃣ phas
 
 ## Storage
 
-| DigitalOcean | pgcloud | Phase | Notes |
+| DigitalOcean | prgd | Phase | Notes |
 |---|---|---|---|
 | Volume Block Storage | Volumes (Ceph RBD) | 2️⃣ | Attach/detach as workflows; $0.10/GB-mo class pricing. |
 | Spaces Object Storage | Object storage (Ceph RGW, S3 API) | 3️⃣ | "Spaces"-style buckets, CDN later. |

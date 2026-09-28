@@ -12,7 +12,7 @@ while true; do
   sleep $((next - now))
   stamp=$(date -u +%Y%m%d-%H%M)
   f=/backups/all-$stamp.sql.gz
-  if pg_dumpall -h postgres -U pgcloud --clean --if-exists | gzip -6 > "$f.tmp"; then
+  if pg_dumpall -h postgres -U prgd --clean --if-exists | gzip -6 > "$f.tmp"; then
     mv "$f.tmp" "$f"
     echo "backup written: $f ($(du -h "$f" | cut -f1))"
     find /backups -name 'all-*.sql.gz' -mtime +"${BACKUP_KEEP_DAYS:-14}" -delete

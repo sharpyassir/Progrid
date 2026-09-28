@@ -36,20 +36,20 @@
 
 - name: Directories
   file: { path: "{{ item }}", state: directory, mode: "0750" }
-  loop: [/opt/pgcloud, /etc/pgcloud, /var/backups/pgcloud]
+  loop: [/opt/prgd, /etc/prgd, /var/backups/prgd]
 
-# No secrets in these files (those live in /etc/pgcloud/pgcloud.env); containers that run as a
+# No secrets in these files (those live in /etc/prgd/prgd.env); containers that run as a
 # normal user, such as Temporal, must be able to read the files mounted into them.
 - name: Compose bundle
-  copy: { src: "{{ playbook_dir }}/../prod/{{ item }}", dest: "/opt/pgcloud/{{ item }}", mode: "0644" }
+  copy: { src: "{{ playbook_dir }}/../prod/{{ item }}", dest: "/opt/prgd/{{ item }}", mode: "0644" }
   loop: [docker-compose.yml, Caddyfile, backup.sh, temporal-dynamicconfig.yaml]
   notify: compose up
 
 - name: Deploy script
-  copy: { src: "{{ playbook_dir }}/../prod/deploy.sh", dest: /opt/pgcloud/deploy.sh, mode: "0750" }
+  copy: { src: "{{ playbook_dir }}/../prod/deploy.sh", dest: /opt/prgd/deploy.sh, mode: "0750" }
 
 - name: Environment file from the vault
-  template: { src: pgcloud.env.j2, dest: /etc/pgcloud/pgcloud.env, mode: "0600" }
+  template: { src: prgd.env.j2, dest: /etc/prgd/prgd.env, mode: "0600" }
   notify: compose up
 
 - name: Registry login (private images only)
@@ -79,11 +79,11 @@
 
 - name: Deploy tool for the CI user
   copy:
-    dest: /etc/sudoers.d/pgcloud-deploy
+    dest: /etc/sudoers.d/prgd-deploy
     mode: "0440"
-    content: "{{ ansible_user }} ALL=(root) NOPASSWD: /opt/pgcloud/deploy.sh\n"
+    content: "{{ ansible_user }} ALL=(root) NOPASSWD: /opt/prgd/deploy.sh\n"
     validate: visudo -cf %s
 
 - name: First start
-  shell: /opt/pgcloud/deploy.sh {{ image_tag }}
-  args: { creates: /var/lib/docker/volumes/pgcloud_pgdata }
+  shell: /opt/prgd/deploy.sh {{ image_tag }}
+  args: { creates: /var/lib/docker/volumes/prgd_pgdata }

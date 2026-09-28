@@ -7,7 +7,7 @@ image_tag: latest
 host_agent_version: v0.1.0          # GitHub release tag that carries host-agent_linux_amd64.tar.gz
 hypervisor_driver: proxmox          # fake for a demo box without Proxmox
 proxmox_url: https://pve1.mgmt.internal:8006
-proxmox_token_id: pgcloud@pve!control-plane
+proxmox_token_id: prgd@pve!control-plane
 proxmox_ceph_pool: vm-disks
 proxmox_vxlan_zone: customers
 mail_provider: postmark

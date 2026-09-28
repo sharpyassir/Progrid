@@ -45,7 +45,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/pgcloud-${{ matrix.app }}
+          images: ${{ env.REGISTRY }}/prgd-${{ matrix.app }}
           tags: |
             type=raw,value=${{ github.event.workflow_run.head_sha || github.sha }}
             type=sha,prefix=,format=short
@@ -81,4 +81,4 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: sudo /opt/pgcloud/deploy.sh ${{ github.ref_type == 'tag' && github.ref_name || format('{0}', github.event.workflow_run.head_sha || github.sha) }}
+          script: sudo /opt/prgd/deploy.sh ${{ github.ref_type == 'tag' && github.ref_name || format('{0}', github.event.workflow_run.head_sha || github.sha) }}

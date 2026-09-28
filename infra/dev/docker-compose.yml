@@ -1,18 +1,18 @@
 # Local development data plane substitutes. Nothing here runs customer workloads;
 # the real data plane is Proxmox VE + Ceph on the Saudi region nodes.
-name: pgcloud-dev
+name: prgd-dev
 
 services:
   postgres:
     image: timescale/timescaledb:2.17.2-pg16
     environment:
-      POSTGRES_USER: pgcloud
-      POSTGRES_PASSWORD: pgcloud
-      POSTGRES_DB: pgcloud
+      POSTGRES_USER: prgd
+      POSTGRES_PASSWORD: prgd
+      POSTGRES_DB: prgd
     ports: ["5432:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pgcloud"]
+      test: ["CMD-SHELL", "pg_isready -U prgd"]
       interval: 5s
       retries: 10
 
@@ -32,8 +32,8 @@ services:
     environment:
       DB: postgres12
       DB_PORT: 5432
-      POSTGRES_USER: pgcloud
-      POSTGRES_PWD: pgcloud
+      POSTGRES_USER: prgd
+      POSTGRES_PWD: prgd
       POSTGRES_SEEDS: postgres
       DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
     ports: ["7233:7233"]

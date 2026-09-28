@@ -5,7 +5,7 @@ heartbeat: 60s
 proxmox:
   url: "https://127.0.0.1:8006"
   node: "{{ pve_node_name }}"
-  token_id: "pgcloud@pve!agent"
+  token_id: "prgd@pve!agent"
   storage: "{{ proxmox_ceph_pool }}"
   bridge: "{{ proxmox_vxlan_zone }}"
   public_bridge: "vmbr0"

@@ -11,24 +11,24 @@ jobs:
     services:
       postgres:
         image: timescale/timescaledb:2.17.2-pg16
-        env: { POSTGRES_USER: pgcloud, POSTGRES_PASSWORD: pgcloud, POSTGRES_DB: pgcloud }
+        env: { POSTGRES_USER: prgd, POSTGRES_PASSWORD: prgd, POSTGRES_DB: prgd }
         ports: ["5432:5432"]
-        options: --health-cmd "pg_isready -U pgcloud" --health-interval 5s --health-retries 10
+        options: --health-cmd "pg_isready -U prgd" --health-interval 5s --health-retries 10
     env:
-      DATABASE_URL: postgresql://pgcloud:pgcloud@localhost:5432/pgcloud
+      DATABASE_URL: postgresql://prgd:prgd@localhost:5432/prgd
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @pgcloud/api prisma:generate
-      - run: pnpm --filter @pgcloud/api prisma:deploy
-      - run: pnpm --filter @pgcloud/api seed
+      - run: pnpm --filter @prgd/api prisma:generate
+      - run: pnpm --filter @prgd/api prisma:deploy
+      - run: pnpm --filter @prgd/api seed
       - run: pnpm -r typecheck
       - run: pnpm -r test
-      - run: pnpm --filter @pgcloud/api build
-      - run: pnpm --filter @pgcloud/console build
+      - run: pnpm --filter @prgd/api build
+      - run: pnpm --filter @prgd/console build
         env: { NEXT_PUBLIC_API_URL: http://localhost:4000 }
 
   integration:
@@ -40,9 +40,9 @@ jobs:
     services:
       postgres:
         image: timescale/timescaledb:2.17.2-pg16
-        env: { POSTGRES_USER: pgcloud, POSTGRES_PASSWORD: pgcloud, POSTGRES_DB: pgcloud }
+        env: { POSTGRES_USER: prgd, POSTGRES_PASSWORD: prgd, POSTGRES_DB: prgd }
         ports: ["5432:5432"]
-        options: --health-cmd "pg_isready -U pgcloud" --health-interval 5s --health-retries 10
+        options: --health-cmd "pg_isready -U prgd" --health-interval 5s --health-retries 10
       redis:
         image: redis:7
         ports: ["6379:6379"]
@@ -51,8 +51,8 @@ jobs:
         image: nats:2.10
         ports: ["4222:4222"]
     env:
-      DATABASE_URL: postgresql://pgcloud:pgcloud@localhost:5432/pgcloud
-      IT_DATABASE_URL: postgresql://pgcloud:pgcloud@localhost:5432/pgcloud_test
+      DATABASE_URL: postgresql://prgd:prgd@localhost:5432/prgd
+      IT_DATABASE_URL: postgresql://prgd:prgd@localhost:5432/prgd_test
       IT_REDIS_URL: redis://localhost:6379/5
       NATS_URL: nats://localhost:4222
       TEMPORAL_ADDRESS: localhost:7233
@@ -62,7 +62,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @pgcloud/api prisma:generate
+      - run: pnpm --filter @prgd/api prisma:generate
       - name: Start a Temporal dev server
         run: |
           curl -fsSL -o /tmp/temporal.tar.gz "https://temporal.download/cli/archive/latest?platform=linux&arch=amd64"
@@ -70,7 +70,7 @@ jobs:
           nohup /tmp/temporal server start-dev --headless --ip 127.0.0.1 --port 7233 --db-filename /tmp/temporal.db > /tmp/temporal.log 2>&1 &
           for i in $(seq 1 60); do (echo > /dev/tcp/127.0.0.1/7233) 2>/dev/null && exit 0; sleep 1; done
           cat /tmp/temporal.log; exit 1
-      - run: pnpm --filter @pgcloud/api test:integration
+      - run: pnpm --filter @prgd/api test:integration
       - if: failure()
         run: tail -n 200 /tmp/temporal.log
 
@@ -93,7 +93,7 @@ jobs:
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test ./... -count=1
-      - run: go build -o terraform-provider-pgcloud .
+      - run: go build -o terraform-provider-prgd .
 
   host-agent:
     runs-on: ubuntu-latest
@@ -116,7 +116,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version: "1.24" }
-      - run: test -z "$(gofmt -l .)" && go vet ./... && go build -o pgcloud .
+      - run: test -z "$(gofmt -l .)" && go vet ./... && go build -o prgd .
 
   openapi:
     runs-on: ubuntu-latest

@@ -1,5 +1,5 @@
 - name: Config directory
-  file: { path: /etc/pgcloud, state: directory, mode: "0750" }
+  file: { path: /etc/prgd, state: directory, mode: "0750" }
 
 - name: Download host-agent {{ host_agent_version }}
   unarchive:
@@ -11,12 +11,12 @@
   notify: restart host-agent
 
 - name: Agent config
-  template: { src: agent.yaml.j2, dest: /etc/pgcloud/agent.yaml, mode: "0640" }
+  template: { src: agent.yaml.j2, dest: /etc/prgd/agent.yaml, mode: "0640" }
   notify: restart host-agent
 
 - name: Agent secrets (environment file read by systemd)
   copy:
-    dest: /etc/pgcloud/agent.env
+    dest: /etc/prgd/agent.env
     mode: "0600"
     content: |
       PVE_TOKEN_SECRET={{ vault_pve_agent_token_secret }}

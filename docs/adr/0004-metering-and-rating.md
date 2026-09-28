@@ -5,7 +5,7 @@
 ## Decision
 
 1. Host agents publish `usage.v1` events to NATS every minute per resource
-   (`pgcloud.usage`), containing `resourceType`, `resourceId`, `quantity`, `unit`, `at`.
+   (`prgd.usage`), containing `resourceType`, `resourceId`, `quantity`, `unit`, `at`.
 2. `BillingModule.MeteringConsumer` writes them into `UsageEvent`, a TimescaleDB
    hypertable partitioned on `at`.
 3. An hourly job (`RatingService.rollupHour`) aggregates events into `UsageRecord`

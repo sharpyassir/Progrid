@@ -14,7 +14,7 @@ variables. Settings and secrets live in one file on the management host, rendere
 | Website (`apps/www`) | management host | container, `<domain>` |
 | Postgres with TimescaleDB, Redis, NATS, Temporal | management host | containers with named volumes |
 | Caddy | management host | container, ports 80 and 443, Let's Encrypt |
-| Nightly backups | management host | container writing `/var/backups/pgcloud`, optional S3 copy |
+| Nightly backups | management host | container writing `/var/backups/prgd`, optional S3 copy |
 | Host agent (`agents/host-agent`) | every Proxmox node | static binary under systemd, talks to NATS over the management network |
 | Customer servers | Proxmox nodes | virtual machines on Ceph, created by the host agent |
 | CLI, MCP server | the developer's machine | GitHub release binaries, npm package |
@@ -31,7 +31,7 @@ Goal: a public demo and the first design partners, before our own hardware is ra
 3. Fill `infra/ansible/inventory.ini`, `group_vars/all/vars.yml` and the vault in `group_vars/all/vault.yml`. Set `hypervisor_driver: fake`
    if there is no Proxmox yet, or install Proxmox on the same box and point the agent at it.
 4. `ansible-playbook -i inventory.ini site.yml --ask-vault-pass`. The role installs Docker, copies the
-   compose bundle to `/opt/pgcloud`, writes `/etc/pgcloud/pgcloud.env`, opens the firewall and starts everything.
+   compose bundle to `/opt/prgd`, writes `/etc/prgd/prgd.env`, opens the firewall and starts everything.
 5. Add the GitHub secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`). The public addresses baked into the
    website and console default to progrid.sa; see `docs/deploy-digitalocean.md` for a full first deploy.
    From then on every push to `main` builds images and rolls the host.
@@ -51,23 +51,23 @@ Three management virtual machines on the Proxmox cluster itself, each running pa
 
 The compose file already separates these by service name, so splitting is a matter of running a subset on
 each VM and pointing `DATABASE_URL`, `REDIS_URL`, `NATS_URL` and `TEMPORAL_ADDRESS` at the data VMs
-(they are plain environment variables in `pgcloud.env`). Backups go to object storage off the cluster.
+(they are plain environment variables in `prgd.env`). Backups go to object storage off the cluster.
 Secrets move from the Ansible vault to OpenBao with agent templates when more than two people deploy.
 
 ## Images and releases
 
-`.github/workflows/deploy.yml` builds `pgcloud-api`, `pgcloud-console` and `pgcloud-www` on every push to
+`.github/workflows/deploy.yml` builds `prgd-api`, `prgd-console` and `prgd-www` on every push to
 `main` and pushes them to GitHub Container Registry tagged with the short commit sha and `latest`; a `v*`
-tag adds the version. The deploy job then runs `/opt/pgcloud/deploy.sh <tag>` over SSH, which pulls, runs
+tag adds the version. The deploy job then runs `/opt/prgd/deploy.sh <tag>` over SSH, which pulls, runs
 `prisma migrate deploy` in a one shot container, restarts the services and checks `/healthz`.
 
-To roll back: `sudo /opt/pgcloud/deploy.sh <previous sha>`. Migrations are forward only, so a rollback
+To roll back: `sudo /opt/prgd/deploy.sh <previous sha>`. Migrations are forward only, so a rollback
 across a migration needs a restore or a follow up migration.
 
 ## The settings file
 
-`/etc/pgcloud/pgcloud.env` holds every setting the API reads plus what compose needs (domain, image tag,
-Postgres password, NATS token). `infra/prod/pgcloud.env.example` shows the shape. Ansible renders it from
+`/etc/prgd/prgd.env` holds every setting the API reads plus what compose needs (domain, image tag,
+Postgres password, NATS token). `infra/prod/prgd.env.example` shows the shape. Ansible renders it from
 `group_vars/all/vars.yml` and the vault in `group_vars/all/vault.yml`; do not edit it by hand on the host.
 
 Production values to set deliberately: `REQUIRE_TOTP_FOR_OWNERS=true`, a real `MAIL_PROVIDER` with its key,
@@ -132,14 +132,14 @@ cloud-init address matches the allocation, so servers still on DHCP are not cut 
 
 ## Backups and restore
 
-The backup container dumps Postgres every night at 02:15 UTC to `/var/backups/pgcloud`, keeps
+The backup container dumps Postgres every night at 02:15 UTC to `/var/backups/prgd`, keeps
 `BACKUP_KEEP_DAYS` days, and copies to `BACKUP_S3_URL` when set. Restore on a fresh host:
 
 ```sh
 ansible-playbook -i inventory.ini site.yml --limit management --ask-vault-pass
-cd /opt/pgcloud && docker compose --env-file /etc/pgcloud/pgcloud.env stop api worker
-gunzip -c /var/backups/pgcloud/pgcloud-YYYYMMDD-0215.sql.gz | docker compose --env-file /etc/pgcloud/pgcloud.env exec -T postgres psql -U pgcloud pgcloud
-docker compose --env-file /etc/pgcloud/pgcloud.env start api worker
+cd /opt/prgd && docker compose --env-file /etc/prgd/prgd.env stop api worker
+gunzip -c /var/backups/prgd/prgd-YYYYMMDD-0215.sql.gz | docker compose --env-file /etc/prgd/prgd.env exec -T postgres psql -U prgd prgd
+docker compose --env-file /etc/prgd/prgd.env start api worker
 ```
 
 Redis holds only locks, rate limit counters and idempotency keys; losing it is harmless. NATS JetStream
@@ -158,7 +158,7 @@ holds in flight host agent jobs; the worker retries them. Temporal state lives i
 
 Buckets live on the same Ceph cluster as the VM disks, served by RADOS Gateway on two or
 more nodes behind Caddy or a load balancer at `S3_ENDPOINT`. Create an admin user once with
-`radosgw-admin user create --uid=pgcloud-admin --display-name="pgcloud control plane"
+`radosgw-admin user create --uid=prgd-admin --display-name="prgd control plane"
 --caps="users=*;buckets=*;usage=read"` and put its keys in the settings file as
 `RGW_ADMIN_ACCESS_KEY` and `RGW_ADMIN_SECRET_KEY`. The API creates one RGW user per project,
 issues keys on it, creates buckets and links them to the project user, and reads bucket
@@ -189,6 +189,6 @@ Create one app per environment at github.com/settings/apps (or under the organiz
 | Subscribe to events | Push, Installation |
 | Where can it be installed | Any account |
 
-Then put the app id, slug and the generated private key (PEM, newlines as `\n`) into `pgcloud.env` as
+Then put the app id, slug and the generated private key (PEM, newlines as `\n`) into `prgd.env` as
 `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`. Without these the console falls back to
 repository URLs with an optional token, and the API answers `github_app_unavailable` on the connect endpoint.

@@ -153,7 +153,7 @@ the MVP so phase 2 is additive.
   (`/servers`, `/volumes`, `/firewalls`, `/apps`), pagination, idempotency keys, clear
   error codes.
 - **Generated SDKs**: Go, Python, JavaScript from the same spec.
-- **CLI**: single Go binary (`pgcloud servers create --size s-2vcpu-4gb --image ubuntu-24-04`).
+- **CLI**: single Go binary (`prgd servers create --size s-2vcpu-4gb --image ubuntu-24-04`).
 - **Terraform provider**.
 - **Webhooks and events**: server created, backup finished, invoice issued, spend limit reached.
 - **Console**: fast, minimal, dark/light, TR / AR (RTL) / EN.
@@ -217,7 +217,7 @@ Code (control plane, console, billing), founder as product owner.
 
 ## Open decisions before coding
 
-- Brand and domain name for the cloud (CLI name, API domain) — **`pgcloud` used as placeholder**
+- Brand and domain name for the cloud (CLI name, API domain) — **`prgd` used as placeholder**
 - Data center and server provider in the Saudi region; own IP blocks and nested networking allowed?
 - Proxmox VE vs Apache CloudStack as first engine — **repo assumes Proxmox behind a driver interface**
 - Own IP block (RIPE membership) or leased IPs for year 1
