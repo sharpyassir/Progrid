@@ -28,6 +28,25 @@ console.{$DOMAIN} {
     reverse_proxy console:3000
 }
 
+# DevOps console for on call engineers. The app sets its own Content Security Policy with a nonce
+# per request; these are the same static headers it sends, repeated here so they hold even for
+# responses the app does not produce (errors from the proxy).
+ops.{$DOMAIN} {
+    encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy no-referrer
+        Cross-Origin-Opener-Policy same-origin
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), clipboard-read=(), publickey-credentials-get=(self), publickey-credentials-create=(self)"
+        X-Robots-Tag "noindex, nofollow"
+        -Server
+        -X-Powered-By
+    }
+    reverse_proxy ops:3002
+}
+
 api.{$DOMAIN} {
     import common
     # Long polling and webhook bodies are small; keep uploads bounded.

@@ -1,14 +1,15 @@
 name: deploy
 
-# Every push to main builds the three control plane images and tags them with the commit sha
+# Every push to main builds the control plane images and tags them with the commit sha
 # (and `latest`). A tag `v*` also tags them with the version. The deploy job then rolls the
 # management host over SSH, which pulls the images, runs migrations and restarts.
 #
 # Secrets (repository settings):
 #   DEPLOY_HOST   management host address        DEPLOY_USER  ssh user (the Ansible user)
 #   DEPLOY_SSH_KEY  private key for that user
-# The public addresses baked into the website and console default to progrid.sa. Override them with
-# repository variables PUBLIC_API_URL, PUBLIC_CONSOLE_URL and PUBLIC_WWW_URL for another domain.
+# The public addresses baked into the website, the console and the ops console default to progrid.sa.
+# Override them with repository variables PUBLIC_API_URL, PUBLIC_CONSOLE_URL, PUBLIC_WWW_URL,
+# PUBLIC_OPS_URL and PUBLIC_GATEWAY_URL (the terminal gateway, wss://) for another domain.
 # Set the `production` environment to require a reviewer if you want a manual gate.
 # Images are only built after the ci workflow succeeded for the same commit, so a failing
 # commit never reaches the host.
@@ -34,7 +35,12 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        app: [api, console, www]
+        # app names the image (prgd-<app>); dockerfile is relative to the workspace root.
+        include:
+          - { app: api, dockerfile: apps/api/Dockerfile }
+          - { app: console, dockerfile: apps/console/Dockerfile }
+          - { app: www, dockerfile: apps/www/Dockerfile }
+          - { app: ops, dockerfile: apps/ops/Dockerfile }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,7 +60,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/${{ matrix.app }}/Dockerfile
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -62,6 +68,8 @@ jobs:
             NEXT_PUBLIC_API_URL=${{ vars.PUBLIC_API_URL || 'https://api.progrid.sa' }}
             NEXT_PUBLIC_CONSOLE_URL=${{ vars.PUBLIC_CONSOLE_URL || 'https://console.progrid.sa' }}
             NEXT_PUBLIC_WWW_URL=${{ vars.PUBLIC_WWW_URL || 'https://progrid.sa' }}
+            NEXT_PUBLIC_OPS_URL=${{ vars.PUBLIC_OPS_URL || 'https://ops.progrid.sa' }}
+            NEXT_PUBLIC_GATEWAY_URL=${{ vars.PUBLIC_GATEWAY_URL || 'wss://gateway.progrid.sa' }}
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}
 

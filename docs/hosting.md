@@ -27,7 +27,7 @@ Proxmox nodes sit on the management network and reach the host through NATS on p
 Goal: a public demo and the first design partners, before our own hardware is racked.
 
 1. Rent one dedicated server with a public IP (8 cores, 32 GB, NVMe is plenty). Install Ubuntu 24.04.
-2. Point DNS: `<domain>`, `www.<domain>`, `console.<domain>`, `api.<domain>` to that address.
+2. Point DNS: `<domain>`, `www.<domain>`, `console.<domain>`, `ops.<domain>`, `api.<domain>` to that address.
 3. Fill `infra/ansible/inventory.ini`, `group_vars/all/vars.yml` and the vault in `group_vars/all/vault.yml`. Set `hypervisor_driver: fake`
    if there is no Proxmox yet, or install Proxmox on the same box and point the agent at it.
 4. `ansible-playbook -i inventory.ini site.yml --ask-vault-pass`. The role installs Docker, copies the
