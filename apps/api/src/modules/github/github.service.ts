@@ -133,7 +133,7 @@ export class GithubService {
   private async ghFetch<T>(path: string, token: string, init: RequestInit = {}): Promise<T> {
     const res = await fetch(`https://api.github.com${path}`, {
       ...init,
-      headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${token}`, 'x-github-api-version': '2022-11-28', 'user-agent': 'pgcloud', ...(init.headers as Record<string, string>) },
+      headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${token}`, 'x-github-api-version': '2022-11-28', 'user-agent': 'prgd', ...(init.headers as Record<string, string>) },
       signal: AbortSignal.timeout(10_000),
     });
     if (res.status === 204) return undefined as T;

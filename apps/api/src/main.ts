@@ -16,7 +16,7 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   const swagger = new DocumentBuilder()
-    .setTitle('pgcloud API')
+    .setTitle('prgd API')
     .setVersion('v1')
     .setDescription('The same API powers the console, CLI, Terraform, SDKs and AI agents. Canonical spec: packages/openapi/openapi.yaml')
     .addBearerAuth()

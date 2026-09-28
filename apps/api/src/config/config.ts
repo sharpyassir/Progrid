@@ -11,7 +11,7 @@ const schema = z.object({
   NATS_TOKEN: z.string().optional(),
   TEMPORAL_ADDRESS: z.string().default('localhost:7233'),
   TEMPORAL_NAMESPACE: z.string().default('default'),
-  TEMPORAL_TASK_QUEUE: z.string().default('pgcloud-control-plane'),
+  TEMPORAL_TASK_QUEUE: z.string().default('prgd-control-plane'),
   HYPERVISOR_DRIVER: z.enum(['fake', 'proxmox']).default('fake'),
   PROXMOX_CEPH_POOL: z.string().default('vm-disks'),
   /** Proxmox SDN VXLAN zone the per project VNets are created in (PRIVATE_NETWORK_MODE=sdn_vnet). */

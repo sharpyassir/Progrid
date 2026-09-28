@@ -348,7 +348,7 @@ function firewallRules(rules: ForwardingRule[], nodes: number, privateNet: strin
   return [
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '22', cidrs: [cp], description: 'platform ssh' },
     ...rules.map((r) => ({ direction: 'inbound' as const, protocol: 'tcp' as const, ports: String(r.entryPort), cidrs: ['0.0.0.0/0', '::/0'] })),
-    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '9009', cidrs: [cp], description: 'pgcloud load balancer agent' },
+    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '9009', cidrs: [cp], description: 'prgd load balancer agent' },
     ...(nodes > 1 ? [{ direction: 'inbound' as const, protocol: 'vrrp' as const, cidrs: [privateNet], description: 'keepalived between load balancer nodes' }] : []),
     { direction: 'outbound' as const, protocol: 'any' as const, cidrs: ['0.0.0.0/0'] },
   ];

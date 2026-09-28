@@ -28,8 +28,8 @@ export class AccountSecurityService {
     const url = `${loadConfig().CONSOLE_URL}/verify?token=${token}`;
     await this.mail.send({
       to: user.email,
-      subject: 'Confirm your email for pgcloud',
-      text: `Hi ${user.name},\n\nConfirm your email address to start creating servers:\n${url}\n\nThe link is valid for 24 hours. If you did not create a pgcloud account, ignore this message.`,
+      subject: 'Confirm your email for prgd',
+      text: `Hi ${user.name},\n\nConfirm your email address to start creating servers:\n${url}\n\nThe link is valid for 24 hours. If you did not create a prgd account, ignore this message.`,
     });
   }
 
@@ -53,7 +53,7 @@ export class AccountSecurityService {
     const url = `${loadConfig().CONSOLE_URL}/reset-password?token=${token}`;
     await this.mail.send({
       to: user.email,
-      subject: 'Reset your pgcloud password',
+      subject: 'Reset your prgd password',
       text: `Hi ${user.name},\n\nSomeone asked to reset the password for this account. If that was you, choose a new password here:\n${url}\n\nThe link is valid for one hour. If you did not ask for this, you can ignore it; your password has not changed.`,
     });
   }

@@ -2,7 +2,7 @@ import { AGENT_NET_PY, AGENT_S3_PY } from '../../common/platform-agent';
 
 /**
  * cloud-init for a managed database node. Installs the engine, its HA tooling and
- * `pgcloud-dbd`: an HTTP agent on the private address, port 9009, that receives the whole
+ * `prgd-dbd`: an HTTP agent on the private address, port 9009, that receives the whole
  * node configuration from the control plane (POST /config), writes etcd, Patroni, pgBouncer,
  * pgBackRest and keepalived config, applies users and databases on the primary, runs backups
  * (POST /backup) and restores (POST /restore), and reports role, members, lag and restore
@@ -53,13 +53,13 @@ const RUNCMD: Record<DbNodeInit['engine'], string[]> = {
 
 /** The agent, standard library only (plus PyYAML on Postgres nodes, which Patroni needs anyway). */
 const DBD_PY = String.raw`#!/usr/bin/env python3
-# pgcloud managed database agent. The control plane is the only writer of configuration.
+# prgd managed database agent. The control plane is the only writer of configuration.
 import http.server, json, os, shutil, subprocess, threading, time, urllib.request, urllib.parse
-SECRET = open('/opt/pgcloud/vm.secret').read().strip()
-ENGINE = open('/opt/pgcloud/engine').read().strip()
-STATE = '/opt/pgcloud/db.json'
-LAST = '/opt/pgcloud/last-config.json'
-LOG = '/var/log/pgcloud-dbd.log'
+SECRET = open('/opt/prgd/vm.secret').read().strip()
+ENGINE = open('/opt/prgd/engine').read().strip()
+STATE = '/opt/prgd/db.json'
+LAST = '/opt/prgd/last-config.json'
+LOG = '/var/log/prgd-dbd.log'
 lock = threading.Lock()
 slock = threading.Lock()
 BT = chr(96)
@@ -98,18 +98,18 @@ def write(path, text, mode=0o644, owner=None):
     return old != text
 def render(path, text, mode=0o644, owner=None):
     # Like write, for files a service rewrites itself: compare with what the agent wrote last.
-    shadow = '/opt/pgcloud/rendered' + path
+    shadow = '/opt/prgd/rendered' + path
     old = open(shadow).read() if os.path.exists(shadow) else None
     if old == text and os.path.exists(path): return False
     write(path, text, mode, owner); write(shadow, text, 0o600)
     return True
 def self_node(c): return [n for n in c['cluster']['nodes'] if n['isSelf']][0]
 def ensure_cert():
-    if not os.path.exists('/etc/pgcloud/server.crt'):
-        os.makedirs('/etc/pgcloud', exist_ok=True)
-        sh(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '3650', '-subj', '/CN=pgcloud-db', '-keyout', '/etc/pgcloud/server.key', '-out', '/etc/pgcloud/server.crt'])
+    if not os.path.exists('/etc/prgd/server.crt'):
+        os.makedirs('/etc/prgd', exist_ok=True)
+        sh(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '3650', '-subj', '/CN=prgd-db', '-keyout', '/etc/prgd/server.key', '-out', '/etc/prgd/server.crt'])
     owner = {'postgres': 'postgres:postgres', 'valkey': 'valkey:valkey', 'mysql': 'mysql:mysql'}[ENGINE]
-    sh('chown %s /etc/pgcloud/server.* && chmod 600 /etc/pgcloud/server.key' % owner, check=False)
+    sh('chown %s /etc/prgd/server.* && chmod 600 /etc/prgd/server.key' % owner, check=False)
 def disk_used(path):
     st = os.statvfs(path)
     return round(100 * (1 - st.f_bavail / st.f_blocks), 1)
@@ -121,7 +121,7 @@ def s3_host(b):
 
 def keepalived(c, me, check):
     # VRRP runs unicast between the nodes over the private network; the VIP sits on the
-    # interface named by /opt/pgcloud/vip.network.
+    # interface named by /opt/prgd/vip.network.
     peers = [n['ip'] for n in c['cluster']['nodes'] if not n['isSelf']]
     uni = ("  unicast_src_ip %s\n  unicast_peer { %s }\n" % (private_ipv4() or me['ip'], ' '.join(peers))) if peers else ''
     text = "vrrp_script chk_primary {\n  script \"%s\"\n  interval 2\n  fall 2\n  rise 2\n}\nvrrp_instance VI_db {\n  state BACKUP\n  interface %s\n  virtual_router_id %d\n  priority %d\n  advert_int 1\n  nopreempt\n%s  authentication { auth_type PASS auth_pass %s }\n  virtual_ipaddress { %s/%d dev %s }\n  track_script { chk_primary }\n}\n" % (check, private_iface() or 'eth0', c['cluster']['vrid'], 100 - me['index'], uni, c['cluster']['vrrpPass'], c['cluster']['vip'], c['cluster']['prefix'], vip_iface())
@@ -166,7 +166,7 @@ def apply_postgres(c):
     hba += [f"host replication replicator {n['ip']}/32 scram-sha-256" for n in nodes]
     hba += [f"host all all {n['ip']}/32 scram-sha-256" for n in nodes]
     hba += [f"hostssl all all {cidr} scram-sha-256" for cidr in (c.get('trustedSources') or ['0.0.0.0/0', '::/0'])]
-    params = {'max_connections': 200, 'shared_buffers': '256MB', 'ssl': 'on', 'ssl_cert_file': '/etc/pgcloud/server.crt', 'ssl_key_file': '/etc/pgcloud/server.key', 'wal_level': 'replica', 'archive_mode': 'on', 'password_encryption': 'scram-sha-256'}
+    params = {'max_connections': 200, 'shared_buffers': '256MB', 'ssl': 'on', 'ssl_cert_file': '/etc/prgd/server.crt', 'ssl_key_file': '/etc/prgd/server.key', 'wal_level': 'replica', 'archive_mode': 'on', 'password_encryption': 'scram-sha-256'}
     params.update(c.get('params', {}))
     # archive_command lives only in Patroni's dynamic configuration: a no-op until the pgBackRest
     # stanza exists, then switched on by archiving(). The local config must not override it.
@@ -179,7 +179,7 @@ def apply_postgres(c):
         'bootstrap': {'dcs': {'ttl': 30, 'loop_wait': 10, 'retry_timeout': 10, 'maximum_lag_on_failover': 1048576, 'postgresql': {'use_pg_rewind': True, 'parameters': dcs_params, 'pg_hba': hba}},
                       # Patroni sets the superuser password from postgresql.authentication at initdb and creates the replication role after bootstrap.
                       'initdb': [{'encoding': 'UTF8'}, 'data-checksums', {'auth-local': 'peer'}, {'auth-host': 'scram-sha-256'}],
-                      'post_bootstrap': '/opt/pgcloud/post-bootstrap.sh'},
+                      'post_bootstrap': '/opt/prgd/post-bootstrap.sh'},
         'postgresql': {'listen': '0.0.0.0:5432', 'connect_address': f"{me['ip']}:5432", 'data_dir': PG_DATA, 'bin_dir': PG_BIN, 'pgpass': '/var/lib/postgresql/.pgpass-patroni',
                        'authentication': {'superuser': {'username': 'postgres', 'password': pw}, 'replication': {'username': 'replicator', 'password': c['replicationPassword']}, 'rewind': {'username': 'postgres', 'password': pw}},
                        'parameters': params, 'pg_hba': hba},
@@ -188,7 +188,7 @@ def apply_postgres(c):
     import yaml
     changed = write('/etc/patroni/config.yml', yaml.safe_dump(patroni), 0o600, 'postgres:postgres')
     # Patroni passes a superuser connection string as the first argument.
-    write('/opt/pgcloud/post-bootstrap.sh', "#!/bin/sh\nset -e\npsql \"$1\" -v ON_ERROR_STOP=1 -c \"CREATE ROLE %s WITH SUPERUSER LOGIN PASSWORD '%s'\"\n" % (c['admin']['user'], pw), 0o755)
+    write('/opt/prgd/post-bootstrap.sh', "#!/bin/sh\nset -e\npsql \"$1\" -v ON_ERROR_STOP=1 -c \"CREATE ROLE %s WITH SUPERUSER LOGIN PASSWORD '%s'\"\n" % (c['admin']['user'], pw), 0o755)
     b = c.get('backup') or {}
     if b.get('bucket'):
         host, port = s3_host(b)
@@ -199,7 +199,7 @@ def apply_postgres(c):
     elif changed:
         sh('systemctl reload patroni', check=False)
     # pgbouncer in front, transaction pooling, auth through pg_shadow.
-    ini = write('/etc/pgbouncer/pgbouncer.ini', f"[databases]\n* = host=127.0.0.1 port=5432\n[pgbouncer]\nlisten_addr = 0.0.0.0\nlisten_port = 6432\nauth_type = scram-sha-256\nauth_file = /etc/pgbouncer/userlist.txt\nauth_user = {c['admin']['user']}\nauth_query = SELECT usename, passwd FROM pg_shadow WHERE usename=$1\npool_mode = transaction\nmax_client_conn = 1000\ndefault_pool_size = 20\nclient_tls_sslmode = allow\nclient_tls_cert_file = /etc/pgcloud/server.crt\nclient_tls_key_file = /etc/pgcloud/server.key\n")
+    ini = write('/etc/pgbouncer/pgbouncer.ini', f"[databases]\n* = host=127.0.0.1 port=5432\n[pgbouncer]\nlisten_addr = 0.0.0.0\nlisten_port = 6432\nauth_type = scram-sha-256\nauth_file = /etc/pgbouncer/userlist.txt\nauth_user = {c['admin']['user']}\nauth_query = SELECT usename, passwd FROM pg_shadow WHERE usename=$1\npool_mode = transaction\nmax_client_conn = 1000\ndefault_pool_size = 20\nclient_tls_sslmode = allow\nclient_tls_cert_file = /etc/prgd/server.crt\nclient_tls_key_file = /etc/prgd/server.key\n")
     users = write('/etc/pgbouncer/userlist.txt', f"\"{c['admin']['user']}\" \"{pw}\"\n", 0o600, 'postgres:postgres')
     if ini or users or sh('systemctl is-active --quiet pgbouncer', check=False).returncode:
         sh('systemctl enable pgbouncer && systemctl restart pgbouncer', check=False)
@@ -276,7 +276,7 @@ def restore_postgres(req):
         sh('systemctl start patroni', check=False); sh(PATRONICTL + 'resume', check=False)
         raise RuntimeError('pgbackrest restore: ' + (r.stderr or r.stdout)[-500:])
     # Replay to the end of the backup and promote outside Patroni, then give the node back to it.
-    r = sh(pgctl + ['start', '-w', '-t', '3600', '-l', '/var/log/pgcloud-restore-postgres.log'], check=False)
+    r = sh(pgctl + ['start', '-w', '-t', '3600', '-l', '/var/log/prgd-restore-postgres.log'], check=False)
     if r.returncode != 0: raise RuntimeError('the restored server did not start: ' + (r.stderr or r.stdout)[-500:])
     for _ in range(1800):
         if pg('SELECT pg_is_in_recovery()').stdout.strip() == 'f': break
@@ -297,9 +297,9 @@ def restore_postgres(req):
     archiving(c)
 
 # ---- valkey: replication plus sentinel on three nodes, ACL users, RDB backups ----
-SENTINEL_DONE = '/opt/pgcloud/sentinel.configured'
+SENTINEL_DONE = '/opt/prgd/sentinel.configured'
 def vcli(*args, host=None, port=6379):
-    pw = open('/opt/pgcloud/admin.pw').read().strip()
+    pw = open('/opt/prgd/admin.pw').read().strip()
     return sh(['valkey-cli'] + (['-h', host] if host else []) + ['-p', str(port)] + (['-a', pw, '--no-auth-warning'] if port == 6379 else []) + list(args), check=False)
 def sentinel_primary():
     r = vcli('SENTINEL', 'get-master-addr-by-name', 'main', port=26379)
@@ -313,10 +313,10 @@ def apply_valkey(c):
     primary = (sentinel_primary() if os.path.exists(SENTINEL_DONE) else None) or first['ip']
     ensure_cert()
     conf = ["bind 0.0.0.0", "port 6379", "protected-mode yes", f"requirepass {pw}", f"masterauth {pw}", "appendonly yes", "dir /var/lib/valkey", "maxmemory-policy allkeys-lru",
-            "tls-port 6380", "tls-cert-file /etc/pgcloud/server.crt", "tls-key-file /etc/pgcloud/server.key", "tls-auth-clients no", "tls-replication no", "aclfile /opt/pgcloud/acl.txt"]
+            "tls-port 6380", "tls-cert-file /etc/prgd/server.crt", "tls-key-file /etc/prgd/server.key", "tls-auth-clients no", "tls-replication no", "aclfile /opt/prgd/acl.txt"]
     if primary != me['ip']: conf.append(f"replicaof {primary} 6379")
     conf_changed = render('/etc/valkey/valkey.conf', '\n'.join(conf) + '\n', 0o640, 'valkey:valkey')
-    acl_changed = write('/opt/pgcloud/acl.txt', '\n'.join([f"user default on >{pw} ~* &* +@all"] + [f"user {u['name']} on >{u['password']} ~* &* +@all -@dangerous" for u in c.get('users', [])]) + '\n', 0o600, 'valkey:valkey')
+    acl_changed = write('/opt/prgd/acl.txt', '\n'.join([f"user default on >{pw} ~* &* +@all"] + [f"user {u['name']} on >{u['password']} ~* &* +@all -@dangerous" for u in c.get('users', [])]) + '\n', 0o600, 'valkey:valkey')
     if conf_changed or sh('systemctl is-active --quiet valkey-server', check=False).returncode:
         sh('systemctl enable valkey-server && systemctl restart valkey-server', check=False)
     elif acl_changed:
@@ -347,7 +347,7 @@ def backup_valkey(bid):
     rec = {'id': bid, 'status': 'running', 'startedAt': time.time()}; record_backup(rec)
     try:
         cfg = last_config(); path = f'/var/lib/valkey/backup-{bid}.rdb'
-        pw = open('/opt/pgcloud/admin.pw').read().strip()
+        pw = open('/opt/prgd/admin.pw').read().strip()
         sh(['valkey-cli', '-a', pw, '--no-auth-warning', '--rdb', path])
         rec['sizeBytes'] = s3_put(cfg['backup'], f"{cfg['cluster']['name']}/{bid}.rdb", path); os.remove(path)
         rec['status'] = 'completed'; rec['ref'] = f"{cfg['cluster']['name']}/{bid}.rdb"
@@ -385,7 +385,7 @@ def restore_valkey(req):
 def my(sql, host=None, c=None):
     # Local root, or a peer through the admin account (TLS is required by the server).
     if host: return sh(['mysql', '-h', host, '-u', c['admin']['user'], '-p' + c['admin']['password'], '--connect-timeout=3', '-N', '-e', sql], check=False)
-    return sh(['mysql', '-uroot', '-p' + open('/opt/pgcloud/admin.pw').read().strip(), '-N', '-e', sql], check=False)
+    return sh(['mysql', '-uroot', '-p' + open('/opt/prgd/admin.pw').read().strip(), '-N', '-e', sql], check=False)
 def replica_source():
     for line in my('SHOW REPLICA STATUS\\G').stdout.splitlines():
         if line.strip().startswith('Source_Host:'): return line.split(':', 1)[1].strip()
@@ -425,8 +425,8 @@ def apply_mysql(c):
     st = state()
     primary = st.get('mysqlPrimary') or first['ip']
     ensure_cert()
-    conf = f"[mysqld]\nbind-address = 0.0.0.0\nserver-id = {me['index'] + 1}\ngtid_mode = ON\nenforce_gtid_consistency = ON\nlog_bin = binlog\nbinlog_expire_logs_seconds = 604800\nrelay_log = relay\nlog_replica_updates = ON\nrequire_secure_transport = ON\nssl_cert = /etc/pgcloud/server.crt\nssl_key = /etc/pgcloud/server.key\ninnodb_buffer_pool_size = {c.get('params', {}).get('innodb_buffer_pool_size', '256M')}\n"
-    if write('/etc/mysql/mysql.conf.d/zz-pgcloud.cnf', conf) or sh('systemctl is-active --quiet mysql', check=False).returncode:
+    conf = f"[mysqld]\nbind-address = 0.0.0.0\nserver-id = {me['index'] + 1}\ngtid_mode = ON\nenforce_gtid_consistency = ON\nlog_bin = binlog\nbinlog_expire_logs_seconds = 604800\nrelay_log = relay\nlog_replica_updates = ON\nrequire_secure_transport = ON\nssl_cert = /etc/prgd/server.crt\nssl_key = /etc/prgd/server.key\ninnodb_buffer_pool_size = {c.get('params', {}).get('innodb_buffer_pool_size', '256M')}\n"
+    if write('/etc/mysql/mysql.conf.d/zz-prgd.cnf', conf) or sh('systemctl is-active --quiet mysql', check=False).returncode:
         sh('systemctl enable mysql && systemctl restart mysql', check=False)
     # root moves from socket authentication to the admin password, kept out of the binary log.
     if sh(['mysql', '-uroot', '-e', 'SELECT 1'], check=False).returncode == 0:
@@ -509,8 +509,8 @@ def xbcloud_args(b):
 def backup_mysql(bid):
     rec = {'id': bid, 'status': 'running', 'startedAt': time.time()}; record_backup(rec)
     try:
-        pw = open('/opt/pgcloud/admin.pw').read().strip(); cfg = last_config(); b = cfg['backup']; name = cfg['cluster']['name']
-        r = sh(f"xtrabackup --backup --stream=xbstream --user=root --password='{pw}' 2>/var/log/pgcloud-xtrabackup.log | xbcloud put {xbcloud_args(b)} '{name}/{bid}'", check=False)
+        pw = open('/opt/prgd/admin.pw').read().strip(); cfg = last_config(); b = cfg['backup']; name = cfg['cluster']['name']
+        r = sh(f"xtrabackup --backup --stream=xbstream --user=root --password='{pw}' 2>/var/log/prgd-xtrabackup.log | xbcloud put {xbcloud_args(b)} '{name}/{bid}'", check=False)
         if r.returncode != 0: raise RuntimeError((r.stderr or '')[-500:])
         rec['status'] = 'completed'; rec['ref'] = f'{name}/{bid}'
     except Exception as e:
@@ -519,7 +519,7 @@ def backup_mysql(bid):
 
 def restore_mysql(req):
     c = last_config(); b = c['backup']; me = self_node(c)
-    tmp = '/var/lib/pgcloud-restore'; old = '/var/lib/mysql.before-restore'; xlog = '/var/log/pgcloud-xtrabackup.log'
+    tmp = '/var/lib/prgd-restore'; old = '/var/lib/mysql.before-restore'; xlog = '/var/log/prgd-xtrabackup.log'
     shutil.rmtree(tmp, ignore_errors=True); os.makedirs(tmp)
     r = sh(f"xbcloud get {xbcloud_args(b)} '{req.get('ref') or c['cluster']['name'] + '/' + req['backupId']}' 2>>{xlog} | xbstream -x -C {tmp}", check=False)
     if r.returncode != 0: raise RuntimeError('download failed: ' + (r.stderr or '')[-400:])
@@ -563,20 +563,20 @@ def run_restore(req):
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_GET(self):
-        if self.headers.get('X-Pgcloud-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
+        if self.headers.get('X-Prgd-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
         if self.path != '/status': return self._send(404, {})
         st = state()
         try: engine = STATUS[ENGINE]()
         except Exception as e: engine = {'role': 'unknown', 'error': str(e)[-300:]}
         self._send(200, {'version': st.get('version', 0), 'engine': ENGINE, 'backups': st.get('backups', []), 'restore': st.get('restore'), **engine})
     def do_POST(self):
-        if self.headers.get('X-Pgcloud-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
+        if self.headers.get('X-Prgd-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
         n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
         if self.path == '/config':
             if restoring(): return self._send(409, {'error': 'not_ready', 'detail': 'a restore is running'})
             with lock:
                 try:
-                    open('/opt/pgcloud/admin.pw', 'w').write(body['admin']['password']); os.chmod('/opt/pgcloud/admin.pw', 0o600)
+                    open('/opt/prgd/admin.pw', 'w').write(body['admin']['password']); os.chmod('/opt/prgd/admin.pw', 0o600)
                     json.dump(body, open(LAST, 'w')); os.chmod(LAST, 0o600)
                     APPLY[ENGINE](body)
                     update_state(version=body['version'])
@@ -608,35 +608,35 @@ export function renderDbCloudInit(d: DbNodeInit): string {
 package_update: true
 packages: ${PACKAGES[d.engine]}
 write_files:
-  - path: /etc/sysctl.d/90-pgcloud-db.conf
+  - path: /etc/sysctl.d/90-prgd-db.conf
     content: |
       net.ipv4.ip_nonlocal_bind = 1
       vm.swappiness = 10
-  - path: /opt/pgcloud/vm.secret
+  - path: /opt/prgd/vm.secret
     permissions: '0600'
     content: '${d.vmSecret}'
-  - path: /opt/pgcloud/engine
+  - path: /opt/prgd/engine
     content: '${d.engine}'
-  - path: /opt/pgcloud/vip.network
+  - path: /opt/prgd/vip.network
     content: '${d.vipNetwork}'
-  - path: /opt/pgcloud/dbd.py
+  - path: /opt/prgd/dbd.py
     permissions: '0755'
     content: |
 ${indent(agent, 6)}
-  - path: /etc/systemd/system/pgcloud-dbd.service
+  - path: /etc/systemd/system/prgd-dbd.service
     content: |
       [Unit]
-      Description=pgcloud managed database agent
+      Description=prgd managed database agent
       After=network-online.target
       [Service]
-      ExecStart=/opt/pgcloud/dbd.py
+      ExecStart=/opt/prgd/dbd.py
       Restart=always
       [Install]
       WantedBy=multi-user.target
 runcmd:
   - sysctl --system
 ${RUNCMD[d.engine].map((c) => `  - ${yamlQuote(c)}`).join('\n')}
-  - systemctl daemon-reload && systemctl enable --now pgcloud-dbd
+  - systemctl daemon-reload && systemctl enable --now prgd-dbd
 `;
 }
 

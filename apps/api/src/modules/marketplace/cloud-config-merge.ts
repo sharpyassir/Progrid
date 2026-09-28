@@ -28,8 +28,8 @@ export function mergeCloudConfig(app: string, customer: string): string {
   if (trimmed.startsWith('#!')) {
     const script = trimmed.replace(/\s+$/, '').split('\n');
     extra = [
-      { key: 'write_files', inline: '', body: ['  - path: /var/lib/cloud/pgcloud-user-data.sh', "    permissions: '0755'", '    content: |', ...script.map((l) => (l ? `      ${l}` : ''))] },
-      { key: 'runcmd', inline: '', body: ['  - [ /var/lib/cloud/pgcloud-user-data.sh ]'] },
+      { key: 'write_files', inline: '', body: ['  - path: /var/lib/cloud/prgd-user-data.sh', "    permissions: '0755'", '    content: |', ...script.map((l) => (l ? `      ${l}` : ''))] },
+      { key: 'runcmd', inline: '', body: ['  - [ /var/lib/cloud/prgd-user-data.sh ]'] },
     ];
   } else if (/^#cloud-config\b/.test(trimmed)) {
     extra = parseTop(trimmed);

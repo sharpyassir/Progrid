@@ -23,7 +23,7 @@ address included.
 From the console under **Managed databases**, from the CLI, or the API:
 
 ```
-pgcloud databases create app-db --size s-1vcpu-2gb --nodes 3 --trusted 203.0.113.0/24 --wait
+prgd databases create app-db --size s-1vcpu-2gb --nodes 3 --trusted 203.0.113.0/24 --wait
 ```
 
 ```
@@ -55,8 +55,8 @@ databases. Removing a database from the cluster keeps the data
 on disk until you drop it yourself, so a slip is recoverable.
 
 ```
-pgcloud databases users ID add reporting
-pgcloud databases dbs ID add analytics
+prgd databases users ID add reporting
+prgd databases dbs ID add analytics
 ```
 
 ## Trusted sources
@@ -66,7 +66,7 @@ sources to the addresses and networks that should be allowed; everything else is
 the host firewall before it reaches the database.
 
 ```
-pgcloud databases trusted ID 203.0.113.0/24,198.51.100.7
+prgd databases trusted ID 203.0.113.0/24,198.51.100.7
 ```
 
 ## Backups and recovery
@@ -74,7 +74,7 @@ pgcloud databases trusted ID 203.0.113.0/24,198.51.100.7
 A full backup runs every night at the hour you choose (02:00 UTC by default) and is kept for
 seven days. For PostgreSQL the write ahead log is archived continuously once the first backup
 repository is set up. Take a backup before a risky migration with **Back up now** or
-`pgcloud databases backups ID now`.
+`prgd databases backups ID now`.
 
 ## Restore
 
@@ -115,7 +115,7 @@ updates are applied to replicas first and then to the primary through a switchov
 
 ## Terraform, SDKs and agents
 
-Terraform manages clusters with `pgcloud_database`; `password` and `uri` are sensitive. The
+Terraform manages clusters with `prgd_database`; `password` and `uri` are sensitive. The
 SDKs expose `databases` with users, databases, backups and `waitUntilActive`. Agent tokens
 need `databases:read` and `databases:write`; the MCP server exposes `list_databases`,
 `create_database` and `database_admin`.

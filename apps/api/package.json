@@ -1,8 +1,8 @@
 {
-  "name": "@pgcloud/api",
+  "name": "@prgd/api",
   "version": "0.1.0",
   "private": true,
-  "description": "pgcloud control plane — NestJS modular monolith",
+  "description": "prgd control plane — NestJS modular monolith",
   "scripts": {
     "dev": "nest start --watch",
     "worker": "ts-node -r tsconfig-paths/register src/worker.ts",

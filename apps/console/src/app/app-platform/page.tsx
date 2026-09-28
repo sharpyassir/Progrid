@@ -124,7 +124,7 @@ export default function AppPlatformPage() {
         <textarea className="input font-mono text-xs" name="env" rows={3} placeholder={'Environment variables, one per line\nDATABASE_URL=postgres://…'} />
         {mode === 'url' && <input className="input" name="gitToken" type="password" placeholder="Token for a private repository (optional)" autoComplete="off" />}
         <div className="flex items-center gap-4 text-sm text-neutral-500"><span>{money(priceOf(size) * instances, currency, locale)} per month</span><button className="btn-primary" disabled={busy}>{busy ? 'Creating…' : 'Create app'}</button></div>
-        <p className="text-xs text-neutral-500">A Dockerfile at the root is used as is. Without one, Node, Python, Go and static sites are detected. Or from your terminal: <code>pgcloud app create hello https://github.com/you/app --wait</code></p>
+        <p className="text-xs text-neutral-500">A Dockerfile at the root is used as is. Without one, Node, Python, Go and static sites are detected. Or from your terminal: <code>prgd app create hello https://github.com/you/app --wait</code></p>
       </form>
     </div>
   );

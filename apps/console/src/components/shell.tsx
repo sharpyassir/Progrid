@@ -50,7 +50,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   }, [ready, pathname, router]);
 
   const setLocale = (l: Locale) => {
-    try { localStorage.setItem('pgcloud.locale', l); } catch { /* ignore */ }
+    try { localStorage.setItem('prgd.locale', l); } catch { /* ignore */ }
     setLocaleState(l);
   };
   const signOut = () => {

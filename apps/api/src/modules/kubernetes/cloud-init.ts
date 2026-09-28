@@ -6,13 +6,13 @@ export const FLANNEL_MANIFEST = 'https://github.com/flannel-io/flannel/releases/
 /**
  * cloud-init for a managed Kubernetes node (control plane or worker; the role comes with
  * the first config push). Installs containerd, kubeadm, kubelet and kubectl from the
- * upstream package repository for the cluster's minor version, plus `pgcloud-k8sd`: an HTTP
+ * upstream package repository for the cluster's minor version, plus `prgd-k8sd`: an HTTP
  * agent on :9009 that receives the node's configuration from the control plane
  * (POST /config) and reports state (GET /status).
  *
  * What the agent does with a config:
  *   control plane, index 0   kubeadm init behind the VIP, install the CNI (flannel, pinned
- *                            and bound to the private interface), the pgcloud-block
+ *                            and bound to the private interface), the prgd-block
  *                            StorageClass, issue join tokens (24 hour TTL, POST /join-token
  *                            for later joins), upload certificates for the other control
  *                            plane nodes, label and taint
@@ -21,7 +21,7 @@ export const FLANNEL_MANIFEST = 'https://github.com/flannel-io/flannel/releases/
  *                            the platform attached, and remove nodes that left the cluster
  *   control plane, others    kubeadm join --control-plane
  *   workers                  kubeadm join, then format and mount block volumes assigned to
- *                            them under /var/lib/pgcloud/volumes/<id>
+ *                            them under /var/lib/prgd/volumes/<id>
  *
  * Every node's kubelet uses the private address (--node-ip). Control plane nodes renew the
  * kubeadm certificates monthly, one node a day apart, and take a daily etcd snapshot that
@@ -29,7 +29,7 @@ export const FLANNEL_MANIFEST = 'https://github.com/flannel-io/flannel/releases/
  *
  * GET /status on node 0 also carries the admin kubeconfig, the CA hash the joiners need,
  * node readiness, LoadBalancer Services and pending PersistentVolumeClaims of the
- * pgcloud-block class. The control plane turns those into load balancers and volumes and
+ * prgd-block class. The control plane turns those into load balancers and volumes and
  * feeds the results back in the next config.
  */
 export interface KubeNodeInit {
@@ -51,44 +51,44 @@ write_files:
     content: |
       overlay
       br_netfilter
-  - path: /etc/sysctl.d/90-pgcloud-k8s.conf
+  - path: /etc/sysctl.d/90-prgd-k8s.conf
     content: |
       net.bridge.bridge-nf-call-iptables = 1
       net.bridge.bridge-nf-call-ip6tables = 1
       net.ipv4.ip_forward = 1
       net.ipv4.ip_nonlocal_bind = 1
-  - path: /opt/pgcloud/vm.secret
+  - path: /opt/prgd/vm.secret
     permissions: '0600'
     content: '${d.vmSecret}'
-  - path: /opt/pgcloud/kube.version
+  - path: /opt/prgd/kube.version
     content: '${d.version}'
-  - path: /opt/pgcloud/vip.network
+  - path: /opt/prgd/vip.network
     content: '${d.vipNetwork}'
-  - path: /etc/systemd/system/pgcloud-k8sd.service
+  - path: /etc/systemd/system/prgd-k8sd.service
     content: |
       [Unit]
-      Description=pgcloud kubernetes node agent
+      Description=prgd kubernetes node agent
       After=network-online.target
       [Service]
-      ExecStart=/usr/bin/python3 /opt/pgcloud/k8sd.py
+      ExecStart=/usr/bin/python3 /opt/prgd/k8sd.py
       Restart=always
       RestartSec=2
       [Install]
       WantedBy=multi-user.target
-  - path: /opt/pgcloud/k8sd.py
+  - path: /opt/prgd/k8sd.py
     permissions: '0755'
     content: |
       #!/usr/bin/env python3
-      # pgcloud managed Kubernetes node agent. Standard library only.
+      # prgd managed Kubernetes node agent. Standard library only.
       import base64, glob, http.server, json, os, re, shutil, subprocess, threading, time, urllib.request, urllib.parse
-      SECRET = open('/opt/pgcloud/vm.secret').read().strip()
-      STATE = '/opt/pgcloud/state.json'
-      LAST = '/opt/pgcloud/last-config.json'
+      SECRET = open('/opt/prgd/vm.secret').read().strip()
+      STATE = '/opt/prgd/state.json'
+      LAST = '/opt/prgd/last-config.json'
       lock = threading.Lock()
       slock = threading.Lock()
       FLANNEL = '${FLANNEL_MANIFEST}'
       CRICTL = 'crictl --runtime-endpoint unix:///run/containerd/containerd.sock '
-      SNAPSHOTS = '/var/lib/pgcloud/etcd-snapshots'
+      SNAPSHOTS = '/var/lib/prgd/etcd-snapshots'
 
       def sh(cmd, check=True, timeout=900, env=None):
           r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout, env=env)
@@ -106,7 +106,7 @@ ${agentNetPy(6)}
           with slock:
               st = state(); st.update(kw); save(st)
       def log(msg):
-          try: open('/var/log/pgcloud-k8sd.log', 'a').write(time.strftime('%Y-%m-%dT%H:%M:%SZ ', time.gmtime()) + msg + '\\n')
+          try: open('/var/log/prgd-k8sd.log', 'a').write(time.strftime('%Y-%m-%dT%H:%M:%SZ ', time.gmtime()) + msg + '\\n')
           except Exception: pass
       def last_config():
           try: return json.load(open(LAST))
@@ -141,7 +141,7 @@ ${agentNetPy(6)}
 
       def keepalived(c, m):
           # VRRP runs unicast between the control plane nodes over the private network; the VIP
-          # sits on the interface named by /opt/pgcloud/vip.network.
+          # sits on the interface named by /opt/prgd/vip.network.
           peers = [n['ip'] for n in c['cluster']['nodes'] if n['role'] == 'control' and not n['isSelf']]
           uni = ("  unicast_src_ip %s\\n  unicast_peer { %s }\\n" % (private_ipv4() or m['ip'], ' '.join(peers))) if peers else ''
           text = "vrrp_script chk_api {\\n  script \\"/usr/bin/curl -sfk https://127.0.0.1:6443/healthz\\"\\n  interval 2\\n  fall 3\\n  rise 2\\n}\\nvrrp_instance VI_k8s {\\n  state BACKUP\\n  interface %s\\n  virtual_router_id %d\\n  priority %d\\n  advert_int 1\\n%s  authentication { auth_type PASS auth_pass %s }\\n  virtual_ipaddress { %s/%d dev %s }\\n  track_script { chk_api }\\n}\\n" % (private_iface() or 'eth0', c['cluster']['vrid'], 100 - m['index'], uni, c['cluster']['vrrpPass'], c['cluster']['vip'], c['cluster']['prefix'], vip_iface())
@@ -158,14 +158,14 @@ ${agentNetPy(6)}
           init = {'apiVersion': 'kubeadm.k8s.io/v1beta4', 'kind': 'InitConfiguration', 'certificateKey': c['certKey'],
                   'bootstrapTokens': [{'token': c['joinToken'], 'ttl': '24h'}],
                   'localAPIEndpoint': {'advertiseAddress': node_ip(m)}, 'nodeRegistration': {'name': m['name']}}
-          write('/opt/pgcloud/kubeadm.json', json.dumps(cfg) + '\\n---\\n' + json.dumps(init), 0o600)
-          sh('kubeadm init --config /opt/pgcloud/kubeadm.json --upload-certs', timeout=1200)
+          write('/opt/prgd/kubeadm.json', json.dumps(cfg) + '\\n---\\n' + json.dumps(init), 0o600)
+          sh('kubeadm init --config /opt/prgd/kubeadm.json --upload-certs', timeout=1200)
           # Flannel from a pinned release, with the cluster's pod network and VXLAN on the private interface.
           manifest = sh('curl -fsSL %s' % FLANNEL, timeout=120).replace('10.244.0.0/16', c['podCidr'])
           iface = private_iface() or 'eth0'
           manifest = re.sub(r'\\n(\\s*)- --kube-subnet-mgr', lambda x: x.group(0) + '\\n' + x.group(1) + '- --iface=' + iface, manifest, count=1)
           kubectl('apply -f -', inp=manifest)
-          kubectl('apply -f -', inp=json.dumps({'apiVersion': 'storage.k8s.io/v1', 'kind': 'StorageClass', 'metadata': {'name': 'pgcloud-block', 'annotations': {'storageclass.kubernetes.io/is-default-class': 'true'}}, 'provisioner': 'pgcloud.dev/block', 'volumeBindingMode': 'WaitForFirstConsumer', 'reclaimPolicy': 'Delete'}))
+          kubectl('apply -f -', inp=json.dumps({'apiVersion': 'storage.k8s.io/v1', 'kind': 'StorageClass', 'metadata': {'name': 'prgd-block', 'annotations': {'storageclass.kubernetes.io/is-default-class': 'true'}}, 'provisioner': 'prgd.dev/block', 'volumeBindingMode': 'WaitForFirstConsumer', 'reclaimPolicy': 'Delete'}))
 
       def join(c, m, control):
           extra = ' --control-plane --certificate-key ' + c['certKey'] + ' --apiserver-advertise-address ' + node_ip(m) if control else ''
@@ -187,8 +187,8 @@ ${agentNetPy(6)}
                   kubectl('-n %s patch svc %s --subresource=status -p %s' % (ns, name, json.dumps(json.dumps({'status': {'loadBalancer': {'ingress': [{'ip': svc['ip']}]}}}))), check=False)
           # PersistentVolumes for block volumes that a worker has mounted.
           for pv in c.get('pvs') or []:
-              spec = {'apiVersion': 'v1', 'kind': 'PersistentVolume', 'metadata': {'name': pv['name'], 'labels': {'pgcloud.dev/volume': pv['volumeId']}},
-                      'spec': {'capacity': {'storage': '%dGi' % pv['sizeGb']}, 'accessModes': ['ReadWriteOnce'], 'persistentVolumeReclaimPolicy': 'Retain', 'storageClassName': 'pgcloud-block', 'volumeMode': 'Filesystem',
+              spec = {'apiVersion': 'v1', 'kind': 'PersistentVolume', 'metadata': {'name': pv['name'], 'labels': {'prgd.dev/volume': pv['volumeId']}},
+                      'spec': {'capacity': {'storage': '%dGi' % pv['sizeGb']}, 'accessModes': ['ReadWriteOnce'], 'persistentVolumeReclaimPolicy': 'Retain', 'storageClassName': 'prgd-block', 'volumeMode': 'Filesystem',
                                'local': {'path': pv['path']}, 'claimRef': {'namespace': pv['pvcNamespace'], 'name': pv['pvcName']},
                                'nodeAffinity': {'required': {'nodeSelectorTerms': [{'matchExpressions': [{'key': 'kubernetes.io/hostname', 'operator': 'In', 'values': [pv['node']]}]}]}}}}
               kubectl('apply -f -', inp=json.dumps(spec), check=False)
@@ -204,7 +204,7 @@ ${agentNetPy(6)}
               devs = glob.glob('/dev/disk/by-id/*%s*' % v['serial'])
               devs = [d for d in devs if '-part' not in d]
               if not devs: continue
-              dev = devs[0]; path = '/var/lib/pgcloud/volumes/' + v['id']
+              dev = devs[0]; path = '/var/lib/prgd/volumes/' + v['id']
               if 'ext4' not in sh('blkid -o value -s TYPE %s' % dev, check=False): sh('mkfs.ext4 -F -q %s' % dev)
               os.makedirs(path, exist_ok=True)
               if path not in sh('mount', check=False): sh('mount %s %s' % (dev, path))
@@ -212,7 +212,7 @@ ${agentNetPy(6)}
               if path not in fstab: open('/etc/fstab', 'a').write('%s %s ext4 defaults,nofail 0 2\\n' % (dev, path))
               mounted.append(v['id'])
           # Volumes that left the config are unmounted so they can be detached.
-          for path in glob.glob('/var/lib/pgcloud/volumes/*'):
+          for path in glob.glob('/var/lib/prgd/volumes/*'):
               vid = os.path.basename(path)
               if vid not in [v['id'] for v in c.get('volumes') or []]:
                   sh('umount %s' % path, check=False); os.rmdir(path) if os.path.isdir(path) and not os.listdir(path) else None
@@ -258,7 +258,7 @@ ${agentNetPy(6)}
                   out['pvcs'] = [{'namespace': p['metadata']['namespace'], 'name': p['metadata']['name'], 'uid': p['metadata']['uid'], 'phase': (p.get('status') or {}).get('phase'),
                                   'sizeGb': size_gb(((p['spec'].get('resources') or {}).get('requests') or {}).get('storage', '10Gi')),
                                   'node': (p['metadata'].get('annotations') or {}).get('volume.kubernetes.io/selected-node')}
-                                 for p in pvcs.get('items', []) if p['spec'].get('storageClassName') == 'pgcloud-block']
+                                 for p in pvcs.get('items', []) if p['spec'].get('storageClassName') == 'prgd-block']
                   out['apiHealthy'] = 'ok' in sh('curl -sfk https://127.0.0.1:6443/healthz', check=False)
               except Exception as e:
                   out['error'] = str(e)[-300:]
@@ -272,10 +272,10 @@ ${indentBlock(AGENT_S3_PY, 6)}
           cid = (sh(CRICTL + 'ps --name etcd -q', check=False).split() or [None])[0]
           if not cid: raise RuntimeError('etcd container not found')
           # etcd runs as a static pod with /var/lib/etcd mounted, so the snapshot lands on the host.
-          sh(CRICTL + 'exec %s etcdctl --endpoints=https://127.0.0.1:2379 --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key snapshot save /var/lib/etcd/pgcloud-snapshot.db' % cid, timeout=600)
+          sh(CRICTL + 'exec %s etcdctl --endpoints=https://127.0.0.1:2379 --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key snapshot save /var/lib/etcd/prgd-snapshot.db' % cid, timeout=600)
           name = 'etcd-%s-%s.db' % (m['name'], time.strftime('%Y%m%dT%H%M%SZ', time.gmtime()))
           path = SNAPSHOTS + '/' + name
-          shutil.move('/var/lib/etcd/pgcloud-snapshot.db', path); os.chmod(path, 0o600)
+          shutil.move('/var/lib/etcd/prgd-snapshot.db', path); os.chmod(path, 0o600)
           if c.get('backup'):
               s3_put(c['backup'], c['cluster']['name'] + '/etcd/' + name, path); os.remove(path)
           # Local copies are kept for seven days.
@@ -286,7 +286,7 @@ ${indentBlock(AGENT_S3_PY, 6)}
       def renew_certs():
           sh('kubeadm certs renew all', timeout=600)
           # Static pods read certificates at start: restart them one at a time so the node keeps serving.
-          hold = '/etc/kubernetes/pgcloud-restart'; os.makedirs(hold, exist_ok=True)
+          hold = '/etc/kubernetes/prgd-restart'; os.makedirs(hold, exist_ok=True)
           for pod in ('etcd', 'kube-apiserver', 'kube-controller-manager', 'kube-scheduler'):
               src = '/etc/kubernetes/manifests/%s.yaml' % pod
               if not os.path.exists(src): continue
@@ -315,10 +315,10 @@ ${indentBlock(AGENT_S3_PY, 6)}
           def log_message(self, *a): pass
           def do_GET(self):
               if self.path != '/status': return self._send(404, {})
-              if self.headers.get('X-Pgcloud-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
+              if self.headers.get('X-Prgd-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
               self._send(200, status())
           def do_POST(self):
-              if self.headers.get('X-Pgcloud-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
+              if self.headers.get('X-Prgd-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
               n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
               if self.path == '/join-token':
                   # A fresh bootstrap token for nodes joining later, valid 24 hours.
@@ -355,6 +355,6 @@ runcmd:
   - echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${d.version}/deb/ /' > /etc/apt/sources.list.d/kubernetes.list
   - apt-get update -qq && apt-get install -y -qq kubelet kubeadm kubectl && apt-mark hold kubelet kubeadm kubectl
   - systemctl enable --now kubelet
-  - systemctl daemon-reload && systemctl enable --now pgcloud-k8sd
+  - systemctl daemon-reload && systemctl enable --now prgd-k8sd
 `;
 }

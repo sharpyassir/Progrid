@@ -13,7 +13,7 @@ Create one under **Security, Firewalls**: for each rule choose the direction, pr
 
 Attach it from the firewall page or from the server's **Networking** tab. Changes apply within seconds to every attached server. A server with no firewall accepts everything.
 
-From the terminal, `pgcloud firewalls` lists them; creating and attaching is done in the console or through the API (`POST /v1/firewalls`, `POST /v1/firewalls/{id}/servers`).
+From the terminal, `prgd firewalls` lists them; creating and attaching is done in the console or through the API (`POST /v1/firewalls`, `POST /v1/firewalls/{id}/servers`).
 
 ## Addresses
 

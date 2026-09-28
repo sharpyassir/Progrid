@@ -5,7 +5,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { Actor, scopesForRole, staffScopes } from '../../common/auth/actor';
 import { loadConfig } from '../../config/config';
 
-const TOKEN_PREFIX = 'pgc_';
+const TOKEN_PREFIX = 'prgd_';
 
 export interface IssuedToken {
   id: string;

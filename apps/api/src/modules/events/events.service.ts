@@ -38,7 +38,7 @@ interface EmitContext {
 /**
  * Single place every domain event goes through:
  *  1. audit log row
- *  2. internal NATS fan-out (`pgcloud.events.<name>`) for other modules / AI ops
+ *  2. internal NATS fan-out (`prgd.events.<name>`) for other modules / AI ops
  *  3. queued webhook deliveries for customer-facing events
  */
 @Injectable()
@@ -95,7 +95,7 @@ export class EventsService {
         const res = await fetch(d.webhook.url, {
           method: 'POST',
           redirect: 'manual',
-          headers: { 'content-type': 'application/json', 'x-pgcloud-signature': `t=${timestamp},v1=${signature}`, 'x-pgcloud-timestamp': timestamp, 'x-pgcloud-event': d.event },
+          headers: { 'content-type': 'application/json', 'x-prgd-signature': `t=${timestamp},v1=${signature}`, 'x-prgd-timestamp': timestamp, 'x-prgd-event': d.event },
           body,
           signal: AbortSignal.timeout(10_000),
         });

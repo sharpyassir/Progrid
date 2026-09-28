@@ -10,7 +10,7 @@ order: 17
 DNS hosting is free. Add the domain from the console under **DNS**, from the CLI, or the API:
 
 ```
-pgcloud domains add example.com --ip 203.0.113.5
+prgd domains add example.com --ip 203.0.113.5
 ```
 
 ```
@@ -42,9 +42,9 @@ Names are relative to the zone: `www`, `_dmarc`, `*.dev`, or `@` for the zone it
 30 seconds to a week, 3600 by default.
 
 ```
-pgcloud domains records example.com add A www 203.0.113.5 --ttl 300
-pgcloud domains records example.com add MX @ mail.example.com --priority 10
-pgcloud domains records example.com add TXT @ "v=spf1 mx -all"
+prgd domains records example.com add A www 203.0.113.5 --ttl 300
+prgd domains records example.com add MX @ mail.example.com --priority 10
+prgd domains records example.com add TXT @ "v=spf1 mx -all"
 ```
 
 Every change bumps the zone serial and is pushed to the nameservers within seconds; the zone
@@ -56,12 +56,12 @@ the previous TTL runs out, so lower the TTL a day before a planned move.
 ## Reverse DNS
 
 Set the PTR for any public IP in your project from the **Public IPs** page, with
-`pgcloud domains rdns IP_ID mail.example.com`, or `PUT /v1/public-ips/{id}/reverse-dns`. Mail
+`prgd domains rdns IP_ID mail.example.com`, or `PUT /v1/public-ips/{id}/reverse-dns`. Mail
 servers should have a PTR that matches their forward A record. Clear it by sending `null`.
 
 ## Terraform, SDKs and agents
 
-Terraform manages zones with `pgcloud_domain` and records with `pgcloud_dns_record`. The SDKs
+Terraform manages zones with `prgd_domain` and records with `prgd_dns_record`. The SDKs
 expose `domains` with record helpers and `setReverseDns`. Agent tokens need `dns:read` and
 `dns:write`; the MCP server exposes `list_domains`, `create_domain` and `dns_record`.
 

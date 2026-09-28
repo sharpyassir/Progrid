@@ -51,7 +51,7 @@ export default function KubernetesPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Kubernetes</h1>
-        <p className="text-sm text-neutral-500">Clusters we bootstrap and keep healthy. A single control plane is included; three control plane nodes behind one address cost a flat fee. Worker nodes are billed as servers. Services of type LoadBalancer get a load balancer, and pgcloud-block claims get a volume, on their own.</p>
+        <p className="text-sm text-neutral-500">Clusters we bootstrap and keep healthy. A single control plane is included; three control plane nodes behind one address cost a flat fee. Worker nodes are billed as servers. Services of type LoadBalancer get a load balancer, and prgd-block claims get a volume, on their own.</p>
       </div>
       {error && <p className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:bg-red-950/30">{error}</p>}
 

@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 
 /**
  * Resolves `Authorization: Bearer …` into an Actor and enforces `@RequireScopes`.
- * Accepts API tokens (`pgc_…`) and console session JWTs.
+ * Accepts API tokens (`prgd_…`) and console session JWTs.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {

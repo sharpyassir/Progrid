@@ -16,7 +16,7 @@ class ConnectDto { @IsInt() installationId: number; @IsString() state: string; }
 export class GithubController {
   constructor(private readonly github: GithubService, private readonly deploys: DeployService, @Inject(forwardRef(() => AppPlatformService)) private readonly apps: AppPlatformService) {}
 
-  /** Is the GitHub App configured on this installation of pgcloud? */
+  /** Is the GitHub App configured on this installation of prgd? */
   @Get('app')
   app() {
     return { enabled: this.github.enabled };

@@ -40,7 +40,7 @@ describe('managed Kubernetes', () => {
     expect(wAgent!.st.initialized).toBe(true);
     const self = wAgent!.last!.cluster.nodes.find((n: { isSelf: boolean }) => n.isSelf);
     expect(self.ip).toBe(worker.server.privateIp);
-    expect(self.labels).toEqual({ 'pgcloud.dev/pool': 'workers', tier: 'web' });
+    expect(self.labels).toEqual({ 'prgd.dev/pool': 'workers', tier: 'web' });
 
     // A day later the bootstrap token from creation has expired: scaling up must get a new one from node 0.
     const before = await s.prisma.kubeCluster.findUniqueOrThrow({ where: { id: created.id } });
@@ -131,7 +131,7 @@ describe('Kubernetes cloud controller', () => {
     const lbAgent = await s.agents.inspect(lbNode.serverId);
     for (const w of workers) expect(lbAgent!.last!.haproxyCfg).toContain(`${w.server.privateIp}:30080`);
 
-    // A pgcloud-block claim the scheduler put on the first worker.
+    // A prgd-block claim the scheduler put on the first worker.
     await s.agents.kubectlApply(clusterName, { kind: 'PersistentVolumeClaim', namespace: 'web', name: 'data', sizeGb: 20, node: workers[0].server.name });
     cluster = await settle();
     expect(cluster.cloud.volumes).toHaveLength(1);

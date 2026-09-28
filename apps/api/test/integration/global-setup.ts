@@ -10,7 +10,7 @@ import Redis from 'ioredis';
  * and checks that Temporal answers. Everything the tests need is created here or by the tests.
  */
 export default async function setup() {
-  const dbUrl = process.env.IT_DATABASE_URL ?? 'postgresql://pgcloud:pgcloud@localhost:5432/pgcloud_test';
+  const dbUrl = process.env.IT_DATABASE_URL ?? 'postgresql://prgd:prgd@localhost:5432/prgd_test';
   const redisUrl = process.env.IT_REDIS_URL ?? 'redis://localhost:6379/5';
   const temporal = process.env.TEMPORAL_ADDRESS ?? 'localhost:7233';
   const root = resolve(__dirname, '../..');

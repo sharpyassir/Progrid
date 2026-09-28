@@ -16,7 +16,7 @@ Volumes are charged per GB per month from the moment they exist, attached or not
 From the console open **Volumes**, give it a name and a size, and pick the server to attach it to. From the CLI:
 
 ```
-pgcloud volumes create web-data --size 100 --server web-1
+prgd volumes create web-data --size 100 --server web-1
 ```
 
 Or through the API:
@@ -43,7 +43,7 @@ Add the same path to `/etc/fstab` with `nofail` so a detached volume does not bl
 
 ## Grow
 
-Volumes only grow. Resize from the console, with `pgcloud volumes resize ID --size 250`, or `POST /v1/volumes/{id}/resize`. An attached volume grows live; then extend the file system in the guest:
+Volumes only grow. Resize from the console, with `prgd volumes resize ID --size 250`, or `POST /v1/volumes/{id}/resize`. An attached volume grows live; then extend the file system in the guest:
 
 ```
 sudo resize2fs /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_<serial>   # ext4
@@ -52,11 +52,11 @@ sudo xfs_growfs /mnt/data                                          # xfs
 
 ## Detach and delete
 
-Unmount the file system in the guest first, then detach from the console, with `pgcloud volumes detach ID`, or `POST /v1/volumes/{id}/detach`. A volume must be detached before you delete it, and deleting destroys the data with no undo.
+Unmount the file system in the guest first, then detach from the console, with `prgd volumes detach ID`, or `POST /v1/volumes/{id}/detach`. A volume must be detached before you delete it, and deleting destroys the data with no undo.
 
 ## Terraform, SDKs and agents
 
-Terraform manages a volume with the `pgcloud_volume` resource; `size_gb` grows in place and `server_id` attaches, detaches or moves it. The TypeScript and Python SDKs expose `volumes.create`, `attach`, `detach`, `resize`, `delete` and a `waitUntilSettled` helper. Agent tokens need the `volumes:read` and `volumes:write` scopes; the MCP server exposes `list_volumes`, `create_volume` and `volume_action`.
+Terraform manages a volume with the `prgd_volume` resource; `size_gb` grows in place and `server_id` attaches, detaches or moves it. The TypeScript and Python SDKs expose `volumes.create`, `attach`, `detach`, `resize`, `delete` and a `waitUntilSettled` helper. Agent tokens need the `volumes:read` and `volumes:write` scopes; the MCP server exposes `list_volumes`, `create_volume` and `volume_action`.
 
 ## Limits
 

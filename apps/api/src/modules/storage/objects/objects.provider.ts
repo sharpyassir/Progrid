@@ -61,7 +61,7 @@ export class FakeObjectStorage implements ObjectStorageProvider {
 
   async ensureUser() {}
   async createKey(projectId: string) {
-    const accessKey = 'PGC' + randomBytes(8).toString('hex').toUpperCase();
+    const accessKey = 'PRGD' + randomBytes(8).toString('hex').toUpperCase();
     const secretKey = randomBytes(24).toString('base64url');
     this.keys.set(accessKey, { projectId, secretKey });
     return { accessKey, secretKey };
@@ -158,7 +158,7 @@ export class RgwObjectStorage implements ObjectStorageProvider {
     try {
       await this.admin('GET', 'user', { uid });
     } catch {
-      await this.admin('PUT', 'user', { uid, 'display-name': `pgcloud project ${projectId}`, 'generate-key': 'false' });
+      await this.admin('PUT', 'user', { uid, 'display-name': `prgd project ${projectId}`, 'generate-key': 'false' });
     }
   }
   async createKey(projectId: string) {

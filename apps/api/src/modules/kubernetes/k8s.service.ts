@@ -61,7 +61,7 @@ interface CloudState {
  * Managed Kubernetes: kubeadm clusters on platform owned servers. One or three control plane
  * nodes behind a reserved address, worker pools as ordinary sized servers, a node agent that
  * does the joining, and a cloud controller that turns Services of type LoadBalancer into
- * platform load balancers and pgcloud-block PersistentVolumeClaims into attached volumes.
+ * platform load balancers and prgd-block PersistentVolumeClaims into attached volumes.
  */
 @Injectable()
 export class KubernetesService {
@@ -147,7 +147,7 @@ export class KubernetesService {
     // Daily etcd snapshots go to a platform owned bucket; without one they stay on the nodes.
     try {
       await this.storage.ensureUser(PLATFORM_PROJECT);
-      const bucket = `pgcloud-k8s-${cluster.id.toLowerCase()}`;
+      const bucket = `prgd-k8s-${cluster.id.toLowerCase()}`;
       await this.storage.createBucket(PLATFORM_PROJECT, bucket);
       const key = await this.storage.createKey(PLATFORM_PROJECT);
       await this.prisma.kubeCluster.update({ where: { id: cluster.id }, data: { backupBucket: bucket, backupAccessKey: key.accessKey, backupSecretKey: key.secretKey } });
@@ -323,7 +323,7 @@ export class KubernetesService {
 
   /**
    * The cloud controller. Services of type LoadBalancer get a platform load balancer whose
-   * targets are the cluster's workers by tag; pending pgcloud-block claims get a volume
+   * targets are the cluster's workers by tag; pending prgd-block claims get a volume
    * attached to the node the scheduler picked. Returns true when the config must be pushed.
    */
   private async reconcileCloud(c: KubeRow, st: NodeStatus, mounted: Set<string>) {
@@ -384,7 +384,7 @@ export class KubernetesService {
       if (!node) continue;
       const v = await this.volumes.create(actor, { name: volName(c, pvc.namespace, pvc.name), sizeGb: Math.max(10, pvc.sizeGb), region: c.regionId, project: c.projectId, serverId: node.serverId }).catch((e) => { this.log.warn(`volume for ${key}: ${e.message}`); return null; });
       if (!v) continue;
-      state.volumes[key] = { volumeId: v.id, node: pvc.node, sizeGb: Math.max(10, pvc.sizeGb), pvName: `pgcloud-${v.id.slice(-10)}` };
+      state.volumes[key] = { volumeId: v.id, node: pvc.node, sizeGb: Math.max(10, pvc.sizeGb), pvName: `prgd-${v.id.slice(-10)}` };
       changed = true;
     }
     for (const [key, vol] of Object.entries(state.volumes)) {
@@ -426,7 +426,7 @@ export class KubernetesService {
     const poolOf = new Map(c.pools.map((p) => [p.id, p]));
     const nodes = c.nodes.map((x) => ({
       index: x.index, name: x.server.name, role: x.role, ip: x.server.privateIp ?? x.server.publicIps[0]?.address ?? '127.0.0.1', isSelf: x.id === n.id,
-      labels: x.poolId ? { 'pgcloud.dev/pool': poolOf.get(x.poolId)?.name ?? '', ...((poolOf.get(x.poolId)?.labels as Record<string, string>) ?? {}) } : undefined,
+      labels: x.poolId ? { 'prgd.dev/pool': poolOf.get(x.poolId)?.name ?? '', ...((poolOf.get(x.poolId)?.labels as Record<string, string>) ?? {}) } : undefined,
       taints: x.poolId ? ((poolOf.get(x.poolId)?.taints as object[]) ?? []) : undefined,
     }));
     const vip = c.publicIp?.address ?? '';
@@ -440,7 +440,7 @@ export class KubernetesService {
       joinToken: c.joinToken, certKey: c.certKey, caHash: c.caHash, podCidr: c.podCidr, serviceCidr: c.serviceCidr,
       services: Object.fromEntries(Object.entries(state.services ?? {}).map(([k, v]) => [k, { ip: v.ip ?? null }])),
       volumes: volumesHere,
-      pvs: Object.entries(state.volumes ?? {}).filter(([, v]) => v.mounted).map(([key, v]) => ({ name: v.pvName, volumeId: v.volumeId, pvcNamespace: key.split('/')[0], pvcName: key.split('/')[1], node: v.node, sizeGb: v.sizeGb, path: `/var/lib/pgcloud/volumes/${v.volumeId}` })),
+      pvs: Object.entries(state.volumes ?? {}).filter(([, v]) => v.mounted).map(([key, v]) => ({ name: v.pvName, volumeId: v.volumeId, pvcNamespace: key.split('/')[0], pvcName: key.split('/')[1], node: v.node, sizeGb: v.sizeGb, path: `/var/lib/prgd/volumes/${v.volumeId}` })),
       deletePvs: state.deletePvs ?? [],
       removeNodes: state.removeNodes ?? [],
       backup: c.backupBucket ? { endpoint: cfg.S3_ENDPOINT, region: cfg.S3_REGION, bucket: c.backupBucket, accessKey: c.backupAccessKey, secretKey: c.backupSecretKey } : null,
@@ -589,7 +589,7 @@ function firewallRules(ha: boolean, privateNet: string) {
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '2379-2380', cidrs: [privateNet], description: 'etcd' },
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '10250-10260', cidrs: [privateNet], description: 'kubelet (10250) and controllers between nodes' },
     { direction: 'inbound' as const, protocol: 'udp' as const, ports: '8472', cidrs: [privateNet], description: 'flannel vxlan between nodes' },
-    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '9009', cidrs: [cp], description: 'pgcloud node agent' },
+    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '9009', cidrs: [cp], description: 'prgd node agent' },
     ...(ha ? [{ direction: 'inbound' as const, protocol: 'vrrp' as const, cidrs: [privateNet], description: 'keepalived between control plane nodes' }] : []),
     { direction: 'outbound' as const, protocol: 'any' as const, cidrs: ['0.0.0.0/0'] },
   ];

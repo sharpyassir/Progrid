@@ -70,7 +70,7 @@ export class DeployService {
         { direction: 'inbound', protocol: 'tcp', ports: '22', cidrs: ['0.0.0.0/0'] },
         { direction: 'inbound', protocol: 'tcp', ports: '80', cidrs: ['0.0.0.0/0'] },
         { direction: 'inbound', protocol: 'tcp', ports: '443', cidrs: ['0.0.0.0/0'] },
-        { direction: 'inbound', protocol: 'tcp', ports: '9009', cidrs: [loadConfig().CONTROL_PLANE_CIDR], description: 'pgcloud redeploy hook' },
+        { direction: 'inbound', protocol: 'tcp', ports: '9009', cidrs: [loadConfig().CONTROL_PLANE_CIDR], description: 'prgd redeploy hook' },
         { direction: 'outbound', protocol: 'any', cidrs: ['0.0.0.0/0'] },
       ],
     });
@@ -143,7 +143,7 @@ export class DeployService {
     return n;
   }
 
-  /** Last build log from the server (tail of /var/log/pgcloud-deploy.log), cached on the row. */
+  /** Last build log from the server (tail of /var/log/prgd-deploy.log), cached on the row. */
   async logs(actor: Actor, id: string) {
     const d = await this.prisma.deployment.findFirst({ where: { id, project: { teamId: actor.teamId } }, include: { server: { include: { publicIps: true } } } });
     if (!d) throw ApiError.notFound('deployment', id);

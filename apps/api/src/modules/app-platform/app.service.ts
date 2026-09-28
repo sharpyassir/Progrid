@@ -292,7 +292,7 @@ export class AppPlatformService {
         { direction: 'inbound', protocol: 'tcp', ports: '80', cidrs: ['0.0.0.0/0', '::/0'], description: 'http' },
         { direction: 'inbound', protocol: 'tcp', ports: '443', cidrs: ['0.0.0.0/0', '::/0'], description: 'https' },
         { direction: 'inbound', protocol: 'udp', ports: '443', cidrs: ['0.0.0.0/0', '::/0'], description: 'http3' },
-        { direction: 'inbound', protocol: 'tcp', ports: '9009', cidrs: [cfg.CONTROL_PLANE_CIDR], description: 'pgcloud app agent' },
+        { direction: 'inbound', protocol: 'tcp', ports: '9009', cidrs: [cfg.CONTROL_PLANE_CIDR], description: 'prgd app agent' },
         { direction: 'outbound', protocol: 'any', cidrs: ['0.0.0.0/0'] },
       ],
     }));
@@ -477,7 +477,7 @@ export class AppPlatformService {
   }
 
   private async ensurePlatformProject() {
-    const team = await this.prisma.team.upsert({ where: { slug: PLATFORM_TEAM }, update: {}, create: { slug: PLATFORM_TEAM, name: 'pgcloud platform', status: 'active', country: 'SA', currency: 'USD' } });
+    const team = await this.prisma.team.upsert({ where: { slug: PLATFORM_TEAM }, update: {}, create: { slug: PLATFORM_TEAM, name: 'prgd platform', status: 'active', country: 'SA', currency: 'USD' } });
     return this.prisma.project.upsert({ where: { id: PLATFORM_PROJECT }, update: {}, create: { id: PLATFORM_PROJECT, teamId: team.id, slug: PLATFORM_PROJECT, name: 'Platform', quotaServers: 10_000, quotaVcpu: 1_000_000, quotaMemoryMb: 1_000_000_000 } });
   }
 

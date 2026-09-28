@@ -1,4 +1,4 @@
-// pgcloud control plane data model.
+// prgd control plane data model.
 // Models are grouped by owning module (see docs/adr/0001-modular-monolith.md).
 // Money is always integer minor units (cents / kuruş). Time is always UTC.
 
@@ -651,7 +651,7 @@ model MarketplaceApp {
   ports       Int[]     @default([])
   variables   Json      @default("[]") // [{name,label,type,required,default}]
   cloudInit   String // rendered with variables at deploy time
-  vendorName  String    @default("pgcloud")
+  vendorName  String    @default("prgd")
   vendorRevenueShare Int @default(0) // percent, e.g. 70 for paid vendor apps
   priceMonthlyMinor  Int @default(0) // 0 = free (server cost only)
   status      AppStatus @default(draft)
@@ -766,7 +766,7 @@ enum InvoiceStatus {
 model Invoice {
   id          String        @id @default(cuid())
   teamId      String
-  number      String        @unique // "PG-2026-000123", from the invoice_number_seq sequence
+  number      String        @unique // "PRGD-2026-000123", from the invoice_number_seq sequence
   currency    Currency
   periodStart DateTime
   periodEnd   DateTime

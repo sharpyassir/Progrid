@@ -9,9 +9,9 @@ The API powers the console, the CLI, the MCP server and every SDK. There is noth
 
 ## SDKs and Terraform
 
-- **TypeScript**: `npm install @pgcloud/sdk`, types generated from the OpenAPI document, works anywhere `fetch` exists.
-- **Python**: `pip install pgcloud`, no dependencies.
-- **Terraform**: the `pgcloud/pgcloud` provider with `pgcloud_server`, `pgcloud_firewall`, `pgcloud_ssh_key` and data sources for sizes and images.
+- **TypeScript**: `npm install @prgd/sdk`, types generated from the OpenAPI document, works anywhere `fetch` exists.
+- **Python**: `pip install prgd`, no dependencies.
+- **Terraform**: the `prgd/prgd` provider with `prgd_server`, `prgd_firewall`, `prgd_ssh_key` and data sources for sizes and images.
 
 All three send an idempotency key on every write and surface API errors with their code, including `approval_required` when a person has to approve an agent's request.
 
@@ -19,10 +19,10 @@ All three send an idempotency key on every write and surface API errors with the
 
 ```
 https://api.progrid.sa/v1
-Authorization: Bearer pgc_...
+Authorization: Bearer prgd_...
 ```
 
-Tokens are created under **Managed Agents, Agent Access** or with `pgcloud tokens create`. Each token has scopes such as `servers:write` or `billing:read`; a call outside its scopes fails with `403 forbidden`.
+Tokens are created under **Managed Agents, Agent Access** or with `prgd tokens create`. Each token has scopes such as `servers:write` or `billing:read`; a call outside its scopes fails with `403 forbidden`.
 
 ## Requests and responses
 
@@ -61,4 +61,4 @@ Webhook events for monitoring are `alert.triggered` and `alert.resolved`; see th
 
 ## Webhooks
 
-Register a URL under **Projects, Webhooks** with the events you want, such as `server.active`, `invoice.issued` or `approval.requested`. Every delivery carries `X-Pgcloud-Signature: t=<unix seconds>,v1=<hex>` where the hex is HMAC SHA256 of `<t>.<body>` with the webhook secret; reject deliveries whose `t` is older than five minutes so a captured request cannot be replayed. Only https URLs on public hosts are accepted. Deliveries are retried with backoff for a day and listed with their response in the console.
+Register a URL under **Projects, Webhooks** with the events you want, such as `server.active`, `invoice.issued` or `approval.requested`. Every delivery carries `X-Prgd-Signature: t=<unix seconds>,v1=<hex>` where the hex is HMAC SHA256 of `<t>.<body>` with the webhook secret; reject deliveries whose `t` is older than five minutes so a captured request cannot be replayed. Only https URLs on public hosts are accepted. Deliveries are retried with backoff for a day and listed with their response in the console.

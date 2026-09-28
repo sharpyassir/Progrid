@@ -145,7 +145,7 @@ export default function ServerDetailPage() {
             <p className="text-neutral-500">{t(locale, 'connectNote')}</p>
             <pre className="overflow-x-auto rounded bg-neutral-900 p-3 font-mono text-xs text-neutral-100">{ip ? `ssh root@${ip}` : t(locale, 'waitingIp')}</pre>
             <p className="text-neutral-500">{t(locale, 'fromCli')}</p>
-            <pre className="overflow-x-auto rounded bg-neutral-900 p-3 font-mono text-xs text-neutral-100">{`pgcloud servers get ${server.id}\npgcloud ssh ${server.name}`}</pre>
+            <pre className="overflow-x-auto rounded bg-neutral-900 p-3 font-mono text-xs text-neutral-100">{`prgd servers get ${server.id}\nprgd ssh ${server.name}`}</pre>
           </section>
         </div>
       )}

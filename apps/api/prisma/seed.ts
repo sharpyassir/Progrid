@@ -130,7 +130,7 @@ async function main() {
   }
 
   // Dev user + team + token
-  const email = 'dev@pgcloud.local';
+  const email = 'dev@prgd.local';
   let user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
     user = await prisma.user.create({
@@ -145,15 +145,15 @@ async function main() {
     });
     const team = await prisma.team.findUniqueOrThrow({ where: { slug: 'dev' } });
     await prisma.credit.create({ data: { teamId: team.id, kind: 'promo', currency: 'SAR', amountMinor: 37500, remainingMinor: 37500, reason: 'dev seed ($100 at 3.75)' } });
-    const raw = 'pgc_' + randomBytes(32).toString('base64url');
+    const raw = 'prgd_' + randomBytes(32).toString('base64url');
     await prisma.apiToken.create({
       data: { teamId: team.id, userId: user.id, name: 'dev', prefix: raw.slice(0, 12), hash: createHash('sha256').update(raw).digest('hex'), scopes: ['servers:read', 'servers:write', 'servers:delete', 'images:read', 'snapshots:read', 'snapshots:write', 'volumes:read', 'volumes:write', 'dns:read', 'dns:write', 'storage:read', 'storage:write', 'databases:read', 'databases:write', 'kubernetes:read', 'kubernetes:write', 'network:read', 'network:write', 'apps:read', 'apps:write', 'billing:read', 'billing:write', 'support:read', 'support:write', 'iam:read', 'iam:write'] },
     });
-    const admin = 'pgc_' + randomBytes(32).toString('base64url');
+    const admin = 'prgd_' + randomBytes(32).toString('base64url');
     await prisma.apiToken.create({ data: { teamId: team.id, userId: user.id, name: 'staff-admin', prefix: admin.slice(0, 12), hash: createHash('sha256').update(admin).digest('hex'), scopes: ['admin'] } });
     console.log(`\nDev login:   ${email} / devpassword123`);
-    console.log(`Dev token:   export PGCLOUD_TOKEN=${raw}`);
-    console.log(`Admin token: export PGCLOUD_ADMIN_TOKEN=${admin}\n`);
+    console.log(`Dev token:   export PRGD_TOKEN=${raw}`);
+    console.log(`Admin token: export PRGD_ADMIN_TOKEN=${admin}\n`);
   }
   console.log('seed complete');
 }

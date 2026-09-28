@@ -18,11 +18,11 @@ The App Platform takes a repository and gives you a running app at `https://<nam
 Pick a name, which becomes the hostname, and a repository. From the console, **App Platform, New app**; from the terminal:
 
 ```sh
-pgcloud app create hello https://github.com/you/hello --port 8080 --size app-s --instances 2 --env DATABASE_URL=... --wait
-pgcloud app logs <id> --follow
+prgd app create hello https://github.com/you/hello --port 8080 --size app-s --instances 2 --env DATABASE_URL=... --wait
+prgd app logs <id> --follow
 ```
 
-From the API, `POST /v1/app-platform/apps` with `name` and either `repoUrl` (plus `gitToken` for a private repository) or `installationId` and `repo` from the GitHub App. Apps created through the GitHub App deploy again on every push to the branch; the others deploy with **Deploy now**, `pgcloud app deploy ID`, or `POST /v1/app-platform/apps/{id}/deploy`.
+From the API, `POST /v1/app-platform/apps` with `name` and either `repoUrl` (plus `gitToken` for a private repository) or `installationId` and `repo` from the GitHub App. Apps created through the GitHub App deploy again on every push to the branch; the others deploy with **Deploy now**, `prgd app deploy ID`, or `POST /v1/app-platform/apps/{id}/deploy`.
 
 The app shows `creating` while a host is chosen, `building` while the image is built, then `live`. A failed build leaves the app `failed` with the reason in the build log; fix the repository and deploy again.
 
@@ -39,17 +39,17 @@ Run up to five instances of an app; requests are spread across them and a deploy
 
 ## Configuration
 
-Environment variables, the branch, the port, the size, the instance count and the health path can be changed from the app page, with `pgcloud app env ID KEY=value` and `pgcloud app scale ID 3`, or with `PATCH /v1/app-platform/apps/{id}`. Every change builds and deploys again. Variables are stored on the platform and passed to the containers; they never appear in logs.
+Environment variables, the branch, the port, the size, the instance count and the health path can be changed from the app page, with `prgd app env ID KEY=value` and `prgd app scale ID 3`, or with `PATCH /v1/app-platform/apps/{id}`. Every change builds and deploys again. Variables are stored on the platform and passed to the containers; they never appear in logs.
 
 The health path (default `/`) is checked on new instances before they take traffic and every ten seconds after that.
 
 ## Custom domains
 
-Add a domain on the app page or with `pgcloud app domains ID add app.example.com`. The domain is served only after it is verified, which proves it is yours: either point a CNAME from the domain at the app hostname, or add a TXT record at `_progrid-verify.<domain>` holding the token the app shows for that domain (`domains[].verification` in the API). The platform checks every five minutes for a week, or right away with `POST /v1/app-platform/apps/{id}/domains/{domain}/verify`. The certificate is issued on the first request after that. A domain can be attached to one app at a time.
+Add a domain on the app page or with `prgd app domains ID add app.example.com`. The domain is served only after it is verified, which proves it is yours: either point a CNAME from the domain at the app hostname, or add a TXT record at `_progrid-verify.<domain>` holding the token the app shows for that domain (`domains[].verification` in the API). The platform checks every five minutes for a week, or right away with `POST /v1/app-platform/apps/{id}/domains/{domain}/verify`. The certificate is issued on the first request after that. A domain can be attached to one app at a time.
 
 ## Logs
 
-The build log shows the clone, the image build and the instance start. The runtime log holds every instance's output, the last 300 lines of each under its own heading. Both are on the app page, `pgcloud app logs ID [--runtime] [--follow]`, and `GET /v1/app-platform/apps/{id}/logs?type=build|runtime`.
+The build log shows the clone, the image build and the instance start. The runtime log holds every instance's output, the last 300 lines of each under its own heading. Both are on the app page, `prgd app logs ID [--runtime] [--follow]`, and `GET /v1/app-platform/apps/{id}/logs?type=build|runtime`.
 
 ## Limits
 

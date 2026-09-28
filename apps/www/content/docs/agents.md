@@ -12,7 +12,7 @@ An agent is just another API client. What makes it safe is the token you give it
 In the console under **Managed Agents, Agent Access**, or from the terminal:
 
 ```sh
-pgcloud tokens create claude --agent --cap 15
+prgd tokens create claude --agent --cap 15
 ```
 
 This token can read and create servers and deploys, may spend at most $15 per month, and must ask before deleting a server or resizing one down. The token is shown once. Copy it.
@@ -22,7 +22,7 @@ This token can read and create servers and deploys, may spend at most $15 per mo
 The MCP server exposes Progrid as tools to any MCP client.
 
 ```sh
-claude mcp add pgcloud -e PGCLOUD_TOKEN=pgc_... -- npx -y pgcloud-mcp
+claude mcp add prgd -e PRGD_TOKEN=prgd_... -- npx -y prgd-mcp
 ```
 
 For Cursor or another client, add the same command to its MCP settings. The tools are `list_servers`, `get_server`, `list_sizes`, `list_images`, `create_server`, `server_action`, `delete_server`, `deploy_repository`, `list_deployments`, `redeploy`, `get_billing`, `list_firewalls` and `get_approval`.
@@ -45,7 +45,7 @@ Any language works. The token goes in the `Authorization` header:
 
 ```sh
 curl https://api.progrid.sa/v1/servers \
-  -H "Authorization: Bearer pgc_..." \
+  -H "Authorization: Bearer prgd_..." \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{"name":"staging","size":"s-1vcpu-1gb","image":"ubuntu-24-04"}'

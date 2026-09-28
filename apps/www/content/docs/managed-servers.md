@@ -18,11 +18,11 @@ The agent is a single shell script and a standard library Python reporter. It ke
 
 ## Turning it on
 
-Tick **Managed** when you create a server, pass `managed: true` to `POST /v1/servers`, use `pgcloud servers create web-1 --managed`, or set `managed = true` in Terraform. The agent installs during first boot alongside any cloud-init you supplied.
+Tick **Managed** when you create a server, pass `managed: true` to `POST /v1/servers`, use `prgd servers create web-1 --managed`, or set `managed = true` in Terraform. The agent installs during first boot alongside any cloud-init you supplied.
 
-An existing server can be switched later from its page, with `pgcloud servers managed ID on`, or `PATCH /v1/servers/{id}` with `managed: true`. cloud-init has already run on a running server, so the page shows a one line install command to run once as root; `pgcloud servers managed ID status` shows the same command until the first report arrives. A rebuild installs it on its own.
+An existing server can be switched later from its page, with `prgd servers managed ID on`, or `PATCH /v1/servers/{id}` with `managed: true`. cloud-init has already run on a running server, so the page shows a one line install command to run once as root; `prgd servers managed ID status` shows the same command until the first report arrives. A rebuild installs it on its own.
 
-Turning managed off stops the charge and the reports at once. The agent stays installed but its reports are refused; remove it with `apt-get remove unattended-upgrades fail2ban` and `systemctl disable --now pgcloud-managed.timer` if you no longer want it.
+Turning managed off stops the charge and the reports at once. The agent stays installed but its reports are refused; remove it with `apt-get remove unattended-upgrades fail2ban` and `systemctl disable --now prgd-managed.timer` if you no longer want it.
 
 ## Pricing
 

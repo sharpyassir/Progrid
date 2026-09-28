@@ -20,7 +20,7 @@ describe('reminderStageFor', () => {
 
 describe('document numbers', () => {
   it('pads the sequence to six digits', () => {
-    expect(invoiceNumber(2026, 123)).toBe('PG-2026-000123');
+    expect(invoiceNumber(2026, 123)).toBe('PRGD-2026-000123');
     expect(creditNoteNumber(2026, BigInt(45))).toBe('CN-2026-000045');
   });
 });

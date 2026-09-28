@@ -101,7 +101,7 @@ export class ManagedCareController {
   }
 
   @Public() @Post('report') @HttpCode(200)
-  report(@Headers('x-pgcloud-managed-token') token: string | undefined, @Body() body: ManagedReport) {
+  report(@Headers('x-prgd-managed-token') token: string | undefined, @Body() body: ManagedReport) {
     return this.care.report(token, body ?? {});
   }
 }

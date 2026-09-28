@@ -21,7 +21,7 @@ Before a new team can create anything billable, it adds credit once: open **Bill
 
 ## Credit and invoices
 
-Usage is drawn from credit first. On the first of each month an invoice is issued for the previous month, with an ZATCA e-invoice for Saudi companies, and the team owners and the billing email get an email. Invoices are numbered in one sequence (for example `PG-2026-000123`) and are due 14 days after they are issued. The console shows month to date spend, every invoice with a PDF, and every card payment.
+Usage is drawn from credit first. On the first of each month an invoice is issued for the previous month, with an ZATCA e-invoice for Saudi companies, and the team owners and the billing email get an email. Invoices are numbered in one sequence (for example `PRGD-2026-000123`) and are due 14 days after they are issued. The console shows month to date spend, every invoice with a PDF, and every card payment.
 
 The name, VAT number, billing address and country printed on your invoices come from the **Team** page. Saudi businesses should enter their 15 digit VAT number there before the invoice is issued.
 
@@ -32,10 +32,10 @@ The name, VAT number, billing address and country printed on your invoices come 
 **Pay an invoice** the same way with the **Pay** button next to any open invoice, or from the terminal:
 
 ```sh
-pgcloud billing                 # balance and month to date
-pgcloud billing invoices
-pgcloud billing topup 25        # prints the payment page to open
-pgcloud billing pay INVOICE_ID
+prgd billing                 # balance and month to date
+prgd billing invoices
+prgd billing topup 25        # prints the payment page to open
+prgd billing pay INVOICE_ID
 ```
 
 If you already opened a payment page for an invoice in the last 30 minutes, **Pay** takes you back to that same page instead of starting a second payment.
@@ -77,4 +77,4 @@ Each project can have a monthly limit, and each agent token can have its own cap
 | One click app | the server price plus the app's price, if any |
 | Bandwidth | outbound transfer up to the size's monthly allowance is included; beyond it, per GB in the calendar month |
 
-The live price list is at `GET /v1/pricing` and in `pgcloud sizes`.
+The live price list is at `GET /v1/pricing` and in `prgd sizes`.

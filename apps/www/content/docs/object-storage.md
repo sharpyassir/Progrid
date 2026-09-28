@@ -11,7 +11,7 @@ A bucket is an S3 compatible container for files. Create one from the console un
 storage**, from the CLI, or the API:
 
 ```
-pgcloud buckets create acme-assets
+prgd buckets create acme-assets
 ```
 
 ```
@@ -28,7 +28,7 @@ buckets need a key or a presigned URL.
 
 ## Access keys
 
-Create a key from the console or with `pgcloud buckets keys create ci`. The secret is shown
+Create a key from the console or with `prgd buckets keys create ci`. The secret is shown
 once. Keys work for every bucket in the project, and revoking one cuts off its clients at
 once. Point any S3 client at our endpoint:
 
@@ -51,9 +51,9 @@ The console browses a bucket by prefix, uploads through your browser, downloads 
 The CLI does the same:
 
 ```
-pgcloud buckets upload acme-assets ./logo.png --key img/logo.png
-pgcloud buckets ls acme-assets --prefix img/
-pgcloud buckets download acme-assets img/logo.png
+prgd buckets upload acme-assets ./logo.png --key img/logo.png
+prgd buckets ls acme-assets --prefix img/
+prgd buckets download acme-assets img/logo.png
 ```
 
 Both use presigned URLs from `POST /v1/buckets/{name}/presign`: a short lived link to GET,
@@ -62,7 +62,7 @@ upload straight to storage.
 
 ## Terraform, SDKs and agents
 
-Terraform manages buckets with `pgcloud_bucket` and keys with `pgcloud_storage_key` (the
+Terraform manages buckets with `prgd_bucket` and keys with `prgd_storage_key` (the
 secret lands in state; keep state private). The SDKs expose `buckets` with `upload` and
 `presign` helpers and `storageKeys`. Agent tokens need `storage:read` and `storage:write`; the
 MCP server exposes `list_buckets`, `create_bucket`, `bucket_presign` and `create_storage_key`.

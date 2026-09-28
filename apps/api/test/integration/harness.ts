@@ -113,7 +113,7 @@ export class Client {
     const token = opts.token === null ? undefined : opts.token ?? this.token;
     const r = await fetch(this.baseUrl + path, {
       method,
-      headers: { 'x-forwarded-for': this.ip, 'user-agent': 'pgcloud-integration', ...(token ? { authorization: `Bearer ${token}` } : {}), ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
+      headers: { 'x-forwarded-for': this.ip, 'user-agent': 'prgd-integration', ...(token ? { authorization: `Bearer ${token}` } : {}), ...(body !== undefined ? { 'content-type': 'application/json' } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),
       redirect: opts.redirect ?? 'follow',
     });

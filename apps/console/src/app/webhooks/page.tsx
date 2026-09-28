@@ -43,7 +43,7 @@ export default function WebhooksPage() {
         </table>
       </div>
       <form onSubmit={create} className="card space-y-3">
-        <input className="input" name="url" type="url" placeholder="https://example.com/hooks/pgcloud" required />
+        <input className="input" name="url" type="url" placeholder="https://example.com/hooks/prgd" required />
         <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
           {events.map((ev) => <label key={ev} className="flex items-center gap-2 text-sm"><input type="checkbox" name="event" value={ev} defaultChecked={ev === 'server.active'} /> {ev}</label>)}
         </div>

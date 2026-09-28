@@ -36,7 +36,7 @@ describe('accounts and access', () => {
   it('issues API tokens limited to their scopes and never above the creator', async () => {
     const t = await signup(s);
     const tok = await t.client.ok('POST', '/v1/tokens', { name: 'ci', scopes: ['servers:read'] }, 201);
-    expect(tok.token).toMatch(/^pgc_/);
+    expect(tok.token).toMatch(/^prgd_/);
     const api = new Client(s.baseUrl, tok.token);
     expect((await api.get('/v1/servers')).status).toBe(200);
     const denied = await api.post('/v1/servers', { name: 'nope', size: 's-1vcpu-2gb', image: 'ubuntu-24-04' });

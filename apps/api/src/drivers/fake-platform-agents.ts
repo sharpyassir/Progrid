@@ -180,7 +180,7 @@ export class FakePlatformAgents {
   }
 
   /**
-   * What a customer does with kubectl: a Service of type LoadBalancer, or a pgcloud-block
+   * What a customer does with kubectl: a Service of type LoadBalancer, or a prgd-block
    * claim the scheduler placed on `node`. Node 0 reports them in its status like the real one.
    */
   async kubectlApply(clusterName: string, obj: { kind: 'Service'; namespace: string; name: string; ports: { port: number; nodePort: number; protocol?: string }[] } | { kind: 'PersistentVolumeClaim'; namespace: string; name: string; sizeGb: number; node: string }) {
@@ -578,7 +578,7 @@ export class FakePlatformAgents {
         const st = node.st.apps[aid] as Json | undefined;
         if (kind === 'runtime') {
           const n = st && st.state === 'live' && !st.stopped ? st.instances ?? 1 : 0;
-          return send(200, { log: Array.from({ length: n }, (_, i) => `=== pgcloud-${aid}-${i} ===\n${new Date().toISOString()} listening on port ${st!.port}\n`).join('') });
+          return send(200, { log: Array.from({ length: n }, (_, i) => `=== prgd-${aid}-${i} ===\n${new Date().toISOString()} listening on port ${st!.port}\n`).join('') });
         }
         return send(200, { log: st?.buildLog ?? '' });
       }
@@ -631,7 +631,7 @@ export class FakePlatformAgents {
         st.buildLog += `=== failed: ${st.error} ===\n`;
       } else {
         const commit = src.commit ?? sha(`${src.repo}#${src.branch}`).slice(0, 40);
-        Object.assign(st, { state: 'live', commit, image: `pgcloud-app-${aid}:${commit.slice(0, 12)}`, error: null });
+        Object.assign(st, { state: 'live', commit, image: `prgd-app-${aid}:${commit.slice(0, 12)}`, error: null });
         st.buildLog += `$ docker build -t ${st.image} .\nSuccessfully built ${commit.slice(0, 12)}\n=== live ===\n`;
       }
       changed = true;
@@ -679,16 +679,16 @@ function selfNode(c: Json): Json {
 
 /** Which agent a VM's cloud-init installs, and the files that agent reads at start. */
 export function parseAgent(userData: string): Partial<FakeNode> {
-  const kind: Kind | undefined = userData.includes('/opt/pgcloud/lbd.py') ? 'lb'
-    : userData.includes('/opt/pgcloud/dbd.py') ? 'db'
-    : userData.includes('/opt/pgcloud/k8sd.py') ? 'k8s'
-    : userData.includes('/opt/pgcloud/appd.py') ? 'app'
-    : userData.includes('/opt/pgcloud/deployd.py') ? 'deploy'
+  const kind: Kind | undefined = userData.includes('/opt/prgd/lbd.py') ? 'lb'
+    : userData.includes('/opt/prgd/dbd.py') ? 'db'
+    : userData.includes('/opt/prgd/k8sd.py') ? 'k8s'
+    : userData.includes('/opt/prgd/appd.py') ? 'app'
+    : userData.includes('/opt/prgd/deployd.py') ? 'deploy'
     : undefined;
   if (!kind) return {};
   const file = (path: string) => new RegExp(`path: ${path.replace(/[.]/g, '\\.')}\\n(?:\\s+permissions: '\\d+'\\n)?\\s+content: '([^']*)'`).exec(userData)?.[1];
-  const out: Partial<FakeNode> = { kind, secret: file('/opt/pgcloud/vm.secret') };
-  if (kind === 'db') out.engine = file('/opt/pgcloud/engine') as Engine;
+  const out: Partial<FakeNode> = { kind, secret: file('/opt/prgd/vm.secret') };
+  if (kind === 'db') out.engine = file('/opt/prgd/engine') as Engine;
   if (kind === 'deploy') out.repo = { url: /REPO='([^']*)'/.exec(userData)?.[1] ?? '', branch: /BRANCH='([^']*)'/.exec(userData)?.[1] ?? 'main' };
   return out;
 }

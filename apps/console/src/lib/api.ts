@@ -1,5 +1,5 @@
 /**
- * Thin client for the pgcloud API. The console is just one API client — it uses the
+ * Thin client for the prgd API. The console is just one API client — it uses the
  * same endpoints the CLI, Terraform and agents use. Session token lives in localStorage.
  */
 import { getLocale, t } from './i18n';
@@ -16,7 +16,7 @@ export class ApiError extends Error {
 
 export function getToken() {
   try {
-    return typeof window !== 'undefined' ? localStorage.getItem('pgcloud.session') : null;
+    return typeof window !== 'undefined' ? localStorage.getItem('prgd.session') : null;
   } catch {
     return null;
   }
@@ -24,8 +24,8 @@ export function getToken() {
 
 export function setToken(t: string | null) {
   try {
-    if (t) localStorage.setItem('pgcloud.session', t);
-    else localStorage.removeItem('pgcloud.session');
+    if (t) localStorage.setItem('prgd.session', t);
+    else localStorage.removeItem('prgd.session');
   } catch {
     /* private mode */
   }

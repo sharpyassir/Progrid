@@ -208,7 +208,7 @@ export class DnsService {
         content = host(content);
         break;
       case 'NS':
-        if (name === '@') throw ApiError.invalid('The apex NS set is managed by pgcloud');
+        if (name === '@') throw ApiError.invalid('The apex NS set is managed by prgd');
         content = host(content);
         break;
       case 'MX':

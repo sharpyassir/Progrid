@@ -2,7 +2,7 @@ import { agentNetPy } from '../../common/platform-agent';
 
 /**
  * cloud-init for a load balancer node. Installs HAProxy, keepalived and certbot, and
- * `pgcloud-lbd`: a small HTTP agent on the private address, port 9009, that receives the
+ * `prgd-lbd`: a small HTTP agent on the private address, port 9009, that receives the
  * rendered config from the control plane (POST /config), validates and reloads HAProxy,
  * writes keepalived.conf, issues Let's Encrypt certificates, and reports backend health from
  * the HAProxy stats socket (GET /status). Every request carries the shared secret.
@@ -18,24 +18,24 @@ export function renderLbCloudInit(d: LbNodeInit): string {
 package_update: true
 packages: [haproxy, keepalived, certbot, python3, ca-certificates]
 write_files:
-  - path: /etc/sysctl.d/90-pgcloud-lb.conf
+  - path: /etc/sysctl.d/90-prgd-lb.conf
     content: |
       net.ipv4.ip_nonlocal_bind = 1
       net.ipv4.ip_forward = 1
-  - path: /opt/pgcloud/vip.network
+  - path: /opt/prgd/vip.network
     content: '${d.vipNetwork}'
-  - path: /opt/pgcloud/vm.secret
+  - path: /opt/prgd/vm.secret
     permissions: '0600'
     content: '${d.vmSecret}'
-  - path: /opt/pgcloud/lbd.py
+  - path: /opt/prgd/lbd.py
     permissions: '0755'
     content: |
       #!/usr/bin/env python3
-      # pgcloud load balancer agent. The control plane is the only writer of haproxy.cfg.
+      # prgd load balancer agent. The control plane is the only writer of haproxy.cfg.
       import http.server, json, os, socket, subprocess, threading, time
-      SECRET = open('/opt/pgcloud/vm.secret').read().strip()
+      SECRET = open('/opt/prgd/vm.secret').read().strip()
       CERTS = '/etc/haproxy/certs'
-      STATE = '/opt/pgcloud/lb.json'
+      STATE = '/opt/prgd/lb.json'
       os.makedirs(CERTS, exist_ok=True)
       lock = threading.Lock()
 
@@ -63,7 +63,7 @@ ${agentNetPy(6)}
           # Standalone certbot on 8402; HAProxy routes /.well-known/acme-challenge/ there.
           r = subprocess.run(['certbot', 'certonly', '--standalone', '--http-01-port', '8402', '--non-interactive', '--agree-tos', '--register-unsafely-without-email', '--cert-name', cert_id] + sum([['-d', d] for d in domains], []), capture_output=True, text=True)
           if r.returncode != 0:
-              open('/var/log/pgcloud-lbd.log', 'a').write(r.stdout + r.stderr); return
+              open('/var/log/prgd-lbd.log', 'a').write(r.stdout + r.stderr); return
           live = '/etc/letsencrypt/live/' + cert_id + '/'
           open(CERTS + '/' + cert_id + '.pem', 'w').write(open(live + 'fullchain.pem').read() + open(live + 'privkey.pem').read())
           subprocess.run(['systemctl', 'reload', 'haproxy'])
@@ -106,11 +106,11 @@ ${agentNetPy(6)}
       class H(http.server.BaseHTTPRequestHandler):
           def log_message(self, *a): pass
           def do_GET(self):
-              if self.headers.get('X-Pgcloud-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
+              if self.headers.get('X-Prgd-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
               if self.path != '/status': return self._send(404, {})
               self._send(200, {'version': state().get('version', 0), 'backends': stats()})
           def do_POST(self):
-              if self.headers.get('X-Pgcloud-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
+              if self.headers.get('X-Prgd-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
               if self.path != '/config': return self._send(404, {})
               n = int(self.headers.get('Content-Length') or 0)
               code, body = apply(json.loads(self.rfile.read(n)))
@@ -118,19 +118,19 @@ ${agentNetPy(6)}
           def _send(self, code, body):
               b = json.dumps(body).encode(); self.send_response(code); self.send_header('Content-Type', 'application/json'); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
       http.server.ThreadingHTTPServer((bind_address(), 9009), H).serve_forever()
-  - path: /etc/systemd/system/pgcloud-lbd.service
+  - path: /etc/systemd/system/prgd-lbd.service
     content: |
       [Unit]
-      Description=pgcloud load balancer agent
+      Description=prgd load balancer agent
       After=network-online.target haproxy.service
       [Service]
-      ExecStart=/opt/pgcloud/lbd.py
+      ExecStart=/opt/prgd/lbd.py
       Restart=always
       [Install]
       WantedBy=multi-user.target
 runcmd:
   - sysctl --system
   - systemctl enable --now haproxy
-  - systemctl daemon-reload && systemctl enable --now pgcloud-lbd
+  - systemctl daemon-reload && systemctl enable --now prgd-lbd
 `;
 }

@@ -31,8 +31,8 @@ def iface_ipv4(name):
 def private_ipv4():
     return iface_ipv4(private_iface())
 def vip_iface():
-    # /opt/pgcloud/vip.network is written by cloud-init: the network that carries the virtual IP.
-    which = open('/opt/pgcloud/vip.network').read().strip() if os.path.exists('/opt/pgcloud/vip.network') else 'public'
+    # /opt/prgd/vip.network is written by cloud-init: the network that carries the virtual IP.
+    which = open('/opt/prgd/vip.network').read().strip() if os.path.exists('/opt/prgd/vip.network') else 'public'
     return (private_iface() if which == 'private' else public_iface()) or public_iface() or 'eth0'
 def bind_address():
     # Listen on the private address only. cloud-init sets the static private address before the
@@ -41,7 +41,7 @@ def bind_address():
         a = private_ipv4()
         if a: return a
         time.sleep(2)
-    open('/var/log/pgcloud-agent.log', 'a').write('no private address after five minutes; listening on all addresses\n')
+    open('/var/log/prgd-agent.log', 'a').write('no private address after five minutes; listening on all addresses\n')
     return '0.0.0.0'`;
 
 /**
@@ -115,7 +115,7 @@ export function agentHost(s: { id?: string; name?: string; privateIp?: string | 
   return pub;
 }
 
-/** One request to a platform agent on :9009. Every agent checks the shared secret in X-Pgcloud-Secret. */
+/** One request to a platform agent on :9009. Every agent checks the shared secret in X-Prgd-Secret. */
 export interface AgentRequest {
   method?: 'GET' | 'POST';
   /** Path with query string, e.g. "/status" or "/logs?app=…". */
@@ -142,7 +142,7 @@ export function agentFetch(host: string, req: AgentRequest): Promise<Response> {
   const hasBody = req.body !== undefined;
   return fetch(`http://${host}:9009${req.path}`, {
     method: req.method ?? 'GET',
-    headers: { 'X-Pgcloud-Secret': req.secret, ...(hasBody ? { 'content-type': 'application/json' } : {}) },
+    headers: { 'X-Prgd-Secret': req.secret, ...(hasBody ? { 'content-type': 'application/json' } : {}) },
     body: hasBody ? JSON.stringify(req.body) : undefined,
     signal: AbortSignal.timeout(req.timeoutMs),
   });

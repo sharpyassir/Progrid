@@ -127,7 +127,7 @@ describe('managed databases', () => {
     const [valkey, mysql] = await Promise.all([createDb(c, { name: 'cache', engine: 'valkey' }), createDb(c, { name: 'shop', engine: 'mysql' })]);
     expect(valkey.db.connection.uri).toMatch(/^rediss:\/\/default:/);
     expect(valkey.db.databases).toEqual([]);
-    expect(mysql.db.connection.uri).toMatch(/^mysql:\/\/pgcloud_admin:.*:3306\/defaultdb/);
+    expect(mysql.db.connection.uri).toMatch(/^mysql:\/\/prgd_admin:.*:3306\/defaultdb/);
     // Valkey has no named databases.
     expect((await c.post(`/v1/databases/${valkey.db.id}/dbs`, { name: 'x' })).status).toBe(422);
     await c.ok('POST', `/v1/databases/${mysql.db.id}/dbs`, { name: 'orders' }, 201);

@@ -32,10 +32,10 @@ The deploy shows `creating`, then `deploying`, then `live` with the public addre
 ## From the command line
 
 ```sh
-pgcloud deploy https://github.com/you/app --branch main --port 8080 --env DATABASE_URL=...
-pgcloud deploys ls
-pgcloud deploys logs dep_123 --follow
-pgcloud deploys redeploy dep_123
+prgd deploy https://github.com/you/app --branch main --port 8080 --env DATABASE_URL=...
+prgd deploys ls
+prgd deploys logs dep_123 --follow
+prgd deploys redeploy dep_123
 ```
 
 ## Automatic redeploys
@@ -44,7 +44,7 @@ Deployments made through the GitHub App redeploy on every push to their branch. 
 
 Deployments made from a URL get their own webhook address and secret, shown once when they are created. Add it to the repository under **Settings, Webhooks** with content type `application/json` and the push event. Pushes to other branches are ignored. Every delivery is checked with the `X-Hub-Signature-256` header before anything runs.
 
-If you would rather not touch repository settings, the CLI step in your CI works just as well: `pgcloud deploys redeploy ID` after your tests pass.
+If you would rather not touch repository settings, the CLI step in your CI works just as well: `prgd deploys redeploy ID` after your tests pass.
 
 ## Redeploy and roll back
 

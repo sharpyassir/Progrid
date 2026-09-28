@@ -1,7 +1,7 @@
 /**
  * cloud-init for an app host: a platform owned server that runs customer containers behind
- * Caddy. Caddy itself runs as a container on the same `pgcloud` Docker network as the apps,
- * so it reaches instances by container name. `pgcloud-appd` on the private address, port
+ * Caddy. Caddy itself runs as a container on the same `prgd` Docker network as the apps,
+ * so it reaches instances by container name. `prgd-appd` on the private address, port
  * 9009, receives the whole desired state (POST /config), builds images from the customers'
  * repositories, runs the instances with memory and CPU limits, writes the Caddyfile (one site
  * per verified hostname, TLS from Let's Encrypt) and reports per app state, logs and whether
@@ -23,7 +23,7 @@ export function renderAppHostCloudInit(d: AppHostInit): string {
 package_update: true
 packages: [docker.io, git, python3, ca-certificates, curl]
 write_files:
-  - path: /opt/pgcloud/vm.secret
+  - path: /opt/prgd/vm.secret
     permissions: '0600'
     content: '${d.vmSecret}'
   - path: /etc/caddy/Caddyfile
@@ -32,28 +32,28 @@ write_files:
         email ${d.acmeEmail}
       }
       :80 {
-        respond "pgcloud app platform" 200
+        respond "prgd app platform" 200
       }
-  - path: /etc/systemd/system/pgcloud-appd.service
+  - path: /etc/systemd/system/prgd-appd.service
     content: |
       [Unit]
-      Description=pgcloud app host agent
+      Description=prgd app host agent
       After=network-online.target docker.service
       [Service]
-      ExecStart=/usr/bin/python3 /opt/pgcloud/appd.py
+      ExecStart=/usr/bin/python3 /opt/prgd/appd.py
       Restart=always
       RestartSec=2
       [Install]
       WantedBy=multi-user.target
-  - path: /opt/pgcloud/appd.py
+  - path: /opt/prgd/appd.py
     permissions: '0755'
     content: |
       #!/usr/bin/env python3
-      # pgcloud app host agent. Standard library only. The control plane is the only writer of configuration.
+      # prgd app host agent. Standard library only. The control plane is the only writer of configuration.
       import http.server, json, os, shlex, shutil, subprocess, threading, time, urllib.request
-      SECRET = open('/opt/pgcloud/vm.secret').read().strip()
-      ROOT = '/var/lib/pgcloud/apps'
-      LAST = '/opt/pgcloud/last-config.json'
+      SECRET = open('/opt/prgd/vm.secret').read().strip()
+      ROOT = '/var/lib/prgd/apps'
+      LAST = '/opt/prgd/last-config.json'
       lock = threading.Lock()
       state = {'version': 0, 'apps': {}}
       building = set()
@@ -70,9 +70,9 @@ ${agentNetPy(6)}
 
       def load_state():
           global state
-          try: state = json.load(open('/opt/pgcloud/state.json'))
+          try: state = json.load(open('/opt/prgd/state.json'))
           except Exception: pass
-      def save_state(): json.dump(state, open('/opt/pgcloud/state.json', 'w'))
+      def save_state(): json.dump(state, open('/opt/prgd/state.json', 'w'))
 
       def detect_dockerfile(d):
           if os.path.exists(d + '/Dockerfile'): return None
@@ -108,9 +108,9 @@ ${agentNetPy(6)}
               if app.get('commit'): sh('git fetch --depth 1 origin %s && git checkout -q %s' % (q(app['commit']), q(app['commit'])), cwd=src, log=log, check=False)
               commit = sh('git rev-parse HEAD', cwd=src).strip()
               gen = detect_dockerfile(src)
-              if gen: open(src + '/Dockerfile.pgcloud', 'w').write(gen)
-              image = 'pgcloud-app-%s:%s' % (aid, commit[:12])
-              sh('docker build --build-arg PORT=%d -t %s -f %s %s' % (app['port'], image, 'Dockerfile.pgcloud' if gen else 'Dockerfile', src), cwd=src, log=log, timeout=1800)
+              if gen: open(src + '/Dockerfile.prgd', 'w').write(gen)
+              image = 'prgd-app-%s:%s' % (aid, commit[:12])
+              sh('docker build --build-arg PORT=%d -t %s -f %s %s' % (app['port'], image, 'Dockerfile.prgd' if gen else 'Dockerfile', src), cwd=src, log=log, timeout=1800)
               run(app, image, log)
               state['apps'][aid] = {'deployId': app['deployId'], 'state': 'live', 'commit': commit, 'image': image, 'error': None}
               open(log, 'a').write('=== live ===\\n')
@@ -123,16 +123,16 @@ ${agentNetPy(6)}
       def run(app, image, log):
           aid = app['id']; env = ROOT + '/' + aid + '/app.env'
           open(env, 'w').write(''.join('%s=%s\\n' % (k, str(v).replace('\\n', '')) for k, v in (app.get('env') or {}).items()) + 'PORT=%d\\n' % app['port']); os.chmod(env, 0o600)
-          names = ['pgcloud-%s-%d' % (aid, i) for i in range(app['instances'])]
+          names = ['prgd-%s-%d' % (aid, i) for i in range(app['instances'])]
           # Start new instances beside the old ones, check health, then retire the old ones.
           for i, name in enumerate(names):
               sh('docker rm -f %s-next 2>/dev/null || true' % name, check=False)
-              sh('docker run -d --name %s-next --network pgcloud --restart unless-stopped --memory %dm --cpus %s --env-file %s --label pgcloud.app=%s %s' % (name, app['memoryMb'], app['cpus'], env, aid, image), log=log)
+              sh('docker run -d --name %s-next --network prgd --restart unless-stopped --memory %dm --cpus %s --env-file %s --label prgd.app=%s %s' % (name, app['memoryMb'], app['cpus'], env, aid, image), log=log)
               healthy(name + '-next', app['port'], app.get('healthPath'))
           for name in names:
               sh('docker rm -f %s 2>/dev/null || true' % name, check=False)
               sh('docker rename %s-next %s' % (name, name), check=False)
-          for c in sh("docker ps -a --filter label=pgcloud.app=%s --format '{{.Names}}'" % aid, check=False).split():
+          for c in sh("docker ps -a --filter label=prgd.app=%s --format '{{.Names}}'" % aid, check=False).split():
               if c not in names: sh('docker rm -f %s' % c, check=False)
           sh('docker image prune -f >/dev/null 2>&1', check=False)
 
@@ -150,19 +150,19 @@ ${agentNetPy(6)}
           raise RuntimeError('instance did not answer on port %d within two minutes' % port)
 
       def ensure_caddy():
-          # Caddy on the pgcloud network, ports 80 and 443 published, config and certificates on the host.
-          sh('docker network inspect pgcloud >/dev/null 2>&1 || docker network create pgcloud', check=False)
+          # Caddy on the prgd network, ports 80 and 443 published, config and certificates on the host.
+          sh('docker network inspect prgd >/dev/null 2>&1 || docker network create prgd', check=False)
           if sh("docker inspect -f '{{.State.Running}}' caddy 2>/dev/null", check=False).strip() == 'true': return
           sh('docker rm -f caddy 2>/dev/null || true', check=False)
           os.makedirs('/var/lib/caddy/data', exist_ok=True); os.makedirs('/var/lib/caddy/config', exist_ok=True)
-          sh('docker run -d --name caddy --restart unless-stopped --network pgcloud -p 80:80 -p 443:443 -p 443:443/udp -v /etc/caddy:/etc/caddy -v /var/lib/caddy/data:/data -v /var/lib/caddy/config:/config ' + CADDY_IMAGE)
+          sh('docker run -d --name caddy --restart unless-stopped --network prgd -p 80:80 -p 443:443 -p 443:443/udp -v /etc/caddy:/etc/caddy -v /var/lib/caddy/data:/data -v /var/lib/caddy/config:/config ' + CADDY_IMAGE)
 
       def caddy(apps):
-          out = ['{', '  email ' + open('/opt/pgcloud/acme.email').read().strip() if os.path.exists('/opt/pgcloud/acme.email') else '', '}', ':80 {', '  respond "pgcloud app platform" 200', '}']
+          out = ['{', '  email ' + open('/opt/prgd/acme.email').read().strip() if os.path.exists('/opt/prgd/acme.email') else '', '}', ':80 {', '  respond "prgd app platform" 200', '}']
           for app in apps:
               st = state['apps'].get(app['id']) or {}
               if st.get('state') != 'live' or app.get('stopped'): continue
-              ups = ' '.join('pgcloud-%s-%d:%d' % (app['id'], i, app['port']) for i in range(app['instances']))
+              ups = ' '.join('prgd-%s-%d:%d' % (app['id'], i, app['port']) for i in range(app['instances']))
               out.append('%s {\\n  encode zstd gzip\\n  reverse_proxy %s {\\n    lb_policy round_robin\\n    health_uri %s\\n    health_interval 10s\\n  }\\n}' % (', '.join(app['hostnames']), ups, app.get('healthPath') or '/'))
           open('/etc/caddy/Caddyfile', 'w').write('\\n'.join(out) + '\\n')
           ensure_caddy()
@@ -173,24 +173,24 @@ ${agentNetPy(6)}
           wanted = {a['id'] for a in c['apps']}
           for aid in list(state['apps']):
               if aid not in wanted:
-                  sh("docker ps -aq --filter label=pgcloud.app=%s | xargs -r docker rm -f" % aid, check=False)
+                  sh("docker ps -aq --filter label=prgd.app=%s | xargs -r docker rm -f" % aid, check=False)
                   shutil.rmtree(ROOT + '/' + aid, ignore_errors=True); state['apps'].pop(aid, None)
           for app in c['apps']:
               st = state['apps'].get(app['id']) or {}
               if app.get('stopped'):
-                  sh("docker ps -q --filter label=pgcloud.app=%s | xargs -r docker stop" % app['id'], check=False)
+                  sh("docker ps -q --filter label=prgd.app=%s | xargs -r docker stop" % app['id'], check=False)
                   continue
               if st.get('deployId') != app['deployId'] and app['id'] not in building:
                   building.add(app['id']); state['apps'][app['id']] = {**st, 'deployId': app['deployId'], 'state': 'building', 'error': None}
                   threading.Thread(target=build, args=(app,), daemon=True).start()
               elif st.get('state') == 'live':
-                  sh("docker ps -aq --filter label=pgcloud.app=%s --filter status=exited | xargs -r docker start" % app['id'], check=False)
+                  sh("docker ps -aq --filter label=prgd.app=%s --filter status=exited | xargs -r docker start" % app['id'], check=False)
           save_state(); caddy(c['apps'])
 
       def status():
           out = {'version': state.get('version', 0), 'apps': {}}
           for aid, st in state['apps'].items():
-              running = len(sh("docker ps -q --filter label=pgcloud.app=%s" % aid, check=False).split())
+              running = len(sh("docker ps -q --filter label=prgd.app=%s" % aid, check=False).split())
               tail = ''
               try:
                   with open(ROOT + '/' + aid + '/build.log', 'rb') as f:
@@ -208,7 +208,7 @@ ${agentNetPy(6)}
       class H(http.server.BaseHTTPRequestHandler):
           def log_message(self, *a): pass
           def do_GET(self):
-              if self.headers.get('X-Pgcloud-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
+              if self.headers.get('X-Prgd-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
               if self.path == '/status': return self._send(200, status())
               if self.path.startswith('/logs'):
                   q = dict(p.split('=', 1) for p in self.path.split('?', 1)[1].split('&') if '=' in p) if '?' in self.path else {}
@@ -216,7 +216,7 @@ ${agentNetPy(6)}
                   if not aid.isalnum(): return self._send(400, {'error': 'bad_app'})
                   if kind == 'runtime':
                       # Every instance, each under its own heading.
-                      names = sorted(sh("docker ps -a --filter label=pgcloud.app=%s --format '{{.Names}}'" % aid, check=False).split())
+                      names = sorted(sh("docker ps -a --filter label=prgd.app=%s --format '{{.Names}}'" % aid, check=False).split())
                       log = ''.join('=== %s ===\\n%s' % (n, sh('docker logs --tail 300 --timestamps %s 2>&1' % n, check=False)) for n in names if not n.endswith('-next'))
                   else:
                       try:
@@ -226,7 +226,7 @@ ${agentNetPy(6)}
                   return self._send(200, {'log': log})
               self._send(404, {})
           def do_POST(self):
-              if self.headers.get('X-Pgcloud-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
+              if self.headers.get('X-Prgd-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
               n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
               if self.path == '/config':
                   with lock:
@@ -245,11 +245,11 @@ ${agentNetPy(6)}
       except Exception: pass
       http.server.ThreadingHTTPServer((bind_address(), 9009), H).serve_forever()
 runcmd:
-  - echo '${d.acmeEmail}' > /opt/pgcloud/acme.email
+  - echo '${d.acmeEmail}' > /opt/prgd/acme.email
   - systemctl enable --now docker
-  - docker network create pgcloud || true
+  - docker network create prgd || true
   - mkdir -p /var/lib/caddy/data /var/lib/caddy/config
-  - docker run -d --name caddy --restart unless-stopped --network pgcloud -p 80:80 -p 443:443 -p 443:443/udp -v /etc/caddy:/etc/caddy -v /var/lib/caddy/data:/data -v /var/lib/caddy/config:/config caddy:2 || true
-  - mkdir -p /var/lib/pgcloud/apps && systemctl daemon-reload && systemctl enable --now pgcloud-appd
+  - docker run -d --name caddy --restart unless-stopped --network prgd -p 80:80 -p 443:443 -p 443:443/udp -v /etc/caddy:/etc/caddy -v /var/lib/caddy/data:/data -v /var/lib/caddy/config:/config caddy:2 || true
+  - mkdir -p /var/lib/prgd/apps && systemctl daemon-reload && systemctl enable --now prgd-appd
 `;
 }

@@ -217,7 +217,7 @@ export class SupportService {
         closedAt: close ? now : null,
         lastSupportAt: now,
         firstRespondedAt: ticket.firstRespondedAt ?? now,
-        messages: { create: { fromSupport: true, authorId: actor.userId, authorName: staff?.name ?? 'pgcloud support', body: dto.body } },
+        messages: { create: { fromSupport: true, authorId: actor.userId, authorName: staff?.name ?? 'Progrid support', body: dto.body } },
       },
       include: ticketInclude,
     });

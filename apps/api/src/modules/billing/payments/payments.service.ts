@@ -42,7 +42,7 @@ export class PaymentsService {
     const team = await this.prisma.team.findUniqueOrThrow({ where: { id: actor.teamId } });
     const { min, max } = this.limits(team.currency);
     if (!Number.isInteger(amountMinor) || amountMinor < min || amountMinor > max) throw ApiError.invalid(`Amount must be between ${min / 100} and ${max / 100} ${team.currency}`, { min, max });
-    return this.start(actor, team, amountMinor, `pgcloud credit top up for ${team.name}`, undefined);
+    return this.start(actor, team, amountMinor, `Progrid credit top up for ${team.name}`, undefined);
   }
 
   async payInvoice(actor: Actor, invoiceId: string) {
@@ -63,7 +63,7 @@ export class PaymentsService {
     }
     const due = inv.totalMinor - inv.creditedMinor;
     if (due <= 0) throw ApiError.invalidState(`Invoice ${inv.number} has nothing left to pay`);
-    return this.start(actor, team, due, `pgcloud invoice ${inv.number}`, inv.id);
+    return this.start(actor, team, due, `Progrid invoice ${inv.number}`, inv.id);
   }
 
   list(actor: Actor) {

@@ -64,7 +64,7 @@ export default function KubernetesClusterPage() {
           <tr><td className="py-1 text-neutral-500">Service network</td><td className="py-1 font-mono">{c.serviceCidr}</td></tr>
           <tr><td className="py-1 text-neutral-500">Region</td><td className="py-1">{c.region.name}</td></tr>
         </tbody></table>
-        <pre className="overflow-x-auto rounded bg-neutral-100 p-2 font-mono text-xs dark:bg-neutral-800">{`pgcloud kubernetes kubeconfig ${c.id} > ~/.kube/${c.name}.yaml\nexport KUBECONFIG=~/.kube/${c.name}.yaml\nkubectl get nodes`}</pre>
+        <pre className="overflow-x-auto rounded bg-neutral-100 p-2 font-mono text-xs dark:bg-neutral-800">{`prgd kubernetes kubeconfig ${c.id} > ~/.kube/${c.name}.yaml\nexport KUBECONFIG=~/.kube/${c.name}.yaml\nkubectl get nodes`}</pre>
         <p className="text-xs text-neutral-500">The kubeconfig holds the cluster admin credentials. Keep it as safe as a password.</p>
       </section>
 
@@ -79,7 +79,7 @@ export default function KubernetesClusterPage() {
           <table className="w-full"><tbody>
             {c.cloud.loadBalancers.map((l) => <tr key={l.service} className="border-t border-neutral-100 first:border-0 dark:border-neutral-800"><td className="py-1.5 text-neutral-500">Service</td><td className="py-1.5 font-mono text-xs">{l.service}</td><td className="py-1.5"><Link href={`/load-balancers/${l.loadBalancerId}`} className="text-blue-600 hover:underline">load balancer</Link></td><td className="py-1.5 font-mono text-xs">{l.ip ?? 'pending'}</td></tr>)}
             {c.cloud.volumes.map((v) => <tr key={v.claim} className="border-t border-neutral-100 first:border-0 dark:border-neutral-800"><td className="py-1.5 text-neutral-500">Claim</td><td className="py-1.5 font-mono text-xs">{v.claim}</td><td className="py-1.5"><Link href="/volumes" className="text-blue-600 hover:underline">{v.sizeGb} GB volume</Link></td><td className="py-1.5 font-mono text-xs">{v.node}{v.mounted ? '' : ' (attaching)'}</td></tr>)}
-            {c.cloud.loadBalancers.length + c.cloud.volumes.length === 0 && <tr><td className="py-1.5 text-neutral-500" colSpan={4}>Nothing yet. A Service of type LoadBalancer gets a load balancer; a PersistentVolumeClaim with the pgcloud-block class gets a volume.</td></tr>}
+            {c.cloud.loadBalancers.length + c.cloud.volumes.length === 0 && <tr><td className="py-1.5 text-neutral-500" colSpan={4}>Nothing yet. A Service of type LoadBalancer gets a load balancer; a PersistentVolumeClaim with the prgd-block class gets a volume.</td></tr>}
           </tbody></table>
         </section>
       </div>

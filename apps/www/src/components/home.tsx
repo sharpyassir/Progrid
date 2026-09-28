@@ -4,7 +4,7 @@ import { COPY, type Lang } from '@/lib/copy';
 
 export function pageMetadata(lang: Lang): Metadata {
   const c = COPY[lang];
-  return { title: c.meta.title, description: c.meta.description, alternates: { languages: { en: '/', tr: '/tr', ar: '/ar' } }, openGraph: { title: 'pgcloud', description: c.meta.description, type: 'website' } };
+  return { title: c.meta.title, description: c.meta.description, alternates: { languages: { en: '/', tr: '/tr', ar: '/ar' } }, openGraph: { title: 'Progrid', description: c.meta.description, type: 'website' } };
 }
 
 

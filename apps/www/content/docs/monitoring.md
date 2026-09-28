@@ -12,11 +12,11 @@ Every server reports CPU, memory, disk throughput and network once a minute, str
 From the terminal or code:
 
 ```sh
-pgcloud servers metrics srv_123 --period 6h
+prgd servers metrics srv_123 --period 6h
 ```
 
 ```ts
-const m = await pg.servers.metrics('srv_123', '24h');
+const m = await prgd.servers.metrics('srv_123', '24h');
 console.log(m.latest?.cpu, m.points.length);
 ```
 
@@ -31,10 +31,10 @@ When the average over the window crosses the threshold, one incident opens. Team
 Create rules under **Core Cloud, Monitoring**, or from the terminal:
 
 ```sh
-pgcloud alerts create "High CPU" --metric cpu --above 90 --minutes 10
-pgcloud alerts create "Web tier bandwidth" --metric net_out --above 400 --tag web --email oncall@example.com
-pgcloud alerts ls
-pgcloud alerts mute alr_123
+prgd alerts create "High CPU" --metric cpu --above 90 --minutes 10
+prgd alerts create "Web tier bandwidth" --metric net_out --above 400 --tag web --email oncall@example.com
+prgd alerts ls
+prgd alerts mute alr_123
 ```
 
 Muting a rule keeps it but stops evaluation. Incidents show on the Monitoring page while they fire and stay in the history afterwards.

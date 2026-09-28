@@ -113,7 +113,7 @@ export class DatabasesService {
     const cluster = await this.prisma.dbCluster.create({
       data: {
         projectId: project.id, regionId: region.id, name: dto.name, engine: dto.engine, version, nodes, sizeId: size.id, port,
-        adminUser: 'pgcloud_admin', adminPassword: password(), trustedSources: trusted, publicIpId: vip.id, firewallId: fw.id, vmSecret, backupHourUtc: dto.backupHourUtc ?? 2,
+        adminUser: 'prgd_admin', adminPassword: password(), trustedSources: trusted, publicIpId: vip.id, firewallId: fw.id, vmSecret, backupHourUtc: dto.backupHourUtc ?? 2,
         databases: dto.engine === 'valkey' ? undefined : { create: { name: 'defaultdb' } },
         users: { create: { name: 'app', password: password() } },
       },
@@ -121,7 +121,7 @@ export class DatabasesService {
     // Backups go to a platform owned bucket with a key of their own.
     try {
       await this.storage.ensureUser(PLATFORM_PROJECT);
-      const bucket = `pgcloud-db-${cluster.id.toLowerCase()}`;
+      const bucket = `prgd-db-${cluster.id.toLowerCase()}`;
       await this.storage.createBucket(PLATFORM_PROJECT, bucket);
       const key = await this.storage.createKey(PLATFORM_PROJECT);
       await this.prisma.dbCluster.update({ where: { id: cluster.id }, data: { backupBucket: bucket, backupAccessKey: key.accessKey, backupSecretKey: key.secretKey } });
@@ -161,7 +161,7 @@ export class DatabasesService {
 
   async addUser(actor: Actor, id: string, dto: DbNameDto, project?: string) {
     const c = await this.own(actor, id, project);
-    if (['postgres', 'pgcloud_admin', 'replicator', 'root', 'mysql', 'default'].includes(dto.name)) throw ApiError.invalid('That user name is reserved');
+    if (['postgres', 'prgd_admin', 'replicator', 'root', 'mysql', 'default'].includes(dto.name)) throw ApiError.invalid('That user name is reserved');
     if (c.users.some((u) => u.name === dto.name)) throw ApiError.conflict('name_taken', `User ${dto.name} already exists`);
     if (c.users.length >= 50) throw ApiError.quota('User limit (50) reached');
     const u = await this.prisma.dbUser.create({ data: { clusterId: id, name: dto.name, password: password() } });
@@ -506,7 +506,7 @@ function firewallRules(engine: 'postgres' | 'valkey' | 'mysql', port: number, tr
     ...(engine === 'valkey' ? [{ direction: 'inbound' as const, protocol: 'tcp' as const, ports: '6380', cidrs, description: 'tls port' }] : []),
     ...internal[engine].map(([ports, description]) => ({ direction: 'inbound' as const, protocol: 'tcp' as const, ports, cidrs: [privateNet], description })),
     { direction: 'inbound' as const, protocol: 'tcp' as const, ports: String(port), cidrs: [privateNet], description: 'replication' },
-    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '9009', cidrs: [cp], description: 'pgcloud database agent' },
+    { direction: 'inbound' as const, protocol: 'tcp' as const, ports: '9009', cidrs: [cp], description: 'prgd database agent' },
     ...(nodes > 1 ? [{ direction: 'inbound' as const, protocol: 'vrrp' as const, cidrs: [privateNet], description: 'keepalived between database nodes' }] : []),
     { direction: 'outbound' as const, protocol: 'any' as const, cidrs: ['0.0.0.0/0'] },
   ];

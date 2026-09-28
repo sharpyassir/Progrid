@@ -20,18 +20,18 @@ Times are the target for the first answer from an engineer, counted around the c
 
 **Free** covers account, billing and abuse questions and anything that looks like a platform fault. **Developer** adds technical help on any product: setup, sizing, best practice. **Standard** adds urgent tickets for production incidents and help with incidents on managed products. **Premium** gives you a named engineer who knows your setup, a monthly review, and priority during platform incidents.
 
-Paid plans are billed by the hour like everything else, on the team's oldest project, in the team's currency. Change plans at any time from **Support** in the console, with `pgcloud support plan standard`, or with `PUT /v1/support/plan`. An open ticket keeps the target of the plan it was opened under.
+Paid plans are billed by the hour like everything else, on the team's oldest project, in the team's currency. Change plans at any time from **Support** in the console, with `prgd support plan standard`, or with `PUT /v1/support/plan`. An open ticket keeps the target of the plan it was opened under.
 
 ## Tickets
 
 Open a ticket from **Support** in the console, from the terminal, or from the API:
 
 ```sh
-pgcloud support new "Server web-1 will not reboot" --body "Reboot has been queued for an hour." --priority high --about server:cm...
-pgcloud support tickets
-pgcloud support show ID
-pgcloud support reply ID "Still stuck after a stop and start."
-pgcloud support close ID
+prgd support new "Server web-1 will not reboot" --body "Reboot has been queued for an hour." --priority high --about server:cm...
+prgd support tickets
+prgd support show ID
+prgd support reply ID "Still stuck after a stop and start."
+prgd support close ID
 ```
 
 Name the server, database, load balancer, domain, bucket or invoice when you can. It must belong to your team, and it lets the engineer open the right thing before writing back.

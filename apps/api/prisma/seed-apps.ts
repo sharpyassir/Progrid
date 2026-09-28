@@ -31,7 +31,7 @@ runcmd:
   - systemctl enable --now docker
   - cd /opt/${name} && docker compose up -d
 ${extra}
-  - echo "pgcloud app ${name} ready" > /etc/motd
+  - echo "prgd app ${name} ready" > /etc/motd
 `;
 
 export const MARKETPLACE_APPS: SeedApp[] = [
@@ -141,7 +141,7 @@ runcmd:
   {
     slug: 'n8n', name: 'n8n', category: 'automation', version: '1.x', minSizeId: 's-1vcpu-2gb', ports: [80, 443],
     summary: 'Workflow automation with 400+ integrations and AI nodes.',
-    description: 'n8n with PostgreSQL storage and Caddy for HTTPS. Includes the AI agent nodes; point them at the pgcloud inference gateway or your own keys.',
+    description: 'n8n with PostgreSQL storage and Caddy for HTTPS. Includes the AI agent nodes; point them at the prgd inference gateway or your own keys.',
     variables: [adminEmail, adminPassword, domain],
     cloudInit: dockerCompose('n8n', `services:
   db:

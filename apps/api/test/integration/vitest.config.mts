@@ -16,7 +16,7 @@ const root = fileURLToPath(new URL('../..', import.meta.url));
  */
 function decoratorMetadata(): Plugin {
   return {
-    name: 'pgcloud-decorator-metadata',
+    name: 'prgd-decorator-metadata',
     enforce: 'pre',
     transform(code, id) {
       if (!id.endsWith('.ts') || id.includes('/node_modules/')) return null;
@@ -58,13 +58,13 @@ export default defineConfig({
     server: { deps: { inline: [/apps\/api\/src/] } },
     env: {
       NODE_ENV: 'test',
-      DATABASE_URL: process.env.IT_DATABASE_URL ?? 'postgresql://pgcloud:pgcloud@localhost:5432/pgcloud_test',
+      DATABASE_URL: process.env.IT_DATABASE_URL ?? 'postgresql://prgd:prgd@localhost:5432/prgd_test',
       REDIS_URL: process.env.IT_REDIS_URL ?? 'redis://localhost:6379/5',
       NATS_URL: process.env.NATS_URL ?? 'nats://localhost:4222',
       TEMPORAL_ADDRESS: process.env.TEMPORAL_ADDRESS ?? 'localhost:7233',
       TEMPORAL_NAMESPACE: 'default',
       // A queue of its own per run, so workflows left over from an earlier run never land here.
-      TEMPORAL_TASK_QUEUE: `pgcloud-it-${runId}`,
+      TEMPORAL_TASK_QUEUE: `prgd-it-${runId}`,
       HYPERVISOR_DRIVER: 'fake',
       PAYMENT_PROVIDER: 'fake',
       DNS_PROVIDER: 'fake',

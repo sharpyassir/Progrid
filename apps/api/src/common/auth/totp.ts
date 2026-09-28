@@ -41,7 +41,7 @@ export function generateSecret(): string {
   return base32Encode(randomBytes(20));
 }
 
-export function otpauthUrl(secret: string, account: string, issuer = 'pgcloud'): string {
+export function otpauthUrl(secret: string, account: string, issuer = 'prgd'): string {
   return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(account)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
 }
 

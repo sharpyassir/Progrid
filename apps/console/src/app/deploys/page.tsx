@@ -141,7 +141,7 @@ function DeploysPage() {
         {mode === 'github' ? (
           installs.length === 0 ? (
             <div className="rounded-md border border-dashed border-neutral-300 p-4 text-sm dark:border-neutral-700">
-              <p className="mb-3 text-neutral-600 dark:text-neutral-300">Install the pgcloud GitHub App on your account or organization. You choose which repositories it can see. Private repositories work without any token, and every push redeploys.</p>
+              <p className="mb-3 text-neutral-600 dark:text-neutral-300">Install the Progrid GitHub App on your account or organization. You choose which repositories it can see. Private repositories work without any token, and every push redeploys.</p>
               <button type="button" className="btn-primary" onClick={connectGithub}>Connect GitHub</button>
             </div>
           ) : (
@@ -167,7 +167,7 @@ function DeploysPage() {
         <textarea className="input font-mono text-xs" name="env" rows={3} placeholder={'Environment variables, one per line\nDATABASE_URL=postgres://…'} />
         {mode === 'url' && <input className="input" name="gitToken" type="password" placeholder="GitHub token for private repos (optional, never stored by us)" autoComplete="off" />}
         <button className="btn-primary" disabled={busy || (mode === 'github' && !installation)}>{busy ? 'Creating…' : 'Deploy'}</button>
-        <p className="text-xs text-neutral-500">Or from your terminal: <code>pgcloud deploy https://github.com/you/app --wait</code></p>
+        <p className="text-xs text-neutral-500">Or from your terminal: <code>prgd deploy https://github.com/you/app --wait</code></p>
       </form>
     </div>
   );

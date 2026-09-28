@@ -44,9 +44,9 @@ export function startOfMonth(d: Date) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
 }
 
-/** Invoice number from the global invoice_number_seq sequence, e.g. PG-2026-000123. */
+/** Invoice number from the global invoice_number_seq sequence, e.g. PRGD-2026-000123. */
 export function invoiceNumber(year: number, seq: number | bigint) {
-  return `PG-${year}-${String(seq).padStart(6, '0')}`;
+  return `PRGD-${year}-${String(seq).padStart(6, '0')}`;
 }
 
 /** Credit note number from the global credit_note_number_seq sequence, e.g. CN-2026-000045. */

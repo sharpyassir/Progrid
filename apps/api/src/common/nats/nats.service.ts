@@ -4,17 +4,17 @@ import { loadConfig } from '../../config/config';
 
 /**
  * Subjects (see agents/host-agent for the other side):
- *   pgcloud.host.<hostId>.jobs      control plane → agent   (request/reply)
- *   pgcloud.host.<hostId>.heartbeat agent → control plane   (every minute)
- *   pgcloud.usage                   agent → control plane   (usage.v1 events)
- *   pgcloud.events.<name>           control plane → internal fan-out
+ *   prgd.host.<hostId>.jobs      control plane → agent   (request/reply)
+ *   prgd.host.<hostId>.heartbeat agent → control plane   (every minute)
+ *   prgd.usage                   agent → control plane   (usage.v1 events)
+ *   prgd.events.<name>           control plane → internal fan-out
  */
 export const Subjects = {
-  hostJobs: (hostId: string) => `pgcloud.host.${hostId}.jobs`,
-  hostHeartbeat: 'pgcloud.host.*.heartbeat',
-  usage: 'pgcloud.usage',
-  metrics: 'pgcloud.metrics',
-  event: (name: string) => `pgcloud.events.${name}`,
+  hostJobs: (hostId: string) => `prgd.host.${hostId}.jobs`,
+  hostHeartbeat: 'prgd.host.*.heartbeat',
+  usage: 'prgd.usage',
+  metrics: 'prgd.metrics',
+  event: (name: string) => `prgd.events.${name}`,
 } as const;
 
 @Injectable()
@@ -26,7 +26,7 @@ export class NatsService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     const { NATS_URL, NATS_TOKEN } = loadConfig();
     try {
-      this.nc = await connect({ servers: NATS_URL, name: 'pgcloud-api', reconnect: true, maxReconnectAttempts: -1, ...(NATS_TOKEN ? { token: NATS_TOKEN } : {}) });
+      this.nc = await connect({ servers: NATS_URL, name: 'prgd-api', reconnect: true, maxReconnectAttempts: -1, ...(NATS_TOKEN ? { token: NATS_TOKEN } : {}) });
       this.log.log(`connected to NATS at ${NATS_URL}`);
     } catch (err) {
       // Local dev without NATS still works with the fake driver.

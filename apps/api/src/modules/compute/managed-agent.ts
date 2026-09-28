@@ -21,13 +21,13 @@
  */
 
 export const MANAGED_AGENT_VERSION = 1;
-export const MANAGED_MARKER = '# pgcloud-managed-agent';
+export const MANAGED_MARKER = '# prgd-managed-agent';
 
 const REPORTER = `#!/usr/bin/env python3
-# pgcloud managed care reporter. Standard library only.
+# prgd managed care reporter. Standard library only.
 import json, os, subprocess, time, urllib.request
 
-ENV = dict(l.strip().split('=', 1) for l in open('/etc/pgcloud/managed.env') if '=' in l)
+ENV = dict(l.strip().split('=', 1) for l in open('/etc/prgd/managed.env') if '=' in l)
 
 def sh(cmd):
     try:
@@ -97,7 +97,7 @@ report = {
     'reportedAt': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
 }
 req = urllib.request.Request(ENV['API_URL'].rstrip('/') + '/v1/managed/report', data=json.dumps(report).encode(), method='POST',
-                             headers={'Content-Type': 'application/json', 'X-Pgcloud-Managed-Token': ENV['TOKEN']})
+                             headers={'Content-Type': 'application/json', 'X-Prgd-Managed-Token': ENV['TOKEN']})
 urllib.request.urlopen(req, timeout=20).read()
 `;
 
@@ -106,18 +106,18 @@ export function renderManagedInstallScript(opts: { apiUrl: string; token: string
   const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
   return `#!/bin/sh
 ${MANAGED_MARKER} v${MANAGED_AGENT_VERSION}
-# Installs the pgcloud managed care agent. Safe to run more than once.
+# Installs the prgd managed care agent. Safe to run more than once.
 set -e
 export DEBIAN_FRONTEND=noninteractive
-mkdir -p /opt/pgcloud /etc/pgcloud
+mkdir -p /opt/prgd /etc/prgd
 umask 077
-printf 'API_URL=%s\\nTOKEN=%s\\n' ${q(opts.apiUrl)} ${q(opts.token)} > /etc/pgcloud/managed.env
+printf 'API_URL=%s\\nTOKEN=%s\\n' ${q(opts.apiUrl)} ${q(opts.token)} > /etc/prgd/managed.env
 umask 022
 
 apt-get update -qq || true
 apt-get install -y -qq unattended-upgrades fail2ban python3 >/dev/null
 
-cat > /etc/apt/apt.conf.d/52pgcloud-unattended <<'EOF'
+cat > /etc/apt/apt.conf.d/52prgd-unattended <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
 APT::Periodic::AutocleanInterval "7";
@@ -132,7 +132,7 @@ Unattended-Upgrade::Automatic-Reboot "true";
 Unattended-Upgrade::Automatic-Reboot-Time "04:00";
 EOF
 
-cat > /etc/fail2ban/jail.d/pgcloud.conf <<'EOF'
+cat > /etc/fail2ban/jail.d/prgd.conf <<'EOF'
 [DEFAULT]
 bantime = 1h
 findtime = 10m
@@ -144,10 +144,10 @@ EOF
 # Turn password logins off only once a key is on the box, so nobody gets locked out.
 if [ -s /root/.ssh/authorized_keys ] || ls /home/*/.ssh/authorized_keys >/dev/null 2>&1; then
   mkdir -p /etc/ssh/sshd_config.d
-  printf 'PasswordAuthentication no\\nPermitRootLogin prohibit-password\\nMaxAuthTries 4\\nX11Forwarding no\\n' > /etc/ssh/sshd_config.d/50-pgcloud.conf
+  printf 'PasswordAuthentication no\\nPermitRootLogin prohibit-password\\nMaxAuthTries 4\\nX11Forwarding no\\n' > /etc/ssh/sshd_config.d/50-prgd.conf
 fi
 
-cat > /etc/sysctl.d/60-pgcloud.conf <<'EOF'
+cat > /etc/sysctl.d/60-prgd.conf <<'EOF'
 net.ipv4.tcp_syncookies = 1
 net.ipv4.conf.all.rp_filter = 1
 net.ipv4.conf.all.accept_redirects = 0
@@ -157,21 +157,21 @@ kernel.kptr_restrict = 2
 EOF
 sysctl --system >/dev/null 2>&1 || true
 
-cat > /opt/pgcloud/managed-report.py <<'EOF'
+cat > /opt/prgd/managed-report.py <<'EOF'
 ${REPORTER}EOF
-chmod 0755 /opt/pgcloud/managed-report.py
+chmod 0755 /opt/prgd/managed-report.py
 
-cat > /etc/systemd/system/pgcloud-managed.service <<'EOF'
+cat > /etc/systemd/system/prgd-managed.service <<'EOF'
 [Unit]
-Description=pgcloud managed care report
+Description=prgd managed care report
 After=network-online.target
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 /opt/pgcloud/managed-report.py
+ExecStart=/usr/bin/python3 /opt/prgd/managed-report.py
 EOF
-cat > /etc/systemd/system/pgcloud-managed.timer <<'EOF'
+cat > /etc/systemd/system/prgd-managed.timer <<'EOF'
 [Unit]
-Description=pgcloud managed care report every five minutes
+Description=prgd managed care report every five minutes
 [Timer]
 OnBootSec=90s
 OnUnitActiveSec=5min
@@ -181,13 +181,13 @@ WantedBy=timers.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now pgcloud-managed.timer >/dev/null 2>&1
+systemctl enable --now prgd-managed.timer >/dev/null 2>&1
 systemctl enable --now fail2ban >/dev/null 2>&1 || true
 systemctl restart fail2ban >/dev/null 2>&1 || true
 systemctl reload ssh >/dev/null 2>&1 || systemctl reload sshd >/dev/null 2>&1 || true
 systemctl restart unattended-upgrades >/dev/null 2>&1 || true
-systemctl start pgcloud-managed.service >/dev/null 2>&1 || true
-echo "pgcloud managed care agent installed"
+systemctl start prgd-managed.service >/dev/null 2>&1 || true
+echo "prgd managed care agent installed"
 `;
 }
 
@@ -207,8 +207,8 @@ export function withManagedAgent(userData: string | null | undefined, script: st
     const body = userData.trimEnd() + '\n';
     parts.push({ type: body.startsWith('#!') ? 'text/x-shellscript' : 'text/cloud-config', name: 'user-data', body });
   }
-  parts.push({ type: 'text/x-shellscript', name: 'pgcloud-managed.sh', body: script });
-  const boundary = '==pgcloud-managed==';
+  parts.push({ type: 'text/x-shellscript', name: 'prgd-managed.sh', body: script });
+  const boundary = '==prgd-managed==';
   return [
     'Content-Type: multipart/mixed; boundary="' + boundary + '"',
     'MIME-Version: 1.0',

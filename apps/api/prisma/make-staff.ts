@@ -4,7 +4,7 @@ import { PrismaClient } from '@prisma/client';
 /**
  * Promotes an existing account to full staff (back office access). Sign up through the console
  * first, then run once on the host:
- *   docker compose --env-file /etc/pgcloud/pgcloud.env run --rm staff you@progrid.sa
+ *   docker compose --env-file /etc/prgd/prgd.env run --rm staff you@progrid.sa
  * The user must enable two factor sign in before the back office opens for them.
  */
 const prisma = new PrismaClient();

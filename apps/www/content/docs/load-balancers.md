@@ -18,7 +18,7 @@ them over the private network.
 From the console open **Load balancers**, or from the CLI:
 
 ```
-pgcloud load-balancers create web --rule http:80:80 --server web-1 --server web-2 --wait
+prgd load-balancers create web --rule http:80:80 --server web-1 --server web-2 --wait
 ```
 
 Through the API:
@@ -53,7 +53,7 @@ rules.
 
 ## Certificates
 
-Two kinds, both under **Certificates** on the load balancers page or `pgcloud certificates`:
+Two kinds, both under **Certificates** on the load balancers page or `prgd certificates`:
 
 - **Let's Encrypt:** give the domain names, point them at the load balancer IP, and use the
   certificate in an HTTPS rule. The nodes issue the certificate over HTTP validation and renew
@@ -87,7 +87,7 @@ deletes its nodes and releases the IP; the target servers are untouched.
 
 ## Terraform, SDKs and agents
 
-Terraform manages a load balancer with the `pgcloud_load_balancer` resource and
+Terraform manages a load balancer with the `prgd_load_balancer` resource and
 `forwarding_rule` blocks. The SDKs expose `loadBalancers` and `certificates` with a
 `waitUntilActive` helper. Agent tokens need `network:read` and `network:write`; the MCP server
 exposes `list_load_balancers`, `create_load_balancer`, `load_balancer_servers` and

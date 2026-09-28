@@ -1,4 +1,4 @@
-# @pgcloud/api
+# @prgd/api
 
 The control plane: a NestJS modular monolith (`src/app.module.ts`), a Temporal worker
 (`src/worker.ts`, workflows in `src/workflows`) and the Prisma schema (`prisma/`). How to run it
@@ -28,7 +28,7 @@ stopped; tests run the jobs they need.
 It needs:
 
 - Postgres. The suite drops and recreates the database in `IT_DATABASE_URL`
-  (default `postgresql://pgcloud:pgcloud@localhost:5432/pgcloud_test`; the name must contain
+  (default `postgresql://prgd:prgd@localhost:5432/prgd_test`; the name must contain
   "test"), applies every migration and runs the seed. The user must be allowed to create
   databases.
 - Redis. The suite empties the database in `IT_REDIS_URL` (default `redis://localhost:6379/5`).
