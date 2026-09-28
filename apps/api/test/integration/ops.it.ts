@@ -607,3 +607,52 @@ describe('ops console terminal sessions and the gateway contract', () => {
     expect(audit.map((a) => a.action)).toEqual(expect.arrayContaining(['ops.session_opened', 'ops.session_started', 'ops.secret_resolved', 'ops.session_ended', 'ops.session_recording_stored']));
   });
 });
+
+describe('ops console shifts and handovers', () => {
+  it('starts a shift with the checklist, ends it with a handover and revokes non emergency grants', async () => {
+    const c = await contractWithAsset();
+    const prev = await externalEngineer({ contractIds: [c.contractId] });
+    const eng = await externalEngineer({ contractIds: [c.contractId] });
+    // The previous engineer hands over first.
+    await onCall(prev.userId, 'SECONDARY');
+    await prev.client.ok('GET', '/ops/v1/shifts/handover/latest');
+    await prev.client.ok('POST', '/ops/v1/shifts/start', { checklist: { pagingAppOnline: true, vpnWorking: true, twoFactorWorking: true, lastHandoverRead: true } }, 200);
+    const prevEnd = await prev.client.ok('POST', '/ops/v1/shifts/end', { handover: { risks: 'Disk on web at 85 percent', pendingMaintenance: 'Kernel patch Friday', notes: 'Quiet night' } }, 200);
+    expect(prevEnd.shift.state).toBe('ended');
+
+    await onCall(eng.userId);
+    const incomplete = await eng.client.post('/ops/v1/shifts/start', { checklist: { pagingAppOnline: true, vpnWorking: false, twoFactorWorking: true, lastHandoverRead: true } });
+    expect(incomplete.status).toBe(422);
+    expect(incomplete.body.error.details.missing).toEqual(['vpnWorking']);
+    const unread = await eng.client.post('/ops/v1/shifts/start', { checklist: { pagingAppOnline: true, vpnWorking: true, twoFactorWorking: true, lastHandoverRead: true } });
+    expect(unread.status).toBe(409);
+    expect(unread.body.error.code).toBe('handover_not_read');
+    const latest = await eng.client.ok('GET', '/ops/v1/shifts/handover/latest');
+    expect(latest.handover).toMatchObject({ id: prevEnd.handover.id, risks: 'Disk on web at 85 percent' });
+    const started = await eng.client.ok('POST', '/ops/v1/shifts/start', { checklist: { pagingAppOnline: true, vpnWorking: true, twoFactorWorking: true, lastHandoverRead: true } }, 200);
+    expect(started.state).toBe('started');
+    expect(started.startChecklist.lastHandoverId).toBe(prevEnd.handover.id);
+    expect((await eng.client.ok('GET', '/ops/v1/me')).currentShift.startedAt).toBeTruthy();
+
+    // One non emergency grant (P3, lead approved) and one emergency grant (P1, on call).
+    const p3 = await customerTicket(c.owner, c.assetId, 'P3', 'Rotate logs');
+    const normal = await eng.client.ok('POST', '/ops/v1/access/grants', { assetId: c.assetId, ticketId: p3.id, reason: 'Configure logrotate', durationMin: 60 }, 201);
+    await lead.client.ok('POST', `/admin/ops/access/grants/${normal.id}/approve`, {}, 200);
+    const p1 = await customerTicket(c.owner, c.assetId, 'P1', 'Down');
+    const urgent = await eng.client.ok('POST', '/ops/v1/access/grants', { assetId: c.assetId, ticketId: p1.id, reason: 'Outage', durationMin: 60 }, 201);
+    for (const id of [normal.id, urgent.id]) await waitFor(async () => (await s.prisma.accessGrant.findUniqueOrThrow({ where: { id } })).status === 'ACTIVE', { what: 'grants ACTIVE', timeoutMs: 20_000 });
+    await eng.client.ok('PATCH', `/ops/v1/tickets/${p1.id}`, { assigneeId: eng.userId });
+
+    const noHandover = await eng.client.post('/ops/v1/shifts/end', {});
+    expect(noHandover.status).toBe(400);
+    const ended = await eng.client.ok('POST', '/ops/v1/shifts/end', { handover: { risks: 'P1 still open', pendingMaintenance: '', notes: 'Customer was told' } }, 200);
+    expect(ended.grantsRevoked).toBe(1);
+    expect(ended.handover.openTickets.map((t: { id: string }) => t.id)).toContain(p1.id);
+    expect((await s.prisma.accessGrant.findUniqueOrThrow({ where: { id: normal.id } })).revokeReason).toBe('shift_end');
+    expect((await s.prisma.accessGrant.findUniqueOrThrow({ where: { id: urgent.id } })).status).toBe('ACTIVE');
+    // An ended shift no longer receives pages.
+    const current = await lead.client.ok('GET', '/admin/managed/oncall/current');
+    expect(current.shifts.map((x: { userId: string }) => x.userId)).not.toContain(eng.userId);
+    expect(await s.prisma.auditLog.count({ where: { resource: `oncall_shift:${started.id}`, action: { in: ['ops.shift_started', 'ops.shift_ended'] } } })).toBe(2);
+  });
+});

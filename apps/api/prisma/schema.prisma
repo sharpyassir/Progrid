@@ -2425,10 +2425,19 @@ model OnCallShift {
   endsAt      DateTime
   note        String?
   createdById String?
+  /// Ops console: when the engineer started the shift, after the start checklist.
+  startedAt   DateTime?
+  /// When the engineer ended it with a handover. An ended shift no longer receives pages.
+  endedAt     DateTime?
+  /// {pagingAppOnline, vpnWorking, twoFactorWorking, lastHandoverRead, lastHandoverId, at}
+  startChecklist Json?
+  handoverRemindedAt  DateTime?
+  handoverEscalatedAt DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  handover Handover?
 
   @@index([startsAt, endsAt])
   @@index([userId, startsAt])
@@ -2968,4 +2977,24 @@ model OpsSecret {
   updatedAt   DateTime @updatedAt
 
   @@map("prgd_ops_secrets")
+}
+
+/// What an engineer hands to the next shift. Ending a shift requires one.
+model Handover {
+  id                 String   @id @default(cuid())
+  shiftId            String   @unique
+  authorId           String
+  /// Open tickets of the author at the end of the shift: [{id, number, subject, priority, status, contractId}].
+  openTickets        Json     @default("[]")
+  risks              String   @default("")
+  pendingMaintenance String   @default("")
+  notes              String   @default("")
+  /// Users who read it (the start checklist needs the last handover read).
+  readBy             String[] @default([])
+  createdAt          DateTime @default(now())
+
+  shift OnCallShift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@map("prgd_handovers")
 }

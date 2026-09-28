@@ -20,6 +20,8 @@ import { AdminOpsAccessController, OpsAccessController } from './access/access.c
 import { SessionsService } from './sessions/sessions.service';
 import { AdminOpsSessionsController, GatewayInternalController, GatewaySecretGuard, OpsSessionsController } from './sessions/sessions.controller';
 import { ObjectsModule } from '../storage/objects/objects.module';
+import { ShiftsService } from './shifts/shifts.service';
+import { OpsShiftsController } from './shifts/shifts.controller';
 
 /**
  * DevOps console backend: /ops/v1 for engineers (apps/ops), /admin/ops for support leads and
@@ -29,8 +31,8 @@ import { ObjectsModule } from '../storage/objects/objects.module';
  */
 @Module({
   imports: [EventsModule, ManagedModule, ObjectsModule],
-  controllers: [OpsAuthController, OpsDeskController, OpsTimersController, OpsAccessController, OpsSessionsController, GatewayInternalController, AdminOpsEngineersController, AdminOpsTimesheetsController, AdminOpsAccessController, AdminOpsSessionsController],
-  providers: [OpsAudit, OpsHooks, OpsScopeService, EngineerGuard, AssignmentGuard, ResidencyGuard, OpsAuthService, EngineersService, OffboardingService, DeskService, TimersService, TimesheetsService, GrantsService, SessionsService, GatewaySecretGuard],
-  exports: [OpsAudit, OpsHooks, TimersService, TimesheetsService, GrantsService, SessionsService, GatewaySecretGuard],
+  controllers: [OpsAuthController, OpsDeskController, OpsTimersController, OpsAccessController, OpsSessionsController, OpsShiftsController, GatewayInternalController, AdminOpsEngineersController, AdminOpsTimesheetsController, AdminOpsAccessController, AdminOpsSessionsController],
+  providers: [OpsAudit, OpsHooks, OpsScopeService, EngineerGuard, AssignmentGuard, ResidencyGuard, OpsAuthService, EngineersService, OffboardingService, DeskService, TimersService, TimesheetsService, GrantsService, SessionsService, GatewaySecretGuard, ShiftsService],
+  exports: [OpsAudit, OpsHooks, TimersService, TimesheetsService, GrantsService, SessionsService, ShiftsService],
 })
 export class OpsModule {}

@@ -48,7 +48,7 @@ export class DeskService {
     const now = new Date();
     const [contracts, shift, pages, extra] = await Promise.all([
       this.contracts(ops),
-      this.prisma.onCallShift.findFirst({ where: { userId: ops.userId, startsAt: { lte: new Date(now.getTime() + 30 * 60_000) }, endsAt: { gt: now } }, orderBy: { startsAt: 'asc' } }),
+      this.prisma.onCallShift.findFirst({ where: { userId: ops.userId, endedAt: null, startsAt: { lte: new Date(now.getTime() + 30 * 60_000) }, endsAt: { gt: now } }, orderBy: { startsAt: 'asc' } }),
       this.prisma.page.findMany({ where: { userId: ops.userId, ackAt: null, urgency: 'high' }, orderBy: { createdAt: 'desc' }, take: 50 }),
       this.hooks.meExtras(ops),
     ]);
@@ -57,7 +57,7 @@ export class DeskService {
       engineer: { kind: ops.kind, country: ops.country, timezone: ops.timezone, status: ops.profile?.status ?? 'ACTIVE', currency: ops.profile?.currency ?? null },
       lead: ops.lead,
       contracts: contracts.data,
-      currentShift: shift ? { id: shift.id, role: shift.role, startsAt: shift.startsAt, endsAt: shift.endsAt } : null,
+      currentShift: shift ? { id: shift.id, role: shift.role, startsAt: shift.startsAt, endsAt: shift.endsAt, startedAt: shift.startedAt, endedAt: shift.endedAt } : null,
       openPages: pages.map(opsPage),
       ...extra,
     };

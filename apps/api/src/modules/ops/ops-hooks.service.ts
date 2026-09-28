@@ -4,6 +4,7 @@ import type { OpsContext } from './guards/ops-context';
 import { TimersService } from './timers/timers.service';
 import { GrantsService, LIVE_GRANT, presentGrant } from './access/grants.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { presentHandover } from './shifts/shifts.service';
 
 /**
  * Side effects that cross ops areas, in one place so the desk does not depend on every area:
@@ -20,7 +21,8 @@ export class OpsHooks {
       this.timers.current(ops.userId),
       this.prisma.accessGrant.findMany({ where: { userId: ops.userId, status: { in: LIVE_GRANT } }, include: { asset: { select: { id: true, name: true } }, ticket: { select: { id: true, number: true } } }, orderBy: { createdAt: 'desc' } }),
     ]);
-    return { runningTimer, activeGrants: grants.map((g) => presentGrant(g)) };
+    const last = await this.prisma.handover.findFirst({ orderBy: { createdAt: 'desc' }, include: { shift: { include: { user: { select: { id: true, name: true } } } } } });
+    return { runningTimer, activeGrants: grants.map((g) => presentGrant(g)), lastHandover: last ? { ...presentHandover(last, ops.external), read: last.readBy.includes(ops.userId) } : null };
   }
 
   /** Extra fields of the ticket workspace. */

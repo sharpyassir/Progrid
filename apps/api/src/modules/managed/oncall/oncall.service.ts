@@ -23,7 +23,8 @@ export class OnCallService {
   constructor(private readonly prisma: PrismaService, private readonly events: EventsService) {}
 
   async current(at = new Date()) {
-    const shifts = await this.prisma.onCallShift.findMany({ where: { startsAt: { lte: at }, endsAt: { gt: at } }, include: { user: { select: contactSelect } }, orderBy: { startsAt: 'desc' } });
+    // A shift the engineer ended early with a handover (ops console) no longer receives pages.
+    const shifts = await this.prisma.onCallShift.findMany({ where: { startsAt: { lte: at }, endsAt: { gt: at }, endedAt: null }, include: { user: { select: contactSelect } }, orderBy: { startsAt: 'desc' } });
     const pick = (role: OnCallRole) => shifts.find((s) => s.role === role)?.user ?? null;
     return { at, primary: pick('PRIMARY'), secondary: pick('SECONDARY'), shifts: shifts.map(presentShift) };
   }

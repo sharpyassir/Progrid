@@ -300,7 +300,7 @@ export class GrantsService implements OnModuleInit {
   /** On call now: a PRIMARY or SECONDARY shift covering this moment that the engineer has not ended. */
   private async onCallNow(userId: string) {
     const now = new Date();
-    return !!(await this.prisma.onCallShift.findFirst({ where: { userId, startsAt: { lte: now }, endsAt: { gt: now } } }));
+    return !!(await this.prisma.onCallShift.findFirst({ where: { userId, startsAt: { lte: now }, endsAt: { gt: now }, endedAt: null } }));
   }
 
   private async askLead(ops: OpsContext, g: AccessGrant, why: string) {
