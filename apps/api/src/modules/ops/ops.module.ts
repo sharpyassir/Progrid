@@ -22,6 +22,8 @@ import { AdminOpsSessionsController, GatewayInternalController, GatewaySecretGua
 import { ObjectsModule } from '../storage/objects/objects.module';
 import { ShiftsService } from './shifts/shifts.service';
 import { OpsShiftsController } from './shifts/shifts.controller';
+import { PostmortemsService } from './postmortems/postmortems.service';
+import { AdminOpsPostmortemsController, OpsPostmortemsController } from './postmortems/postmortems.controller';
 
 /**
  * DevOps console backend: /ops/v1 for engineers (apps/ops), /admin/ops for support leads and
@@ -31,8 +33,8 @@ import { OpsShiftsController } from './shifts/shifts.controller';
  */
 @Module({
   imports: [EventsModule, ManagedModule, ObjectsModule],
-  controllers: [OpsAuthController, OpsDeskController, OpsTimersController, OpsAccessController, OpsSessionsController, OpsShiftsController, GatewayInternalController, AdminOpsEngineersController, AdminOpsTimesheetsController, AdminOpsAccessController, AdminOpsSessionsController],
-  providers: [OpsAudit, OpsHooks, OpsScopeService, EngineerGuard, AssignmentGuard, ResidencyGuard, OpsAuthService, EngineersService, OffboardingService, DeskService, TimersService, TimesheetsService, GrantsService, SessionsService, GatewaySecretGuard, ShiftsService],
-  exports: [OpsAudit, OpsHooks, TimersService, TimesheetsService, GrantsService, SessionsService, ShiftsService],
+  controllers: [OpsAuthController, OpsDeskController, OpsTimersController, OpsAccessController, OpsSessionsController, OpsShiftsController, OpsPostmortemsController, GatewayInternalController, AdminOpsEngineersController, AdminOpsTimesheetsController, AdminOpsAccessController, AdminOpsSessionsController, AdminOpsPostmortemsController],
+  providers: [OpsAudit, OpsHooks, OpsScopeService, EngineerGuard, AssignmentGuard, ResidencyGuard, OpsAuthService, EngineersService, OffboardingService, DeskService, TimersService, TimesheetsService, GrantsService, SessionsService, GatewaySecretGuard, ShiftsService, PostmortemsService],
+  exports: [OpsAudit, OpsHooks, TimersService, TimesheetsService, GrantsService, SessionsService, ShiftsService, PostmortemsService],
 })
 export class OpsModule {}

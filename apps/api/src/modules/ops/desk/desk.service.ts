@@ -4,6 +4,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ApiError } from '../../../common/errors/api-error';
 import { loadConfig } from '../../../config/config';
 import { ManagedTicketsService } from '../../managed/tickets/tickets.service';
+import { isClosedStatus } from '../../managed/managed.constants';
 import { ManagedAlertsService } from '../../managed/alerts/alerts.service';
 import { PagingService } from '../../managed/oncall/paging.service';
 import { OnCallService } from '../../managed/oncall/oncall.service';
@@ -179,15 +180,15 @@ export class DeskService {
       await this.prisma.ticketMessage.create({ data: { ticketId: id, fromSupport: true, internal: true, rootCause: true, authorId: ops.userId, authorName: author?.name ?? 'Engineer', body: `Root cause: ${dto.rootCause}` } });
       await this.audit.emit('ops.ticket_root_cause', ops, { contractId: t.contractId, assetId: t.assetId, ticketId: id }, `ticket:${id}`);
     }
-    const closing = dto.status === 'closed' && t.status !== 'closed';
+    const closing = dto.status === 'closed' && !isClosedStatus(t.status);
     if (closing && !dto.rootCause && !t.messages.length) throw new ApiError(422, 'root_cause_required', 'Record the root cause (an internal note) before closing the ticket');
-    const status = closing ? await this.hooks.closingStatus(t) : dto.status;
-    await this.tickets.update(ops.actor, id, { status, priority: dto.priority, assigneeId: dto.assigneeId });
+    // The managed module closes a P1 into resolved_pending_pm until its postmortem is submitted,
+    // and tells its listeners (access grants are revoked, the postmortem draft is created).
+    await this.tickets.update(ops.actor, id, { status: dto.status, priority: dto.priority, assigneeId: dto.assigneeId });
     const after = await this.prisma.ticket.findUniqueOrThrow({ where: { id } });
     if (after.status !== t.status) {
       await this.audit.emit('ops.ticket_status', ops, { contractId: t.contractId, assetId: t.assetId, ticketId: id, from: t.status, to: after.status }, `ticket:${id}`);
     }
-    if (closing) await this.hooks.ticketClosed(ops, id);
     await this.hooks.activity(ops.userId, id);
     return this.ticket(ops, id);
   }

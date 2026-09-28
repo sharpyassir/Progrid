@@ -255,7 +255,7 @@ export class ContractsService {
       where: { id },
       include: { plan: true, team: true, assets: { where: { removedAt: null } }, responsibilities: { orderBy: { sortOrder: 'asc' } }, maintenanceTasks: true, reports: { orderBy: { period: 'desc' }, take: 1 } },
     });
-    const open = await this.prisma.ticket.count({ where: { contractId: id, status: { not: 'closed' } } });
+    const open = await this.prisma.ticket.count({ where: { contractId: id, status: { notIn: ['closed', 'resolved_pending_pm'] } } });
     const lines = [
       `Handover for ${c.team.name}: ${c.plan.name} managed cloud contract`,
       `Ended: ${(c.cancelledAt ?? new Date()).toISOString().slice(0, 10)}${c.cancelReason ? ` (${c.cancelReason})` : ''}`,

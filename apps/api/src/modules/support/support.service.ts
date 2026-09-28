@@ -60,7 +60,7 @@ export class SupportService {
   async current(actor: Actor) {
     const team = await this.prisma.team.findUniqueOrThrow({ where: { id: actor.teamId }, select: { supportPlan: true, supportPlanSince: true, currency: true } });
     const plans = await this.plans(team.currency);
-    const open = await this.prisma.ticket.count({ where: { teamId: actor.teamId, status: { not: 'closed' } } });
+    const open = await this.prisma.ticket.count({ where: { teamId: actor.teamId, status: { notIn: ['closed', 'resolved_pending_pm'] } } });
     return { plan: team.supportPlan, since: team.supportPlanSince, openTickets: open, details: plans.data.find((p) => p.id === team.supportPlan) };
   }
 
@@ -83,7 +83,7 @@ export class SupportService {
   async list(actor: Actor, q: ListTicketsQuery) {
     const status = q.status ?? 'all';
     const rows = await this.prisma.ticket.findMany({
-      where: { teamId: actor.teamId, ...(status === 'all' ? {} : { status }) },
+      where: { teamId: actor.teamId, ...(status === 'all' ? {} : status === 'closed' ? { status: { in: ['closed', 'resolved_pending_pm'] } } : { status }) },
       include: { _count: { select: { messages: { where: { internal: false } } } } },
       orderBy: { updatedAt: 'desc' },
       ...cursorArgs(q),
@@ -102,7 +102,7 @@ export class SupportService {
     const target = PLAN_CATALOG[plan].targets[priority];
     if (target === null) throw ApiError.invalid(`Priority "${priority}" needs a higher support plan`, { plan, allowed: (Object.keys(PLAN_CATALOG[plan].targets) as Priority[]).filter((p) => PLAN_CATALOG[plan].targets[p] !== null) });
     // Managed cloud tickets are covered by the managed contract, not the support plan.
-    const open = await this.prisma.ticket.count({ where: { teamId: team.id, status: { not: 'closed' }, contractId: null } });
+    const open = await this.prisma.ticket.count({ where: { teamId: team.id, status: { notIn: ['closed', 'resolved_pending_pm'] }, contractId: null } });
     if (open >= PLAN_CATALOG[plan].maxOpen) throw ApiError.quota(`Your plan allows ${PLAN_CATALOG[plan].maxOpen} open tickets; close one first`);
     if (dto.resource) await this.checkResource(actor, dto.resource);
     const author = await this.authorName(actor);
@@ -126,7 +126,7 @@ export class SupportService {
 
   async reply(actor: Actor, id: string, dto: TicketMessageDto) {
     const ticket = await this.own(actor, id);
-    if (ticket.status === 'closed' && ticket.closedAt && Date.now() - ticket.closedAt.getTime() > 14 * 86400_000) throw ApiError.invalidState('This ticket was closed more than 14 days ago; open a new one');
+    if ((ticket.status === 'closed' || ticket.status === 'resolved_pending_pm') && ticket.closedAt && Date.now() - ticket.closedAt.getTime() > 14 * 86400_000) throw ApiError.invalidState('This ticket was closed more than 14 days ago; open a new one');
     const author = await this.authorName(actor);
     const updated = await this.prisma.ticket.update({
       where: { id },
@@ -140,7 +140,7 @@ export class SupportService {
 
   async close(actor: Actor, id: string) {
     const ticket = await this.own(actor, id);
-    if (ticket.status === 'closed') return this.present(ticket);
+    if (ticket.status === 'closed' || ticket.status === 'resolved_pending_pm') return this.present(ticket);
     const updated = await this.prisma.ticket.update({ where: { id }, data: { status: 'closed', closedAt: new Date() }, include: ticketInclude });
     await this.events.emit('ticket.closed', { ticketId: id, number: ticket.number, by: 'customer' }, { actor, resource: `ticket:${id}` });
     return this.present(updated);
@@ -195,7 +195,7 @@ export class SupportService {
     });
     const teams = await this.prisma.team.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.teamId))] } }, select: { id: true, name: true, slug: true, supportPlan: true } });
     const teamOf = new Map(teams.map((t) => [t.id, t]));
-    return toPage(rows.map((t) => ({ ...this.summary(t, t._count.messages), team: teamOf.get(t.teamId) ?? null, overdue: t.status === 'open' && !t.firstRespondedAt && !!t.firstResponseDueAt && t.firstResponseDueAt < new Date() })), q.limit);
+    return toPage(rows.map((t) => ({ ...this.summary(t, t._count.messages, true), team: teamOf.get(t.teamId) ?? null, overdue: t.status === 'open' && !t.firstRespondedAt && !!t.firstResponseDueAt && t.firstResponseDueAt < new Date() })), q.limit);
   }
 
   async adminGet(id: string) {
@@ -288,9 +288,10 @@ export class SupportService {
     await Promise.all([...to].map((email) => this.mail.send({ to: email, subject: `Re: [#${ticket.number}] ${ticket.subject}`, text: `${body}\n\nReply or close the ticket here:\n${url}` }).catch((e) => this.log.warn(`support mail failed: ${e}`))));
   }
 
-  private summary(t: Prisma.TicketGetPayload<object>, messageCount: number) {
+  /** Customers see a managed P1 waiting for its postmortem (resolved_pending_pm) as closed. */
+  private summary(t: Prisma.TicketGetPayload<object>, messageCount: number, staff = false) {
     return {
-      id: t.id, number: t.number, subject: t.subject, status: t.status, priority: t.priority, plan: t.plan, resource: t.resource,
+      id: t.id, number: t.number, subject: t.subject, status: staff || t.status !== 'resolved_pending_pm' ? t.status : 'closed', priority: t.priority, plan: t.plan, resource: t.resource,
       firstResponseDueAt: t.firstResponseDueAt, firstRespondedAt: t.firstRespondedAt, lastCustomerAt: t.lastCustomerAt, lastSupportAt: t.lastSupportAt,
       closedAt: t.closedAt, createdAt: t.createdAt, updatedAt: t.updatedAt, messageCount,
     };
@@ -299,6 +300,6 @@ export class SupportService {
   /** Customer view by default: internal notes (managed cloud tickets) are never returned to customers. */
   private present(t: TicketRow, staff = false) {
     const messages = t.messages.filter((m) => staff || !m.internal);
-    return { ...this.summary(t, messages.length), messages: messages.map((m) => ({ id: m.id, fromSupport: m.fromSupport, author: m.authorName, body: m.body, createdAt: m.createdAt, ...(staff ? { internal: m.internal } : {}) })) };
+    return { ...this.summary(t, messages.length, staff), messages: messages.map((m) => ({ id: m.id, fromSupport: m.fromSupport, author: m.authorName, body: m.body, createdAt: m.createdAt, ...(staff ? { internal: m.internal } : {}) })) };
   }
 }

@@ -139,7 +139,7 @@ export class PagingService {
     const p = await this.prisma.page.findUnique({ where: { id: pageId }, include: { alert: true, ticket: true } });
     if (!p || p.ackAt) return 'acknowledged';
     if (p.escalatedAt) return 'escalated';
-    if (p.alert?.status === 'RESOLVED' && (!p.ticket || p.ticket.status === 'closed')) return 'resolved';
+    if (p.alert?.status === 'RESOLVED' && (!p.ticket || p.ticket.status === 'closed' || p.ticket.status === 'resolved_pending_pm')) return 'resolved';
     const lead = await this.oncall.supportLead(p.userId);
     await this.prisma.page.update({ where: { id: pageId }, data: { escalatedAt: new Date() } });
     if (!lead) {

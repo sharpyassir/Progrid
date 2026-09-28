@@ -84,7 +84,7 @@ export function opsTicketSummary(t: Ticket & { assignee?: Person; asset?: { id: 
     responseBreached: t.responseBreached,
     resolveBreached: t.resolveBreached,
     /** Seconds until the next SLA target (response until the first reply, then resolve); negative when late, null when closed. */
-    slaSecondsLeft: t.status === 'closed' || !due ? null : Math.round((due.getTime() - now.getTime()) / 1000),
+    slaSecondsLeft: t.status === 'closed' || t.status === 'resolved_pending_pm' || !due ? null : Math.round((due.getTime() - now.getTime()) / 1000),
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
   };

@@ -57,7 +57,7 @@ export class TimersService {
     let contractId: string;
     if (dto.ticketId) {
       const t = await this.prisma.ticket.findUniqueOrThrow({ where: { id: dto.ticketId } });
-      if (t.status === 'closed') throw ApiError.invalidState('The ticket is closed');
+      if (t.status === 'closed' || t.status === 'resolved_pending_pm') throw ApiError.invalidState('The ticket is closed');
       contractId = t.contractId!;
     } else {
       const r = await this.prisma.maintenanceRun.findUniqueOrThrow({ where: { id: dto.maintenanceRunId }, include: { task: { select: { contractId: true } } } });

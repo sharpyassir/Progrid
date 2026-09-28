@@ -656,3 +656,55 @@ describe('ops console shifts and handovers', () => {
     expect(await s.prisma.auditLog.count({ where: { resource: `oncall_shift:${started.id}`, action: { in: ['ops.shift_started', 'ops.shift_ended'] } } })).toBe(2);
   });
 });
+
+describe('ops console postmortems and runbooks', () => {
+  it('keeps a closed P1 pending its postmortem, suggests runbooks and lets the lead close the postmortem', async () => {
+    const c = await contractWithAsset();
+    const other = await contractWithAsset();
+    const eng = await externalEngineer({ contractIds: [c.contractId] });
+    const tag = randomBytes(3).toString('hex');
+    const mine = await lead.client.ok('POST', '/admin/managed/runbooks', { title: `Customer stack ${tag}`, body: 'Nginx in front of Node', tags: [`contract:${c.contractId}`] }, 201);
+    const theirs = await lead.client.ok('POST', '/admin/managed/runbooks', { title: `Other customer ${tag}`, body: 'Secret layout', tags: [`contract:${other.contractId}`] }, 201);
+    const generic = await lead.client.ok('POST', '/admin/managed/runbooks', { title: `Disk full on Linux ${tag}`, body: 'Clean journald', tags: ['disk'] }, 201);
+
+    const t = await customerTicket(c.owner, c.assetId, 'P1', 'The disk is full and the site is down');
+    const ws = await eng.client.ok('GET', `/ops/v1/tickets/${t.id}`);
+    const suggested = ws.suggestedRunbooks.map((r: { id: string }) => r.id);
+    expect(suggested[0]).toBe(mine.id);
+    expect(suggested).toContain(generic.id);
+    expect(suggested).not.toContain(theirs.id);
+    const list = await eng.client.ok('GET', `/ops/v1/runbooks?q=${tag}`);
+    expect(list.data.map((r: { id: string }) => r.id).sort()).toEqual([generic.id, mine.id].sort());
+    expect((await eng.client.get(`/ops/v1/runbooks/${theirs.slug}`)).status).toBe(404);
+    expect((await eng.client.post('/ops/v1/runbooks', { title: 'Sneaky', body: 'x', tags: [`contract:${other.contractId}`] })).status).toBe(403);
+    await eng.client.ok('PATCH', `/ops/v1/runbooks/${generic.slug}`, { body: 'Clean journald and old kernels' });
+    expect((await eng.client.del(`/ops/v1/runbooks/${generic.slug}`)).status).toBe(403);
+
+    await eng.client.ok('PATCH', `/ops/v1/tickets/${t.id}`, { assigneeId: eng.userId });
+    const closed = await eng.client.ok('PATCH', `/ops/v1/tickets/${t.id}`, { status: 'closed', rootCause: 'Application logs were never rotated.' });
+    expect(closed.ticket.status).toBe('resolved_pending_pm');
+    expect(closed.postmortem.status).toBe('DRAFT');
+    // The customer sees it resolved.
+    expect((await c.owner.client.ok('GET', `/v1/managed/tickets/${t.id}`)).status).toBe('closed');
+    expect((await c.owner.client.ok('GET', '/v1/managed/tickets?status=closed')).data.map((x: { id: string }) => x.id)).toContain(t.id);
+    expect((await c.owner.client.ok('GET', `/v1/support/tickets/${t.id}`)).status).toBe('closed');
+
+    const pm = await eng.client.ok('GET', `/ops/v1/postmortems/${closed.postmortem.id}`);
+    expect(pm.rootCause).toBe('Application logs were never rotated.');
+    expect(pm.timeline).toContain('Resolved');
+    expect(new Date(pm.dueAt).getTime() - new Date(pm.ticket.resolvedAt).getTime()).toBe(48 * 3600_000);
+    const incomplete = await eng.client.patch(`/ops/v1/postmortems/${pm.id}`, { submit: true });
+    expect(incomplete.status).toBe(422);
+    expect(incomplete.body.error.details.missing).toEqual(['impact', 'fix', 'prevention']);
+    const submitted = await eng.client.ok('PATCH', `/ops/v1/postmortems/${pm.id}`, { impact: 'Site down 40 minutes', fix: 'Rotated and compressed logs', prevention: 'logrotate in the base image, disk alert at 80 percent', submit: true });
+    expect(submitted.status).toBe('SUBMITTED');
+    expect((await s.prisma.ticket.findUniqueOrThrow({ where: { id: t.id } })).status).toBe('closed');
+    expect((await eng.client.patch(`/ops/v1/postmortems/${pm.id}`, { impact: 'changed later' })).status).toBe(409);
+
+    const pending = await lead.client.ok('GET', '/admin/ops/postmortems?status=SUBMITTED');
+    expect(pending.data.map((x: { id: string }) => x.id)).toContain(pm.id);
+    expect((await lead.client.ok('POST', `/admin/ops/postmortems/${pm.id}/close`, { comment: 'Good write up' }, 200)).status).toBe('CLOSED');
+    const audit = await s.prisma.auditLog.findMany({ where: { resource: `postmortem:${pm.id}` } });
+    expect(audit.map((a) => a.action)).toEqual(expect.arrayContaining(['ops.postmortem_required', 'ops.postmortem_submitted', 'ops.postmortem_closed']));
+  });
+});

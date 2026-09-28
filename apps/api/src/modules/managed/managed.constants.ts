@@ -1,4 +1,4 @@
-import type { ManagedPriority, Prisma, ResponsibilityOwner, TicketPriority } from '@prisma/client';
+import type { ManagedPriority, Prisma, ResponsibilityOwner, TicketPriority, TicketStatus } from '@prisma/client';
 import { ApiError } from '../../common/errors/api-error';
 import type { Actor } from '../../common/auth/actor';
 import { hasStaffArea } from '../../common/auth/actor';
@@ -53,6 +53,14 @@ export function parseTargets(value: Prisma.JsonValue, what: string): Targets {
 export function assertOwner(actor: Actor) {
   if (actor.role !== 'owner') throw ApiError.forbidden('Only team owners can manage managed cloud contracts and reports');
 }
+
+/** Resolved ticket states. A managed P1 waits in resolved_pending_pm until its postmortem is submitted. */
+export const CLOSED_STATUSES: TicketStatus[] = ['closed', 'resolved_pending_pm'];
+export const isClosedStatus = (s: TicketStatus | string) => s === 'closed' || s === 'resolved_pending_pm';
+/** What customers see: a ticket waiting for its postmortem is resolved (closed) for them. */
+export const customerStatus = (s: TicketStatus) => (s === 'resolved_pending_pm' ? 'closed' : s);
+/** A customer filter on status: closed covers resolved_pending_pm too. */
+export const customerStatusFilter = (s: TicketStatus) => (isClosedStatus(s) ? { in: CLOSED_STATUSES } : s);
 
 /** Support leads and full staff. */
 export const isLead = (actor: Actor) => hasStaffArea(actor.scopes, 'support_lead');

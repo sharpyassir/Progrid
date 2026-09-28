@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma, type ManagedContract, type ManagedPlan, type ManagedPriority } from '@prisma/client';
+import { Prisma, type ManagedContract, type ManagedPlan, type ManagedPriority, type TicketStatus } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ApiError } from '../../../common/errors/api-error';
 import { cursorArgs, toPage } from '../../../common/pagination';
 import type { Actor } from '../../../common/auth/actor';
 import { loadConfig } from '../../../config/config';
 import { EventsService } from '../../events/events.service';
-import { SUPPORT_PRIORITY, isLead, parseTargets } from '../managed.constants';
+import { CLOSED_STATUSES, SUPPORT_PRIORITY, customerStatus, customerStatusFilter, isClosedStatus, isLead, parseTargets } from '../managed.constants';
 import { ManagedWorkflows } from '../managed-workflows.service';
 import { ManagedNotify } from '../managed-notify.service';
 import { SlaService } from '../sla/sla.service';
@@ -70,7 +70,7 @@ export class ManagedTicketsService {
 
   async list(actor: Actor, q: ListManagedTicketsQuery) {
     const rows = await this.prisma.ticket.findMany({
-      where: { teamId: actor.teamId, contractId: q.contractId ?? { not: null }, ...(q.status && q.status !== 'all' ? { status: q.status } : {}), ...(q.priority ? { managedPriority: q.priority } : {}) },
+      where: { teamId: actor.teamId, contractId: q.contractId ?? { not: null }, ...(q.status && q.status !== 'all' ? { status: customerStatusFilter(q.status) } : {}), ...(q.priority ? { managedPriority: q.priority } : {}) },
       include: { _count: { select: { messages: { where: { internal: false } } } } },
       orderBy: { updatedAt: 'desc' },
       ...cursorArgs(q),
@@ -97,7 +97,7 @@ export class ManagedTicketsService {
 
   async reply(actor: Actor, id: string, body: string) {
     const t = await this.own(actor, id);
-    if (t.status === 'closed' && t.closedAt && Date.now() - t.closedAt.getTime() > 14 * 86_400_000) throw ApiError.invalidState('This ticket was closed more than 14 days ago; open a new one');
+    if (isClosedStatus(t.status) && t.closedAt && Date.now() - t.closedAt.getTime() > 14 * 86_400_000) throw ApiError.invalidState('This ticket was closed more than 14 days ago; open a new one');
     const author = await this.authorName(actor);
     const updated = await this.prisma.ticket.update({
       where: { id },
@@ -111,8 +111,8 @@ export class ManagedTicketsService {
 
   async close(actor: Actor, id: string) {
     const t = await this.own(actor, id);
-    if (t.status === 'closed') return this.present(t, false);
-    const updated = await this.prisma.ticket.update({ where: { id }, data: { status: 'closed', closedAt: new Date() }, include: ticketInclude });
+    if (isClosedStatus(t.status)) return this.present(t, false);
+    const updated = await this.prisma.ticket.update({ where: { id }, data: { status: await this.closeStatus(t), closedAt: new Date() }, include: ticketInclude });
     await this.stopTimers(updated);
     await this.events.emit('ticket.closed', { ticketId: id, number: t.number, by: 'customer', contractId: t.contractId }, { actor, resource: `ticket:${id}` });
     await this.closed(id);
@@ -153,7 +153,7 @@ export class ManagedTicketsService {
     });
     const teams = await this.prisma.team.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.teamId))] } }, select: { id: true, name: true, slug: true } });
     const teamOf = new Map(teams.map((t) => [t.id, t]));
-    return toPage(rows.map((t) => ({ ...this.summary(t, t._count.messages), team: teamOf.get(t.teamId) ?? null, assignee: t.assignee, asset: t.asset, plan: t.contract?.plan ?? null })), q.limit);
+    return toPage(rows.map((t) => ({ ...this.summary(t, t._count.messages, true), team: teamOf.get(t.teamId) ?? null, assignee: t.assignee, asset: t.asset, plan: t.contract?.plan ?? null })), q.limit);
   }
 
   async adminGet(id: string) {
@@ -189,16 +189,17 @@ export class ManagedTicketsService {
       Object.assign(data, { managedPriority: dto.priority, priority: SUPPORT_PRIORITY[dto.priority], responseDueAt: due.responseDueAt, resolveDueAt: due.resolveDueAt, firstResponseDueAt: due.responseDueAt, warnedAt: null });
       changes.priority = { from: t.managedPriority, to: dto.priority };
     }
-    if (dto.status && dto.status !== t.status) {
-      data.status = dto.status;
-      data.closedAt = dto.status === 'closed' ? new Date() : null;
-      changes.status = { from: t.status, to: dto.status };
+    const target = dto.status === 'closed' ? await this.closeStatus(t) : dto.status;
+    if (target && target !== t.status && !(isClosedStatus(target) && isClosedStatus(t.status) && target !== 'closed')) {
+      data.status = target;
+      data.closedAt = isClosedStatus(target) ? t.closedAt ?? new Date() : null;
+      changes.status = { from: t.status, to: target };
     }
     if (!Object.keys(changes).length) return this.adminGet(id);
     const updated = await this.prisma.ticket.update({ where: { id }, data, include: ticketInclude });
     await this.events.emit('managed.ticket_updated', { ticketId: id, number: t.number, changes }, { teamId: t.teamId, actor, resource: `ticket:${id}` });
     if (newPriority) await this.startTimers(updated);
-    if (updated.status === 'closed') {
+    if (changes.status && isClosedStatus(updated.status)) {
       await this.stopTimers(updated);
       await this.closed(id);
     }
@@ -217,12 +218,13 @@ export class ManagedTicketsService {
     const now = new Date();
     const internal = !!dto.internal;
     const close = !internal && !!dto.close;
+    const closedStatus = close ? await this.closeStatus(t) : 'closed';
     const updated = await this.prisma.ticket.update({
       where: { id },
       data: internal
         ? { messages: { create: { fromSupport: true, internal: true, authorId: actor.userId, authorName: staff?.name ?? 'Progrid engineer', body: dto.body } } }
         : {
-            status: close ? 'closed' : 'answered',
+            status: close ? closedStatus : 'answered',
             closedAt: close ? now : null,
             lastSupportAt: now,
             firstRespondedAt: t.firstRespondedAt ?? now,
@@ -338,7 +340,7 @@ export class ManagedTicketsService {
   private async stopTimers(t: { id: string; managedPriority: ManagedPriority | null; status: string }) {
     if (!t.managedPriority) return;
     await this.workflows.signal(ManagedWorkflows.slaId(t.id, 'response', t.managedPriority), 'slaStop');
-    if (t.status === 'closed') await this.workflows.signal(ManagedWorkflows.slaId(t.id, 'resolve', t.managedPriority), 'slaStop');
+    if (isClosedStatus(t.status)) await this.workflows.signal(ManagedWorkflows.slaId(t.id, 'resolve', t.managedPriority), 'slaStop');
   }
 
   /** The ticket when the timer still has something to watch, otherwise null. */
@@ -346,7 +348,7 @@ export class ManagedTicketsService {
     const t = await this.prisma.ticket.findUnique({ where: { id: ticketId }, include: { contract: { include: { plan: true } } } });
     if (!t || !t.contract || t.managedPriority !== priority) return null;
     if (!SUPPORTED.includes(t.contract.status)) return null;
-    if (t.status === 'closed') return null;
+    if (isClosedStatus(t.status)) return null;
     if (kind === 'response' && t.firstRespondedAt) return null;
     return t;
   }
@@ -395,9 +397,20 @@ export class ManagedTicketsService {
     else await this.notify.toStaff({ subject, text });
   }
 
-  summary(t: Prisma.TicketGetPayload<object>, messageCount: number) {
+  /**
+   * The status a managed ticket closes into: a P1 without a submitted postmortem waits in
+   * resolved_pending_pm (docs/devops-console.md, "Postmortems"); everything else is closed.
+   */
+  async closeStatus(t: { id: string; managedPriority: ManagedPriority | null; contractId: string | null }): Promise<TicketStatus> {
+    if (!t.contractId || t.managedPriority !== 'P1') return 'closed';
+    const pm = await this.prisma.postmortem.findUnique({ where: { ticketId: t.id }, select: { status: true } });
+    return pm && pm.status !== 'DRAFT' ? 'closed' : 'resolved_pending_pm';
+  }
+
+  /** Customer views show resolved_pending_pm as closed; staff views show the real status. */
+  summary(t: Prisma.TicketGetPayload<object>, messageCount: number, staff = false) {
     return {
-      id: t.id, number: t.number, subject: t.subject, status: t.status, priority: t.managedPriority, contractId: t.contractId, assetId: t.assetId, assigneeId: t.assigneeId, source: t.source,
+      id: t.id, number: t.number, subject: t.subject, status: staff ? t.status : customerStatus(t.status), priority: t.managedPriority, contractId: t.contractId, assetId: t.assetId, assigneeId: t.assigneeId, source: t.source,
       responseDueAt: t.responseDueAt, resolveDueAt: t.resolveDueAt, firstRespondedAt: t.firstRespondedAt, closedAt: t.closedAt,
       warnedAt: t.warnedAt, breachedAt: t.breachedAt, responseBreached: t.responseBreached, resolveBreached: t.resolveBreached,
       lastCustomerAt: t.lastCustomerAt, lastSupportAt: t.lastSupportAt, createdAt: t.createdAt, updatedAt: t.updatedAt, messageCount,
@@ -408,8 +421,8 @@ export class ManagedTicketsService {
   present(t: TicketRow, staff: boolean) {
     const messages = t.messages.filter((m) => staff || !m.internal);
     return {
-      ...this.summary(t, messages.length),
-      messages: messages.map((m) => ({ id: m.id, fromSupport: m.fromSupport, author: m.authorName, body: m.body, createdAt: m.createdAt, ...(staff ? { internal: m.internal, authorId: m.authorId } : {}) })),
+      ...this.summary(t, messages.length, staff),
+      messages: messages.map((m) => ({ id: m.id, fromSupport: m.fromSupport, author: m.authorName, body: m.body, createdAt: m.createdAt, ...(staff ? { internal: m.internal, authorId: m.authorId, rootCause: m.rootCause } : {}) })),
     };
   }
 }

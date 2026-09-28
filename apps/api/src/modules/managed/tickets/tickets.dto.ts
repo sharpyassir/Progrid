@@ -4,6 +4,7 @@ import { PaginationQuery } from '../../../common/pagination';
 const PRIORITIES = ['P1', 'P2', 'P3', 'P4'] as const;
 type P = (typeof PRIORITIES)[number];
 const STATUSES = ['open', 'answered', 'closed'] as const;
+const LIST_STATUSES = [...STATUSES, 'resolved_pending_pm'] as const;
 
 export class CreateManagedTicketDto {
   @IsString() @Length(3, 140) subject: string;
@@ -34,7 +35,8 @@ export class UpdateManagedTicketDto {
 }
 
 export class ListManagedTicketsQuery extends PaginationQuery {
-  @IsOptional() @IsIn([...STATUSES, 'all']) status?: (typeof STATUSES)[number] | 'all';
+  /** closed includes P1 tickets waiting for their postmortem (resolved_pending_pm). */
+  @IsOptional() @IsIn([...LIST_STATUSES, 'all']) status?: (typeof LIST_STATUSES)[number] | 'all';
   @IsOptional() @IsIn(PRIORITIES) priority?: P;
   @IsOptional() @IsString() contractId?: string;
 }

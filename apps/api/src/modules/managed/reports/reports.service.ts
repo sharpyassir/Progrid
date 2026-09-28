@@ -204,7 +204,7 @@ export class ReportsService {
         tickets: tickets.length,
         responseMet: tickets.filter((t) => t.firstRespondedAt && !t.responseBreached).length,
         responseBreached: tickets.filter((t) => t.responseBreached).length,
-        resolveMet: tickets.filter((t) => t.status === 'closed' && !t.resolveBreached).length,
+        resolveMet: tickets.filter((t) => (t.status === 'closed' || t.status === 'resolved_pending_pm') && !t.resolveBreached).length,
         resolveBreached: tickets.filter((t) => t.resolveBreached).length,
       },
       patches: tally('PATCHING'),

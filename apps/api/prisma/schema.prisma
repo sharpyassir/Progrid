@@ -1755,6 +1755,8 @@ enum TicketStatus {
   open // waiting on us
   answered // waiting on the customer
   closed
+  /// A managed P1 that is resolved but still needs its postmortem. Customers see it as closed.
+  resolved_pending_pm
 
   @@map("prgd_ticket_status")
 }
@@ -1814,6 +1816,7 @@ model Ticket {
   maintenanceRuns MaintenanceRun[]
   workTimers WorkTimer[]
   accessGrants AccessGrant[]
+  postmortem Postmortem?
 
   @@index([contractId, status])
   @@index([assigneeId, status])
@@ -2997,4 +3000,42 @@ model Handover {
 
   @@index([createdAt])
   @@map("prgd_handovers")
+}
+
+enum PostmortemStatus {
+  DRAFT
+  SUBMITTED
+  CLOSED
+
+  @@map("prgd_postmortem_status")
+}
+
+/// Required after every managed P1: the ticket stays resolved_pending_pm until it is submitted. A support lead closes it.
+model Postmortem {
+  id          String           @id @default(cuid())
+  ticketId    String           @unique
+  authorId    String?
+  /// Markdown sections (spec template).
+  timeline    String           @default("")
+  impact      String           @default("")
+  rootCause   String           @default("")
+  fix         String           @default("")
+  prevention  String           @default("")
+  status      PostmortemStatus @default(DRAFT)
+  /// 48 hours (postmortemDueHours) after the ticket was resolved.
+  dueAt       DateTime
+  submittedAt DateTime?
+  submittedById String?
+  closedById  String?
+  closedAt    DateTime?
+  closeComment String?
+  remindedAt  DateTime?
+  overdueNotifiedAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([status, dueAt])
+  @@map("prgd_postmortems")
 }
