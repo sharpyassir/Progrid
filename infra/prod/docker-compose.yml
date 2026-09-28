@@ -135,7 +135,9 @@ services:
       POSTGRES_USER: pgcloud
       POSTGRES_PWD: ${POSTGRES_PASSWORD}
       POSTGRES_SEEDS: postgres
-      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/progrid.yaml
+    volumes:
+      - ./temporal-dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/progrid.yaml:ro
     networks: [internal]
 
   # Authoritative nameserver. Runs on the management host in phase 0; in phase 1 run one on

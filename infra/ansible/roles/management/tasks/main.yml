@@ -40,7 +40,7 @@
 
 - name: Compose bundle
   copy: { src: "{{ playbook_dir }}/../prod/{{ item }}", dest: "/opt/pgcloud/{{ item }}", mode: "0640" }
-  loop: [docker-compose.yml, Caddyfile, backup.sh]
+  loop: [docker-compose.yml, Caddyfile, backup.sh, temporal-dynamicconfig.yaml]
   notify: compose up
 
 - name: Deploy script

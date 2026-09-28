@@ -1,0 +1,7 @@
+# Temporal dynamic config for the Progrid control plane. The auto-setup image no longer ships the
+# development file, so the server reads this one. Values here can be changed without a restart.
+frontend.enableUpdateWorkflowExecution:
+  - value: true
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true
+    constraints: {}
