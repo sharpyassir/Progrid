@@ -63,7 +63,7 @@ export default function ManagedTicketPage() {
         {(ticket.messages ?? []).map((m) => (
           <div key={m.id} className={`card ${m.fromSupport ? 'border-blue-200 bg-blue-50/40 dark:border-blue-900 dark:bg-blue-950/20' : ''}`}>
             <div className="mb-1 flex items-center gap-2 text-xs text-neutral-500"><span className="font-medium text-neutral-800 dark:text-neutral-200">{m.author}</span>{m.fromSupport && <span className="badge bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200">{t(locale, 'mcProgridEngineers')}</span>}<span className="ms-auto">{fmtDateTime(m.createdAt, locale)}</span></div>
-            <p className="whitespace-pre-wrap text-sm">{m.body}</p>
+            <p className="whitespace-pre-wrap text-sm" dir="auto">{m.body}</p>
           </div>
         ))}
       </div>

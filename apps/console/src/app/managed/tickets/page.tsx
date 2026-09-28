@@ -96,7 +96,7 @@ function Tickets() {
             <button key={s} onClick={() => setStatus(s)} className={`rounded px-2 py-1 ${status === s ? 'bg-neutral-900 text-white dark:bg-white dark:text-neutral-900' : 'text-neutral-600 dark:text-neutral-300'}`}>{tk(locale, `mcTicketFilter_${s}`)}</button>
           ))}
         </div>
-        <select className="input ms-auto w-auto py-1" value={priority} onChange={(e) => setPriority(e.target.value as '' | Priority)} aria-label={t(locale, 'priority')}>
+        <select className="input ms-auto !w-auto py-1" value={priority} onChange={(e) => setPriority(e.target.value as '' | Priority)} aria-label={t(locale, 'priority')}>
           <option value="">{t(locale, 'mcAllPriorities')}</option>
           {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>

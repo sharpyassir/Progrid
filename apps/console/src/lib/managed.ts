@@ -149,9 +149,9 @@ export function fmtSpan(ms: number, locale: Locale) {
 }
 
 export const fmtDateTime = (d: string | null | undefined, locale: Locale) =>
-  d ? new Date(d).toLocaleString(locale === 'ar' ? 'ar-SA-u-nu-latn' : locale, { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  d ? new Date(d).toLocaleString(locale === 'ar' ? 'ar-SA-u-nu-latn-ca-gregory' : locale, { dateStyle: 'medium', timeStyle: 'short' }) : '';
 export const fmtDay = (d: string | null | undefined, locale: Locale) =>
-  d ? new Date(d).toLocaleDateString(locale === 'ar' ? 'ar-SA-u-nu-latn' : locale, { dateStyle: 'medium' }) : '';
+  d ? new Date(d).toLocaleDateString(locale === 'ar' ? 'ar-SA-u-nu-latn-ca-gregory' : locale, { dateStyle: 'medium' }) : '';
 /** "September 2026" for "2026-09". */
 export const fmtPeriod = (period: string, locale: Locale) =>
   new Date(`${period}-01T00:00:00Z`).toLocaleDateString(locale === 'ar' ? 'ar-SA-u-nu-latn-ca-gregory' : locale, { month: 'long', year: 'numeric', timeZone: 'UTC' });
