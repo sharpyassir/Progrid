@@ -9,6 +9,7 @@ import { EventsService } from '../events/events.service';
 import { loadConfig } from '../../config/config';
 import { generateRecoveryCodes, generateSecret, otpauthUrl, verifyTotp } from '../../common/auth/totp';
 import type { Actor } from '../../common/auth/actor';
+import { dropUnprovenIdentities } from '../oauth/unproven-identities';
 
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 
@@ -60,6 +61,7 @@ export class AccountSecurityService {
 
   async resetPassword(token: string, password: string) {
     const row = await this.consumeToken(token, 'reset');
+    await dropUnprovenIdentities(this.prisma, row.userId); // the reset link proved the mailbox
     await this.prisma.user.update({ where: { id: row.userId }, data: { passwordHash: await argon2.hash(password) } });
     // Every other reset link for this user is now useless.
     await this.prisma.emailToken.updateMany({ where: { userId: row.userId, kind: 'reset', usedAt: null }, data: { usedAt: new Date() } });

@@ -12,6 +12,7 @@ import { AccountSecurityService } from '../iam/account-security.service';
 import { TeamService } from '../team/team.service';
 import { OidcProviders } from './providers';
 import { OAuthStore, randomToken, sha256, type Completion, type PendingLogin } from './oauth.store';
+import { dropUnprovenIdentities } from './unproven-identities';
 import { decideLink, PROVIDERS, safeReturnPath, type Intent, type ProviderAccount, type ProviderId, type RefuseCode } from './linking';
 
 export const BROWSER_COOKIE = 'prgd_oauth';
@@ -175,7 +176,10 @@ export class OAuthService {
   }
 
   private async complete(c: Completion, meta: Meta) {
-    if (c.link) await this.linkIdentity(c.userId, c.link, true);
+    if (c.link) {
+      if (c.link.emailVerified) await this.proveEmail(c.userId, c.link.provider);
+      await this.linkIdentity(c.userId, c.link, true);
+    }
     else if (c.identityId) await this.prisma.oAuthIdentity.update({ where: { id: c.identityId }, data: { lastUsedAt: new Date() } }).catch(() => undefined);
 
     let session = c.session;
@@ -228,6 +232,21 @@ export class OAuthService {
     await this.linkIdentity(user.id, a, true);
     await this.events.emit('user.oauth_signup', { userId: user.id, provider: a.provider, emailVerified: a.emailVerified }, { teamId: team.id, resource: `user:${user.id}` });
     return { ...base, userId: user.id, returnPath: '/security?welcome=1' };
+  }
+
+  /**
+   * The provider vouches for the address of an account whose email was never confirmed: drop
+   * identities nobody vouched for (see dropUnprovenIdentities), then confirm the email the way the
+   * verification link does, which also lifts the owner's teams out of pending_verification.
+   */
+  private async proveEmail(userId: string, provider: ProviderId) {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { emailVerified: true } });
+    if (user.emailVerified) return;
+    const dropped = await dropUnprovenIdentities(this.prisma, userId);
+    await this.prisma.user.update({ where: { id: userId }, data: { emailVerified: new Date() } });
+    const owned = await this.prisma.teamMember.findMany({ where: { userId, role: 'owner' } });
+    await this.prisma.team.updateMany({ where: { id: { in: owned.map((m) => m.teamId) }, status: 'pending_verification' }, data: { status: 'active' } });
+    await this.events.emit('user.email_verified', { userId, via: provider, droppedIdentities: dropped }, { resource: `user:${userId}` });
   }
 
   private async linkIdentity(userId: string, a: ProviderAccount, automatic: boolean) {

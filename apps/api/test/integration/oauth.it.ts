@@ -231,6 +231,31 @@ describe('social sign in', () => {
     expect(row.tenantId).toBe(WORK_TENANT);
   });
 
+  it('drops an unproven identity once the real owner of the address proves it', async () => {
+    // Someone creates an account with another person's address through a work directory that did not verify it.
+    const email = newEmail();
+    const attacker: Browser = { client: new Client(s.baseUrl) };
+    const made = await socialRound(attacker, 'microsoft', msClaims(email, WORK_TENANT));
+    const first = await attacker.client.ok('POST', '/v1/auth/oauth/exchange', { code: made.searchParams.get('code') }, 200);
+    expect(first.user.emailVerified).toBe(false);
+    expect(first.team.status).toBe('pending_verification');
+    const attackerSub = (await s.prisma.oAuthIdentity.findFirstOrThrow({ where: { userId: first.user.id } })).subject;
+
+    // The owner of the mailbox arrives with Google, which vouches for the address.
+    const owner: Browser = { client: new Client(s.baseUrl) };
+    const g = await socialRound(owner, 'google', googleClaims(email));
+    const res = await owner.client.ok('POST', '/v1/auth/oauth/exchange', { code: g.searchParams.get('code') }, 200);
+    expect(res.user.id).toBe(first.user.id);
+    expect(res.user.emailVerified).toBe(true);
+    const ids = await s.prisma.oAuthIdentity.findMany({ where: { userId: first.user.id } });
+    expect(ids.map((i) => i.provider)).toEqual(['google']);
+    expect((await s.prisma.team.findUniqueOrThrow({ where: { id: first.team.id } })).status).toBe('active');
+
+    // The Microsoft account no longer reaches it: it would now create a new account, which the taken address refuses.
+    const again = await socialRound(attacker, 'microsoft', { ...msClaims(email, WORK_TENANT), sub: attackerSub });
+    expect(again.searchParams.get('error')).toBe('link_from_security');
+  });
+
   it('refuses a Microsoft token whose issuer does not match its tenant', async () => {
     const b: Browser = { client: new Client(s.baseUrl) };
     const authorize = await begin(b, 'microsoft');
