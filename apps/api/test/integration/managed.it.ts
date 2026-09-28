@@ -510,3 +510,104 @@ describe('managed cloud runbooks', () => {
     expect((await engineer.client.ok('DELETE', `/admin/managed/runbooks/${rb.id}`)).deleted).toBe(true);
   });
 });
+
+describe('managed cloud summaries and staff lookups', () => {
+  it('shows every member the contract summary without prices or liability terms', async () => {
+    const nobody = await signup(s);
+    expect(await nobody.client.ok('GET', '/v1/managed/summary')).toEqual({ hasContract: false, contract: null, openTickets: 0, previous: null });
+
+    const { owner, contractId } = await activeContract('ESSENTIAL');
+    const m = await member(owner);
+    // Members still cannot read the contract itself.
+    expect((await m.client.get('/v1/managed/contracts')).status).toBe(403);
+    await m.client.ok('POST', '/v1/managed/tickets', { subject: 'Backups question', body: 'How long do you keep them?', priority: 'P4' }, 201);
+
+    const summary = await m.client.ok('GET', '/v1/managed/summary');
+    expect(summary).toMatchObject({ hasContract: true, openTickets: 1, contract: { id: contractId, status: 'ACTIVE', planName: 'Essential', planCode: 'ESSENTIAL', coverage: 'BUSINESS_HOURS', calendar: 'SA' } });
+    expect(summary.contract.sla).toMatchObject({ coverage: 'BUSINESS_HOURS', timeZone: 'Asia/Riyadh', responseTargets: { P1: 240, P2: 480, P3: 960, P4: 2400 } });
+    const text = JSON.stringify(summary);
+    for (const hidden of ['Minor', 'liability', 'price', 'signedBy', 'notes', 'currency', '110000', '1000000']) expect(text).not.toContain(hidden);
+    // The owner gets the same summary.
+    expect((await owner.client.ok('GET', '/v1/managed/summary')).contract.id).toBe(contractId);
+
+    // After cancellation the summary says so, still without amounts.
+    await lead.client.ok('POST', `/admin/managed/contracts/${contractId}/cancel`, { reason: 'test' }, 200);
+    const after = await m.client.ok('GET', '/v1/managed/summary');
+    expect(after).toMatchObject({ hasContract: false, contract: null, previous: { planName: 'Essential' } });
+  });
+
+  it('lets support leads search teams without billing data', async () => {
+    const t = await signup(s);
+    const team = await s.prisma.team.findUniqueOrThrow({ where: { id: t.teamId } });
+    const r = await lead.client.ok('GET', `/admin/managed/teams?q=${encodeURIComponent(team.name.slice(3))}`);
+    const hit = r.data.find((x: { id: string }) => x.id === t.teamId);
+    expect(hit).toEqual({ id: t.teamId, name: team.name, slug: team.slug, country: 'SA', ownerName: 'Integration Test' });
+    // By exact id and by the owner's email too.
+    expect((await lead.client.ok('GET', `/admin/managed/teams?q=${t.teamId}`)).data.map((x: { id: string }) => x.id)).toEqual([t.teamId]);
+    expect((await lead.client.ok('GET', `/admin/managed/teams?q=${encodeURIComponent(t.email)}`)).data.map((x: { id: string }) => x.id)).toEqual([t.teamId]);
+    // Engineers and customers cannot search teams.
+    expect((await engineer.client.get('/admin/managed/teams?q=it')).status).toBe(403);
+    expect((await t.client.get('/admin/managed/teams?q=it')).status).toBe(403);
+    // The lead creates a contract for the team it found.
+    const c = await lead.client.ok('POST', '/admin/managed/contracts', { teamId: hit.id, plan: 'ESSENTIAL' }, 201);
+    expect(c.teamId).toBe(t.teamId);
+  });
+
+  it('groups worklog totals per contract and per engineer', async () => {
+    const a = await activeContract('ESSENTIAL');
+    const b = await activeContract('ESSENTIAL');
+    const [teamA, teamB] = await Promise.all([a, b].map((x) => s.prisma.team.findUniqueOrThrow({ where: { id: x.owner.teamId } })));
+    // A month far in the past so no other test logs time in it.
+    const from = new Date(Date.UTC(2021, 2, 1)), to = new Date(Date.UTC(2021, 3, 1));
+    const at = new Date(Date.UTC(2021, 2, 10, 12));
+    const log = (who: Team, contractId: string, minutes: number, billable = true) => who.client.ok('POST', '/admin/managed/worklogs', { contractId, minutes, billable }, 201).then((w) => s.prisma.workLog.update({ where: { id: w.id }, data: { workedAt: at } }));
+    await log(engineer, a.contractId, 100);
+    await log(engineer, a.contractId, 60);
+    await log(engineer, a.contractId, 20, false);
+    await log(lead, a.contractId, 30);
+    await log(lead, b.contractId, 45);
+    // Draft time from the ops console does not count.
+    await s.prisma.workLog.create({ data: { contractId: b.contractId, userId: engineer.userId, minutes: 500, billable: true, status: 'DRAFT', workedAt: at } });
+
+    const r = await engineer.client.ok('GET', `/admin/managed/worklogs?from=${from.toISOString()}&to=${to.toISOString()}&limit=1`);
+    expect(r.data).toHaveLength(1);
+    expect(r.totals).toMatchObject({ billableMinutes: 235, nonBillableMinutes: 20 });
+    expect(r.totals.byContract).toEqual([
+      { contractId: a.contractId, teamId: teamA.id, teamName: teamA.name, planName: 'Essential', includedMinutes: 120, overageMinutes: 70, billableMinutes: 190, nonBillableMinutes: 20, entries: 4 },
+      { contractId: b.contractId, teamId: teamB.id, teamName: teamB.name, planName: 'Essential', includedMinutes: 120, overageMinutes: 0, billableMinutes: 45, nonBillableMinutes: 0, entries: 1 },
+    ]);
+    const byUser = Object.fromEntries(r.totals.byUser.map((u: { userId: string }) => [u.userId, u]));
+    expect(byUser[engineer.userId]).toMatchObject({ billableMinutes: 160, nonBillableMinutes: 20, entries: 3, name: 'Integration Test' });
+    expect(byUser[lead.userId]).toMatchObject({ billableMinutes: 75, nonBillableMinutes: 0, entries: 2 });
+    // Filters apply to the groups too.
+    const onlyB = await engineer.client.ok('GET', `/admin/managed/worklogs?contractId=${b.contractId}&from=${from.toISOString()}&to=${to.toISOString()}`);
+    expect(onlyB.totals.byContract.map((x: { contractId: string }) => x.contractId)).toEqual([b.contractId]);
+    expect(onlyB.totals.byUser).toEqual([{ userId: lead.userId, name: 'Integration Test', billableMinutes: 45, nonBillableMinutes: 0, entries: 1 }]);
+  });
+
+  it('names the team and plan on staff report and maintenance responses', async () => {
+    const { owner, contractId } = await activeContract('ESSENTIAL');
+    const team = await s.prisma.team.findUniqueOrThrow({ where: { id: owner.teamId } });
+    const ref = { contractId, teamId: team.id, teamName: team.name, planName: 'Essential', planCode: 'ESSENTIAL' };
+
+    const task = await engineer.client.ok('POST', '/admin/managed/maintenance/tasks', { contractId, kind: 'BACKUP_TEST', cron: '0 2 * * 0' }, 201);
+    expect(task).toMatchObject(ref);
+    const tasks = await engineer.client.ok('GET', `/admin/managed/maintenance/tasks?contractId=${contractId}`);
+    expect(tasks.data[0]).toMatchObject(ref);
+    expect(await engineer.client.ok('GET', `/admin/managed/maintenance/tasks/${task.id}`)).toMatchObject(ref);
+    const run = await s.prisma.maintenanceRun.create({ data: { taskId: task.id, status: 'SUCCEEDED', trigger: 'manual', runner: 'fake', log: 'ok' } });
+    const runs = await engineer.client.ok('GET', `/admin/managed/maintenance/runs?contractId=${contractId}`);
+    expect(runs.data[0].task).toMatchObject({ ...ref, id: task.id });
+    expect((await engineer.client.ok('GET', `/admin/managed/maintenance/runs/${run.id}`)).task).toMatchObject(ref);
+
+    const report = await engineer.client.ok('POST', `/admin/managed/reports/${contractId}/generate`, { period: '2021-01' }, 201);
+    expect(report).toMatchObject(ref);
+    const reports = await engineer.client.ok('GET', `/admin/managed/reports?contractId=${contractId}`);
+    expect(reports.data[0]).toMatchObject(ref);
+    expect(await engineer.client.ok('PATCH', `/admin/managed/reports/${report.id}`, { recommendations: 'Nothing to add.' })).toMatchObject(ref);
+    // Customers never see the staff fields.
+    await engineer.client.ok('POST', `/admin/managed/reports/${report.id}/send`, {}, 200);
+    const customer = await owner.client.ok('GET', `/v1/managed/contracts/${contractId}/reports`);
+    expect(customer.data[0].teamName).toBeUndefined();
+  });
+});
