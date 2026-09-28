@@ -169,6 +169,7 @@ Engineers review the drafts (`GET /admin/managed/reports?status=DRAFT`), rewrite
 | Area | Endpoints |
 |---|---|
 | Plans | `GET, POST /admin/managed/plans`, `GET, PATCH, DELETE /admin/managed/plans/{id}` (changes are full staff only) |
+| Teams | `GET /admin/managed/teams?q=` (support leads and full staff: id, name, slug, country and owner name, no billing data) |
 | Contracts | `GET, POST /admin/managed/contracts`, `GET, PATCH /admin/managed/contracts/{id}`, `POST .../activate`, `.../suspend`, `.../resume`, `.../cancel`, `.../renew`, `GET .../handover`, `GET .../usage` |
 | Onboarding | `GET, POST /admin/managed/contracts/{id}/onboarding`, `PATCH .../onboarding/{key}` |
 | Responsibilities | `GET, POST /admin/managed/contracts/{id}/responsibilities`, `PATCH, DELETE .../responsibilities/{rid}` |
@@ -178,9 +179,9 @@ Engineers review the drafts (`GET /admin/managed/reports?status=DRAFT`), rewrite
 | On call | `GET /admin/managed/oncall/current`, `GET, POST /admin/managed/oncall/shifts`, `PATCH, DELETE .../shifts/{id}`, `GET /admin/managed/staff`, `PUT /admin/managed/staff/{userId}/contact` |
 | Pages | `GET /admin/managed/pages`, `POST /admin/managed/pages/{id}/ack` |
 | Maintenance | `GET, POST /admin/managed/maintenance/tasks`, `GET, PATCH, DELETE .../tasks/{id}`, `POST .../tasks/{id}/run`, `GET /admin/managed/maintenance/runs`, `GET .../runs/{id}` |
-| Worklogs | `GET, POST /admin/managed/worklogs`, `PATCH, DELETE /admin/managed/worklogs/{id}` |
+| Worklogs | `GET, POST /admin/managed/worklogs`, `PATCH, DELETE /admin/managed/worklogs/{id}`. The list carries `totals` for the whole filter: overall, `byContract` (team, plan, included and overage minutes) and `byUser` |
 | Runbooks | `GET, POST /admin/managed/runbooks`, `GET, PATCH, DELETE /admin/managed/runbooks/{idOrSlug}` |
-| Reports | `GET /admin/managed/reports`, `GET, PATCH /admin/managed/reports/{id}`, `GET .../pdf`, `POST .../send`, `POST /admin/managed/reports/{contractId}/generate` |
+| Reports | `GET /admin/managed/reports` (reports and maintenance tasks and runs carry `teamName` and `planName`), `GET, PATCH /admin/managed/reports/{id}`, `GET .../pdf`, `POST .../send`, `POST /admin/managed/reports/{contractId}/generate` |
 | Holidays | `GET, PUT /admin/managed/holidays`, `DELETE /admin/managed/holidays/{id}` |
 
 ## Configuration

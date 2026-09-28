@@ -45,7 +45,7 @@ The response target is the time to the first answer from an engineer. The resolu
 
 ## Getting started
 
-1. A team owner requests a plan from **Managed** in the console or with `POST /v1/managed/contracts`. The contract starts as **DRAFT**.
+1. A team owner requests a plan from **Managed** in the console or with `POST /v1/managed/contracts`. The contract starts as **DRAFT**. Every team member can check the plan, status and service levels with `GET /v1/managed/summary`; prices and contract terms stay with the owners.
 2. We contact you to agree the scope, the liability cap and the calendar, and sign the contract. The contract moves to **ONBOARDING**.
 3. During onboarding our engineers install monitoring, configure backups and test a restore, get access through the management network, write the documentation and runbook for your setup, and agree the shared responsibility matrix with you.
 4. When the checklist is complete the contract becomes **ACTIVE** and billing starts that day. The first month is charged for the days it was active.
