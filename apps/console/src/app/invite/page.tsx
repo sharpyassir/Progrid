@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { api, ApiError, getToken, setToken } from '@/lib/api';
 import { Key, t, tf } from '@/lib/i18n';
 import { useShell } from '@/components/shell';
+import { SocialButtons } from '@/components/social-buttons';
 
 interface InviteInfo { teamName: string; email: string; role: string; expiresAt: string; hasAccount: boolean }
 
@@ -70,6 +71,7 @@ function InvitePage() {
           <button className="btn-primary w-full" disabled={busy} onClick={() => finish(() => post('/v1/invitations/accept', { token }))}>{t(locale, 'acceptInvite')}</button>
         )}
         {signedInAs && signedInAs !== info.email && <p className="text-sm text-amber-700">{tf(locale, 'inviteWrongUser')(info.email)}</p>}
+        {!signedInAs && <SocialButtons locale={locale} intent={info.hasAccount ? 'login' : 'signup'} invite={token} returnPath="/team" />}
         {!signedInAs && info.hasAccount && (
           <form onSubmit={signInAndAccept} className="space-y-3">
             <p className="text-sm">{t(locale, 'signInToAccept')}</p>

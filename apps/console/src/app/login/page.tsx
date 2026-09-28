@@ -6,6 +6,7 @@ import { FormEvent, useState } from 'react';
 import { api, ApiError, WWW_URL, setToken } from '@/lib/api';
 import { t } from '@/lib/i18n';
 import { useShell } from '@/components/shell';
+import { SocialButtons } from '@/components/social-buttons';
 
 export default function LoginPage() {
   const { locale } = useShell();
@@ -40,6 +41,7 @@ export default function LoginPage() {
     <div className="mx-auto mt-16 max-w-sm">
       <h1 className="mb-6 text-2xl font-semibold">{t(locale, mode === 'login' ? 'login' : 'signup')}</h1>
       <form onSubmit={submit} className="card space-y-3">
+        <SocialButtons locale={locale} intent={mode} />
         {mode === 'signup' && (
           <>
             <input className="input" name="name" placeholder={t(locale, 'name')} required />
