@@ -27,6 +27,17 @@ dns_provider: powerdns              # fake only on a demo box
 dns_nameservers: ns1.progrid.sa,ns2.progrid.sa
 object_storage_provider: rgw        # fake only on a demo box
 s3_endpoint: https://s3.sa1.progrid.sa
+# Managed cloud
+paging_mode: live                   # log records pages without sending them
+twilio_account_sid: ""
+twilio_from: ""                     # E.164 SMS sender
+twilio_whatsapp_from: ""            # E.164 WhatsApp sender
+push_webhook_url: ""
+page_ack_timeout_seconds: 600
+maintenance_runner: fake            # ansible once the worker can reach the management network
+maintenance_playbook_dir: /opt/prgd/maintenance
+maintenance_ssh_user: prgd
+maintenance_ssh_key_file: ""
 
 # --- vault.yml keys (values with ansible-vault) ---
 # vault_postgres_password: ...
@@ -38,6 +49,8 @@ s3_endpoint: https://s3.sa1.progrid.sa
 # vault_moyasar_secret_key: ...
 # vault_moyasar_webhook_secret: ...
 # vault_support_inbound_secret: ...
+# vault_alertmanager_webhook_secret: ...  # shared secret for POST /internal/alerts/alertmanager
+# vault_twilio_auth_token: ""             # Twilio SMS and WhatsApp paging
 # vault_pdns_api_key: ...
 # vault_rgw_admin_access_key: ...
 # vault_rgw_admin_secret_key: ...

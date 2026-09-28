@@ -45,6 +45,9 @@
   loop: [docker-compose.yml, Caddyfile, backup.sh, temporal-dynamicconfig.yaml]
   notify: compose up
 
+- name: Managed cloud maintenance playbooks (mounted into the worker)
+  copy: { src: "{{ playbook_dir }}/maintenance/", dest: /opt/prgd/maintenance/, mode: "0644", directory_mode: "0755" }
+
 - name: Deploy script
   copy: { src: "{{ playbook_dir }}/../prod/deploy.sh", dest: /opt/prgd/deploy.sh, mode: "0750" }
 

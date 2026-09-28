@@ -50,6 +50,9 @@ services:
   worker:
     <<: *api
     command: ["node", "dist/worker.js"]
+    # Managed cloud maintenance playbooks (MAINTENANCE_PLAYBOOK_DIR), copied here by Ansible.
+    volumes:
+      - ./maintenance:/opt/prgd/maintenance:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:4001/healthz"]
       interval: 30s

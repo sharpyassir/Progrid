@@ -97,7 +97,7 @@ payment_provider: moyasar         # never fake on a public server
 Secrets. Generate random values:
 
 ```bash
-for k in postgres_password nats_token jwt_secret secrets_key support_inbound_secret; do echo "vault_$k: $(openssl rand -hex 32)"; done
+for k in postgres_password nats_token jwt_secret secrets_key support_inbound_secret alertmanager_webhook_secret; do echo "vault_$k: $(openssl rand -hex 32)"; done
 ```
 
 Then `ansible-vault create group_vars/all/vault.yml`, choose a vault password you will keep, and paste:
@@ -108,6 +108,8 @@ vault_nats_token: <from above>
 vault_jwt_secret: <from above>
 vault_secrets_key: <from above>
 vault_support_inbound_secret: <from above>
+vault_alertmanager_webhook_secret: <from above>
+vault_twilio_auth_token: ""
 vault_mail_api_key: ""
 vault_moyasar_secret_key: ""
 vault_moyasar_webhook_secret: ""
