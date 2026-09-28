@@ -8,14 +8,13 @@ import { t, tf } from '@/lib/i18n';
 import { AdminShell } from '@/components/admin-shell';
 import { useShell } from '@/components/shell';
 import { Cell, ErrorBox, Loading, OkBox, Row, Table, tk, ToneBadge } from '@/components/managed';
-import { downloadPdf, errText, fmtDateTime, fmtPeriod, hours, type Contract, type Report } from '@/lib/managed';
+import { downloadPdf, errText, fmtDateTime, fmtPeriod, hours, type Report } from '@/lib/managed';
 
 /** One monthly report: the data summary, the engineer's recommendations, send, regenerate and PDF. */
 export default function AdminReportDetail() {
   const { id } = useParams<{ id: string }>();
   const { locale } = useShell();
   const [r, setR] = useState<Report | null>(null);
-  const [contract, setContract] = useState<Contract | null>(null);
   const [recs, setRecs] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +24,6 @@ export default function AdminReportDetail() {
   const load = useCallback(async () => {
     const rep = await api<Report>(`/admin/managed/reports/${id}`);
     setR(rep); setRecs(rep.recommendations ?? '');
-    api<Contract>(`/admin/managed/contracts/${rep.contractId}`).then(setContract).catch(() => undefined);
   }, [id]);
   useEffect(() => { load().catch((e) => setLoadError(errText(e))); }, [load]);
 
@@ -34,7 +32,7 @@ export default function AdminReportDetail() {
     try { await fn(); setOk(done); await load(); } catch (e) { setError(errText(e)); } finally { setBusy(false); }
   }
 
-  const title = r ? `${fmtPeriod(r.period, locale)}${contract ? `: ${contract.team?.name ?? ''}` : ''}` : t(locale, 'admMcReportsTitle');
+  const title = r ? `${fmtPeriod(r.period, locale)}${r.teamName ? `: ${r.teamName}` : ''}` : t(locale, 'admMcReportsTitle');
   if (loadError) return <AdminShell title={title}><ErrorBox error={loadError} /></AdminShell>;
   if (!r) return <AdminShell title={title}><Loading /></AdminShell>;
   const d = r.data;
@@ -46,7 +44,7 @@ export default function AdminReportDetail() {
       <div className="flex flex-wrap items-center gap-2 text-sm">
         {draft ? <ToneBadge tone="amber">{t(locale, 'admMcDraft')}</ToneBadge> : <ToneBadge tone="green">{t(locale, 'mcSent')}</ToneBadge>}
         <span className="text-neutral-500">{tf(locale, 'admMcGeneratedAt')(fmtDateTime(r.generatedAt, locale))}{r.sentAt ? ` · ${tf(locale, 'admMcSentAt')(fmtDateTime(r.sentAt, locale))}` : ''}</span>
-        <Link href={`/admin/managed/contracts/${r.contractId}`} className="text-blue-600 hover:underline">{t(locale, 'admMcContract')}</Link>
+        <Link href={`/admin/managed/contracts/${r.contractId}`} className="text-blue-600 hover:underline">{r.planName ? `${t(locale, 'admMcContract')}: ${r.planName}` : t(locale, 'admMcContract')}</Link>
         <div className="ms-auto flex flex-wrap gap-2">
           {r.hasPdf && <button className="btn-ghost" disabled={busy} onClick={() => run(() => downloadPdf(`/admin/managed/reports/${r.id}/pdf`, `progrid-managed-report-${r.period}.pdf`), t(locale, 'admMcDownloaded'))}>{t(locale, 'mcDownloadPdf')}</button>}
           <button className="btn-ghost" disabled={busy} onClick={() => { if (confirm(t(locale, 'admMcRegenerateConfirm'))) run(() => api(`/admin/managed/reports/${r.contractId}/generate`, { method: 'POST', body: JSON.stringify({ period: r.period }) }), t(locale, 'admMcRegenerated')); }}>{t(locale, 'admMcRegenerate')}</button>

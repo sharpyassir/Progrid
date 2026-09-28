@@ -288,8 +288,8 @@ function Assets({ c, assets, lead, busy, run, post, patch }: { c: Contract; asse
             </Cell>
             <Cell><AssetStatusBadge s={a.status} />{a.rejectedReason && <div className="mt-1 max-w-xs text-xs text-red-700 dark:text-red-400">{a.rejectedReason}</div>}</Cell>
             <Cell><HealthBadge h={a.health} />{!!a.openAlerts && <div className="text-xs text-red-700 dark:text-red-400">{tf(locale, 'mcOpenAlertsCount')(a.openAlerts)}</div>}</Cell>
-            <Cell><Toggle on={a.monitoringEnabled} label={t(locale, 'admMcMonitoring')} disabled={!lead || busy} onChange={(v) => run(() => patch(`assets/${a.id}`, { monitoringEnabled: v }))} /></Cell>
-            <Cell><Toggle on={a.backupEnabled} label={t(locale, 'backups')} disabled={!lead || busy} onChange={(v) => run(() => patch(`assets/${a.id}`, { backupEnabled: v }))} /></Cell>
+            <Cell><Toggle on={a.monitoringEnabled} label={lead ? t(locale, 'admMcMonitoring') : `${t(locale, 'admMcMonitoring')}: ${t(locale, 'admMcTogglesLeadOnly')}`} disabled={!lead || busy} onChange={(v) => run(() => patch(`assets/${a.id}`, { monitoringEnabled: v }))} /></Cell>
+            <Cell><Toggle on={a.backupEnabled} label={lead ? t(locale, 'backups') : `${t(locale, 'backups')}: ${t(locale, 'admMcTogglesLeadOnly')}`} disabled={!lead || busy} onChange={(v) => run(() => patch(`assets/${a.id}`, { backupEnabled: v }))} /></Cell>
             <Cell className="text-xs text-neutral-500">
               {a.kind === 'EXTERNAL_SERVER' ? <>
                 <div title={fmtDateTime(a.lastHeartbeatAt, locale)}>{a.lastHeartbeatAt ? fmtRelative(a.lastHeartbeatAt, locale) : t(locale, 'admMcNoHeartbeat')}</div>
@@ -306,6 +306,7 @@ function Assets({ c, assets, lead, busy, run, post, patch }: { c: Contract; asse
           </Row>
         ))}
       </Table>
+      {!lead && assets.length > 0 && <p className="flex items-center gap-1.5 text-xs text-neutral-500"><svg aria-hidden width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 4a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm1 8H9V9h2v5Z" /></svg>{t(locale, 'admMcTogglesLeadOnly')}</p>}
     </Section>
   );
 }

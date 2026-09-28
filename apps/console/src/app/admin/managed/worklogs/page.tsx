@@ -1,17 +1,17 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { t, tf } from '@/lib/i18n';
 import { AdminShell } from '@/components/admin-shell';
 import { useShell } from '@/components/shell';
 import { Cell, ErrorBox, Field, Loading, OkBox, Row, Table, ToneBadge, useAccount } from '@/components/managed';
-import { errText, fmtDay, fmtPeriod, hours, isLeadRoles, periodOf, type Contract, type Page, type WorkLog } from '@/lib/managed';
+import { errText, fmtDay, fmtPeriod, hours, isLeadRoles, periodOf, type Contract, type Page, type WorkLog, type WorkLogTotals } from '@/lib/managed';
 
-interface WorkLogPage extends Page<WorkLog> { totals: { billableMinutes: number; nonBillableMinutes: number } }
+interface WorkLogPage extends Page<WorkLog> { totals: WorkLogTotals }
 
-/** Engineer time: entries for a month, totals per contract, and a form to add time. */
+/** Engineer time: entries for a month, totals per contract and per engineer (from the API), and a form to add time. */
 export default function AdminWorklogs() {
   const { locale } = useShell();
   const { account } = useAccount();
@@ -51,17 +51,7 @@ export default function AdminWorklogs() {
   }
 
   const contractName = (id: string) => { const c = contracts.find((x) => x.id === id); return c ? `${c.team?.name ?? c.teamId} · ${c.plan.name}` : id.slice(0, 8); };
-  // Totals per contract for the loaded month (the API returns the overall totals only).
-  const byContract = useMemo(() => {
-    const m = new Map<string, { billable: number; other: number }>();
-    for (const w of data?.data ?? []) {
-      const x = m.get(w.contractId) ?? { billable: 0, other: 0 };
-      if (w.billable) x.billable += w.minutes; else x.other += w.minutes;
-      m.set(w.contractId, x);
-    }
-    return [...m.entries()].sort((a, b) => b[1].billable - a[1].billable);
-  }, [data]);
-  const truncated = !!data?.meta?.next_cursor;
+  const entryCount = data ? data.totals.byContract.reduce((n, c) => n + c.entries, 0) : 0;
 
   return (
     <AdminShell title={t(locale, 'admMcWorklogsTitle')} actions={<button className="btn-primary" onClick={() => setShowNew((v) => !v)}>{t(locale, 'admMcAddTime')}</button>}>
@@ -103,28 +93,39 @@ export default function AdminWorklogs() {
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="card"><div className="text-xs text-neutral-500">{t(locale, 'admMcBillable')}</div><div className="mt-1 text-2xl font-semibold">{hours(data.totals.billableMinutes)} h</div><div className="text-xs text-neutral-500">{fmtPeriod(period, locale)}</div></div>
             <div className="card"><div className="text-xs text-neutral-500">{t(locale, 'admMcNonBillable')}</div><div className="mt-1 text-2xl font-semibold">{hours(data.totals.nonBillableMinutes)} h</div></div>
-            <div className="card"><div className="text-xs text-neutral-500">{t(locale, 'admMcEntries')}</div><div className="mt-1 text-2xl font-semibold">{data.data.length}{truncated ? '+' : ''}</div></div>
+            <div className="card"><div className="text-xs text-neutral-500">{t(locale, 'admMcEntries')}</div><div className="mt-1 text-2xl font-semibold">{entryCount}</div></div>
           </div>
 
-          <section className="space-y-2">
-            <h2 className="font-medium">{tf(locale, 'admMcTotalsByContract')(fmtPeriod(period, locale))}</h2>
-            {truncated && <p className="text-xs text-amber-700 dark:text-amber-400">{t(locale, 'admMcTotalsTruncated')}</p>}
-            <Table head={[t(locale, 'admMcContract'), t(locale, 'admMcBillable'), t(locale, 'admMcNonBillable'), t(locale, 'admMcIncluded'), '']} empty={byContract.length === 0 ? t(locale, 'admMcNoTime') : undefined}>
-              {byContract.map(([id, v]) => {
-                const c = contracts.find((x) => x.id === id);
-                const over = c ? Math.max(0, v.billable - c.includedEngineerMinutes) : 0;
-                return (
-                  <Row key={id}>
-                    <Cell><Link href={`/admin/managed/contracts/${id}`} className="font-medium hover:underline">{contractName(id)}</Link></Cell>
-                    <Cell>{hours(v.billable)} h</Cell>
-                    <Cell className="text-neutral-500">{hours(v.other)} h</Cell>
-                    <Cell className="text-neutral-500">{c ? `${hours(c.includedEngineerMinutes)} h` : '—'}</Cell>
-                    <Cell>{over > 0 && <ToneBadge tone="amber">{tf(locale, 'admMcOverBy')(hours(over))}</ToneBadge>}</Cell>
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+            <section className="space-y-2">
+              <h2 className="font-medium">{tf(locale, 'admMcTotalsByContract')(fmtPeriod(period, locale))}</h2>
+              <Table head={[t(locale, 'admMcContract'), t(locale, 'admMcBillable'), t(locale, 'admMcNonBillable'), t(locale, 'admMcIncluded'), '']} empty={data.totals.byContract.length === 0 ? t(locale, 'admMcNoTime') : undefined}>
+                {data.totals.byContract.map((v) => (
+                  <Row key={v.contractId}>
+                    <Cell><Link href={`/admin/managed/contracts/${v.contractId}`} className="font-medium hover:underline">{v.teamName ?? v.contractId.slice(0, 8)}</Link>{v.planName && <div className="text-xs text-neutral-500">{v.planName}</div>}</Cell>
+                    <Cell>{hours(v.billableMinutes)} h</Cell>
+                    <Cell className="text-neutral-500">{hours(v.nonBillableMinutes)} h</Cell>
+                    <Cell className="text-neutral-500">{v.includedMinutes !== null ? `${hours(v.includedMinutes)} h` : '—'}</Cell>
+                    <Cell>{v.overageMinutes > 0 && <ToneBadge tone="amber">{tf(locale, 'admMcOverBy')(hours(v.overageMinutes))}</ToneBadge>}</Cell>
                   </Row>
-                );
-              })}
-            </Table>
-          </section>
+                ))}
+              </Table>
+            </section>
+            <section className="space-y-2">
+              <h2 className="font-medium">{tf(locale, 'admMcTotalsByEngineer')(fmtPeriod(period, locale))}</h2>
+              <Table head={[t(locale, 'admMcEngineer'), t(locale, 'admMcBillable'), t(locale, 'admMcNonBillable'), t(locale, 'admMcEntries')]} empty={data.totals.byUser.length === 0 ? t(locale, 'admMcNoTime') : undefined}>
+                {data.totals.byUser.map((u) => (
+                  <Row key={u.userId}>
+                    <Cell className="font-medium">{u.name ?? u.userId.slice(0, 8)}</Cell>
+                    <Cell>{hours(u.billableMinutes)} h</Cell>
+                    <Cell className="text-neutral-500">{hours(u.nonBillableMinutes)} h</Cell>
+                    <Cell className="text-neutral-500">{u.entries}</Cell>
+                  </Row>
+                ))}
+              </Table>
+            </section>
+          </div>
+          <p className="text-xs text-neutral-500">{t(locale, 'admMcTotalsCountedNote')}</p>
 
           <section className="space-y-2">
             <h2 className="font-medium">{t(locale, 'admMcEntries')}</h2>
