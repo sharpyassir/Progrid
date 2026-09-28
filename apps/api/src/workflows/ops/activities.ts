@@ -3,6 +3,7 @@ import { TimersService, type IdlePlan } from '../../modules/ops/timers/timers.se
 import { GrantsService, type GrantPlan } from '../../modules/ops/access/grants.service';
 import { ShiftsService, type ShiftPlan } from '../../modules/ops/shifts/shifts.service';
 import { PostmortemsService, type PostmortemPlan } from '../../modules/ops/postmortems/postmortems.service';
+import { PayoutsService } from '../../modules/ops/payouts/payouts.service';
 
 /**
  * Activities of the ops console workflows: thin wrappers over the ops services, every one safe
@@ -22,6 +23,7 @@ export interface OpsActivities {
   opsPostmortemPlan(postmortemId: string): Promise<PostmortemPlan>;
   opsPostmortemRemind(postmortemId: string): Promise<string>;
   opsPostmortemOverdue(postmortemId: string): Promise<string>;
+  opsPayoutRunMonthly(period: string): Promise<{ period: string; payouts: number; issued: number }>;
 }
 
 export function createOpsActivities(app: INestApplicationContext): OpsActivities {
@@ -29,6 +31,7 @@ export function createOpsActivities(app: INestApplicationContext): OpsActivities
   const grants = app.get(GrantsService);
   const shifts = app.get(ShiftsService);
   const postmortems = app.get(PostmortemsService);
+  const payouts = app.get(PayoutsService);
   return {
     opsTimerIdlePlan: (timerId) => timers.idlePlan(timerId),
     opsTimerIdlePrompt: (timerId) => timers.idlePrompt(timerId),
@@ -43,5 +46,6 @@ export function createOpsActivities(app: INestApplicationContext): OpsActivities
     opsPostmortemPlan: (id) => postmortems.plan(id),
     opsPostmortemRemind: (id) => postmortems.remind(id),
     opsPostmortemOverdue: (id) => postmortems.overdue(id),
+    opsPayoutRunMonthly: (period) => payouts.runMonthly(period),
   };
 }

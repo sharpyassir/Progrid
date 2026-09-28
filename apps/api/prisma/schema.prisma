@@ -2436,11 +2436,14 @@ model OnCallShift {
   startChecklist Json?
   handoverRemindedAt  DateTime?
   handoverEscalatedAt DateTime?
+  /// The contractor payout that paid this shift's standby fee.
+  payoutId    String?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   handover Handover?
+  payout   ContractorPayout? @relation(fields: [payoutId], references: [id], onDelete: SetNull)
 
   @@index([startsAt, endsAt])
   @@index([userId, startsAt])
@@ -2568,6 +2571,8 @@ model WorkLog {
   reviewedById String?
   reviewedAt   DateTime?
   reviewComment String?
+  /// The contractor payout that paid this entry.
+  payoutId     String?
   /// Month (UTC start) whose overage calculation counted this entry; set by the billing hook.
   billedPeriod    DateTime?
   /// Invoice that carried that month's managed lines.
@@ -2582,6 +2587,7 @@ model WorkLog {
   engineer      EngineerProfile? @relation(fields: [engineerId], references: [id], onDelete: SetNull)
   maintenanceRun MaintenanceRun? @relation(fields: [maintenanceRunId], references: [id], onDelete: SetNull)
   timer         WorkTimer?
+  payout        ContractorPayout? @relation(fields: [payoutId], references: [id], onDelete: SetNull)
 
   @@index([contractId, workedAt])
   @@index([contractId, billedPeriod])
@@ -2704,6 +2710,7 @@ model EngineerProfile {
   user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   assignments EngineerAssignment[]
   workLogs    WorkLog[]
+  payouts     ContractorPayout[]
 
   @@index([status])
   @@map("prgd_engineer_profiles")
@@ -3038,4 +3045,57 @@ model Postmortem {
 
   @@index([status, dueAt])
   @@map("prgd_postmortems")
+}
+
+enum ContractorPayoutStatus {
+  DRAFT
+  /// Sent to the engineer with the PDF statement.
+  ISSUED
+  /// Paid outside the platform (bank transfer); the reference is recorded.
+  PAID
+
+  @@map("prgd_contractor_payout_status")
+}
+
+/**
+ * Monthly pay of an external engineer: standby fee per completed shift plus APPROVED worklog
+ * minutes at the hourly rate, with the night multiplier for 22:00 to 06:00 contract local time.
+ * Amounts in the engineer's currency, minor units.
+ */
+model ContractorPayout {
+  id              String                 @id @default(cuid())
+  engineerId      String
+  userId          String
+  /// "2026-09"
+  period          String
+  currency        Currency
+  hourlyRateMinor Int
+  standbyFeeMinor Int
+  nightMultiplier Float
+  standbyShifts   Int
+  standbyMinor    Int
+  workedMinutes   Int
+  nightMinutes    Int
+  workMinor       Int
+  totalMinor      Int
+  /// Statement lines: [{workLogId, contractId, customer, ticketNumber, startedAt, minutes, nightMinutes, amountMinor}] and shifts.
+  lines           Json                   @default("{}")
+  status          ContractorPayoutStatus @default(DRAFT)
+  issuedAt        DateTime?
+  paidAt          DateTime?
+  paidReference   String?
+  paidById        String?
+  /// PDF statement in the invoice style.
+  statement       Bytes?
+  generatedAt     DateTime               @default(now())
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  engineer EngineerProfile @relation(fields: [engineerId], references: [id], onDelete: Cascade)
+  workLogs WorkLog[]
+  shifts   OnCallShift[]
+
+  @@unique([engineerId, period])
+  @@index([period, status])
+  @@map("prgd_contractor_payouts")
 }

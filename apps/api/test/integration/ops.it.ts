@@ -708,3 +708,56 @@ describe('ops console postmortems and runbooks', () => {
     expect(audit.map((a) => a.action)).toEqual(expect.arrayContaining(['ops.postmortem_required', 'ops.postmortem_submitted', 'ops.postmortem_closed']));
   });
 });
+
+describe('ops console contractor payouts', () => {
+  it('pays approved work with the night multiplier in contract local time plus standby, and marks work paid', async () => {
+    const c = await contractWithAsset();
+    const eng = await externalEngineer({ contractIds: [c.contractId] });
+    const stranger = await externalEngineer();
+    const t = await customerTicket(c.owner, c.assetId);
+    const now = new Date();
+    const prevStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+    const period = periodKey(prevStart);
+    // 18:00 UTC is 21:00 in Riyadh: 60 of the 120 minutes are at night. The second entry is at noon.
+    const night = await eng.client.ok('POST', '/ops/v1/timesheet/entries', { ticketId: t.id, minutes: 120, startedAt: new Date(prevStart.getTime() + 9 * 86_400_000 + 18 * 3600_000), reason: 'Evening outage work, logged late' }, 201);
+    const day = await eng.client.ok('POST', '/ops/v1/timesheet/entries', { ticketId: t.id, minutes: 60, startedAt: new Date(prevStart.getTime() + 10 * 86_400_000 + 9 * 3600_000), reason: 'Midday follow up, logged late' }, 201);
+    const unapproved = await eng.client.ok('POST', '/ops/v1/timesheet/entries', { ticketId: t.id, minutes: 30, startedAt: new Date(prevStart.getTime() + 11 * 86_400_000 + 9 * 3600_000), reason: 'Still waiting for review' }, 201);
+    await eng.client.ok('POST', '/ops/v1/timesheet/submit', { month: period }, 200);
+    await lead.client.ok('POST', `/admin/ops/timesheets/${eng.profileId}/approve`, { decision: 'APPROVED', workLogIds: [night.id, day.id] }, 200);
+    const shiftStart = new Date(prevStart.getTime() + 5 * 86_400_000);
+    await s.prisma.onCallShift.create({ data: { userId: eng.userId, role: 'PRIMARY', startsAt: shiftStart, endsAt: new Date(shiftStart.getTime() + 8 * 3600_000), startedAt: shiftStart, endedAt: new Date(shiftStart.getTime() + 8 * 3600_000) } });
+    // A shift never started is not a completed shift.
+    await s.prisma.onCallShift.create({ data: { userId: eng.userId, role: 'PRIMARY', startsAt: new Date(shiftStart.getTime() + 86_400_000), endsAt: new Date(shiftStart.getTime() + 86_400_000 + 8 * 3600_000) } });
+
+    expect((await lead.client.post(`/admin/ops/payouts/${period}/generate`, { engineerId: eng.profileId })).status).toBe(403);
+    const generated = await admin.client.ok('POST', `/admin/ops/payouts/${period}/generate`, { engineerId: eng.profileId }, 200);
+    expect(generated.data).toHaveLength(1);
+    const p = generated.data[0];
+    expect(p).toMatchObject({ period, currency: 'USD', status: 'DRAFT', hourlyRateMinor: 3000, standbyFeeMinor: 5000, nightMultiplier: 1.5, workedMinutes: 180, nightMinutes: 60, workMinor: 7500 + 3000, standbyShifts: 1, standbyMinor: 5000, totalMinor: 15_500, hasStatement: true });
+    expect(p.lines.workLogs.map((l: { workLogId: string; nightMinutes: number; amountMinor: number }) => [l.workLogId, l.nightMinutes, l.amountMinor])).toEqual([[night.id, 60, 7500], [day.id, 0, 3000]]);
+    expect(p.lines.workLogs.map((l: { workLogId: string }) => l.workLogId)).not.toContain(unapproved.id);
+
+    // Drafts are not shown to the engineer; issued ones are, with the statement.
+    expect((await eng.client.ok('GET', '/ops/v1/payouts')).data).toHaveLength(0);
+    await admin.client.ok('PATCH', `/admin/ops/payouts/${p.id}`, { status: 'ISSUED' });
+    const mine = await eng.client.ok('GET', '/ops/v1/payouts');
+    expect(mine.data.map((x: { id: string; totalMinor: number }) => [x.id, x.totalMinor])).toEqual([[p.id, 15_500]]);
+    expect(mine.data[0].paidById).toBeUndefined();
+    const pdf = await fetch(`${s.baseUrl}/ops/v1/payouts/${p.id}/statement`, { headers: { authorization: `Bearer ${eng.client.token}`, 'x-forwarded-for': eng.client.ip } });
+    expect(pdf.status).toBe(200);
+    expect(pdf.headers.get('content-type')).toBe('application/pdf');
+    expect(Buffer.from(await pdf.arrayBuffer()).subarray(0, 4).toString()).toBe('%PDF');
+    expect((await stranger.client.get(`/ops/v1/payouts/${p.id}/statement`)).status).toBe(404);
+    expect(s.outbox.some((m) => m.to === eng.email && m.subject === `Your Progrid statement for ${period}`)).toBe(true);
+
+    expect((await admin.client.patch(`/admin/ops/payouts/${p.id}`, { status: 'PAID' })).status).toBe(422);
+    const paid = await admin.client.ok('PATCH', `/admin/ops/payouts/${p.id}`, { status: 'PAID', paidReference: 'TRF-2026-0042' });
+    expect(paid).toMatchObject({ status: 'PAID', paidReference: 'TRF-2026-0042' });
+    const logs = await s.prisma.workLog.findMany({ where: { id: { in: [night.id, day.id, unapproved.id] } } });
+    expect(Object.fromEntries(logs.map((l) => [l.id, l.status]))).toEqual({ [night.id]: 'PAID', [day.id]: 'PAID', [unapproved.id]: 'SUBMITTED' });
+    // A paid month is never regenerated.
+    const again = await admin.client.ok('POST', `/admin/ops/payouts/${period}/generate`, { engineerId: eng.profileId }, 200);
+    expect(again.data[0]).toMatchObject({ id: p.id, status: 'PAID', totalMinor: 15_500 });
+    expect(await s.prisma.auditLog.count({ where: { resource: `contractor_payout:${p.id}`, action: { in: ['ops.payout_issued', 'ops.payout_paid'] } } })).toBe(2);
+  });
+});
