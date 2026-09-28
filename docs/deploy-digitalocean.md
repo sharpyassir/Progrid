@@ -67,7 +67,7 @@ The droplet pulls three images that GitHub Actions builds: `pgcloud-api`, `pgclo
 pip install ansible-core
 git clone https://github.com/sharpyassir/TurkeyProject.git progrid && cd progrid/infra/ansible
 ansible-galaxy install -r requirements.yml
-cp group_vars/all.yml.example group_vars/all.yml
+mkdir -p group_vars/all && cp group_vars/all.yml.example group_vars/all/vars.yml
 ```
 
 `inventory.ini`:
@@ -84,7 +84,7 @@ ansible_ssh_private_key_file=~/.ssh/progrid
 ansible_python_interpreter=/usr/bin/python3
 ```
 
-In `group_vars/all.yml` change these lines and leave the rest:
+In `group_vars/all/vars.yml` change these lines and leave the rest:
 
 ```yaml
 hypervisor_driver: fake           # until the Proxmox machine exists
@@ -100,7 +100,7 @@ Secrets. Generate random values:
 for k in postgres_password nats_token jwt_secret secrets_key support_inbound_secret; do echo "vault_$k: $(openssl rand -hex 32)"; done
 ```
 
-Then `ansible-vault create group_vars/vault.yml`, choose a vault password you will keep, and paste:
+Then `ansible-vault create group_vars/all/vault.yml`, choose a vault password you will keep, and paste:
 
 ```yaml
 vault_postgres_password: <from above>

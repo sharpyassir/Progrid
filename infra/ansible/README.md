@@ -11,8 +11,9 @@ Two roles, one playbook.
 pip install ansible-core
 ansible-galaxy install -r requirements.yml
 cp inventory.example.ini inventory.ini            # fill in hosts
-cp group_vars/all.yml.example group_vars/all.yml  # fill in settings
-ansible-vault create group_vars/vault.yml         # secrets (see all.yml.example for the keys)
+mkdir -p group_vars/all
+cp group_vars/all.yml.example group_vars/all/vars.yml  # fill in settings
+ansible-vault create group_vars/all/vault.yml          # secrets (see all.yml.example for the keys)
 ansible-playbook -i inventory.ini site.yml --ask-vault-pass
 ```
 

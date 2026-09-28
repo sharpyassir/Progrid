@@ -1,6 +1,6 @@
 - name: Base packages
   apt:
-    name: [ca-certificates, curl, gnupg, ufw, unattended-upgrades, fail2ban]
+    name: [ca-certificates, curl, gnupg, ufw, unattended-upgrades, fail2ban, python3-docker]
     update_cache: true
 
 # Swap as a safety margin for memory spikes on small hosts. Created once; skipped when swap exists.

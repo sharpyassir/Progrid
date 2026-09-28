@@ -28,7 +28,7 @@ Goal: a public demo and the first design partners, before our own hardware is ra
 
 1. Rent one dedicated server with a public IP (8 cores, 32 GB, NVMe is plenty). Install Ubuntu 24.04.
 2. Point DNS: `<domain>`, `www.<domain>`, `console.<domain>`, `api.<domain>` to that address.
-3. Fill `infra/ansible/inventory.ini`, `group_vars/all.yml` and the vault. Set `hypervisor_driver: fake`
+3. Fill `infra/ansible/inventory.ini`, `group_vars/all/vars.yml` and the vault in `group_vars/all/vault.yml`. Set `hypervisor_driver: fake`
    if there is no Proxmox yet, or install Proxmox on the same box and point the agent at it.
 4. `ansible-playbook -i inventory.ini site.yml --ask-vault-pass`. The role installs Docker, copies the
    compose bundle to `/opt/pgcloud`, writes `/etc/pgcloud/pgcloud.env`, opens the firewall and starts everything.
@@ -68,7 +68,7 @@ across a migration needs a restore or a follow up migration.
 
 `/etc/pgcloud/pgcloud.env` holds every setting the API reads plus what compose needs (domain, image tag,
 Postgres password, NATS token). `infra/prod/pgcloud.env.example` shows the shape. Ansible renders it from
-`group_vars/all.yml` and the vault; do not edit it by hand on the host.
+`group_vars/all/vars.yml` and the vault in `group_vars/all/vault.yml`; do not edit it by hand on the host.
 
 Production values to set deliberately: `REQUIRE_TOTP_FOR_OWNERS=true`, a real `MAIL_PROVIDER` with its key,
 `CONSOLE_URL` for the links in emails, and `HYPERVISOR_DRIVER=proxmox` with the control plane token.
