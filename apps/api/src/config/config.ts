@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+/** An optional URL where an empty value (KEY= in an env file) means unset. */
+const optionalUrl = () => z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional());
+
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
@@ -147,7 +150,7 @@ const schema = z.object({
   PRGD_OPS_TIMER_AUTO_STOP_SECONDS: z.coerce.number().int().min(1).default(5400),
   /** SSH certificate authority for terminal sessions: local (development, key in the database) or step-ca. */
   PRGD_SSH_CA: z.enum(['local', 'step-ca']).default('local'),
-  PRGD_STEPCA_URL: z.string().url().optional(),
+  PRGD_STEPCA_URL: optionalUrl(),
   /** Name of the step-ca JWK provisioner that signs SSH user certificates. */
   PRGD_STEPCA_PROVISIONER: z.string().optional(),
   /** The provisioner's private JWK as JSON, or its encrypted key from ca.json (compact JWE) with PRGD_STEPCA_PASSWORD. */
@@ -170,11 +173,11 @@ const schema = z.object({
   PRGD_RECORDINGS_BUCKET: z.string().default('prgd-session-recordings'),
   /** Where the secrets the gateway injects live: local (encrypted table, development), vault (KV v2) or infisical. */
   PRGD_SECRET_STORE: z.enum(['local', 'vault', 'infisical']).default('local'),
-  PRGD_VAULT_ADDR: z.string().url().optional(),
+  PRGD_VAULT_ADDR: optionalUrl(),
   PRGD_VAULT_TOKEN: z.string().optional(),
   /** KV v2 mount; secrets live at <mount>/data/assets/<assetId>. */
   PRGD_VAULT_MOUNT: z.string().default('prgd'),
-  PRGD_INFISICAL_URL: z.string().url().default('https://app.infisical.com'),
+  PRGD_INFISICAL_URL: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().default('https://app.infisical.com')),
   PRGD_INFISICAL_TOKEN: z.string().optional(),
   /** Infisical project (workspace) id; secrets live under the folder /assets/<assetId>. */
   PRGD_INFISICAL_PROJECT: z.string().optional(),

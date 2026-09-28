@@ -38,6 +38,22 @@ maintenance_runner: fake            # ansible once the worker can reach the mana
 maintenance_playbook_dir: /opt/prgd/maintenance
 maintenance_ssh_user: prgd
 maintenance_ssh_key_file: ""
+# DevOps console (docs/devops-console.md)
+prgd_ops_url: https://ops.progrid.sa
+prgd_ops_rp_id: ops.progrid.sa
+prgd_grafana_url: https://grafana.progrid.sa
+prgd_ssh_ca: step-ca                # local keeps the CA key in the database: development only
+prgd_stepca_url: https://ca.internal.progrid.sa:9000
+prgd_stepca_provisioner: prgd-gateway
+prgd_stepca_root_fingerprint: ""
+prgd_ssh_login_user: prgd
+prgd_gateway_public_url: wss://gateway.progrid.sa
+prgd_gateway_source_addresses: ""   # the gateway's management network address, e.g. 10.8.0.2/32
+prgd_recordings_bucket: prgd-session-recordings
+prgd_secret_store: vault            # vault | infisical
+prgd_vault_addr: https://vault.internal.progrid.sa:8200
+prgd_vault_mount: prgd
+prgd_infisical_project: ""
 
 # --- vault.yml keys (values with ansible-vault) ---
 # vault_postgres_password: ...
@@ -51,6 +67,11 @@ maintenance_ssh_key_file: ""
 # vault_support_inbound_secret: ...
 # vault_alertmanager_webhook_secret: ...  # shared secret for POST /internal/alerts/alertmanager
 # vault_twilio_auth_token: ""             # Twilio SMS and WhatsApp paging
+# vault_prgd_gateway_secret: ...          # shared secret prgd-gateway sends to /internal/gateway
+# vault_prgd_stepca_jwk: ...              # step-ca provisioner key (encrypted key from ca.json)
+# vault_prgd_stepca_password: ...         # decrypts it
+# vault_prgd_vault_token: ...             # Vault token with read and write on the prgd KV v2 mount
+# vault_prgd_infisical_token: ""          # Infisical machine identity token, when prgd_secret_store is infisical
 # vault_pdns_api_key: ...
 # vault_rgw_admin_access_key: ...
 # vault_rgw_admin_secret_key: ...
