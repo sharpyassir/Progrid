@@ -188,7 +188,23 @@ export class TeamService {
     return this.join(inv, user.id);
   }
 
-  private async join(inv: { id: string; teamId: string; role: TeamRole }, userId: string) {
+  /**
+   * Social sign in with an invitation: the person proved the invited address to Google or
+   * Microsoft instead of signing in with a password first. Same checks as `accept`.
+   */
+  async acceptForUser(userId: string, token: string, meta: { ip?: string; userAgent?: string } = {}) {
+    const inv = await this.findUsable(token);
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    if (user.email !== inv.email) throw ApiError.forbidden(`This invitation is for ${inv.email}. Sign in with that address to accept it.`);
+    return this.join(inv, user.id, meta);
+  }
+
+  /** The invited address, for social sign up that joins this team instead of creating one. */
+  async invitationEmail(token: string) {
+    return (await this.findUsable(token)).email;
+  }
+
+  private async join(inv: { id: string; teamId: string; role: TeamRole }, userId: string, meta: { ip?: string; userAgent?: string } = {}) {
     await this.prisma.$transaction(async (tx) => {
       const r = await tx.invitation.updateMany({ where: { id: inv.id, acceptedAt: null, revokedAt: null }, data: { acceptedAt: new Date(), acceptedBy: userId } });
       if (!r.count) throw ApiError.invalidState('This invitation was already used or revoked');
@@ -196,7 +212,7 @@ export class TeamService {
     });
     await this.events.emit('team.member_joined', { userId, role: inv.role, invitationId: inv.id }, { teamId: inv.teamId, resource: `user:${userId}` });
     const team = await this.prisma.team.findUniqueOrThrow({ where: { id: inv.teamId }, select: { id: true, name: true, slug: true } });
-    return { team, session: await this.tokens.issueSession(userId, inv.teamId) };
+    return { team, session: await this.tokens.issueSession(userId, inv.teamId, meta) };
   }
 
   private async findUsable(token: string) {
