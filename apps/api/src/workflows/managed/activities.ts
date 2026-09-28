@@ -6,6 +6,7 @@ import { ManagedTicketsService } from '../../modules/managed/tickets/tickets.ser
 import { PagingService } from '../../modules/managed/oncall/paging.service';
 import { MaintenanceService } from '../../modules/managed/maintenance/maintenance.service';
 import { Context } from '@temporalio/activity';
+import { ReportsService } from '../../modules/managed/reports/reports.service';
 
 /**
  * Activities of the managed cloud workflows. Thin wrappers over the managed module services so
@@ -22,6 +23,9 @@ export interface ManagedActivities {
   managedMaintenanceExecute(runId: string): Promise<'SUCCEEDED' | 'FAILED'>;
   managedMaintenanceMarkFailed(runId: string, error: string): Promise<void>;
   managedMaintenanceFailureTicket(runId: string): Promise<string | null>;
+  managedReportGenerate(contractId: string, period: string): Promise<string>;
+  managedReportAutoSendAt(period: string): Promise<string>;
+  managedReportAutoSend(reportId: string): Promise<string>;
 }
 
 export function createManagedActivities(app: INestApplicationContext): ManagedActivities {
@@ -29,6 +33,7 @@ export function createManagedActivities(app: INestApplicationContext): ManagedAc
   const tickets = app.get(ManagedTicketsService);
   const paging = app.get(PagingService);
   const maintenance = app.get(MaintenanceService);
+  const reports = app.get(ReportsService);
 
   return {
     async managedEnsureChecklist(contractId) {
@@ -61,5 +66,15 @@ export function createManagedActivities(app: INestApplicationContext): ManagedAc
 
     managedMaintenanceMarkFailed: (runId, error) => maintenance.markFailed(runId, error),
     managedMaintenanceFailureTicket: (runId) => maintenance.openFailureTicket(runId),
+
+    async managedReportGenerate(contractId, period) {
+      return (await reports.generate(contractId, period)).id;
+    },
+
+    async managedReportAutoSendAt(period) {
+      return ReportsService.autoSendAt(period).toISOString();
+    },
+
+    managedReportAutoSend: (reportId) => reports.autoSend(reportId),
   };
 }

@@ -24,6 +24,7 @@ import { ManagedAlertsService } from '../modules/managed/alerts/alerts.service';
 import { ContractsService } from '../modules/managed/contracts/contracts.service';
 import { ManagedBillingService } from '../modules/managed/billing-hooks/managed-billing.service';
 import { MaintenanceService } from '../modules/managed/maintenance/maintenance.service';
+import { ReportsService } from '../modules/managed/reports/reports.service';
 
 /**
  * Periodic jobs. Each takes a Redis lock so only one API replica runs it.
@@ -58,6 +59,7 @@ export class JobsService {
     private readonly managedContracts: ContractsService,
     private readonly managedBilling: ManagedBillingService,
     private readonly maintenance: MaintenanceService,
+    private readonly reports: ReportsService,
   ) {}
 
   @Cron('50 * * * * *') // every minute at :50: database roles, lag, backup results, config retries
@@ -177,6 +179,16 @@ export class JobsService {
   @Cron('5 * * * * *') // every minute at :05: start maintenance runs that are due
   managedMaintenance() {
     return this.locked('managed-maintenance', 50_000, () => this.maintenance.startDue());
+  }
+
+  @Cron('0 0 4 1 * *') // 04:00 UTC on the 1st, after invoicing: draft last month's managed cloud reports
+  managedReports() {
+    return this.locked('managed-reports', 30 * 60_000, () => this.reports.startMonthly());
+  }
+
+  @Cron('0 20 6 * * *') // 06:20 UTC daily: send report drafts past their automatic send day (safety net for the workflow)
+  managedReportAutoSend() {
+    return this.locked('managed-report-autosend', 10 * 60_000, () => this.reports.sendOverdueDrafts());
   }
 
   @Cron('0 40 * * * *') // forty past every hour: managed contracts follow the team's billing suspension

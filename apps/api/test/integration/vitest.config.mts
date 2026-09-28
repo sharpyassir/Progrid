@@ -81,6 +81,8 @@ export default defineConfig({
       PAGE_ACK_TIMEOUT_SECONDS: '3',
       PAGING_MODE: 'log',
       MAINTENANCE_RUNNER: 'fake',
+      // Drafts are sent automatically from 06:00 UTC on the 1st, so the workflow sends at once in the suite.
+      MANAGED_REPORT_AUTOSEND_DAY: '1',
     },
   },
 });

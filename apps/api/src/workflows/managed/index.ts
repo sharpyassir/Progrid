@@ -3,3 +3,4 @@ export * from './onboarding.workflow';
 export * from './sla-timer.workflow';
 export * from './page-escalation.workflow';
 export * from './maintenance-run.workflow';
+export * from './monthly-report.workflow';

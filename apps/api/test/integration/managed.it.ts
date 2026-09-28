@@ -6,6 +6,7 @@ import { ManagedBillingService } from '../../src/modules/managed/billing-hooks/m
 import { InvoicesService } from '../../src/modules/billing/invoices.service';
 import { startOfMonth } from '../../src/modules/billing/pricing';
 import { MaintenanceService } from '../../src/modules/managed/maintenance/maintenance.service';
+import { ReportsService } from '../../src/modules/managed/reports/reports.service';
 
 const DAY = 86_400_000;
 
@@ -404,5 +405,79 @@ describe('managed cloud maintenance', () => {
     expect(ticket.messages.some((m) => m.internal && m.body.includes('simulated failure'))).toBe(true);
     const customerView = await owner.client.ok('GET', `/v1/managed/tickets/${ticket.id}`);
     expect(JSON.stringify(customerView)).not.toContain('PLAY RECAP');
+  });
+});
+
+describe('managed cloud monthly reports', () => {
+  it('drafts a report with uptime, incidents, SLA, maintenance and hours, then sends the PDF to the owners', async () => {
+    const { owner, contractId } = await activeContract('ESSENTIAL');
+    const now = new Date();
+    const periodEnd = startOfMonth(now);
+    const periodStart = startOfMonth(new Date(periodEnd.getTime() - 1));
+    const period = periodStart.toISOString().slice(0, 7);
+    const minutesInMonth = (periodEnd.getTime() - periodStart.getTime()) / 60_000;
+    await s.prisma.managedContract.update({ where: { id: contractId }, data: { activatedAt: new Date(periodStart.getTime() - 30 * DAY) } });
+    const asset = await lead.client.ok('POST', `/admin/managed/contracts/${contractId}/assets`, { kind: 'EXTERNAL_SERVER', name: 'shop-1', address: '203.0.113.80', managementAddress: '10.8.0.80' }, 201);
+    await s.prisma.managedAsset.update({ where: { id: asset.id }, data: { approvedAt: new Date(periodStart.getTime() - DAY) } });
+    // One hour of critical outage, a P1 ticket, a patch window and some engineer time last month.
+    const outage = new Date(periodStart.getTime() + 10 * DAY);
+    await s.prisma.alert.create({ data: { assetId: asset.id, contractId, fingerprint: `rep-${asset.id}`, name: 'HostDown', severity: 'CRITICAL', status: 'RESOLVED', startsAt: outage, endsAt: new Date(outage.getTime() + 60 * 60_000), resolvedAt: new Date(outage.getTime() + 60 * 60_000) } });
+    const p1 = await owner.client.ok('POST', '/v1/managed/tickets', { subject: 'Shop down', body: 'Nothing loads', priority: 'P1' }, 201);
+    await s.prisma.ticket.update({ where: { id: p1.id }, data: { createdAt: outage, firstRespondedAt: new Date(outage.getTime() + 20 * 60_000), status: 'closed', closedAt: new Date(outage.getTime() + 70 * 60_000) } });
+    const task = await engineer.client.ok('POST', '/admin/managed/maintenance/tasks', { contractId, assetId: asset.id, kind: 'PATCHING', cron: '0 3 * * 5' }, 201);
+    await s.prisma.maintenanceRun.create({ data: { taskId: task.id, status: 'SUCCEEDED', trigger: 'schedule', runner: 'fake', startedAt: new Date(periodStart.getTime() + 5 * DAY), finishedAt: new Date(periodStart.getTime() + 5 * DAY + 600_000), log: 'ok' } });
+    await engineer.client.ok('POST', '/admin/managed/worklogs', { contractId, minutes: 90, workedAt: new Date(periodStart.getTime() + 11 * DAY).toISOString() }, 201);
+
+    const draft = await engineer.client.ok('POST', `/admin/managed/reports/${contractId}/generate`, { period }, 201);
+    expect(draft).toMatchObject({ status: 'DRAFT', period, hasPdf: true });
+    const expectedUptime = Math.round((1 - 60 / (minutesInMonth)) * 100_000) / 1000;
+    expect(draft.data.assets[0]).toMatchObject({ name: 'shop-1', downtimeMinutes: 60, uptimePercent: expectedUptime });
+    expect(draft.data.incidents.alerts.critical).toBe(1);
+    expect(draft.data.incidents.majorTickets.map((t: { number: number }) => t.number)).toEqual([p1.number]);
+    expect(draft.data.sla).toMatchObject({ tickets: 1, responseMet: 1, resolveMet: 1, responseBreached: 0, resolveBreached: 0 });
+    expect(draft.data.patches).toEqual({ runs: 1, succeeded: 1, failed: 0 });
+    expect(draft.data.hours).toMatchObject({ billableMinutes: 90, includedMinutes: 120, overageMinutes: 0 });
+    expect(draft.recommendations).toContain('backup restore test');
+
+    // Drafts are not visible to the customer.
+    expect((await owner.client.ok('GET', `/v1/managed/contracts/${contractId}/reports`)).data).toEqual([]);
+    const edited = await engineer.client.ok('PATCH', `/admin/managed/reports/${draft.id}`, { recommendations: 'Add a second web server before the sale season.' });
+    expect(edited.recommendations).toContain('second web server');
+    const staffPdf = await engineer.client.get(`/admin/managed/reports/${draft.id}/pdf`);
+    expect(staffPdf.headers.get('content-type')).toBe('application/pdf');
+    expect(staffPdf.text.startsWith('%PDF')).toBe(true);
+
+    const sent = await engineer.client.ok('POST', `/admin/managed/reports/${draft.id}/send`, {}, 200);
+    expect(sent.status).toBe('SENT');
+    expect(sent.sentAt).toBeTruthy();
+    const mail = s.outbox.find((m) => m.to === owner.email && m.subject.startsWith('Your managed cloud report'));
+    expect(mail?.attachments?.[0].contentType).toBe('application/pdf');
+    expect(mail!.attachments![0].content.subarray(0, 4).toString()).toBe('%PDF');
+
+    const list = await owner.client.ok('GET', `/v1/managed/contracts/${contractId}/reports`);
+    expect(list.data).toHaveLength(1);
+    const pdf = await owner.client.get(list.data[0].pdfUrl);
+    expect(pdf.status).toBe(200);
+    expect(pdf.headers.get('content-type')).toBe('application/pdf');
+    const m = await member(owner);
+    expect((await m.client.get(`/v1/managed/contracts/${contractId}/reports`)).status).toBe(403);
+    expect((await engineer.client.patch(`/admin/managed/reports/${draft.id}`, { recommendations: 'late' })).status).toBe(409);
+  });
+
+  it('drafts every active contract on the 1st and sends drafts nobody sent', async () => {
+    const { owner, contractId } = await activeContract('ESSENTIAL');
+    const period = ReportsService.previousPeriod();
+    expect(await s.get(ReportsService).startMonthly()).toBeGreaterThanOrEqual(1);
+    const due = ReportsService.autoSendAt(period) <= new Date();
+    const report = await waitFor(async () => {
+      const r = await s.prisma.monthlyReport.findUnique({ where: { contractId_period: { contractId, period } } });
+      return r && (!due || r.status === 'SENT') && r;
+    }, { what: 'the monthly report workflow', timeoutMs: 60_000 });
+    if (due) {
+      expect(report.sentById).toBeNull();
+      expect(s.outbox.some((m) => m.to === owner.email && m.subject.startsWith('Your managed cloud report'))).toBe(true);
+    } else {
+      expect(report.status).toBe('DRAFT');
+    }
   });
 });

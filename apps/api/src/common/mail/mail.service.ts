@@ -8,6 +8,8 @@ export interface Mail {
   html?: string;
   /** Where replies should go; defaults to the support inbox when set. */
   replyTo?: string;
+  /** Files sent with the message (monthly report PDFs). */
+  attachments?: { filename: string; content: Buffer; contentType: string }[];
 }
 
 /**
@@ -32,7 +34,10 @@ export class MailService {
         const res = await fetch('https://api.postmarkapp.com/email', {
           method: 'POST',
           headers: { 'content-type': 'application/json', accept: 'application/json', 'X-Postmark-Server-Token': MAIL_API_KEY ?? '' },
-          body: JSON.stringify({ From: MAIL_FROM, To: mail.to, Subject: mail.subject, TextBody: mail.text, HtmlBody: html, MessageStream: 'outbound', ...(replyTo ? { ReplyTo: replyTo } : {}) }),
+          body: JSON.stringify({
+            From: MAIL_FROM, To: mail.to, Subject: mail.subject, TextBody: mail.text, HtmlBody: html, MessageStream: 'outbound', ...(replyTo ? { ReplyTo: replyTo } : {}),
+            ...(mail.attachments?.length ? { Attachments: mail.attachments.map((a) => ({ Name: a.filename, Content: a.content.toString('base64'), ContentType: a.contentType })) } : {}),
+          }),
         });
         if (!res.ok) throw new Error(`postmark ${res.status}: ${await res.text()}`);
         return;
@@ -41,14 +46,17 @@ export class MailService {
         const res = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: { 'content-type': 'application/json', authorization: `Bearer ${MAIL_API_KEY ?? ''}` },
-          body: JSON.stringify({ from: MAIL_FROM, to: [mail.to], subject: mail.subject, text: mail.text, html, ...(replyTo ? { reply_to: replyTo } : {}) }),
+          body: JSON.stringify({
+            from: MAIL_FROM, to: [mail.to], subject: mail.subject, text: mail.text, html, ...(replyTo ? { reply_to: replyTo } : {}),
+            ...(mail.attachments?.length ? { attachments: mail.attachments.map((a) => ({ filename: a.filename, content: a.content.toString('base64') })) } : {}),
+          }),
         });
         if (!res.ok) throw new Error(`resend ${res.status}: ${await res.text()}`);
         return;
       }
       default:
         this.last = mail;
-        this.log.log(`[mail:log] to=${mail.to} subject="${mail.subject}"\n${mail.text}`);
+        this.log.log(`[mail:log] to=${mail.to} subject="${mail.subject}"${mail.attachments?.length ? ` attachments=${mail.attachments.map((a) => `${a.filename} (${a.content.length} bytes)`).join(', ')}` : ''}\n${mail.text}`);
     }
   }
 }
