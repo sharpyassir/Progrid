@@ -160,6 +160,25 @@ const schema = z.object({
   /** Unix user the gateway logs in as on managed assets (its AuthorizedPrincipalsFile lists the asset principal). */
   PRGD_SSH_LOGIN_USER: z.string().default('prgd'),
   PRGD_SSH_PORT: z.coerce.number().int().min(1).max(65535).default(22),
+  /** Shared secret prgd-gateway sends as X-Prgd-Gateway-Secret on /internal/gateway/*. Empty refuses every call. */
+  PRGD_GATEWAY_SECRET: z.string().optional(),
+  /** WebSocket endpoint of prgd-gateway the ops console connects to. */
+  PRGD_GATEWAY_PUBLIC_URL: z.string().default('ws://localhost:4100'),
+  /** Lifetime of the one time gateway token POST /ops/v1/sessions returns. */
+  PRGD_GATEWAY_TOKEN_TTL_SECONDS: z.coerce.number().int().min(5).max(600).default(60),
+  /** Platform bucket for terminal session recordings (asciicast v2). */
+  PRGD_RECORDINGS_BUCKET: z.string().default('prgd-session-recordings'),
+  /** Where the secrets the gateway injects live: local (encrypted table, development), vault (KV v2) or infisical. */
+  PRGD_SECRET_STORE: z.enum(['local', 'vault', 'infisical']).default('local'),
+  PRGD_VAULT_ADDR: z.string().url().optional(),
+  PRGD_VAULT_TOKEN: z.string().optional(),
+  /** KV v2 mount; secrets live at <mount>/data/assets/<assetId>. */
+  PRGD_VAULT_MOUNT: z.string().default('prgd'),
+  PRGD_INFISICAL_URL: z.string().url().default('https://app.infisical.com'),
+  PRGD_INFISICAL_TOKEN: z.string().optional(),
+  /** Infisical project (workspace) id; secrets live under the folder /assets/<assetId>. */
+  PRGD_INFISICAL_PROJECT: z.string().optional(),
+  PRGD_INFISICAL_ENV: z.string().default('prod'),
 });
 
 export type AppConfig = z.infer<typeof schema>;

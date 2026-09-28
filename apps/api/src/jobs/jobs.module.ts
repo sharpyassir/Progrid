@@ -12,7 +12,8 @@ import { BillingModule } from '../modules/billing/billing.module';
 import { EventsModule } from '../modules/events/events.module';
 import { TeamModule } from '../modules/team/team.module';
 import { ManagedModule } from '../modules/managed/managed.module';
+import { OpsModule } from '../modules/ops/ops.module';
 import { JobsService } from './jobs.service';
 
-@Module({ imports: [MonitoringModule, LbModule, DnsModule, ObjectsModule, StorageModule, DatabasesModule, KubernetesModule, AppPlatformModule, ScheduleModule.forRoot(), BillingModule, EventsModule, TeamModule, ManagedModule], providers: [JobsService] })
+@Module({ imports: [MonitoringModule, LbModule, DnsModule, ObjectsModule, StorageModule, DatabasesModule, KubernetesModule, AppPlatformModule, ScheduleModule.forRoot(), BillingModule, EventsModule, TeamModule, ManagedModule, OpsModule], providers: [JobsService] })
 export class JobsModule {}

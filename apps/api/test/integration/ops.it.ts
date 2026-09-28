@@ -321,7 +321,7 @@ describe('ops console timers and timesheets', () => {
     expect(log).toMatchObject({ status: 'DRAFT', source: 'TIMER', flagged: true, ticketId: t.id, userId: eng.userId, engineerId: eng.profileId });
     // Idle time after the last activity is not counted.
     expect(log.endedAt!.getTime()).toBeLessThanOrEqual(stopped.lastActivityAt.getTime() + 60_000);
-    expect(await s.prisma.auditLog.count({ where: { resource: `timer:${started.id}`, action: 'ops.timer_auto_stopped' } })).toBe(1);
+    await waitFor(async () => (await s.prisma.auditLog.count({ where: { resource: `timer:${started.id}`, action: 'ops.timer_auto_stopped' } })) === 1, { what: 'the auto stop audit event', timeoutMs: 10_000 });
     expect((await eng.client.ok('GET', '/ops/v1/timers/current')).timer).toBeNull();
   });
 
@@ -496,5 +496,114 @@ describe('ops console access grants', () => {
     expect(after.certificates.every((x) => x.revokedAt)).toBe(true);
     expect((await eng.client.post(`/ops/v1/access/grants/${g.id}/extend`, { reason: 'Need more time', minutes: 10 })).status).toBe(409);
     expect(await s.prisma.auditLog.count({ where: { resource: `access_grant:${g.id}`, action: 'ops.grant_revoked' } })).toBe(1);
+  });
+});
+
+/** A call from prgd-gateway to /internal/gateway (shared secret header). */
+async function gateway(path: string, body: unknown, secret: string | null = 'it-gateway-secret') {
+  const r = await fetch(`${s.baseUrl}/internal/gateway/${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...(secret !== null ? { 'x-prgd-gateway-secret': secret } : {}) }, body: JSON.stringify(body) });
+  const text = await r.text();
+  return { status: r.status, body: text ? JSON.parse(text) : null, text };
+}
+
+/** An engineer with an ACTIVE emergency grant on a fresh contract's asset. */
+async function activeGrant() {
+  const c = await contractWithAsset();
+  const eng = await externalEngineer({ contractIds: [c.contractId] });
+  await onCall(eng.userId);
+  const t = await customerTicket(c.owner, c.assetId, 'P1', 'Everything is down');
+  const g = await eng.client.ok('POST', '/ops/v1/access/grants', { assetId: c.assetId, ticketId: t.id, reason: 'Restore service', durationMin: 60 }, 201);
+  await waitFor(async () => (await s.prisma.accessGrant.findUniqueOrThrow({ where: { id: g.id } })).status === 'ACTIVE', { what: 'grant ACTIVE', timeoutMs: 20_000 });
+  return { ...c, eng, ticketId: t.id as string, grantId: g.id as string };
+}
+
+describe('ops console terminal sessions and the gateway contract', () => {
+  it('checks gateway tokens and grants, signs the gateway key and refuses expired or revoked grants', async () => {
+    const x = await activeGrant();
+    await admin.client.ok('PUT', `/admin/ops/assets/${x.assetId}/secrets`, { values: { sudo_password: 's3cret-value-1' } });
+    expect((await lead.client.ok('GET', `/admin/ops/assets/${x.assetId}/secrets`)).keys).toEqual(['sudo_password']);
+
+    const opened = await x.eng.client.ok('POST', '/ops/v1/sessions', { grantId: x.grantId }, 201);
+    expect(opened.token).toMatch(/^prgd_gws_/);
+    expect(opened.gatewayUrl).toBe(`ws://localhost:4100/v1/terminal?session=${opened.sessionId}`);
+    expect(new Date(opened.tokenExpiresAt).getTime() - Date.now()).toBeLessThanOrEqual(60_000);
+
+    const key = ephemeralKey();
+    const check = { token: opened.token, sessionId: opened.sessionId, publicKey: key.line, gatewayId: 'gw-it', clientIp: '198.51.100.20' };
+    expect((await gateway('session-check', check, null)).status).toBe(401);
+    expect((await gateway('session-check', check, 'wrong-secret')).status).toBe(401);
+    expect((await gateway('session-check', { ...check, token: 'prgd_gws_forged-token-value' })).status).toBe(401);
+
+    const ok = await gateway('session-check', check);
+    expect(ok.status).toBe(200);
+    const grant = await s.prisma.accessGrant.findUniqueOrThrow({ where: { id: x.grantId } });
+    expect(ok.body).toMatchObject({ sessionId: opened.sessionId, grantId: x.grantId, target: { host: '10.8.0.70', port: 22, username: 'prgd' }, principals: [`prgd-asset-${x.assetId}`], secrets: [{ ref: `assets/${x.assetId}`, keys: ['sudo_password'] }], policy: { fileDownload: false }, kill: { natsSubject: 'prgd.gateway.sessions.kill' } });
+    expect(ok.body.recording).toMatchObject({ format: 'asciicast-v2', uploadMethod: 'PUT', key: expect.stringMatching(new RegExp(`^sessions/\\d{4}/\\d{2}/${opened.sessionId}\\.cast$`)) });
+    expect(ok.text).not.toContain('s3cret-value-1');
+    const cert = parseCertificate(ok.body.certificate);
+    expect(cert).toMatchObject({ signatureValid: true, principals: [`prgd-asset-${x.assetId}`], keyId: `prgd-session-${opened.sessionId}` });
+    expect(cert.validBefore.getTime()).toBe(Math.floor(grant.expiresAt!.getTime() / 1000) * 1000);
+    expect(cert.publicKey.equals(rawEd25519(key.privateKey))).toBe(true);
+    // The token works once.
+    const replay = await gateway('session-check', check);
+    expect(replay.status).toBe(409);
+    expect(replay.body.error.code).toBe('token_used');
+
+    // Only the gateway, for a live session on this asset, reads secret values.
+    const secret = await gateway('secrets', { sessionId: opened.sessionId, ref: `assets/${x.assetId}` });
+    expect(secret.body.values).toEqual({ sudo_password: 's3cret-value-1' });
+    expect((await gateway('secrets', { sessionId: opened.sessionId, ref: 'assets/someone-else' })).status).toBe(403);
+    for (const path of ['/ops/v1/me', '/ops/v1/sessions', '/ops/v1/access/grants', `/ops/v1/tickets/${x.ticketId}`, `/ops/v1/assets/${x.assetId}`]) {
+      expect((await x.eng.client.get(path)).text, path).not.toContain('s3cret-value-1');
+    }
+
+    // Events from the gateway: activity for the engineer's timer, bytes, the stored recording.
+    const timer = await x.eng.client.ok('POST', '/ops/v1/timers/start', { ticketId: x.ticketId }, 201);
+    await s.prisma.workTimer.update({ where: { id: timer.id }, data: { startedAt: new Date(Date.now() - 15 * 60_000) } });
+    await s.prisma.terminalSession.update({ where: { id: opened.sessionId }, data: { startedAt: new Date(Date.now() - 10 * 60_000) } });
+    expect((await gateway('session-events', { sessionId: opened.sessionId, type: 'started' })).body.action).toBe('continue');
+    expect((await gateway('session-events', { sessionId: opened.sessionId, type: 'heartbeat', bytesIn: 1200, bytesOut: 48_000 })).body).toMatchObject({ ok: true, action: 'continue' });
+    expect((await gateway('session-events', { sessionId: opened.sessionId, type: 'ended', reason: 'client_closed', bytesIn: 1300, bytesOut: 50_000 })).status).toBe(200);
+    expect((await gateway('session-events', { sessionId: opened.sessionId, type: 'recording_stored', recordingKey: 'sessions/wrong.cast', recordingSize: 10 })).status).toBe(422);
+    await gateway('session-events', { sessionId: opened.sessionId, type: 'recording_stored', recordingKey: ok.body.recording.key, recordingSize: 51_234 });
+    const stop = await x.eng.client.ok('POST', '/ops/v1/timers/stop', {}, 200);
+    expect(stop.workLog.sessionMinutes).toBe(10);
+    const ended = await lead.client.ok('GET', `/admin/ops/sessions/${opened.sessionId}`);
+    expect(ended).toMatchObject({ status: 'ENDED', endReason: 'client_closed', bytesIn: 1300, bytesOut: 50_000, recorded: true, recordingSize: 51_234 });
+    const playback = await lead.client.ok('GET', `/admin/ops/sessions/${opened.sessionId}/playback`);
+    expect(playback).toMatchObject({ format: 'asciicast-v2' });
+    expect(playback.url).toContain(ok.body.recording.key);
+
+    // A staff kill ends a live session: the gateway's next event answers kill.
+    const second = await x.eng.client.ok('POST', '/ops/v1/sessions', { grantId: x.grantId }, 201);
+    expect((await gateway('session-check', { token: second.token, publicKey: ephemeralKey().line })).status).toBe(200);
+    const killed = await lead.client.ok('POST', `/admin/ops/sessions/${second.sessionId}/kill`, { reason: 'Unexpected commands' }, 200);
+    expect(killed).toMatchObject({ status: 'KILLED', killReason: 'Unexpected commands' });
+    expect((await gateway('session-events', { sessionId: second.sessionId, type: 'heartbeat' })).body).toMatchObject({ action: 'kill', reason: 'Unexpected commands' });
+
+    // An expired grant: no new session passes the check, live ones are told to end.
+    const live = await x.eng.client.ok('POST', '/ops/v1/sessions', { grantId: x.grantId }, 201);
+    expect((await gateway('session-check', { token: live.token, publicKey: ephemeralKey().line })).status).toBe(200);
+    const late = await x.eng.client.ok('POST', '/ops/v1/sessions', { grantId: x.grantId }, 201);
+    await s.prisma.accessGrant.update({ where: { id: x.grantId }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    const expired = await gateway('session-check', { token: late.token, publicKey: ephemeralKey().line });
+    expect(expired.status).toBe(409);
+    expect(expired.body.error.code).toBe('grant_expired');
+    expect((await gateway('session-events', { sessionId: live.sessionId, type: 'heartbeat' })).body).toMatchObject({ action: 'kill', reason: 'grant expired' });
+    expect((await x.eng.client.post('/ops/v1/sessions', { grantId: x.grantId })).status).toBe(409);
+
+    // A revoked grant: the live session is killed and pending tokens are refused.
+    await s.prisma.accessGrant.update({ where: { id: x.grantId }, data: { expiresAt: new Date(Date.now() + 3600_000) } });
+    const pending = await x.eng.client.ok('POST', '/ops/v1/sessions', { grantId: x.grantId }, 201);
+    await lead.client.ok('POST', `/admin/ops/access/grants/${x.grantId}/revoke`, { reason: 'Work is done' }, 200);
+    expect((await s.prisma.terminalSession.findUniqueOrThrow({ where: { id: live.sessionId } })).status).toBe('KILLED');
+    const revoked = await gateway('session-check', { token: pending.token, publicKey: ephemeralKey().line });
+    expect(revoked.status).toBe(409);
+    expect(revoked.body.error.code).toBe('grant_inactive');
+    const certs = await s.prisma.sshCertificate.findMany({ where: { grantId: x.grantId } });
+    expect(certs.length).toBe(3);
+    expect(certs.every((c) => c.revokedAt)).toBe(true);
+    const audit = await s.prisma.auditLog.findMany({ where: { resource: `terminal_session:${opened.sessionId}` } });
+    expect(audit.map((a) => a.action)).toEqual(expect.arrayContaining(['ops.session_opened', 'ops.session_started', 'ops.secret_resolved', 'ops.session_ended', 'ops.session_recording_stored']));
   });
 });

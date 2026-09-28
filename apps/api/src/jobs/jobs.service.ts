@@ -25,6 +25,7 @@ import { ContractsService } from '../modules/managed/contracts/contracts.service
 import { ManagedBillingService } from '../modules/managed/billing-hooks/managed-billing.service';
 import { MaintenanceService } from '../modules/managed/maintenance/maintenance.service';
 import { ReportsService } from '../modules/managed/reports/reports.service';
+import { SessionsService } from '../modules/ops/sessions/sessions.service';
 
 /**
  * Periodic jobs. Each takes a Redis lock so only one API replica runs it.
@@ -60,6 +61,7 @@ export class JobsService {
     private readonly managedBilling: ManagedBillingService,
     private readonly maintenance: MaintenanceService,
     private readonly reports: ReportsService,
+    private readonly opsSessions: SessionsService,
   ) {}
 
   @Cron('50 * * * * *') // every minute at :50: database roles, lag, backup results, config retries
@@ -194,6 +196,13 @@ export class JobsService {
   @Cron('0 40 * * * *') // forty past every hour: managed contracts follow the team's billing suspension
   managedContractSync() {
     return this.locked('managed-contract-sync', 10 * 60_000, () => this.managedContracts.syncWithTeamStatus());
+  }
+
+  // ---- DevOps console ----
+
+  @Cron('0 30 3 * * *') // 03:30 UTC daily: delete terminal recordings past the retention period (12 months)
+  opsRecordingRetention() {
+    return this.locked('ops-recording-retention', 30 * 60_000, () => this.opsSessions.expireRecordings());
   }
 
   private async locked(name: string, ttlMs: number, fn: () => Promise<unknown>) {

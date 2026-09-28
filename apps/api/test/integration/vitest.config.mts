@@ -86,6 +86,7 @@ export default defineConfig({
       // DevOps console: an idle timer prompts after 2 seconds and stops after 5.
       PRGD_OPS_TIMER_IDLE_PROMPT_SECONDS: '2',
       PRGD_OPS_TIMER_AUTO_STOP_SECONDS: '5',
+      PRGD_GATEWAY_SECRET: 'it-gateway-secret',
     },
   },
 });

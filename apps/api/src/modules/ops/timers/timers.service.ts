@@ -142,8 +142,20 @@ export class TimersService {
     return 'stopped';
   }
 
-  /** Minutes of the engineer's terminal sessions inside [from, to). */
-  async sessionMinutes(_userId: string, _from: Date, _to: Date) {
-    return 0;
+  /** Minutes of the engineer's terminal sessions inside [from, to), overlapping sessions counted once. */
+  async sessionMinutes(userId: string, from: Date, to: Date) {
+    const rows = await this.prisma.terminalSession.findMany({ where: { userId, startedAt: { not: null, lt: to }, OR: [{ endedAt: null }, { endedAt: { gt: from } }] }, select: { startedAt: true, endedAt: true } });
+    const spans = rows
+      .map((r) => [Math.max(r.startedAt!.getTime(), from.getTime()), Math.min((r.endedAt ?? new Date()).getTime(), to.getTime())] as const)
+      .filter(([a, b]) => b > a)
+      .sort((x, y) => x[0] - y[0]);
+    let total = 0;
+    let cursor = -Infinity;
+    for (const [a, b] of spans) {
+      const start = Math.max(a, cursor);
+      if (b > start) total += b - start;
+      cursor = Math.max(cursor, b);
+    }
+    return Math.round(total / 60_000);
   }
 }

@@ -83,6 +83,7 @@ model User {
   webAuthnCredentials WebAuthnCredential[]
   workTimers          WorkTimer[]
   accessGrants        AccessGrant[]
+  terminalSessions    TerminalSession[]
 
   @@map("prgd_users")
 }
@@ -2852,6 +2853,7 @@ model AccessGrant {
   ticket       Ticket?          @relation(fields: [ticketId], references: [id], onDelete: SetNull)
   run          MaintenanceRun?  @relation(fields: [maintenanceRunId], references: [id], onDelete: SetNull)
   certificates SshCertificate[]
+  sessions     TerminalSession[]
 
   @@index([userId, status])
   @@index([status, expiresAt])
@@ -2894,4 +2896,76 @@ model SshCertificate {
 
   @@index([grantId])
   @@map("prgd_ssh_certificates")
+}
+
+enum TerminalSessionStatus {
+  /// Opened in the ops console; the one time gateway token is not used yet.
+  PENDING
+  /// The gateway checked the token and connected.
+  ACTIVE
+  ENDED
+  /// Ended by staff, or because its grant was revoked or expired.
+  KILLED
+  FAILED
+  /// The gateway token was never used.
+  EXPIRED
+
+  @@map("prgd_terminal_session_status")
+}
+
+/// A browser terminal session through prgd-gateway, recorded as asciicast v2 in object storage.
+model TerminalSession {
+  id               String                @id @default(cuid())
+  grantId          String
+  userId           String
+  contractId       String
+  assetId          String
+  ticketId         String?
+  maintenanceRunId String?
+  /// sha256 of the one time gateway token (prgd_gws_...), valid for PRGD_GATEWAY_TOKEN_TTL_SECONDS.
+  tokenHash        String                @unique
+  tokenExpiresAt   DateTime
+  tokenUsedAt      DateTime?
+  status           TerminalSessionStatus @default(PENDING)
+  gatewayId        String?
+  clientIp         String?
+  startedAt        DateTime?
+  endedAt          DateTime?
+  lastEventAt      DateTime?
+  bytesIn          BigInt                @default(0)
+  bytesOut         BigInt                @default(0)
+  /// Object key in PRGD_RECORDINGS_BUCKET; deleted after the retention period (recordingExpiredAt).
+  recordingKey     String?
+  recordingSize    BigInt?
+  recordingStoredAt  DateTime?
+  recordingExpiredAt DateTime?
+  certSerial       String?
+  killedById       String?
+  killReason       String?
+  /// Why the session ended, as the gateway reported it (client_closed, grant_expired, killed, error).
+  endReason        String?
+  createdAt        DateTime              @default(now())
+
+  grant AccessGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+  @@index([status])
+  @@index([grantId])
+  @@index([assetId, startedAt])
+  @@index([recordingExpiredAt, startedAt])
+  @@map("prgd_terminal_sessions")
+}
+
+/// Secrets the gateway injects into terminal sessions, for PRGD_SECRET_STORE=local (development). Values sealed.
+model OpsSecret {
+  id          String   @id @default(cuid())
+  /// assets/<assetId>
+  ref         String   @unique
+  values      String
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("prgd_ops_secrets")
 }

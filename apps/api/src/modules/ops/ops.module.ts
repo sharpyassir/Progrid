@@ -17,6 +17,9 @@ import { TimesheetsService } from './timesheets/timesheets.service';
 import { AdminOpsTimesheetsController } from './timesheets/admin-timesheets.controller';
 import { GrantsService } from './access/grants.service';
 import { AdminOpsAccessController, OpsAccessController } from './access/access.controller';
+import { SessionsService } from './sessions/sessions.service';
+import { AdminOpsSessionsController, GatewayInternalController, GatewaySecretGuard, OpsSessionsController } from './sessions/sessions.controller';
+import { ObjectsModule } from '../storage/objects/objects.module';
 
 /**
  * DevOps console backend: /ops/v1 for engineers (apps/ops), /admin/ops for support leads and
@@ -25,9 +28,9 @@ import { AdminOpsAccessController, OpsAccessController } from './access/access.c
  * worklogs come from the managed module.
  */
 @Module({
-  imports: [EventsModule, ManagedModule],
-  controllers: [OpsAuthController, OpsDeskController, OpsTimersController, OpsAccessController, AdminOpsEngineersController, AdminOpsTimesheetsController, AdminOpsAccessController],
-  providers: [OpsAudit, OpsHooks, OpsScopeService, EngineerGuard, AssignmentGuard, ResidencyGuard, OpsAuthService, EngineersService, OffboardingService, DeskService, TimersService, TimesheetsService, GrantsService],
-  exports: [OpsAudit, OpsHooks, TimersService, TimesheetsService, GrantsService],
+  imports: [EventsModule, ManagedModule, ObjectsModule],
+  controllers: [OpsAuthController, OpsDeskController, OpsTimersController, OpsAccessController, OpsSessionsController, GatewayInternalController, AdminOpsEngineersController, AdminOpsTimesheetsController, AdminOpsAccessController, AdminOpsSessionsController],
+  providers: [OpsAudit, OpsHooks, OpsScopeService, EngineerGuard, AssignmentGuard, ResidencyGuard, OpsAuthService, EngineersService, OffboardingService, DeskService, TimersService, TimesheetsService, GrantsService, SessionsService, GatewaySecretGuard],
+  exports: [OpsAudit, OpsHooks, TimersService, TimesheetsService, GrantsService, SessionsService, GatewaySecretGuard],
 })
 export class OpsModule {}
