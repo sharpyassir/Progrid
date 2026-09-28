@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createHash, generateKeyPairSync, randomBytes, sign as edSign, type KeyObject } from 'node:crypto';
 import { isoCBOR } from '@simplewebauthn/server/helpers';
 import { Client, signup, sleep, sut, totp, waitFor, type Sut, type Team } from './harness';
@@ -20,6 +20,13 @@ beforeAll(async () => {
   s = await sut();
   admin = await staff([]);
   lead = await staff(['support_lead']);
+});
+
+// The suite shares one database and runs files in any order: leave no on call engineer and no
+// extra support lead behind, since paging and escalation pick them.
+afterAll(async () => {
+  await s.prisma.onCallShift.deleteMany({ where: { user: { engineerProfile: { isNot: null } } } });
+  await s.prisma.user.updateMany({ where: { id: { in: [lead.userId, admin.userId] } }, data: { isStaff: false, staffRoles: [] } });
 });
 
 // ---- helpers ----
