@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * pgcloud MCP server. Exposes the public API as tools so Claude Code, Cursor, Windsurf or
+ * prgd MCP server. Exposes the public API as tools so Claude Code, Cursor, Windsurf or
  * any MCP client can create servers, deploy repositories and read billing.
  *
- * Every call carries the agent token from PGCLOUD_TOKEN (or ~/.config/pgcloud/config.json).
+ * Every call carries the agent token from PRGD_TOKEN (or ~/.config/prgd/config.json).
  * The API enforces the token's scopes, monthly spending cap and approval rules, so the
  * agent can never exceed what the account owner allowed. Errors such as
  * spend_limit_reached come back to the agent as plain text it can act on.
  *
- *   claude mcp add pgcloud -e PGCLOUD_TOKEN=pgc_... -- npx -y pgcloud-mcp
+ *   claude mcp add prgd -e PRGD_TOKEN=prgd_... -- npx -y prgd-mcp
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -22,11 +22,11 @@ const VERSION = '0.1.0';
 /* ───────────────────────── config ───────────────────────── */
 
 function loadConfig(): { apiUrl: string; token: string } {
-  let apiUrl = process.env.PGCLOUD_API_URL ?? '';
-  let token = process.env.PGCLOUD_TOKEN ?? '';
+  let apiUrl = process.env.PRGD_API_URL ?? '';
+  let token = process.env.PRGD_TOKEN ?? '';
   if (!token || !apiUrl) {
     try {
-      const path = process.env.XDG_CONFIG_HOME ? join(process.env.XDG_CONFIG_HOME, 'pgcloud', 'config.json') : join(homedir(), '.config', 'pgcloud', 'config.json');
+      const path = process.env.XDG_CONFIG_HOME ? join(process.env.XDG_CONFIG_HOME, 'prgd', 'config.json') : join(homedir(), '.config', 'prgd', 'config.json');
       const cfg = JSON.parse(readFileSync(path, 'utf8')) as { api_url?: string; token?: string };
       apiUrl ||= cfg.api_url ?? '';
       token ||= cfg.token ?? '';
@@ -35,10 +35,10 @@ function loadConfig(): { apiUrl: string; token: string } {
     }
   }
   if (!token) {
-    process.stderr.write('pgcloud-mcp: set PGCLOUD_TOKEN (an agent token from the console or `pgcloud tokens create NAME --agent --cap 15`)\n');
+    process.stderr.write('prgd-mcp: set PRGD_TOKEN (an agent token from the console or `prgd tokens create NAME --agent --cap 15`)\n');
     process.exit(1);
   }
-  return { apiUrl: (apiUrl || 'https://api.pgcloud.example').replace(/\/$/, ''), token };
+  return { apiUrl: (apiUrl || 'https://api.prgd.example').replace(/\/$/, ''), token };
 }
 
 const cfg = loadConfig();
@@ -53,7 +53,7 @@ class ApiError extends Error {
 
 /** Like api, for endpoints that answer with text (the kubeconfig). */
 async function apiText(method: string, path: string): Promise<string> {
-  const res = await fetch(cfg.apiUrl + path, { method, headers: { authorization: `Bearer ${cfg.token}`, accept: '*/*', 'user-agent': `pgcloud-mcp/${VERSION}` } });
+  const res = await fetch(cfg.apiUrl + path, { method, headers: { authorization: `Bearer ${cfg.token}`, accept: '*/*', 'user-agent': `prgd-mcp/${VERSION}` } });
   const text = await res.text();
   if (!res.ok) {
     let e: { code?: string; message?: string; details?: unknown } = { code: 'http_error', message: res.statusText };
@@ -69,7 +69,7 @@ async function api<T = unknown>(method: string, path: string, body?: unknown): P
     headers: {
       authorization: `Bearer ${cfg.token}`,
       accept: 'application/json',
-      'user-agent': `pgcloud-mcp/${VERSION}`,
+      'user-agent': `prgd-mcp/${VERSION}`,
       ...(body ? { 'content-type': 'application/json', 'idempotency-key': `mcp-${Date.now()}-${Math.random().toString(36).slice(2)}` } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -111,7 +111,7 @@ const money = (minor: number, currency: string) => `${(minor / 100).toFixed(2)} 
 
 /* ───────────────────────── tools ───────────────────────── */
 
-const server = new McpServer({ name: 'pgcloud', version: VERSION });
+const server = new McpServer({ name: 'prgd', version: VERSION });
 
 server.registerTool('list_servers', {
   title: 'List servers',
@@ -366,7 +366,7 @@ server.registerTool('list_domains', {
 
 server.registerTool('create_domain', {
   title: 'Add a DNS zone',
-  description: 'Hosts a domain on pgcloud nameservers (free). Optionally creates an apex A record pointing at ip, for example a server or load balancer address.',
+  description: 'Hosts a domain on prgd nameservers (free). Optionally creates an apex A record pointing at ip, for example a server or load balancer address.',
   inputSchema: { name: z.string(), ip: z.string().optional(), project: z.string().optional() },
 }, async (input) => run(() => api('POST', '/v1/domains', input)));
 
@@ -407,7 +407,7 @@ server.registerTool('create_storage_key', {
 
 server.registerTool('support_ticket', {
   title: 'Open or read a support ticket',
-  description: 'Talk to pgcloud support on behalf of the user. action "open" creates a ticket (priority must be allowed on the team\'s support plan; free allows low and normal). "list" shows tickets, "get" returns one thread, "reply" adds a message, "close" closes it. Use this when something on the platform looks broken rather than retrying forever.',
+  description: 'Talk to prgd support on behalf of the user. action "open" creates a ticket (priority must be allowed on the team\'s support plan; free allows low and normal). "list" shows tickets, "get" returns one thread, "reply" adds a message, "close" closes it. Use this when something on the platform looks broken rather than retrying forever.',
   inputSchema: { action: z.enum(['open', 'list', 'get', 'reply', 'close']), id: z.string().optional(), subject: z.string().optional(), body: z.string().optional(), priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(), resource: z.string().optional().describe('"server:<id>", "database:<id>", "load_balancer:<id>", "domain:<id>", "bucket:<id>" or "invoice:<id>"') },
 }, async ({ action, id, subject, body, priority, resource }) => run(async () => {
   switch (action) {
@@ -457,7 +457,7 @@ server.registerTool('list_kubernetes', {
 
 server.registerTool('create_kubernetes', {
   title: 'Create a Kubernetes cluster',
-  description: 'Creates a managed Kubernetes cluster: one control plane node (included) or three (flat fee) behind one address, plus worker pools sized like servers (at least 2 GB of memory, billed as servers). Ready in about ten minutes; poll list_kubernetes with the id until status is active. Services of type LoadBalancer and PersistentVolumeClaims with the pgcloud-block class get platform resources on their own.',
+  description: 'Creates a managed Kubernetes cluster: one control plane node (included) or three (flat fee) behind one address, plus worker pools sized like servers (at least 2 GB of memory, billed as servers). Ready in about ten minutes; poll list_kubernetes with the id until status is active. Services of type LoadBalancer and PersistentVolumeClaims with the prgd-block class get platform resources on their own.',
   inputSchema: { name: z.string().regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/), version: z.string().optional(), ha: z.boolean().optional(), pools: z.array(z.object({ name: z.string(), size: z.string(), count: z.number().int().min(1).max(50), labels: z.record(z.string()).optional() })).min(1), project: z.string().optional() },
 }, async (input) => run(() => api('POST', '/v1/kubernetes/clusters', input)));
 
@@ -509,4 +509,4 @@ server.registerTool('database_admin', {
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-process.stderr.write(`pgcloud-mcp ${VERSION} connected to ${cfg.apiUrl}\n`);
+process.stderr.write(`prgd-mcp ${VERSION} connected to ${cfg.apiUrl}\n`);

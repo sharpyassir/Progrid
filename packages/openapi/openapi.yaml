@@ -1,14 +1,14 @@
 openapi: 3.1.0
 info:
-  title: pgcloud API
+  title: prgd API
   version: "1"
   description: |
-    The pgcloud public API. The same API powers the console, CLI, Terraform provider,
+    The prgd public API. The same API powers the console, CLI, Terraform provider,
     SDKs and AI agents (via MCP in phase 2).
 
     **Conventions**
-    - Base URL: `https://api.pgcloud.example/v1` (domain is an open decision)
-    - Auth: `Authorization: Bearer pgc_…` (API token) or a console session JWT
+    - Base URL: `https://api.prgd.example/v1` (domain is an open decision)
+    - Auth: `Authorization: Bearer prgd_…` (API token) or a console session JWT
     - Lists are cursor-paginated: `?limit=50&cursor=<id>` → `meta.next_cursor`
     - Mutations accept `Idempotency-Key` (replayed for 24h; same key + different body → 409)
     - Long operations return `202 Accepted` and a resource in a transitional status; poll or use webhooks
@@ -301,9 +301,9 @@ paths:
     post:
       tags: [servers]
       summary: Care agent report
-      description: Posted by the agent inside a managed server every five minutes, authenticated by the `X-Pgcloud-Managed-Token` header.
+      description: Posted by the agent inside a managed server every five minutes, authenticated by the `X-Prgd-Managed-Token` header.
       security: []
-      parameters: [{ name: X-Pgcloud-Managed-Token, in: header, required: true, schema: { type: string } }]
+      parameters: [{ name: X-Prgd-Managed-Token, in: header, required: true, schema: { type: string } }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ManagedReport" } } } }
       responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { ok: { type: boolean }, health: { type: string }, issues: { type: array, items: { type: string } } } } } } }, "401": { description: Unknown token } }
   /servers/{id}/actions:
@@ -759,7 +759,7 @@ paths:
     post:
       tags: [webhooks]
       summary: Create a webhook
-      description: "Deliveries are signed with `X-Pgcloud-Signature: sha256=<hmac>` using the secret returned once at creation."
+      description: "Deliveries are signed with `X-Prgd-Signature: sha256=<hmac>` using the secret returned once at creation."
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [url, events], properties: { url: { type: string, format: uri }, events: { type: array, items: { $ref: "#/components/schemas/EventName" } } } } } } }
       responses: { "201": { description: Created } }
   /webhooks/events:

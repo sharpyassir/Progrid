@@ -1,8 +1,8 @@
 {
-  "name": "@pgcloud/openapi",
+  "name": "@prgd/openapi",
   "version": "0.1.0",
   "private": true,
-  "description": "pgcloud public API v1 — OpenAPI spec (source of truth for SDKs, CLI, Terraform, docs)",
+  "description": "prgd public API v1 — OpenAPI spec (source of truth for SDKs, CLI, Terraform, docs)",
   "main": "openapi.yaml",
   "scripts": {
     "lint": "npx --yes @redocly/cli@1 lint openapi.yaml",

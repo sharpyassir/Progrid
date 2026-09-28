@@ -1,10 +1,10 @@
 {
-  "name": "pgcloud-mcp",
+  "name": "prgd-mcp",
   "version": "0.1.0",
-  "description": "MCP server that lets Claude Code, Cursor and other agents use pgcloud through an agent token with a spending cap",
+  "description": "MCP server that lets Claude Code, Cursor and other agents use prgd through an agent token with a spending cap",
   "license": "MIT",
   "type": "module",
-  "bin": { "pgcloud-mcp": "dist/index.js" },
+  "bin": { "prgd-mcp": "dist/index.js" },
   "files": ["dist"],
   "scripts": {
     "build": "tsc -p tsconfig.json",

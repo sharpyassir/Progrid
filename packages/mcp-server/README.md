@@ -1,28 +1,28 @@
-# pgcloud-mcp
+# prgd-mcp
 
-An MCP server that turns the pgcloud API into tools for Claude Code, Cursor, Windsurf, n8n or any other MCP client.
+An MCP server that turns the prgd API into tools for Claude Code, Cursor, Windsurf, n8n or any other MCP client.
 
 ## Setup
 
 1. Create an agent token with a spending cap (console → Managed Agents → Agent Access, or the CLI):
 
    ```sh
-   pgcloud tokens create claude --agent --cap 15      # $15 per month, delete needs approval
+   prgd tokens create claude --agent --cap 15      # $15 per month, delete needs approval
    ```
 
 2. Add the server to your client:
 
    ```sh
-   claude mcp add pgcloud -e PGCLOUD_TOKEN=pgc_... -- npx -y pgcloud-mcp
+   claude mcp add prgd -e PRGD_TOKEN=prgd_... -- npx -y prgd-mcp
    ```
 
    Cursor or Windsurf (`mcp.json`):
 
    ```json
-   { "mcpServers": { "pgcloud": { "command": "npx", "args": ["-y", "pgcloud-mcp"], "env": { "PGCLOUD_TOKEN": "pgc_..." } } } }
+   { "mcpServers": { "prgd": { "command": "npx", "args": ["-y", "prgd-mcp"], "env": { "PRGD_TOKEN": "prgd_..." } } } }
    ```
 
-   If you already ran `pgcloud login`, the server reads the token and API URL from `~/.config/pgcloud/config.json`, so no env is needed.
+   If you already ran `prgd login`, the server reads the token and API URL from `~/.config/prgd/config.json`, so no env is needed.
 
 3. Ask: "Deploy https://github.com/me/app on the smallest server and give me the URL."
 
@@ -50,6 +50,6 @@ When a token has approval rules (for example `servers:delete`), the matching cal
 ## Development
 
 ```sh
-pnpm --filter pgcloud-mcp build
-PGCLOUD_API_URL=http://localhost:4000 PGCLOUD_TOKEN=pgc_... node packages/mcp-server/dist/index.js
+pnpm --filter prgd-mcp build
+PRGD_API_URL=http://localhost:4000 PRGD_TOKEN=prgd_... node packages/mcp-server/dist/index.js
 ```

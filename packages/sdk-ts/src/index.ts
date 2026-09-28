@@ -1,10 +1,10 @@
 /**
- * pgcloud SDK for TypeScript and JavaScript.
+ * prgd SDK for TypeScript and JavaScript.
  *
- *   import { Pgcloud } from '@pgcloud/sdk';
- *   const pg = new Pgcloud({ token: process.env.PGCLOUD_TOKEN! });
- *   const server = await pg.servers.create({ name: 'web-1', size: 's-1vcpu-1gb', image: 'ubuntu-24-04' });
- *   await pg.servers.waitUntilActive(server.id);
+ *   import { Prgd } from '@prgd/sdk';
+ *   const prgd = new Prgd({ token: process.env.PRGD_TOKEN! });
+ *   const server = await prgd.servers.create({ name: 'web-1', size: 's-1vcpu-1gb', image: 'ubuntu-24-04' });
+ *   await prgd.servers.waitUntilActive(server.id);
  *
  * Types come from the OpenAPI document (src/types.gen.ts, regenerated with `pnpm gen`).
  * Every mutating call sends an Idempotency-Key, so a retried request never doubles a resource.
@@ -64,18 +64,18 @@ export interface AlertPolicy { id: string; name: string; metric: AlertMetric; co
 export interface AlertIncident { id: string; policyId: string; serverId: string; value: number; peakValue: number; startedAt: string; resolvedAt: string | null }
 export interface List<T> { data: T[]; meta?: { next_cursor?: string | null } }
 
-export class PgcloudError extends Error {
+export class PrgdError extends Error {
   constructor(public status: number, public code: string, message: string, public details?: Record<string, unknown>) {
     super(message);
-    this.name = 'PgcloudError';
+    this.name = 'PrgdError';
   }
   /** True for approval_required: a person must approve in the console; `details.approvalId` says which. */
   get needsApproval() { return this.code === 'approval_required'; }
 }
 
-export interface PgcloudOptions {
+export interface PrgdOptions {
   token: string;
-  /** Defaults to https://api.pgcloud.example/v1 or PGCLOUD_API_URL. */
+  /** Defaults to https://api.prgd.example/v1 or PRGD_API_URL. */
   baseUrl?: string;
   fetch?: typeof fetch;
   /** Project id or slug applied to project scoped calls when set. */
@@ -85,13 +85,13 @@ export interface PgcloudOptions {
 
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
-export class Pgcloud {
+export class Prgd {
   private readonly base: string;
   private readonly fetchImpl: typeof fetch;
-  constructor(private readonly opts: PgcloudOptions) {
-    if (!opts.token) throw new Error('pgcloud: token is required');
-    const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.PGCLOUD_API_URL;
-    this.base = (opts.baseUrl ?? env ?? 'https://api.pgcloud.example').replace(/\/+$/, '').replace(/\/v1$/, '');
+  constructor(private readonly opts: PrgdOptions) {
+    if (!opts.token) throw new Error('prgd: token is required');
+    const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.PRGD_API_URL;
+    this.base = (opts.baseUrl ?? env ?? 'https://api.prgd.example').replace(/\/+$/, '').replace(/\/v1$/, '');
     this.fetchImpl = opts.fetch ?? fetch;
   }
 
@@ -99,25 +99,25 @@ export class Pgcloud {
   async request<T>(method: Method, path: string, body?: unknown, query?: Record<string, string | number | undefined>): Promise<T> {
     const url = new URL(this.base + path);
     for (const [k, v] of Object.entries(query ?? {})) if (v !== undefined) url.searchParams.set(k, String(v));
-    const headers: Record<string, string> = { authorization: `Bearer ${this.opts.token}`, accept: 'application/json', 'user-agent': this.opts.userAgent ?? 'pgcloud-sdk-ts/0.1.0' };
+    const headers: Record<string, string> = { authorization: `Bearer ${this.opts.token}`, accept: 'application/json', 'user-agent': this.opts.userAgent ?? 'prgd-sdk-ts/0.1.0' };
     if (body !== undefined) { headers['content-type'] = 'application/json'; headers['idempotency-key'] = randomKey(); }
     const res = await this.fetchImpl(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
     const text = await res.text();
     const json = text ? safeJson(text) : null;
     if (!res.ok) {
       const e = (json as { error?: ApiErrorBody['error'] } | null)?.error;
-      throw new PgcloudError(res.status, e?.code ?? 'http_error', e?.message ?? res.statusText, e?.details as Record<string, unknown> | undefined);
+      throw new PrgdError(res.status, e?.code ?? 'http_error', e?.message ?? res.statusText, e?.details as Record<string, unknown> | undefined);
     }
     return json as T;
   }
 
   /** Like request, for endpoints that answer with text (the kubeconfig). */
   async requestText(method: Method, path: string): Promise<string> {
-    const res = await this.fetchImpl(new URL(this.base + path), { method, headers: { authorization: `Bearer ${this.opts.token}`, accept: '*/*', 'user-agent': this.opts.userAgent ?? 'pgcloud-sdk-ts/0.1.0' } });
+    const res = await this.fetchImpl(new URL(this.base + path), { method, headers: { authorization: `Bearer ${this.opts.token}`, accept: '*/*', 'user-agent': this.opts.userAgent ?? 'prgd-sdk-ts/0.1.0' } });
     const text = await res.text();
     if (!res.ok) {
       const e = (safeJson(text) as { error?: ApiErrorBody['error'] } | null)?.error;
-      throw new PgcloudError(res.status, e?.code ?? 'http_error', e?.message ?? res.statusText, e?.details as Record<string, unknown> | undefined);
+      throw new PrgdError(res.status, e?.code ?? 'http_error', e?.message ?? res.statusText, e?.details as Record<string, unknown> | undefined);
     }
     return text;
   }
@@ -158,8 +158,8 @@ export class Pgcloud {
       for (;;) {
         const s = await this.servers.get(id);
         if (s.status === 'active' || s.status === 'off') return s;
-        if (s.status === 'failed') throw new PgcloudError(500, 'server_failed', s.statusMessage ?? 'Server provisioning failed');
-        if (Date.now() > until) throw new PgcloudError(504, 'timeout', `Server ${id} is still ${s.status}`);
+        if (s.status === 'failed') throw new PrgdError(500, 'server_failed', s.statusMessage ?? 'Server provisioning failed');
+        if (Date.now() > until) throw new PrgdError(504, 'timeout', `Server ${id} is still ${s.status}`);
         await sleep(opts.intervalMs ?? 3000);
       }
     },
@@ -257,7 +257,7 @@ export class Pgcloud {
     upload: async (name: string, key: string, body: Blob | ArrayBuffer | Uint8Array | string, contentType = 'application/octet-stream') => {
       const { url } = await this.buckets.presign(name, key, 'PUT', 900, contentType);
       const r = await fetch(url, { method: 'PUT', body: body as BodyInit, headers: { 'content-type': contentType } });
-      if (!r.ok) throw new PgcloudError(r.status, 'upload_failed', `Upload of ${key} failed with ${r.status}`);
+      if (!r.ok) throw new PrgdError(r.status, 'upload_failed', `Upload of ${key} failed with ${r.status}`);
     },
   };
 
@@ -302,8 +302,8 @@ export class Pgcloud {
       for (;;) {
         const a = await this.request<PlatformApp>('GET', `/v1/app-platform/apps/${id}`);
         if (a.status === 'live') return a;
-        if (a.status === 'failed') throw new PgcloudError(500, 'app_failed', a.statusMessage ?? 'Build failed');
-        if (Date.now() > until) throw new PgcloudError(504, 'timeout', `App ${id} is still ${a.status}`);
+        if (a.status === 'failed') throw new PrgdError(500, 'app_failed', a.statusMessage ?? 'Build failed');
+        if (Date.now() > until) throw new PrgdError(504, 'timeout', `App ${id} is still ${a.status}`);
         await new Promise((r) => setTimeout(r, intervalMs));
       }
     },
@@ -327,8 +327,8 @@ export class Pgcloud {
       for (;;) {
         const c = await this.request<KubeCluster>('GET', `/v1/kubernetes/clusters/${id}`);
         if (c.status === 'active') return c;
-        if (c.status === 'failed') throw new PgcloudError(500, 'kubernetes_failed', c.statusMessage ?? 'Cluster provisioning failed');
-        if (Date.now() > until) throw new PgcloudError(504, 'timeout', `Cluster ${id} is still ${c.status}`);
+        if (c.status === 'failed') throw new PrgdError(500, 'kubernetes_failed', c.statusMessage ?? 'Cluster provisioning failed');
+        if (Date.now() > until) throw new PrgdError(504, 'timeout', `Cluster ${id} is still ${c.status}`);
         await new Promise((r) => setTimeout(r, intervalMs));
       }
     },

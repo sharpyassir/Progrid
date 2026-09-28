@@ -1,7 +1,7 @@
 {
-  "name": "@pgcloud/sdk",
+  "name": "@prgd/sdk",
   "version": "0.1.0",
-  "description": "TypeScript SDK for the pgcloud API. Types are generated from the OpenAPI specification.",
+  "description": "TypeScript SDK for the prgd API. Types are generated from the OpenAPI specification.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",

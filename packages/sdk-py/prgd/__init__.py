@@ -1,12 +1,12 @@
-"""pgcloud Python SDK.
+"""prgd Python SDK.
 
-    from pgcloud import Pgcloud
-    pg = Pgcloud(token=os.environ["PGCLOUD_TOKEN"])
-    server = pg.servers.create(name="web-1", size="s-1vcpu-1gb", image="ubuntu-24-04")
-    server = pg.servers.wait_until_active(server["id"])
+    from prgd import Prgd
+    prgd = Prgd(token=os.environ["PRGD_TOKEN"])
+    server = prgd.servers.create(name="web-1", size="s-1vcpu-1gb", image="ubuntu-24-04")
+    server = prgd.servers.wait_until_active(server["id"])
     print(server["networks"]["v4"][0]["ipAddress"])
 
-No dependencies: urllib only. Every write sends an Idempotency-Key. Errors raise PgcloudError.
+No dependencies: urllib only. Every write sends an Idempotency-Key. Errors raise PrgdError.
 """
 from __future__ import annotations
 
@@ -19,11 +19,11 @@ import urllib.parse
 import urllib.request
 from typing import Any, Dict, Optional
 
-__all__ = ["Pgcloud", "PgcloudError"]
+__all__ = ["Prgd", "PrgdError"]
 __version__ = "0.1.0"
 
 
-class PgcloudError(Exception):
+class PrgdError(Exception):
     def __init__(self, status: int, code: str, message: str, details: Optional[Dict[str, Any]] = None):
         super().__init__(f"{code} ({status}): {message}")
         self.status, self.code, self.message, self.details = status, code, message, details or {}
@@ -34,12 +34,12 @@ class PgcloudError(Exception):
         return self.code == "approval_required"
 
 
-class Pgcloud:
+class Prgd:
     def __init__(self, token: str, base_url: Optional[str] = None, project: Optional[str] = None, timeout: float = 30.0, opener=None):
         if not token:
             raise ValueError("token is required")
         self.token = token
-        self.base = (base_url or os.environ.get("PGCLOUD_API_URL") or "https://api.pgcloud.example").rstrip("/").removesuffix("/v1")
+        self.base = (base_url or os.environ.get("PRGD_API_URL") or "https://api.prgd.example").rstrip("/").removesuffix("/v1")
         self.project = project
         self.timeout = timeout
         self._open = opener or urllib.request.urlopen
@@ -68,7 +68,7 @@ class Pgcloud:
         q = {k: v for k, v in (query or {}).items() if v is not None}
         if q:
             url += "?" + urllib.parse.urlencode(q)
-        headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json", "User-Agent": f"pgcloud-sdk-py/{__version__}"}
+        headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json", "User-Agent": f"prgd-sdk-py/{__version__}"}
         data = None
         if body is not None:
             data = json.dumps(body).encode()
@@ -84,12 +84,12 @@ class Pgcloud:
                 err = json.loads(raw).get("error") or {}
             except ValueError:
                 err = {}
-            raise PgcloudError(e.code, err.get("code", "http_error"), err.get("message", str(e)), err.get("details")) from None
+            raise PrgdError(e.code, err.get("code", "http_error"), err.get("message", str(e)), err.get("details")) from None
         return json.loads(raw) if raw else None
 
     def request_text(self, method: str, path: str) -> str:
         """Like request, for endpoints that answer with plain text or YAML."""
-        req = urllib.request.Request(self.base + path, method=method, headers={"Authorization": f"Bearer {self.token}", "Accept": "*/*", "User-Agent": f"pgcloud-sdk-py/{__version__}"})
+        req = urllib.request.Request(self.base + path, method=method, headers={"Authorization": f"Bearer {self.token}", "Accept": "*/*", "User-Agent": f"prgd-sdk-py/{__version__}"})
         try:
             with self._open(req, timeout=self.timeout) as res:
                 return res.read().decode()
@@ -99,11 +99,11 @@ class Pgcloud:
                 err = json.loads(raw).get("error") or {}
             except ValueError:
                 err = {}
-            raise PgcloudError(e.code, err.get("code", "http_error"), err.get("message", str(e)), err.get("details")) from None
+            raise PrgdError(e.code, err.get("code", "http_error"), err.get("message", str(e)), err.get("details")) from None
 
 
 class _Res:
-    def __init__(self, c: Pgcloud):
+    def __init__(self, c: Prgd):
         self.c = c
 
 
@@ -170,16 +170,16 @@ class _Servers(_Res):
         return self.c.request("GET", f"/v1/servers/{id}/metrics", query={"period": period})
 
     def wait_until_active(self, id: str, timeout: float = 180.0, interval: float = 3.0):
-        """Polls until the server is active or off. Raises PgcloudError on failed or timeout."""
+        """Polls until the server is active or off. Raises PrgdError on failed or timeout."""
         until = time.time() + timeout
         while True:
             s = self.get(id)
             if s["status"] in ("active", "off"):
                 return s
             if s["status"] == "failed":
-                raise PgcloudError(500, "server_failed", s.get("statusMessage") or "Server provisioning failed")
+                raise PrgdError(500, "server_failed", s.get("statusMessage") or "Server provisioning failed")
             if time.time() > until:
-                raise PgcloudError(504, "timeout", f"Server {id} is still {s['status']}")
+                raise PrgdError(504, "timeout", f"Server {id} is still {s['status']}")
             time.sleep(interval)
 
 
@@ -444,9 +444,9 @@ class _AppPlatform(_Res):
             if a["status"] == "live":
                 return a
             if a["status"] == "failed":
-                raise PgcloudError(500, "app_failed", a.get("statusMessage") or "Build failed")
+                raise PrgdError(500, "app_failed", a.get("statusMessage") or "Build failed")
             if time.time() > until:
-                raise PgcloudError(504, "timeout", f"App {id} is still {a['status']}")
+                raise PrgdError(504, "timeout", f"App {id} is still {a['status']}")
             time.sleep(interval)
 
 
@@ -492,9 +492,9 @@ class _Kubernetes(_Res):
             if c["status"] == "active":
                 return c
             if c["status"] == "failed":
-                raise PgcloudError(500, "kubernetes_failed", c.get("statusMessage") or "Cluster provisioning failed")
+                raise PrgdError(500, "kubernetes_failed", c.get("statusMessage") or "Cluster provisioning failed")
             if time.time() > until:
-                raise PgcloudError(504, "timeout", f"Cluster {id} is still {c['status']}")
+                raise PrgdError(504, "timeout", f"Cluster {id} is still {c['status']}")
             time.sleep(interval)
 
 
