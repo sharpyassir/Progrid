@@ -5,7 +5,7 @@ import { ApiError } from '../../../common/errors/api-error';
 import { cursorArgs, toPage } from '../../../common/pagination';
 import type { Actor } from '../../../common/auth/actor';
 import { EventsService } from '../../events/events.service';
-import { DEFAULT_PLAYBOOK } from '../managed.constants';
+import { CONTRACT_REF, contractRef, DEFAULT_PLAYBOOK, type ContractRef } from '../managed.constants';
 import { ManagedWorkflows } from '../managed-workflows.service';
 import { ManagedTicketsService } from '../tickets/tickets.service';
 import { OnCallService } from '../oncall/oncall.service';
@@ -13,16 +13,17 @@ import { checkEligibility } from '../../ops/guards/residency';
 import { isValidCron, nextRun } from './cron';
 import { PLAYBOOK_NAME, runnerFor, type MaintenanceTarget } from './runners';
 
-export function presentTask(t: MaintenanceTask & { asset?: { id: string; name: string } | null }) {
+export function presentTask(t: MaintenanceTask & { asset?: { id: string; name: string } | null; contract?: ContractRef }) {
   return {
-    id: t.id, contractId: t.contractId, assetId: t.assetId, asset: t.asset ?? undefined, kind: t.kind, name: t.name, cron: t.cron, timezone: t.timezone, playbook: t.playbook, vars: t.vars,
+    id: t.id, contractId: t.contractId, ...(t.contract ? contractRef(t.contract) : {}), assetId: t.assetId, asset: t.asset ?? undefined, kind: t.kind, name: t.name, cron: t.cron, timezone: t.timezone, playbook: t.playbook, vars: t.vars,
     enabled: t.enabled, lastRunAt: t.lastRunAt, nextRunAt: t.nextRunAt, createdById: t.createdById, createdAt: t.createdAt, updatedAt: t.updatedAt,
   };
 }
 
-export function presentRun(r: MaintenanceRun & { task?: { id: string; name: string; kind: MaintenanceKind; contractId: string } }, withLog = false) {
+export function presentRun(r: MaintenanceRun & { task?: { id: string; name: string; kind: MaintenanceKind; contractId: string; contract?: ContractRef } }, withLog = false) {
+  const task = r.task ? { id: r.task.id, name: r.task.name, kind: r.task.kind, contractId: r.task.contractId, ...(r.task.contract ? contractRef(r.task.contract) : {}) } : undefined;
   return {
-    id: r.id, taskId: r.taskId, task: r.task, status: r.status, trigger: r.trigger, runner: r.runner, startedById: r.startedById, startedAt: r.startedAt, finishedAt: r.finishedAt,
+    id: r.id, taskId: r.taskId, task, status: r.status, trigger: r.trigger, runner: r.runner, startedById: r.startedById, startedAt: r.startedAt, finishedAt: r.finishedAt,
     error: r.error, ticketId: r.ticketId, createdAt: r.createdAt, ...(withLog ? { log: r.log } : {}),
   };
 }
@@ -59,12 +60,12 @@ export class MaintenanceService {
   // ---- tasks ----
 
   async listTasks(q: { contractId?: string; assetId?: string }) {
-    const rows = await this.prisma.maintenanceTask.findMany({ where: { ...(q.contractId ? { contractId: q.contractId } : {}), ...(q.assetId ? { assetId: q.assetId } : {}) }, include: { asset: { select: { id: true, name: true } } }, orderBy: [{ contractId: 'asc' }, { createdAt: 'asc' }] });
+    const rows = await this.prisma.maintenanceTask.findMany({ where: { ...(q.contractId ? { contractId: q.contractId } : {}), ...(q.assetId ? { assetId: q.assetId } : {}) }, include: { asset: { select: { id: true, name: true } }, contract: CONTRACT_REF }, orderBy: [{ contractId: 'asc' }, { createdAt: 'asc' }] });
     return { data: rows.map(presentTask) };
   }
 
   async getTask(id: string) {
-    const t = await this.prisma.maintenanceTask.findUnique({ where: { id }, include: { asset: { select: { id: true, name: true } }, runs: { orderBy: { createdAt: 'desc' }, take: 20 } } });
+    const t = await this.prisma.maintenanceTask.findUnique({ where: { id }, include: { asset: { select: { id: true, name: true } }, contract: CONTRACT_REF, runs: { orderBy: { createdAt: 'desc' }, take: 20 } } });
     if (!t) throw ApiError.notFound('maintenance task', id);
     return { ...presentTask(t), runs: t.runs.map((r) => presentRun(r)) };
   }
@@ -83,7 +84,7 @@ export class MaintenanceService {
         contractId: dto.contractId, assetId: dto.assetId ?? null, kind: dto.kind, name: dto.name ?? defaultName(dto.kind), cron: dto.cron.trim(), timezone, playbook,
         vars: (dto.vars ?? {}) as Prisma.InputJsonValue, enabled, nextRunAt: enabled ? nextRun(dto.cron, new Date(), timezone) : null, createdById: actor.userId,
       },
-      include: { asset: { select: { id: true, name: true } } },
+      include: { asset: { select: { id: true, name: true } }, contract: CONTRACT_REF },
     });
     await this.events.emit('managed.maintenance_task_created', { taskId: t.id, contractId: t.contractId, kind: t.kind, cron: t.cron }, { teamId: c.teamId, actor, resource: `maintenance_task:${t.id}` });
     return presentTask(t);
@@ -108,7 +109,7 @@ export class MaintenanceService {
         vars: dto.vars as Prisma.InputJsonValue | undefined,
         nextRunAt: enabled ? nextRun(cron, new Date(), timezone) : null,
       },
-      include: { asset: { select: { id: true, name: true } } },
+      include: { asset: { select: { id: true, name: true } }, contract: CONTRACT_REF },
     });
     await this.events.emit('managed.maintenance_task_updated', { taskId: id, changes: dto as Record<string, unknown> }, { teamId: cur.contract.teamId, actor, resource: `maintenance_task:${id}` });
     return presentTask(t);
@@ -152,7 +153,7 @@ export class MaintenanceService {
   async listRuns(q: { taskId?: string; contractId?: string; status?: string; limit: number; cursor?: string }) {
     const rows = await this.prisma.maintenanceRun.findMany({
       where: { ...(q.taskId ? { taskId: q.taskId } : {}), ...(q.contractId ? { task: { contractId: q.contractId } } : {}), ...(q.status ? { status: q.status as MaintenanceRun['status'] } : {}) },
-      include: { task: { select: { id: true, name: true, kind: true, contractId: true } } },
+      include: { task: { select: { id: true, name: true, kind: true, contractId: true, contract: CONTRACT_REF } } },
       orderBy: { createdAt: 'desc' },
       ...cursorArgs({ limit: q.limit, cursor: q.cursor }),
     });
@@ -160,7 +161,7 @@ export class MaintenanceService {
   }
 
   async getRun(id: string) {
-    const r = await this.prisma.maintenanceRun.findUnique({ where: { id }, include: { task: { select: { id: true, name: true, kind: true, contractId: true } } } });
+    const r = await this.prisma.maintenanceRun.findUnique({ where: { id }, include: { task: { select: { id: true, name: true, kind: true, contractId: true, contract: CONTRACT_REF } } } });
     if (!r) throw ApiError.notFound('maintenance run', id);
     return presentRun(r, true);
   }

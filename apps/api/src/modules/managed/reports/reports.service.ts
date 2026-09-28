@@ -5,16 +5,16 @@ import { ApiError } from '../../../common/errors/api-error';
 import type { Actor } from '../../../common/auth/actor';
 import { loadConfig } from '../../../config/config';
 import { EventsService } from '../../events/events.service';
-import { assertOwner, periodBounds, periodKey } from '../managed.constants';
+import { assertOwner, CONTRACT_REF, contractRef, periodBounds, periodKey, type ContractRef } from '../managed.constants';
 import { ManagedWorkflows } from '../managed-workflows.service';
 import { ManagedNotify } from '../managed-notify.service';
 import { ContractTermsService } from '../contracts/contract-terms.service';
 import { draftRecommendations, uptime, type ReportData } from './report-data';
 import { renderReportPdf } from './report-pdf';
 
-export function presentReport(r: MonthlyReport, staff = false) {
+export function presentReport(r: MonthlyReport & { contract?: ContractRef }, staff = false) {
   return {
-    id: r.id, contractId: r.contractId, period: r.period, status: r.status, data: r.data as unknown as ReportData, recommendations: r.recommendations,
+    id: r.id, contractId: r.contractId, ...(staff && r.contract ? contractRef(r.contract) : {}), period: r.period, status: r.status, data: r.data as unknown as ReportData, recommendations: r.recommendations,
     hasPdf: !!r.pdf, pdfBytes: r.pdf?.length ?? 0, generatedAt: r.generatedAt, sentAt: r.sentAt, ...(staff ? { sentById: r.sentById } : {}), createdAt: r.createdAt, updatedAt: r.updatedAt,
   };
 }
@@ -92,7 +92,7 @@ export class ReportsService {
     if (r.status === 'SENT') throw ApiError.invalidState('This report was already sent; regenerate a new month or add notes in a ticket');
     const updated = await this.prisma.monthlyReport.update({ where: { id }, data: { recommendations } });
     const pdf = new Uint8Array(await renderReportPdf(updated.data as unknown as ReportData, recommendations, updated.generatedAt));
-    const out = await this.prisma.monthlyReport.update({ where: { id }, data: { pdf } });
+    const out = await this.prisma.monthlyReport.update({ where: { id }, data: { pdf }, include: { contract: CONTRACT_REF } });
     await this.events.emit('managed.report_edited', { reportId: id, period: r.period }, { teamId: r.contract.teamId, actor, resource: `managed_contract:${r.contractId}` });
     return presentReport(out, true);
   }
@@ -140,7 +140,7 @@ export class ReportsService {
   }
 
   async adminList(q: { contractId?: string; period?: string; status?: 'DRAFT' | 'SENT' }) {
-    const rows = await this.prisma.monthlyReport.findMany({ where: { ...(q.contractId ? { contractId: q.contractId } : {}), ...(q.period ? { period: q.period } : {}), ...(q.status ? { status: q.status } : {}) }, orderBy: [{ period: 'desc' }, { createdAt: 'desc' }], take: 200 });
+    const rows = await this.prisma.monthlyReport.findMany({ where: { ...(q.contractId ? { contractId: q.contractId } : {}), ...(q.period ? { period: q.period } : {}), ...(q.status ? { status: q.status } : {}) }, include: { contract: CONTRACT_REF }, orderBy: [{ period: 'desc' }, { createdAt: 'desc' }], take: 200 });
     return { data: rows.map((r) => presentReport(r, true)) };
   }
 
@@ -214,7 +214,7 @@ export class ReportsService {
   }
 
   private async load(id: string) {
-    const r = await this.prisma.monthlyReport.findUnique({ where: { id }, include: { contract: { select: { teamId: true } } } });
+    const r = await this.prisma.monthlyReport.findUnique({ where: { id }, include: { contract: CONTRACT_REF } });
     if (!r) throw ApiError.notFound('report', id);
     return r;
   }
