@@ -865,3 +865,42 @@ describe('ops console maintenance', () => {
     expect(await s.prisma.auditLog.count({ where: { resource: `maintenance_task:${task.id}`, action: { in: ['ops.maintenance_run_started', 'ops.maintenance_run_retried'] } } })).toBe(3);
   });
 });
+
+describe('ops console alerts, escalation and settings', () => {
+  it('acknowledges an alert and takes its ticket, escalates to the support lead, and keeps settings full staff only', async () => {
+    const c = await contractWithAsset();
+    const eng = await externalEngineer({ contractIds: [c.contractId] });
+    await onCall(eng.userId);
+    const fp = `ops-${randomBytes(4).toString('hex')}`;
+    const labels = { alertname: 'HostDown', severity: 'critical', asset_id: c.assetId };
+    const am = await fetch(`${s.baseUrl}/internal/alerts/alertmanager`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer it-alertmanager-secret' }, body: JSON.stringify({ version: '4', status: 'firing', alerts: [{ status: 'firing', labels, annotations: { summary: 'Host down' }, startsAt: new Date().toISOString(), fingerprint: fp }] }) });
+    expect(am.status).toBe(200);
+    const alert = await s.prisma.alert.findFirstOrThrow({ where: { fingerprint: fp } });
+    // The on call external engineer was paged and assigned (eligible for the contract).
+    const me = await eng.client.ok('GET', '/ops/v1/me');
+    expect(me.openPages.map((p: { alertId: string }) => p.alertId)).toContain(alert.id);
+    const alerts = await eng.client.ok('GET', '/ops/v1/alerts');
+    expect(alerts.data.map((a: { id: string }) => a.id)).toContain(alert.id);
+
+    const acked = await eng.client.ok('POST', `/ops/v1/alerts/${alert.id}/ack`, {}, 200);
+    expect(acked.status).toBe('ACKNOWLEDGED');
+    const ticket = await s.prisma.ticket.findUniqueOrThrow({ where: { id: alert.ticketId! } });
+    expect(ticket.assigneeId).toBe(eng.userId);
+    expect(await s.prisma.page.count({ where: { alertId: alert.id, ackAt: null } })).toBe(0);
+
+    const esc = await eng.client.ok('POST', `/ops/v1/tickets/${ticket.id}/escalate`, { reason: 'Hardware fault, need the hosting provider' }, 200);
+    expect(esc.escalated).toBe(true);
+    expect(await s.prisma.page.count({ where: { ticketId: ticket.id, userId: esc.to.id, urgency: 'high' } })).toBeGreaterThan(0);
+    const ws = await eng.client.ok('GET', `/ops/v1/tickets/${ticket.id}`);
+    expect(ws.messages.some((m: { internal: boolean; body: string }) => m.internal && m.body.startsWith('Escalated to the support lead'))).toBe(true);
+    expect(ws.escalation).toMatchObject({ suggested: false, afterMinutes: 45 });
+
+    expect((await lead.client.patch('/admin/ops/settings', { escalationSuggestMinutes: 30 })).status).toBe(403);
+    expect((await admin.client.patch('/admin/ops/settings', { noSuchSetting: 1 })).status).toBe(422);
+    expect((await admin.client.patch('/admin/ops/settings', { autoGrantMinutes: 300 })).status).toBe(422);
+    const changed = await admin.client.ok('PATCH', '/admin/ops/settings', { escalationSuggestMinutes: 30 });
+    expect(changed.settings).toMatchObject({ escalationSuggestMinutes: 30, autoGrantMinutes: 120, maxGrantMinutes: 240, postmortemDueHours: 48, nightStartHour: 22, nightEndHour: 6, defaultAccessPolicy: 'ANY' });
+    expect((await lead.client.ok('GET', '/admin/ops/settings')).settings.escalationSuggestMinutes).toBe(30);
+    await admin.client.ok('PATCH', '/admin/ops/settings', { escalationSuggestMinutes: 45 });
+  });
+});
