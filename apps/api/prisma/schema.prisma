@@ -42,7 +42,8 @@ enum AccountStatus {
 model User {
   id            String    @id @default(cuid())
   email         String    @unique
-  passwordHash  String
+  /// Null for accounts that only sign in with Google or Microsoft (see OAuthIdentity).
+  passwordHash  String?
   name          String
   locale        String    @default("en") // en | tr | ar
   totpSecret    String? // 2FA (mandatory for owners)
@@ -78,6 +79,7 @@ model User {
   pages             Page[]
   workLogs          WorkLog[]
   runbooksUpdated   Runbook[]
+  oauthIdentities   OAuthIdentity[]
 
   @@map("prgd_users")
 }
@@ -2065,6 +2067,33 @@ model Session {
   @@index([userId, revokedAt])
 
   @@map("prgd_sessions")
+}
+
+enum OAuthProvider {
+  google
+  microsoft
+
+  @@map("prgd_oauth_provider")
+}
+
+/// A Google or Microsoft account linked to a user for social sign in (docs/social-sign-in.md).
+model OAuthIdentity {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider      OAuthProvider
+  /// The id token `sub`: stable per provider account (per app for Microsoft).
+  subject       String
+  email         String
+  emailVerified Boolean   @default(false)
+  /// Microsoft directory (tid) the account belongs to; null for Google.
+  tenantId      String?
+  createdAt     DateTime  @default(now())
+  lastUsedAt    DateTime?
+
+  @@unique([provider, subject])
+  @@index([userId])
+  @@map("prgd_oauth_identities")
 }
 
 /// ---------------------------------------------------------------------------

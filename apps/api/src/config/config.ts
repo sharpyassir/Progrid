@@ -131,6 +131,16 @@ const schema = z.object({
   MAINTENANCE_TIMEOUT_MINUTES: z.coerce.number().int().min(1).default(60),
   /** Day of the month a draft monthly report is sent automatically when nobody sent it (reports are drafted on the 1st). */
   MANAGED_REPORT_AUTOSEND_DAY: z.coerce.number().int().min(1).max(28).default(3),
+
+  // ---- social sign in (docs/social-sign-in.md); a provider shows in the console only when its client id and secret are set ----
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  MICROSOFT_CLIENT_ID: z.string().optional(),
+  MICROSOFT_CLIENT_SECRET: z.string().optional(),
+  /** Entra directory that may sign in: common (work, school and personal accounts), organizations, consumers or a tenant id. */
+  MICROSOFT_TENANT: z.preprocess((v) => (v === '' ? undefined : v), z.string().regex(/^[A-Za-z0-9.-]+$/).default('common')),
+  /** Base of the provider redirect URIs (<base>/v1/auth/oauth/<provider>/callback). Empty uses PUBLIC_API_URL. */
+  OAUTH_REDIRECT_BASE: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
 });
 
 export type AppConfig = z.infer<typeof schema>;

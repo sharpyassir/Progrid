@@ -38,6 +38,10 @@ maintenance_runner: fake            # ansible once the worker can reach the mana
 maintenance_playbook_dir: /opt/prgd/maintenance
 maintenance_ssh_user: prgd
 maintenance_ssh_key_file: ""
+# Social sign in (docs/social-sign-in.md); leave a client id empty to hide that button
+google_client_id: ""                # xxxx.apps.googleusercontent.com
+microsoft_client_id: ""             # Application (client) ID from the Entra app registration
+microsoft_tenant: common            # common accepts work, school and personal accounts
 
 # --- vault.yml keys (values with ansible-vault) ---
 # vault_postgres_password: ...
@@ -51,6 +55,8 @@ maintenance_ssh_key_file: ""
 # vault_support_inbound_secret: ...
 # vault_alertmanager_webhook_secret: ...  # shared secret for POST /internal/alerts/alertmanager
 # vault_twilio_auth_token: ""             # Twilio SMS and WhatsApp paging
+# vault_google_client_secret: ""          # social sign in with Google
+# vault_microsoft_client_secret: ""       # social sign in with Microsoft; rotate before it expires
 # vault_pdns_api_key: ...
 # vault_rgw_admin_access_key: ...
 # vault_rgw_admin_secret_key: ...
