@@ -110,7 +110,7 @@ export class MetricsService {
     const rows = await this.prisma.$queryRaw<{ serverId: string; cpu: number; cpuMax: number; mem: number; memTotal: number; nin: number; nout: number; dr: number; dw: number; n: number }[]>`
       SELECT "serverId", AVG("cpuPercent") AS cpu, MAX("cpuPercent") AS "cpuMax", AVG("memoryUsedMb") AS mem, MAX("memoryTotalMb") AS "memTotal",
              AVG("netInBps") AS nin, AVG("netOutBps") AS nout, AVG("diskReadBps") AS dr, AVG("diskWriteBps") AS dw, COUNT(*)::int AS n
-      FROM "MetricSample" WHERE "at" >= ${hourStart} AND "at" < ${hourEnd} GROUP BY "serverId"`;
+      FROM "prgd_metric_samples" WHERE "at" >= ${hourStart} AND "at" < ${hourEnd} GROUP BY "serverId"`;
     if (rows.length) {
       await this.prisma.metricHourly.createMany({
         data: rows.map((r) => ({ serverId: r.serverId, at: hourStart, cpuPercent: round(Number(r.cpu)), cpuMax: round(Number(r.cpuMax)), memoryUsedMb: Math.round(Number(r.mem)), memoryTotalMb: Number(r.memTotal), netInBps: round(Number(r.nin)), netOutBps: round(Number(r.nout)), diskReadBps: round(Number(r.dr)), diskWriteBps: round(Number(r.dw)), samples: r.n })),

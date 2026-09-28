@@ -19,11 +19,15 @@ enum TeamRole {
   member
   billing
   readonly
+
+  @@map("prgd_team_role")
 }
 
 enum Currency {
   USD
   SAR
+
+  @@map("prgd_currency")
 }
 
 enum AccountStatus {
@@ -31,6 +35,8 @@ enum AccountStatus {
   pending_verification
   suspended
   closed
+
+  @@map("prgd_account_status")
 }
 
 model User {
@@ -72,6 +78,8 @@ model User {
   pages             Page[]
   workLogs          WorkLog[]
   runbooksUpdated   Runbook[]
+
+  @@map("prgd_users")
 }
 
 /// One time links for email verification and password reset (hash stored, raw token mailed).
@@ -86,6 +94,8 @@ model EmailToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, kind])
+
+  @@map("prgd_email_tokens")
 }
 
 model Team {
@@ -126,6 +136,8 @@ model Team {
   abuseFlags AbuseFlag[]
   webhooks  Webhook[]
   managedContracts ManagedContract[]
+
+  @@map("prgd_teams")
 }
 
 model TeamMember {
@@ -136,6 +148,8 @@ model TeamMember {
   user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([teamId, userId])
+
+  @@map("prgd_team_members")
 }
 
 /// An emailed invitation to join a team. The link carries a random token; only its hash is stored.
@@ -155,6 +169,8 @@ model Invitation {
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@index([teamId, email])
+
+  @@map("prgd_invitations")
 }
 
 model Project {
@@ -191,6 +207,8 @@ model Project {
   privateNetworks PrivateNetwork[]
 
   @@unique([teamId, slug])
+
+  @@map("prgd_projects")
 }
 
 model SshKey {
@@ -201,6 +219,8 @@ model SshKey {
   fingerprint String   @unique
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("prgd_ssh_keys")
 }
 
 /// API tokens for humans *and* AI agents. Agent-safe tokens carry scopes, a spend cap
@@ -227,6 +247,8 @@ model ApiToken {
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
   approvals Approval[]
+
+  @@map("prgd_api_tokens")
 }
 
 enum ApprovalStatus {
@@ -235,6 +257,8 @@ enum ApprovalStatus {
   denied
   expired
   failed
+
+  @@map("prgd_approval_status")
 }
 
 /// A request from an agent token that a person must approve before it runs.
@@ -264,6 +288,8 @@ model Approval {
 
   @@index([teamId, status, createdAt])
   @@index([tokenId, status])
+
+  @@map("prgd_approvals")
 }
 
 // ───────────────────────── Regions & data plane inventory ─────────────────────────
@@ -286,6 +312,8 @@ model Region {
   platformApps PlatformApp[]
   appHosts     AppHost[]
   privateNetworks PrivateNetwork[]
+
+  @@map("prgd_regions")
 }
 
 enum HostStatus {
@@ -293,6 +321,8 @@ enum HostStatus {
   draining // no new placements
   maintenance
   down
+
+  @@map("prgd_host_status")
 }
 
 /// A physical Proxmox node. Capacity is tracked in the control plane for scheduling;
@@ -317,6 +347,8 @@ model Host {
 
   region  Region   @relation(fields: [regionId], references: [id])
   servers Server[]
+
+  @@map("prgd_hosts")
 }
 
 // ───────────────────────── Compute ─────────────────────────
@@ -333,6 +365,8 @@ enum ServerStatus {
   deleted
   failed
   suspended // trust & safety or unpaid
+
+  @@map("prgd_server_status")
 }
 
 model Size {
@@ -351,6 +385,8 @@ model Size {
   dbClusters DbCluster[]
   kubeControl  KubeCluster[]  @relation("KubeControlSize")
   kubePools    KubeNodePool[] @relation("KubePoolSize")
+
+  @@map("prgd_sizes")
 }
 
 enum ImageKind {
@@ -358,6 +394,8 @@ enum ImageKind {
   marketplace
   snapshot
   custom
+
+  @@map("prgd_image_kind")
 }
 
 model Image {
@@ -377,6 +415,8 @@ model Image {
   region  Region?  @relation(fields: [regionId], references: [id])
   servers Server[]
   app     MarketplaceApp?
+
+  @@map("prgd_images")
 }
 
 model Server {
@@ -439,6 +479,8 @@ model Server {
   kubeNode  KubeNode?
   appHost   AppHost?
   managedAssets ManagedAsset[]
+
+  @@map("prgd_servers")
 }
 
 enum ActionType {
@@ -451,6 +493,8 @@ enum ActionType {
   snapshot
   restore
   delete
+
+  @@map("prgd_action_type")
 }
 
 enum ActionStatus {
@@ -458,6 +502,8 @@ enum ActionStatus {
   running
   completed
   failed
+
+  @@map("prgd_action_status")
 }
 
 /// Every lifecycle operation is recorded here and backed by a Temporal workflow.
@@ -476,6 +522,8 @@ model ServerAction {
   server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
   @@index([serverId, startedAt])
+
+  @@map("prgd_server_actions")
 }
 
 // ───────────────────────── Storage (MVP: snapshots) ─────────────────────────
@@ -485,11 +533,15 @@ enum SnapshotStatus {
   available
   failed
   deleted
+
+  @@map("prgd_snapshot_status")
 }
 
 enum SnapshotKind {
   manual
   backup
+
+  @@map("prgd_snapshot_kind")
 }
 
 model Snapshot {
@@ -509,6 +561,8 @@ model Snapshot {
   server  Server? @relation(fields: [serverId], references: [id], onDelete: SetNull)
 
   @@index([serverId, kind])
+
+  @@map("prgd_snapshots")
 }
 
 // ───────────────────────── Networking (MVP: public IPs + firewalls) ─────────────────────────
@@ -521,12 +575,16 @@ model IpBlock {
   owned     Boolean    @default(false) // own RIPE block vs leased
   region    Region     @relation(fields: [regionId], references: [id])
   ips       PublicIp[]
+
+  @@map("prgd_ip_blocks")
 }
 
 enum IpStatus {
   free
   reserved
   assigned
+
+  @@map("prgd_ip_status")
 }
 
 model PublicIp {
@@ -552,6 +610,8 @@ model PublicIp {
   reverseDnsSynced Boolean @default(true)
   dbCluster    DbCluster?
   kubeCluster  KubeCluster?
+
+  @@map("prgd_public_ips")
 }
 
 /// A project's private network in one region. Its CIDR comes from the region pool
@@ -580,6 +640,8 @@ model PrivateNetwork {
   @@unique([projectId, regionId])
   @@unique([regionId, cidr])
   @@unique([regionId, poolIndex])
+
+  @@map("prgd_private_networks")
 }
 
 /// One address on a private network, held by a server from create until delete.
@@ -594,11 +656,15 @@ model PrivateIp {
   server  Server?        @relation(fields: [serverId], references: [id], onDelete: SetNull)
 
   @@unique([networkId, address])
+
+  @@map("prgd_private_ips")
 }
 
 enum FirewallDirection {
   inbound
   outbound
+
+  @@map("prgd_firewall_direction")
 }
 
 enum FirewallProtocol {
@@ -608,6 +674,8 @@ enum FirewallProtocol {
   /// IP protocol 112, keepalived between cluster members
   vrrp
   any
+
+  @@map("prgd_firewall_protocol")
 }
 
 model Firewall {
@@ -619,6 +687,8 @@ model Firewall {
   project Project          @relation(fields: [projectId], references: [id])
   rules   FirewallRule[]
   servers FirewallServer[]
+
+  @@map("prgd_firewalls")
 }
 
 model FirewallRule {
@@ -632,6 +702,8 @@ model FirewallRule {
   description String?
 
   firewall Firewall @relation(fields: [firewallId], references: [id], onDelete: Cascade)
+
+  @@map("prgd_firewall_rules")
 }
 
 model FirewallServer {
@@ -641,6 +713,8 @@ model FirewallServer {
   server     Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
   @@id([firewallId, serverId])
+
+  @@map("prgd_firewall_servers")
 }
 
 // ───────────────────────── Marketplace ─────────────────────────
@@ -650,6 +724,8 @@ enum AppStatus {
   in_review
   published
   deprecated
+
+  @@map("prgd_app_status")
 }
 
 model MarketplaceApp {
@@ -675,6 +751,8 @@ model MarketplaceApp {
   createdAt   DateTime  @default(now())
 
   image Image @relation(fields: [imageId], references: [id])
+
+  @@map("prgd_marketplace_apps")
 }
 
 // ───────────────────────── Billing & metering ─────────────────────────
@@ -698,6 +776,8 @@ enum ResourceType {
   managed_plan
   /// Managed cloud engineer time beyond the plan's included minutes (resourceId = contract id).
   managed_overage
+
+  @@map("prgd_resource_type")
 }
 
 /// Raw per-minute usage from host agents (TimescaleDB hypertable on `at`, created in
@@ -716,6 +796,8 @@ model UsageEvent {
   @@id([id, at])
   @@unique([resourceType, resourceId, at])
   @@index([projectId, at])
+
+  @@map("prgd_usage_events")
 }
 
 /// One row per resource per hour, rated.
@@ -739,6 +821,8 @@ model UsageRecord {
   @@unique([resourceType, resourceId, hourStart])
   @@index([projectId, hourStart])
   @@index([invoiceId])
+
+  @@map("prgd_usage_records")
 }
 
 /// USD → quote exchange rates, newest wins. Every price is in USD; riyals are derived.
@@ -751,6 +835,8 @@ model FxRate {
   at     DateTime @default(now())
 
   @@index([base, quote, at])
+
+  @@map("prgd_fx_rates")
 }
 
 /// Price book in USD. hourly = monthly / BILLING_HOURS_PER_MONTH, capped at monthly.
@@ -770,6 +856,8 @@ model Price {
   records UsageRecord[]
 
   @@index([resourceType, sku, currency, validFrom])
+
+  @@map("prgd_prices")
 }
 
 enum InvoiceStatus {
@@ -780,12 +868,14 @@ enum InvoiceStatus {
   uncollectible
   /// Fully reversed by credit notes.
   credited
+
+  @@map("prgd_invoice_status")
 }
 
 model Invoice {
   id          String        @id @default(cuid())
   teamId      String
-  number      String        @unique // "PRGD-2026-000123", from the invoice_number_seq sequence
+  number      String        @unique // "PRGD-2026-000123", from the prgd_invoice_number_seq sequence
   currency    Currency
   periodStart DateTime
   periodEnd   DateTime
@@ -814,6 +904,8 @@ model Invoice {
 
   @@unique([teamId, periodStart, periodEnd])
   @@index([status, dueAt])
+
+  @@map("prgd_invoices")
 }
 
 enum CreditKind {
@@ -821,6 +913,8 @@ enum CreditKind {
   prepaid
   refund
   goodwill
+
+  @@map("prgd_credit_kind")
 }
 
 model Credit {
@@ -834,6 +928,8 @@ model Credit {
   expiresAt   DateTime?
   createdAt   DateTime   @default(now())
   team Team @relation(fields: [teamId], references: [id])
+
+  @@map("prgd_credits")
 }
 
 enum PaymentProvider {
@@ -842,6 +938,8 @@ enum PaymentProvider {
   manual
   /// The built in test page (development and demos). Never set in production.
   fake
+
+  @@map("prgd_payment_provider")
 }
 
 enum PaymentStatus {
@@ -849,6 +947,8 @@ enum PaymentStatus {
   succeeded
   failed
   refunded
+
+  @@map("prgd_payment_status")
 }
 
 model Payment {
@@ -877,11 +977,13 @@ model Payment {
   @@index([invoiceId, status])
   @@index([provider, providerRef])
   @@index([teamId, createdAt])
+
+  @@map("prgd_payments")
 }
 
 // ───────────────────────── Trust & safety ─────────────────────────
 
-/// Reverses all or part of an issued invoice. Numbered from credit_note_number_seq (CN-2026-000045).
+/// Reverses all or part of an issued invoice. Numbered from prgd_credit_note_number_seq (CN-2026-000045).
 model CreditNote {
   id          String   @id @default(cuid())
   number      String   @unique
@@ -901,6 +1003,8 @@ model CreditNote {
 
   @@index([teamId, createdAt])
   @@index([invoiceId])
+
+  @@map("prgd_credit_notes")
 }
 
 enum AbuseKind {
@@ -911,6 +1015,8 @@ enum AbuseKind {
   phishing
   payment_fraud
   report
+
+  @@map("prgd_abuse_kind")
 }
 
 model AbuseFlag {
@@ -927,6 +1033,8 @@ model AbuseFlag {
   team Team @relation(fields: [teamId], references: [id])
 
   @@index([teamId, resolvedAt])
+
+  @@map("prgd_abuse_flags")
 }
 
 // ───────────────────────── Events, audit, webhooks ─────────────────────────
@@ -946,6 +1054,8 @@ model AuditLog {
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([teamId, at])
+
+  @@map("prgd_audit_logs")
 }
 
 model Webhook {
@@ -958,6 +1068,8 @@ model Webhook {
   createdAt DateTime @default(now())
   team       Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
   deliveries WebhookDelivery[]
+
+  @@map("prgd_webhooks")
 }
 
 model WebhookDelivery {
@@ -973,6 +1085,8 @@ model WebhookDelivery {
   webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
 
   @@index([deliveredAt, nextAttemptAt])
+
+  @@map("prgd_webhook_deliveries")
 }
 
 // ───────────────────────── Git Deploy ─────────────────────────
@@ -982,6 +1096,8 @@ enum DeployStatus {
   deploying
   live
   failed
+
+  @@map("prgd_deploy_status")
 }
 
 /// A Git repository deployed onto a server: clone → build (Dockerfile / compose) → run,
@@ -1017,6 +1133,8 @@ model Deployment {
 
   @@index([projectId])
   @@index([repoFullName, branch])
+
+  @@map("prgd_deployments")
 }
 
 /// A GitHub App installation on a customer account or organization, linked to one team.
@@ -1034,6 +1152,8 @@ model GithubInstallation {
   platformApps PlatformApp[]
 
   @@index([teamId])
+
+  @@map("prgd_github_installations")
 }
 
 /// "Notify me" clicks on roadmap products in the console — feeds prioritisation.
@@ -1047,6 +1167,8 @@ model ProductInterest {
 
   @@unique([teamId, product])
   @@index([product])
+
+  @@map("prgd_product_interests")
 }
 
 /// Idempotency-Key storage for POST endpoints (24h TTL enforced by cleanup job).
@@ -1059,6 +1181,8 @@ model IdempotencyKey {
   createdAt  DateTime @default(now())
 
   @@index([createdAt])
+
+  @@map("prgd_idempotency_keys")
 }
 
 // ───────────────────────── Monitoring ─────────────────────────
@@ -1078,6 +1202,8 @@ model MetricSample {
 
   @@id([serverId, at])
   @@index([at])
+
+  @@map("prgd_metric_samples")
 }
 
 /// Hourly rollup of MetricSample, kept for a year.
@@ -1095,6 +1221,8 @@ model MetricHourly {
   samples       Int
 
   @@id([serverId, at])
+
+  @@map("prgd_metric_hourly")
 }
 
 /// Last cumulative counters per server, to turn the agent's totals into per second rates.
@@ -1105,6 +1233,8 @@ model MetricCursor {
   netOutBytes    BigInt
   diskReadBytes  BigInt
   diskWriteBytes BigInt
+
+  @@map("prgd_metric_cursors")
 }
 
 enum AlertMetric {
@@ -1117,11 +1247,15 @@ enum AlertMetric {
   db_node_unreachable
   /// Event based: an App Platform deploy failed. Threshold and window are ignored.
   app_deploy_failed
+
+  @@map("prgd_alert_metric")
 }
 
 enum AlertComparator {
   above
   below
+
+  @@map("prgd_alert_comparator")
 }
 
 /// A resource alert rule: metric over a threshold for a window, on chosen servers or tags.
@@ -1147,6 +1281,8 @@ model AlertPolicy {
   incidents AlertIncident[]
 
   @@index([teamId])
+
+  @@map("prgd_alert_policies")
 }
 
 model AlertIncident {
@@ -1163,6 +1299,8 @@ model AlertIncident {
 
   @@index([teamId, resolvedAt, startedAt])
   @@index([policyId, serverId, resolvedAt])
+
+  @@map("prgd_alert_incidents")
 }
 
 // ───────────────────────── Block volumes ─────────────────────────
@@ -1177,6 +1315,8 @@ enum VolumeStatus {
   deleting
   failed
   deleted
+
+  @@map("prgd_volume_status")
 }
 
 /// A Ceph RBD image the customer attaches to one server at a time. Billed per GB per month
@@ -1204,6 +1344,8 @@ model Volume {
 
   @@index([projectId])
   @@index([serverId])
+
+  @@map("prgd_volumes")
 }
 
 // ───────────────────────── Load balancers ─────────────────────────
@@ -1215,16 +1357,22 @@ enum LoadBalancerStatus {
   failed
   deleting
   deleted
+
+  @@map("prgd_load_balancer_status")
 }
 
 enum LbAlgorithm {
   round_robin
   least_conn
+
+  @@map("prgd_lb_algorithm")
 }
 
 enum CertificateType {
   custom
   letsencrypt
+
+  @@map("prgd_certificate_type")
 }
 
 /// TLS certificate for HTTPS forwarding rules: uploaded PEM, or domains that the
@@ -1244,6 +1392,8 @@ model Certificate {
   project Project @relation(fields: [projectId], references: [id])
 
   @@index([projectId])
+
+  @@map("prgd_certificates")
 }
 
 /// A managed HAProxy in front of servers. We run one to three node VMs (Server rows with
@@ -1285,6 +1435,8 @@ model LoadBalancer {
   targets     LoadBalancerTarget[]
 
   @@index([projectId])
+
+  @@map("prgd_load_balancers")
 }
 
 model LoadBalancerNode {
@@ -1297,6 +1449,8 @@ model LoadBalancerNode {
 
   loadBalancer LoadBalancer @relation(fields: [loadBalancerId], references: [id], onDelete: Cascade)
   server       Server       @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@map("prgd_load_balancer_nodes")
 }
 
 model LoadBalancerTarget {
@@ -1310,6 +1464,8 @@ model LoadBalancerTarget {
   server       Server       @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
   @@unique([loadBalancerId, serverId])
+
+  @@map("prgd_load_balancer_targets")
 }
 
 // ───────────────────────── DNS ─────────────────────────
@@ -1320,6 +1476,8 @@ enum DnsZoneStatus {
   error
   deleting
   deleted
+
+  @@map("prgd_dns_zone_status")
 }
 
 enum DnsRecordType {
@@ -1331,6 +1489,8 @@ enum DnsRecordType {
   NS
   SRV
   CAA
+
+  @@map("prgd_dns_record_type")
 }
 
 /// A hosted zone. The database is the source of truth; every change bumps `serial` and the
@@ -1351,6 +1511,8 @@ model DnsZone {
   records DnsRecord[]
 
   @@index([projectId])
+
+  @@map("prgd_dns_zones")
 }
 
 model DnsRecord {
@@ -1369,6 +1531,8 @@ model DnsRecord {
   zone DnsZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
 
   @@index([zoneId])
+
+  @@map("prgd_dns_records")
 }
 
 // ───────────────────────── Object storage ─────────────────────────
@@ -1379,6 +1543,8 @@ enum BucketStatus {
   deleting
   deleted
   failed
+
+  @@map("prgd_bucket_status")
 }
 
 /// An S3 bucket on the region's Ceph RADOS Gateway, owned by the project's RGW user.
@@ -1403,6 +1569,8 @@ model Bucket {
   region  Region  @relation(fields: [regionId], references: [id])
 
   @@index([projectId])
+
+  @@map("prgd_buckets")
 }
 
 /// An S3 access key pair on the project's RGW user. The secret is shown once at creation.
@@ -1420,6 +1588,8 @@ model StorageKey {
   project Project @relation(fields: [projectId], references: [id])
 
   @@index([projectId])
+
+  @@map("prgd_storage_keys")
 }
 
 // ───────────────────────── Managed databases ─────────────────────────
@@ -1428,6 +1598,8 @@ enum DbEngine {
   postgres
   valkey
   mysql
+
+  @@map("prgd_db_engine")
 }
 
 enum DbClusterStatus {
@@ -1438,12 +1610,16 @@ enum DbClusterStatus {
   restoring
   deleting
   deleted
+
+  @@map("prgd_db_cluster_status")
 }
 
 enum DbBackupStatus {
   running
   completed
   failed
+
+  @@map("prgd_db_backup_status")
 }
 
 /// A managed database cluster: one or three platform owned node VMs (Server rows with
@@ -1488,6 +1664,8 @@ model DbCluster {
   backups     DbBackup[]
 
   @@index([projectId])
+
+  @@map("prgd_db_clusters")
 }
 
 model DbNode {
@@ -1503,6 +1681,8 @@ model DbNode {
 
   cluster DbCluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
   server  Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@map("prgd_db_nodes")
 }
 
 model DbUser {
@@ -1515,6 +1695,8 @@ model DbUser {
   cluster DbCluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
 
   @@unique([clusterId, name])
+
+  @@map("prgd_db_users")
 }
 
 model DbDatabase {
@@ -1526,6 +1708,8 @@ model DbDatabase {
   cluster DbCluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
 
   @@unique([clusterId, name])
+
+  @@map("prgd_db_databases")
 }
 
 model DbBackup {
@@ -1545,6 +1729,8 @@ model DbBackup {
   cluster DbCluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
 
   @@index([clusterId])
+
+  @@map("prgd_db_backups")
 }
 
 /// ---------------------------------------------------------------------------
@@ -1555,12 +1741,16 @@ enum SupportPlan {
   developer
   standard
   premium
+
+  @@map("prgd_support_plan")
 }
 
 enum TicketStatus {
   open // waiting on us
   answered // waiting on the customer
   closed
+
+  @@map("prgd_ticket_status")
 }
 
 enum TicketPriority {
@@ -1568,6 +1758,8 @@ enum TicketPriority {
   normal
   high
   urgent
+
+  @@map("prgd_ticket_priority")
 }
 
 model Ticket {
@@ -1619,6 +1811,8 @@ model Ticket {
   @@index([assigneeId, status])
   @@index([teamId, status])
   @@index([status, priority, createdAt])
+
+  @@map("prgd_tickets")
 }
 
 model TicketMessage {
@@ -1634,6 +1828,8 @@ model TicketMessage {
   createdAt  DateTime @default(now())
 
   @@index([ticketId, createdAt])
+
+  @@map("prgd_ticket_messages")
 }
 
 /// ---------------------------------------------------------------------------
@@ -1646,6 +1842,8 @@ enum KubeClusterStatus {
   failed
   deleting
   deleted
+
+  @@map("prgd_kube_cluster_status")
 }
 
 model KubeCluster {
@@ -1688,6 +1886,8 @@ model KubeCluster {
   nodes       KubeNode[]
 
   @@index([projectId])
+
+  @@map("prgd_kube_clusters")
 }
 
 model KubeNodePool {
@@ -1705,6 +1905,8 @@ model KubeNodePool {
   nodes   KubeNode[]
 
   @@unique([clusterId, name])
+
+  @@map("prgd_kube_node_pools")
 }
 
 model KubeNode {
@@ -1725,6 +1927,8 @@ model KubeNode {
   server  Server        @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
   @@index([clusterId])
+
+  @@map("prgd_kube_nodes")
 }
 
 /// ---------------------------------------------------------------------------
@@ -1735,6 +1939,8 @@ enum AppHostStatus {
   active
   draining
   failed
+
+  @@map("prgd_app_host_status")
 }
 
 enum PlatformAppStatus {
@@ -1745,6 +1951,8 @@ enum PlatformAppStatus {
   stopped
   deleting
   deleted
+
+  @@map("prgd_platform_app_status")
 }
 
 enum AppDeployStatus {
@@ -1752,6 +1960,8 @@ enum AppDeployStatus {
   building
   live
   failed
+
+  @@map("prgd_app_deploy_status")
 }
 
 /// A platform owned server that runs customer app containers behind Caddy.
@@ -1771,6 +1981,8 @@ model AppHost {
   region Region        @relation(fields: [regionId], references: [id])
   server Server        @relation(fields: [serverId], references: [id], onDelete: Cascade)
   apps   PlatformApp[]
+
+  @@map("prgd_app_hosts")
 }
 
 model PlatformApp {
@@ -1815,6 +2027,8 @@ model PlatformApp {
 
   @@index([projectId])
   @@index([repoFullName, branch])
+
+  @@map("prgd_platform_apps")
 }
 
 model AppDeploy {
@@ -1831,6 +2045,8 @@ model AppDeploy {
   app PlatformApp @relation(fields: [appId], references: [id], onDelete: Cascade)
 
   @@index([appId, startedAt])
+
+  @@map("prgd_app_deploys")
 }
 
 /// A console sign in. The session JWT carries this id; revoking the row ends the session at once.
@@ -1847,6 +2063,8 @@ model Session {
   revokedAt  DateTime?
 
   @@index([userId, revokedAt])
+
+  @@map("prgd_sessions")
 }
 
 /// ---------------------------------------------------------------------------
@@ -1856,6 +2074,8 @@ model Session {
 enum ManagedCoverage {
   BUSINESS_HOURS
   TWENTY_FOUR_SEVEN
+
+  @@map("prgd_managed_coverage")
 }
 
 enum ManagedContractStatus {
@@ -1864,12 +2084,16 @@ enum ManagedContractStatus {
   ACTIVE
   SUSPENDED
   CANCELLED
+
+  @@map("prgd_managed_contract_status")
 }
 
 /// Working calendar for business hours SLAs: SA is Sunday to Thursday in Asia/Riyadh, TR is Monday to Friday in Europe/Istanbul.
 enum ManagedCalendar {
   SA
   TR
+
+  @@map("prgd_managed_calendar")
 }
 
 enum ManagedPriority {
@@ -1877,18 +2101,24 @@ enum ManagedPriority {
   P2
   P3
   P4
+
+  @@map("prgd_managed_priority")
 }
 
 enum ManagedAssetKind {
   PLATFORM_SERVER
   EXTERNAL_SERVER
   SITE
+
+  @@map("prgd_managed_asset_kind")
 }
 
 enum ManagedAssetStatus {
   PENDING
   APPROVED
   REJECTED
+
+  @@map("prgd_managed_asset_status")
 }
 
 enum ManagedAssetHealth {
@@ -1896,29 +2126,39 @@ enum ManagedAssetHealth {
   HEALTHY
   DEGRADED
   UNHEALTHY
+
+  @@map("prgd_managed_asset_health")
 }
 
 enum ResponsibilityOwner {
   PROGRID
   CUSTOMER
   SHARED
+
+  @@map("prgd_responsibility_owner")
 }
 
 enum AlertSeverity {
   CRITICAL
   WARNING
   INFO
+
+  @@map("prgd_alert_severity")
 }
 
 enum AlertStatus {
   FIRING
   ACKNOWLEDGED
   RESOLVED
+
+  @@map("prgd_alert_status")
 }
 
 enum OnCallRole {
   PRIMARY
   SECONDARY
+
+  @@map("prgd_on_call_role")
 }
 
 enum PageChannel {
@@ -1926,12 +2166,16 @@ enum PageChannel {
   WHATSAPP
   PUSH
   EMAIL
+
+  @@map("prgd_page_channel")
 }
 
 enum MaintenanceKind {
   PATCHING
   BACKUP_TEST
   CUSTOM
+
+  @@map("prgd_maintenance_kind")
 }
 
 enum MaintenanceRunStatus {
@@ -1939,11 +2183,15 @@ enum MaintenanceRunStatus {
   RUNNING
   SUCCEEDED
   FAILED
+
+  @@map("prgd_maintenance_run_status")
 }
 
 enum MonthlyReportStatus {
   DRAFT
   SENT
+
+  @@map("prgd_monthly_report_status")
 }
 
 /// A managed cloud plan. priceMinor null means a custom price set on each contract.
@@ -1969,6 +2217,8 @@ model ManagedPlan {
   updatedAt   DateTime        @updatedAt
 
   contracts ManagedContract[]
+
+  @@map("prgd_managed_plans")
 }
 
 model ManagedContract {
@@ -2021,6 +2271,8 @@ model ManagedContract {
 
   @@index([teamId, status])
   @@index([status])
+
+  @@map("prgd_managed_contracts")
 }
 
 model OnboardingItem {
@@ -2039,6 +2291,8 @@ model OnboardingItem {
   doneBy   User?           @relation(fields: [doneById], references: [id], onDelete: SetNull)
 
   @@unique([contractId, key])
+
+  @@map("prgd_onboarding_items")
 }
 
 model ManagedAsset {
@@ -2081,6 +2335,8 @@ model ManagedAsset {
 
   @@index([contractId, status])
   @@index([status, kind, lastHeartbeatAt])
+
+  @@map("prgd_managed_assets")
 }
 
 /// Shared responsibility matrix row: who owns an area of operations.
@@ -2097,6 +2353,8 @@ model Responsibility {
   contract ManagedContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
 
   @@unique([contractId, area])
+
+  @@map("prgd_responsibilities")
 }
 
 /// An alert from Alertmanager or the heartbeat monitor, deduplicated by fingerprint while open.
@@ -2134,6 +2392,8 @@ model Alert {
   @@index([contractId, status])
   @@index([assetId, startsAt])
   @@index([status, severity])
+
+  @@map("prgd_alerts")
 }
 
 model OnCallShift {
@@ -2151,6 +2411,8 @@ model OnCallShift {
 
   @@index([startsAt, endsAt])
   @@index([userId, startsAt])
+
+  @@map("prgd_on_call_shifts")
 }
 
 /// One notification to one staff member about an alert or a ticket.
@@ -2181,6 +2443,8 @@ model Page {
   @@index([userId, ackAt])
   @@index([alertId])
   @@index([ticketId])
+
+  @@map("prgd_pages")
 }
 
 model MaintenanceTask {
@@ -2210,6 +2474,8 @@ model MaintenanceTask {
 
   @@index([enabled, nextRunAt])
   @@index([contractId])
+
+  @@map("prgd_maintenance_tasks")
 }
 
 model MaintenanceRun {
@@ -2232,6 +2498,8 @@ model MaintenanceRun {
 
   @@index([taskId, createdAt])
   @@index([status])
+
+  @@map("prgd_maintenance_runs")
 }
 
 /// Engineer time. Billable minutes beyond the plan's included minutes are billed as overage at month end.
@@ -2258,6 +2526,8 @@ model WorkLog {
 
   @@index([contractId, workedAt])
   @@index([contractId, billedPeriod])
+
+  @@map("prgd_work_logs")
 }
 
 /// Internal knowledge base article (markdown).
@@ -2274,6 +2544,8 @@ model Runbook {
   updatedBy User? @relation(fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@index([title])
+
+  @@map("prgd_runbooks")
 }
 
 model MonthlyReport {
@@ -2296,6 +2568,8 @@ model MonthlyReport {
   contract ManagedContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
 
   @@unique([contractId, period])
+
+  @@map("prgd_monthly_reports")
 }
 
 /// Public holidays for business hours SLAs. Hijri based dates must be confirmed by staff every year.
@@ -2306,4 +2580,6 @@ model Holiday {
   name    String
 
   @@unique([country, date])
+
+  @@map("prgd_holidays")
 }

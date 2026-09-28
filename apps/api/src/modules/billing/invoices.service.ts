@@ -62,7 +62,7 @@ export class InvoicesService {
         const tax = Math.round(subtotal * taxRateFor(team.currency, team.country));
         const credit = await this.consumeCredits(tx, team.id, subtotal + tax, now);
         const total = subtotal + tax - credit;
-        const [{ seq }] = await tx.$queryRaw<{ seq: bigint }[]>`SELECT nextval('invoice_number_seq') AS seq`;
+        const [{ seq }] = await tx.$queryRaw<{ seq: bigint }[]>`SELECT nextval('prgd_invoice_number_seq') AS seq`;
 
         const invoice = await tx.invoice.create({
           data: {

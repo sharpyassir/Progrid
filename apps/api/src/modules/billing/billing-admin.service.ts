@@ -88,7 +88,7 @@ export class BillingAdminService {
       const credit = toCredit > 0
         ? await tx.credit.create({ data: { teamId: inv.teamId, kind: 'refund', currency: inv.currency, amountMinor: toCredit, remainingMinor: toCredit, reason: `Credit note on invoice ${inv.number}: ${reason}` } })
         : null;
-      const [{ seq }] = await tx.$queryRaw<{ seq: bigint }[]>`SELECT nextval('credit_note_number_seq') AS seq`;
+      const [{ seq }] = await tx.$queryRaw<{ seq: bigint }[]>`SELECT nextval('prgd_credit_note_number_seq') AS seq`;
       const note = await tx.creditNote.create({
         data: { number: creditNoteNumber(new Date().getUTCFullYear(), seq), teamId: inv.teamId, invoiceId: inv.id, currency: inv.currency, amountMinor, appliedToDueMinor: toDue, creditId: credit?.id, reason, createdBy: actor.userId },
       });
