@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Client, signup, sut, totp, waitFor, type Sut, type Team } from './harness';
 import { addSlaMinutes } from '../../src/modules/managed/sla/sla-calculator';
+import { ManagedAlertsService } from '../../src/modules/managed/alerts/alerts.service';
 
 /**
  * Managed cloud: contracts, onboarding, tickets and SLA due times, alerts and paging,
@@ -200,5 +201,103 @@ describe('managed cloud tickets', () => {
     expect(pages.some((p) => p.userId === lead.userId && p.urgency === 'high')).toBe(true);
     expect(s.outbox.some((m) => m.to === engineer.email && m.subject.startsWith('SLA warning'))).toBe(true);
     expect(await s.prisma.auditLog.count({ where: { resource: `ticket:${t.id}`, action: 'managed.sla_breached' } })).toBe(2);
+  });
+});
+
+/** An Alertmanager v4 webhook body with one alert. */
+function amPayload(status: 'firing' | 'resolved', labels: Record<string, string>, fingerprint: string) {
+  return {
+    version: '4', status, receiver: 'prgd', groupKey: '{}:{alertname="x"}', groupLabels: {}, commonLabels: labels, commonAnnotations: {}, externalURL: 'http://alertmanager:9093',
+    alerts: [{ status, labels, annotations: { summary: `${labels.alertname} on the test server` }, startsAt: new Date(Date.now() - 60_000).toISOString(), endsAt: status === 'resolved' ? new Date().toISOString() : '0001-01-01T00:00:00Z', generatorURL: 'http://prometheus:9090/graph', fingerprint }],
+  };
+}
+
+describe('managed cloud alerts and paging', () => {
+  it('turns a critical alert into a P1 ticket, pages the on call engineer and escalates to the support lead', async () => {
+    await s.prisma.onCallShift.deleteMany({});
+    const now = Date.now();
+    await lead.client.ok('POST', '/admin/managed/oncall/shifts', { userId: engineer.userId, role: 'PRIMARY', startsAt: new Date(now - 3600_000), endsAt: new Date(now + 86_400_000) }, 201);
+    await lead.client.ok('POST', '/admin/managed/oncall/shifts', { userId: lead.userId, role: 'SECONDARY', startsAt: new Date(now - 3600_000), endsAt: new Date(now + 86_400_000) }, 201);
+    expect((await engineer.client.post('/admin/managed/oncall/shifts', { userId: engineer.userId, startsAt: new Date(), endsAt: new Date(now + 1000) })).status).toBe(403);
+    const current = await engineer.client.ok('GET', '/admin/managed/oncall/current');
+    expect(current.primary.id).toBe(engineer.userId);
+    await engineer.client.ok('PUT', `/admin/managed/staff/${engineer.userId}/contact`, { phone: '+966500000001', pagingChannel: 'SMS' });
+
+    const { owner, contractId } = await activeContract('ESSENTIAL');
+    const asset = await lead.client.ok('POST', `/admin/managed/contracts/${contractId}/assets`, { kind: 'EXTERNAL_SERVER', name: 'db-1', address: '203.0.113.60', managementAddress: '10.8.0.6' }, 201);
+    const fp = `fp-${asset.id}`;
+    const labels = { alertname: 'HostDown', severity: 'critical', asset_id: asset.id, instance: '203.0.113.60:9100' };
+    const anon = new Client(s.baseUrl);
+    expect((await anon.post('/internal/alerts/alertmanager', amPayload('firing', labels, fp))).status).toBe(401);
+    expect((await anon.post('/internal/alerts/alertmanager', amPayload('firing', labels, fp), { token: 'wrong' })).status).toBe(401);
+    expect((await anon.post('/internal/alerts/alertmanager?secret=it-alertmanager-secret', amPayload('firing', labels, fp))).status).toBe(422);
+    const first = await anon.req('POST', '/internal/alerts/alertmanager', amPayload('firing', labels, fp), { token: 'it-alertmanager-secret' });
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ received: 1, created: 1 });
+    // Delivered again (Alertmanager repeats): the same alert, no second ticket.
+    const again = await fetch(`${s.baseUrl}/internal/alerts/alertmanager`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-prgd-webhook-secret': 'it-alertmanager-secret' }, body: JSON.stringify(amPayload('firing', labels, fp)) });
+    expect(((await again.json()) as { updated: number }).updated).toBe(1);
+
+    const alert = await s.prisma.alert.findFirstOrThrow({ where: { assetId: asset.id } });
+    expect(alert).toMatchObject({ severity: 'CRITICAL', status: 'FIRING', openKey: fp });
+    const ticket = await s.prisma.ticket.findUniqueOrThrow({ where: { id: alert.ticketId! } });
+    expect(ticket).toMatchObject({ managedPriority: 'P1', assigneeId: engineer.userId, source: 'alert', contractId, assetId: asset.id });
+    expect(await s.prisma.ticket.count({ where: { assetId: asset.id } })).toBe(1);
+    const page = await s.prisma.page.findFirstOrThrow({ where: { alertId: alert.id, userId: engineer.userId } });
+    expect(page).toMatchObject({ urgency: 'high', channel: 'SMS', provider: 'log' });
+
+    // Nobody acknowledges within PAGE_ACK_TIMEOUT_SECONDS (3 in the suite): the support lead is paged.
+    const escalated = await waitFor(() => s.prisma.page.findFirst({ where: { escalatedFromId: page.id, userId: lead.userId } }), { what: 'the escalation page to the support lead', timeoutMs: 30_000 });
+    expect(escalated.urgency).toBe('high');
+    expect((await s.prisma.page.findUniqueOrThrow({ where: { id: page.id } })).escalatedAt).toBeTruthy();
+
+    const acked = await lead.client.ok('POST', `/admin/managed/pages/${escalated.id}/ack`, {}, 200);
+    expect(acked.ackAt).toBeTruthy();
+    expect(await s.prisma.page.count({ where: { alertId: alert.id, ackAt: null } })).toBe(0);
+
+    // Resolved: the alert closes and the customer sees a note on the ticket.
+    const resolved = await anon.req('POST', '/internal/alerts/alertmanager', amPayload('resolved', labels, fp), { token: 'it-alertmanager-secret' });
+    expect(resolved.body.resolved).toBe(1);
+    expect((await s.prisma.alert.findUniqueOrThrow({ where: { id: alert.id } })).status).toBe('RESOLVED');
+    const view = await owner.client.ok('GET', `/v1/managed/tickets/${ticket.id}`);
+    expect(view.messages.at(-1).body).toContain('resolved');
+
+    // A warning opens a P3 ticket without paging anyone.
+    const warn = await anon.req('POST', '/internal/alerts/alertmanager', amPayload('firing', { alertname: 'DiskFilling', severity: 'warning', asset_id: asset.id }, `${fp}-disk`), { token: 'it-alertmanager-secret' });
+    expect(warn.body.created).toBe(1);
+    const wa = await s.prisma.alert.findFirstOrThrow({ where: { fingerprint: `${fp}-disk` } });
+    expect((await s.prisma.ticket.findUniqueOrThrow({ where: { id: wa.ticketId! } })).managedPriority).toBe('P3');
+    expect(await s.prisma.page.count({ where: { alertId: wa.id } })).toBe(0);
+    // Unknown assets are ignored.
+    const unknown = await anon.req('POST', '/internal/alerts/alertmanager', amPayload('firing', { alertname: 'X', severity: 'critical', asset_id: 'nope' }, 'fp-unknown'), { token: 'it-alertmanager-secret' });
+    expect(unknown.body.ignored).toBe(1);
+  });
+
+  it('takes heartbeats from external servers and alerts when they stop', async () => {
+    const { contractId } = await activeContract('ESSENTIAL');
+    const asset = await lead.client.ok('POST', `/admin/managed/contracts/${contractId}/assets`, { kind: 'EXTERNAL_SERVER', name: 'app-1', address: '203.0.113.61' }, 201);
+    const { token } = await engineer.client.ok('POST', `/admin/managed/assets/${asset.id}/heartbeat-token`, {}, 201);
+    expect(token).toMatch(/^prgd_hb_/);
+    const anon = new Client(s.baseUrl);
+    expect((await anon.post('/internal/agents/heartbeat', { status: 'ok' }, { token: 'prgd_hb_wrong' })).status).toBe(401);
+    const hb = await anon.req('POST', '/internal/agents/heartbeat', { status: 'ok', hostname: 'app-1', agentVersion: '1.0.0' }, { token });
+    expect(hb.status).toBe(200);
+    const stored = await s.prisma.managedAsset.findUniqueOrThrow({ where: { id: asset.id } });
+    expect(stored.health).toBe('HEALTHY');
+    expect(stored.heartbeatTokenHash).not.toContain(token);
+
+    await s.prisma.managedAsset.update({ where: { id: asset.id }, data: { lastHeartbeatAt: new Date(Date.now() - 20 * 60_000) } });
+    await s.get(ManagedAlertsService).checkHeartbeats();
+    expect((await s.prisma.managedAsset.findUniqueOrThrow({ where: { id: asset.id } })).health).toBe('UNHEALTHY');
+    const missing = await s.prisma.alert.findFirstOrThrow({ where: { assetId: asset.id, name: 'HeartbeatMissing' } });
+    expect(missing).toMatchObject({ severity: 'CRITICAL', status: 'FIRING', source: 'heartbeat' });
+    expect(missing.ticketId).toBeTruthy();
+
+    await anon.req('POST', '/internal/agents/heartbeat', { status: 'ok' }, { token });
+    expect((await s.prisma.alert.findUniqueOrThrow({ where: { id: missing.id } })).status).toBe('RESOLVED');
+
+    // Rotating the token revokes the old one.
+    await engineer.client.ok('POST', `/admin/managed/assets/${asset.id}/heartbeat-token`, {}, 201);
+    expect((await anon.post('/internal/agents/heartbeat', { status: 'ok' }, { token })).status).toBe(401);
   });
 });

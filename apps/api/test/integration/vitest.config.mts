@@ -76,6 +76,11 @@ export default defineConfig({
       JWT_SECRET: 'integration-test-secret-0123456789',
       PUBLIC_API_URL: 'http://127.0.0.1:4999',
       FX_PROVIDER_URL: 'http://127.0.0.1:9/unused',
+      // Managed cloud: a known Alertmanager secret and a short page acknowledgement timeout.
+      ALERTMANAGER_WEBHOOK_SECRET: 'it-alertmanager-secret',
+      PAGE_ACK_TIMEOUT_SECONDS: '3',
+      PAGING_MODE: 'log',
+      MAINTENANCE_RUNNER: 'fake',
     },
   },
 });

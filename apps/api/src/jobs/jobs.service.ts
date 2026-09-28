@@ -20,6 +20,8 @@ import { DatabasesService } from '../modules/databases/db.service';
 import { KubernetesService } from '../modules/kubernetes/k8s.service';
 import { AppPlatformService } from '../modules/app-platform/app.service';
 import { TeamService } from '../modules/team/team.service';
+import { ManagedAlertsService } from '../modules/managed/alerts/alerts.service';
+import { ContractsService } from '../modules/managed/contracts/contracts.service';
 
 /**
  * Periodic jobs. Each takes a Redis lock so only one API replica runs it.
@@ -50,6 +52,8 @@ export class JobsService {
     private readonly kubernetes: KubernetesService,
     private readonly appPlatform: AppPlatformService,
     private readonly team: TeamService,
+    private readonly managedAlerts: ManagedAlertsService,
+    private readonly managedContracts: ContractsService,
   ) {}
 
   @Cron('50 * * * * *') // every minute at :50: database roles, lag, backup results, config retries
@@ -155,6 +159,18 @@ export class JobsService {
     return this.locked('idem-cleanup', 60_000, () =>
       this.prisma.idempotencyKey.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 24 * 3600_000) } } }),
     );
+  }
+
+  // ---- managed cloud ----
+
+  @Cron('15 * * * * *') // every minute at :15: external servers whose heartbeat went quiet
+  managedHeartbeats() {
+    return this.locked('managed-heartbeats', 50_000, () => this.managedAlerts.checkHeartbeats());
+  }
+
+  @Cron('0 40 * * * *') // forty past every hour: managed contracts follow the team's billing suspension
+  managedContractSync() {
+    return this.locked('managed-contract-sync', 10 * 60_000, () => this.managedContracts.syncWithTeamStatus());
   }
 
   private async locked(name: string, ttlMs: number, fn: () => Promise<unknown>) {

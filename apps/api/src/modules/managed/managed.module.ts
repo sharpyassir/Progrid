@@ -18,6 +18,10 @@ import { OnCallService } from './oncall/oncall.service';
 import { PagingService } from './oncall/paging.service';
 import { ManagedTicketsService } from './tickets/tickets.service';
 import { AdminManagedTicketsController, ManagedTicketsController } from './tickets/tickets.controller';
+import { ManagedAlertsService } from './alerts/alerts.service';
+import { AdminManagedAlertsController } from './alerts/alerts.controller';
+import { ManagedInternalController } from './alerts/internal.controller';
+import { AdminManagedOnCallController } from './oncall/oncall.controller';
 
 /**
  * Managed cloud: we operate customer servers (on the platform or elsewhere) under an SLA.
@@ -31,8 +35,9 @@ import { AdminManagedTicketsController, ManagedTicketsController } from './ticke
     ManagedContractsController, AdminManagedContractsController,
     ManagedAssetsController, AdminManagedAssetsController,
     ManagedTicketsController, AdminManagedTicketsController,
+    AdminManagedAlertsController, ManagedInternalController, AdminManagedOnCallController,
   ],
-  providers: [ManagedWorkflows, ManagedNotify, ManagedPlansService, ContractTermsService, ManagedAccessService, OnboardingService, ResponsibilityService, ContractsService, AssetsService, SlaService, OnCallService, PagingService, ManagedTicketsService],
-  exports: [ManagedWorkflows, ManagedNotify, ManagedPlansService, ContractTermsService, OnboardingService, ContractsService, AssetsService, SlaService, OnCallService, PagingService, ManagedTicketsService],
+  providers: [ManagedWorkflows, ManagedNotify, ManagedPlansService, ContractTermsService, ManagedAccessService, OnboardingService, ResponsibilityService, ContractsService, AssetsService, SlaService, OnCallService, PagingService, ManagedTicketsService, ManagedAlertsService],
+  exports: [ManagedWorkflows, ManagedNotify, ManagedPlansService, ContractTermsService, OnboardingService, ContractsService, AssetsService, SlaService, OnCallService, PagingService, ManagedTicketsService, ManagedAlertsService],
 })
 export class ManagedModule {}
