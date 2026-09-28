@@ -8,10 +8,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/pgcloud/terraform-provider-pgcloud/internal/client"
+	"github.com/prgd/terraform-provider-prgd/internal/client"
 )
 
-// ---- pgcloud_sizes ----
+// ---- prgd_sizes ----
 
 type sizesDataSource struct{ c *client.Client }
 
@@ -66,7 +66,7 @@ func (d *sizesDataSource) Read(ctx context.Context, _ datasource.ReadRequest, re
 	res.Diagnostics.Append(res.State.Set(ctx, &m)...)
 }
 
-// ---- pgcloud_images ----
+// ---- prgd_images ----
 
 type imagesDataSource struct{ c *client.Client }
 

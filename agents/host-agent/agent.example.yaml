@@ -1,12 +1,12 @@
-# /etc/pgcloud/agent.yaml — one per Proxmox node. Deployed by Ansible (infra/ansible, role pve_node).
+# /etc/prgd/agent.yaml — one per Proxmox node. Deployed by Ansible (infra/ansible, role pve_node).
 host_id: "clx…"                       # Host.id from POST /admin/v1/hosts
 nats_url: "nats://10.0.0.10:4222"     # management network only
-nats_creds: "/etc/pgcloud/agent.creds"
+nats_creds: "/etc/prgd/agent.creds"
 heartbeat: 60s
 proxmox:
   url: "https://127.0.0.1:8006"
   node: "pve1"
-  token_id: "pgcloud@pve!agent"
+  token_id: "prgd@pve!agent"
   # token_secret: from env PVE_TOKEN_SECRET (Vault agent template), never in this file
   storage: "vm-disks"                  # Ceph RBD
   ceph_pool: "vm-disks"                # Ceph pool behind that storage; rbd resize of detached volumes runs on it

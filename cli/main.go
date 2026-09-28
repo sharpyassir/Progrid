@@ -1,13 +1,13 @@
-// pgcloud — the command-line client. One static binary, no dependencies, talks to the
-// same public API as the console. Install: curl -fsSL https://get.pgcloud.example | sh
+// prgd — the command-line client. One static binary, no dependencies, talks to the
+// same public API as the console. Install: curl -fsSL https://get.prgd.example | sh
 //
-//	pgcloud login                       # email + password, or paste an API token
-//	pgcloud servers create web-1 --size s-2vcpu-4gb --image ubuntu-24-04 --wait
-//	pgcloud servers ls
-//	pgcloud ssh web-1
-//	pgcloud deploy https://github.com/you/app --branch main --port 3000
-//	pgcloud deploys ls
-//	pgcloud --json servers ls | jq .
+//	prgd login                       # email + password, or paste an API token
+//	prgd servers create web-1 --size s-2vcpu-4gb --image ubuntu-24-04 --wait
+//	prgd servers ls
+//	prgd ssh web-1
+//	prgd deploy https://github.com/you/app --branch main --port 3000
+//	prgd deploys ls
+//	prgd --json servers ls | jq .
 package main
 
 import (
@@ -115,11 +115,11 @@ func main() {
 	case "billing":
 		err = cmdBilling(rest)
 	case "version":
-		fmt.Fprintln(stdout, "pgcloud", version)
+		fmt.Fprintln(stdout, "prgd", version)
 	case "help", "-h", "--help":
 		usage()
 	default:
-		err = fmt.Errorf("unknown command %q (try `pgcloud help`)", cmd)
+		err = fmt.Errorf("unknown command %q (try `prgd help`)", cmd)
 	}
 	if err != nil {
 		stdout.Flush()
@@ -129,9 +129,9 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprint(stdout, `pgcloud — the developer cloud for Saudi Arabia, from your terminal
+	fmt.Fprint(stdout, `prgd — the developer cloud for Saudi Arabia, from your terminal
 
-USAGE  pgcloud [--json] [--project SLUG] <command> [args]
+USAGE  prgd [--json] [--project SLUG] <command> [args]
 
 ACCOUNT   login · logout · whoami · billing [invoices|payments|topup AMOUNT|pay INVOICE_ID] · tokens create NAME [--agent --cap 500] · ssh-keys ls|add NAME FILE
 AGENTS    approvals [ls | approve ID | deny ID --reason TEXT]   (requests parked by agent tokens)
@@ -158,7 +158,7 @@ CATALOG   apps · sizes · images · regions · pricing [--currency SAR|USD] · 
 
 FLAGS     --json           machine-readable output
           --project SLUG   project (default "default")
-ENV       PGCLOUD_TOKEN, PGCLOUD_API_URL override ~/.config/pgcloud/config.json
+ENV       PRGD_TOKEN, PRGD_API_URL override ~/.config/prgd/config.json
 `)
 }
 
@@ -166,10 +166,10 @@ ENV       PGCLOUD_TOKEN, PGCLOUD_API_URL override ~/.config/pgcloud/config.json
 
 func configPath() string {
 	if d := os.Getenv("XDG_CONFIG_HOME"); d != "" {
-		return filepath.Join(d, "pgcloud", "config.json")
+		return filepath.Join(d, "prgd", "config.json")
 	}
 	h, _ := os.UserHomeDir()
-	return filepath.Join(h, ".config", "pgcloud", "config.json")
+	return filepath.Join(h, ".config", "prgd", "config.json")
 }
 
 func loadConfig() {
@@ -177,10 +177,10 @@ func loadConfig() {
 	if b, err := os.ReadFile(configPath()); err == nil {
 		_ = json.Unmarshal(b, &cfg)
 	}
-	if v := os.Getenv("PGCLOUD_API_URL"); v != "" {
+	if v := os.Getenv("PRGD_API_URL"); v != "" {
 		cfg.APIURL = v
 	}
-	if v := os.Getenv("PGCLOUD_TOKEN"); v != "" {
+	if v := os.Getenv("PRGD_TOKEN"); v != "" {
 		cfg.Token = v
 	}
 }
@@ -232,7 +232,7 @@ func callText(method, path string, out *string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "pgcloud-cli/"+version)
+	req.Header.Set("User-Agent", "prgd-cli/"+version)
 	if cfg.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.Token)
 	}
@@ -267,7 +267,7 @@ func call(method, path string, body any, out any) error {
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "pgcloud-cli/"+version)
+	req.Header.Set("User-Agent", "prgd-cli/"+version)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Idempotency-Key", fmt.Sprintf("cli-%d", time.Now().UnixNano()))
@@ -288,7 +288,7 @@ func call(method, path string, body any, out any) error {
 		if json.Unmarshal(raw, &env) == nil && env.Error.Code != "" {
 			env.Error.Status = res.StatusCode
 			if res.StatusCode == 401 && !strings.HasPrefix(path, "/v1/auth/") {
-				return errors.New("not logged in — run `pgcloud login`")
+				return errors.New("not logged in — run `prgd login`")
 			}
 			return &env.Error
 		}
@@ -477,7 +477,7 @@ func cmdLogin(args []string) error {
 	} else {
 		fmt.Fprintf(os.Stderr, "Sign in to %s (paste an API token as the email to use a token instead)\n", cfg.APIURL)
 		email := prompt("Email or token: ", false)
-		if strings.HasPrefix(email, "pgc_") {
+		if strings.HasPrefix(email, "prgd_") {
 			cfg.Token = email
 		} else {
 			pw := prompt("Password: ", true)
@@ -609,7 +609,7 @@ func cmdServers(args []string) error {
 		if jsonOut {
 			emit(s)
 		} else {
-			fmt.Fprintf(stdout, "✓ %s created (%s) — status %s. Watch with: pgcloud servers get %s\n", s["name"], s["id"], s["status"], s["id"])
+			fmt.Fprintf(stdout, "✓ %s created (%s) — status %s. Watch with: prgd servers get %s\n", s["name"], s["id"], s["status"], s["id"])
 		}
 		return nil
 	case "metrics":
@@ -654,7 +654,7 @@ func cmdServers(args []string) error {
 		return cmdGet("/v1/servers/"+id, func(s map[string]any) { table([]map[string]any{s}, serverCols) })
 	case "backups", "rename", "managed":
 		if len(rest) < 2 {
-			return errors.New("usage: pgcloud servers backups ID on|off | rename ID NAME | managed ID on|off|status")
+			return errors.New("usage: prgd servers backups ID on|off | rename ID NAME | managed ID on|off|status")
 		}
 		if sub == "managed" && rest[1] == "status" {
 			var st map[string]any
@@ -712,7 +712,7 @@ func cmdServers(args []string) error {
 		return nil
 	case "restore":
 		if len(rest) < 2 {
-			return errors.New("usage: pgcloud servers restore ID SNAPSHOT_ID")
+			return errors.New("usage: prgd servers restore ID SNAPSHOT_ID")
 		}
 		id, err := resolveServer(rest)
 		if err != nil {
@@ -854,7 +854,7 @@ var deployCols = []string{"name", "status", "url", "branch", "lastCommit", "id"}
 
 func cmdDeploy(args []string) error {
 	if len(args) == 0 || strings.HasPrefix(args[0], "--") {
-		return errors.New("usage: pgcloud deploy https://github.com/you/app [--branch main] [--port 3000] [--size S] [--env K=V] [--name N] [--wait]")
+		return errors.New("usage: prgd deploy https://github.com/you/app [--branch main] [--port 3000] [--size S] [--env K=V] [--name N] [--wait]")
 	}
 	repo := args[0]
 	branch, rest := flag(args[1:], "--branch")
@@ -911,7 +911,7 @@ func cmdDeploy(args []string) error {
 		if err := waitServer(d["serverId"].(string)); err != nil {
 			return err
 		}
-		fmt.Fprintf(stdout, "→ building on the server; follow with: pgcloud deploys get %s\n", d["id"])
+		fmt.Fprintf(stdout, "→ building on the server; follow with: prgd deploys get %s\n", d["id"])
 	}
 	return nil
 }
@@ -1043,7 +1043,7 @@ func cmdBilling(args []string) error {
 		return cmdList("/v1/billing/payments", nil, []string{"createdAt", "status", "amountMinor", "currency", "provider", "id"})
 	case "topup", "pay":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: pgcloud billing %s AMOUNT|INVOICE_ID", args[0])
+			return fmt.Errorf("usage: prgd billing %s AMOUNT|INVOICE_ID", args[0])
 		}
 		var r map[string]any
 		var err error
@@ -1066,7 +1066,7 @@ func cmdBilling(args []string) error {
 		fmt.Fprintf(stdout, "Open this page to pay %s %s:\n%s\n", money(r["amountMinor"], r["currency"]), r["currency"], r["redirectUrl"])
 		return nil
 	}
-	return errors.New("usage: pgcloud billing [invoices | payments | topup AMOUNT | pay INVOICE_ID]")
+	return errors.New("usage: prgd billing [invoices | payments | topup AMOUNT | pay INVOICE_ID]")
 }
 
 func cmdAlerts(args []string) error {
@@ -1077,9 +1077,9 @@ func cmdAlerts(args []string) error {
 	case "incidents":
 		return cmdList("/v1/alerts/incidents?open=true", nil, []string{"serverId", "value", "peakValue", "startedAt", "id"})
 	case "create":
-		// pgcloud alerts create NAME --metric cpu --above 90 [--minutes 10] [--server ID ...] [--tag T ...] [--email E ...]
+		// prgd alerts create NAME --metric cpu --above 90 [--minutes 10] [--server ID ...] [--tag T ...] [--email E ...]
 		if len(args) < 2 {
-			return errors.New("usage: pgcloud alerts create NAME --metric cpu|memory|disk|net_in|net_out --above N|--below N [--minutes 5] [--server ID] [--tag TAG] [--email ADDR]")
+			return errors.New("usage: prgd alerts create NAME --metric cpu|memory|disk|net_in|net_out --above N|--below N [--minutes 5] [--server ID] [--tag TAG] [--email ADDR]")
 		}
 		metric, rest := flag(args[2:], "--metric")
 		above, rest := flag(rest, "--above")
@@ -1130,14 +1130,14 @@ func cmdAlerts(args []string) error {
 		fmt.Fprintln(stdout, "✓ deleted")
 		return nil
 	}
-	return errors.New("usage: pgcloud alerts [ls | incidents | create ... | mute ID | enable ID | delete ID]")
+	return errors.New("usage: prgd alerts [ls | incidents | create ... | mute ID | enable ID | delete ID]")
 }
 
 func cmdLoadBalancers(args []string) error {
 	if len(args) == 0 || args[0] == "ls" {
 		return cmdList("/v1/load-balancers", nil, []string{"name", "status", "ip", "nodes", "id"})
 	}
-	usage := errors.New("usage: pgcloud load-balancers [ls | create NAME --rule PROTO:ENTRY:TARGET[:CERT] ... [--server ID] [--tag T] [--nodes N] [--wait] | get ID | add ID SERVER_ID | remove ID SERVER_ID | delete ID]")
+	usage := errors.New("usage: prgd load-balancers [ls | create NAME --rule PROTO:ENTRY:TARGET[:CERT] ... [--server ID] [--tag T] [--nodes N] [--wait] | get ID | add ID SERVER_ID | remove ID SERVER_ID | delete ID]")
 	var lb map[string]any
 	switch args[0] {
 	case "create":
@@ -1256,7 +1256,7 @@ func cmdCertificates(args []string) error {
 	switch args[0] {
 	case "add":
 		if len(args) < 2 {
-			return errors.New("usage: pgcloud certificates add NAME --le DOMAIN[,DOMAIN] | add NAME --cert FILE --key FILE")
+			return errors.New("usage: prgd certificates add NAME --le DOMAIN[,DOMAIN] | add NAME --cert FILE --key FILE")
 		}
 		le, rest := flag(args[2:], "--le")
 		certFile, rest := flag(rest, "--cert")
@@ -1293,14 +1293,14 @@ func cmdCertificates(args []string) error {
 		fmt.Fprintln(stdout, "✓ deleted")
 		return nil
 	}
-	return errors.New("usage: pgcloud certificates [ls | add ... | delete ID]")
+	return errors.New("usage: prgd certificates [ls | add ... | delete ID]")
 }
 
 func cmdDatabases(args []string) error {
 	if len(args) == 0 || args[0] == "ls" {
 		return cmdList("/v1/databases", nil, []string{"name", "engine", "status", "nodes", "id"})
 	}
-	usage := errors.New("usage: pgcloud databases [ls | create NAME --size S [--engine postgres] [--nodes 1|3] [--trusted CIDRS] [--wait] | get ID | users ID ... | dbs ID ... | trusted ID CIDRS | backups ID [ls|now] | delete ID]")
+	usage := errors.New("usage: prgd databases [ls | create NAME --size S [--engine postgres] [--nodes 1|3] [--trusted CIDRS] [--wait] | get ID | users ID ... | dbs ID ... | trusted ID CIDRS | backups ID [ls|now] | delete ID]")
 	var c map[string]any
 	switch args[0] {
 	case "create":
@@ -1460,7 +1460,7 @@ func cmdBuckets(args []string) error {
 		fmt.Fprintf(stdout, "endpoint: %v  region: %v\n", out["endpoint"], out["region"])
 		return nil
 	}
-	usage := errors.New("usage: pgcloud buckets [ls | create NAME [--public] | get NAME | ls NAME [--prefix P] | upload NAME FILE [--key K] | download NAME KEY [--out FILE] | rm NAME KEY | public NAME on|off | delete NAME | keys ...]")
+	usage := errors.New("usage: prgd buckets [ls | create NAME [--public] | get NAME | ls NAME [--prefix P] | upload NAME FILE [--key K] | download NAME KEY [--out FILE] | rm NAME KEY | public NAME on|off | delete NAME | keys ...]")
 	var b map[string]any
 	switch args[0] {
 	case "create":
@@ -1583,7 +1583,7 @@ func cmdBuckets(args []string) error {
 		switch args[1] {
 		case "create":
 			if len(args) < 3 {
-				return errors.New("usage: pgcloud buckets keys create NAME")
+				return errors.New("usage: prgd buckets keys create NAME")
 			}
 			var k map[string]any
 			if err := call(http.MethodPost, "/v1/storage-keys", map[string]any{"name": args[2]}, &k); err != nil {
@@ -1599,7 +1599,7 @@ func cmdBuckets(args []string) error {
 			}
 			fmt.Fprintln(stdout, "✓ revoked")
 		default:
-			return errors.New("usage: pgcloud buckets keys [ls | create NAME | revoke ID]")
+			return errors.New("usage: prgd buckets keys [ls | create NAME | revoke ID]")
 		}
 	default:
 		return usage
@@ -1624,7 +1624,7 @@ func cmdDomains(args []string) error {
 		fmt.Fprintf(stdout, "nameservers: %v\n", out["nameservers"])
 		return nil
 	}
-	usage := errors.New("usage: pgcloud domains [ls | add NAME [--ip IP] | get NAME | zone-file NAME | delete NAME | records NAME ... | rdns IP_ID HOSTNAME|--clear]")
+	usage := errors.New("usage: prgd domains [ls | add NAME [--ip IP] | get NAME | zone-file NAME | delete NAME | records NAME ... | rdns IP_ID HOSTNAME|--clear]")
 	var z map[string]any
 	switch args[0] {
 	case "add":
@@ -1675,7 +1675,7 @@ func cmdDomains(args []string) error {
 		fmt.Fprintln(stdout, "✓ deleted")
 	case "records":
 		if len(args) < 3 {
-			return errors.New("usage: pgcloud domains records NAME [ls | add TYPE HOST CONTENT [--ttl N] [--priority N] | delete RECORD_ID]")
+			return errors.New("usage: prgd domains records NAME [ls | add TYPE HOST CONTENT [--ttl N] [--priority N] | delete RECORD_ID]")
 		}
 		zone := args[1]
 		switch args[2] {
@@ -1683,7 +1683,7 @@ func cmdDomains(args []string) error {
 			return cmdDomains([]string{"get", zone})
 		case "add":
 			if len(args) < 6 {
-				return errors.New("usage: pgcloud domains records NAME add TYPE HOST CONTENT [--ttl N] [--priority N]")
+				return errors.New("usage: prgd domains records NAME add TYPE HOST CONTENT [--ttl N] [--priority N]")
 			}
 			ttl, rest := flag(args[6:], "--ttl")
 			prio, _ := flag(rest, "--priority")
@@ -1712,11 +1712,11 @@ func cmdDomains(args []string) error {
 			}
 			fmt.Fprintln(stdout, "✓ deleted")
 		default:
-			return errors.New("usage: pgcloud domains records NAME [ls | add ... | delete RECORD_ID]")
+			return errors.New("usage: prgd domains records NAME [ls | add ... | delete RECORD_ID]")
 		}
 	case "rdns":
 		if len(args) < 3 {
-			return errors.New("usage: pgcloud domains rdns PUBLIC_IP_ID HOSTNAME|--clear")
+			return errors.New("usage: prgd domains rdns PUBLIC_IP_ID HOSTNAME|--clear")
 		}
 		body := map[string]any{"name": nil}
 		if args[2] != "--clear" {
@@ -1739,7 +1739,7 @@ func cmdVolumes(args []string) error {
 	}
 	need := func(n int, usage string) error {
 		if len(args) < n {
-			return errors.New("usage: pgcloud volumes " + usage)
+			return errors.New("usage: prgd volumes " + usage)
 		}
 		return nil
 	}
@@ -1805,7 +1805,7 @@ func cmdVolumes(args []string) error {
 		}
 		fmt.Fprintln(stdout, "✓ deleting")
 	default:
-		return errors.New("usage: pgcloud volumes [ls | create NAME --size GB [--server ID] | attach ID SERVER_ID | detach ID | resize ID --size GB | delete ID]")
+		return errors.New("usage: prgd volumes [ls | create NAME --size GB [--server ID] | attach ID SERVER_ID | detach ID | resize ID --size GB | delete ID]")
 	}
 	return nil
 }
@@ -1828,7 +1828,7 @@ func cmdApprovals(args []string) error {
 		fmt.Fprintf(stdout, "✓ %s: %s\n", a["status"], a["summary"])
 		return nil
 	}
-	return errors.New("usage: pgcloud approvals [ls | approve ID | deny ID --reason TEXT]")
+	return errors.New("usage: prgd approvals [ls | approve ID | deny ID --reason TEXT]")
 }
 
 func cmdTokens(args []string) error {
@@ -1855,7 +1855,7 @@ func cmdTokens(args []string) error {
 		}
 		fmt.Fprintf(stdout, "✓ token %s created — copy it now, it is shown once:\n%s\n", args[1], t["token"])
 		if agent {
-			fmt.Fprintf(stdout, "\nAdd to Claude Code:  claude mcp add pgcloud -e PGCLOUD_TOKEN=%s -- npx -y pgcloud-mcp\n", t["token"])
+			fmt.Fprintf(stdout, "\nAdd to Claude Code:  claude mcp add prgd -e PRGD_TOKEN=%s -- npx -y prgd-mcp\n", t["token"])
 		}
 		return nil
 	}
@@ -1867,7 +1867,7 @@ func cmdTokens(args []string) error {
 
 // cmdSupport: support plan and tickets.
 func cmdSupport(args []string) error {
-	usage := errors.New("usage: pgcloud support [plan [free|developer|standard|premium] | plans | tickets [--status open|closed|all] | new SUBJECT --body TEXT [--priority P] [--about server:ID] | show ID | reply ID TEXT | close ID]")
+	usage := errors.New("usage: prgd support [plan [free|developer|standard|premium] | plans | tickets [--status open|closed|all] | new SUBJECT --body TEXT [--priority P] [--about server:ID] | show ID | reply ID TEXT | close ID]")
 	if len(args) == 0 {
 		args = []string{"plan"}
 	}
@@ -1993,7 +1993,7 @@ func cmdKubernetes(args []string) error {
 	if len(args) == 0 || args[0] == "ls" {
 		return cmdList("/v1/kubernetes/clusters", nil, []string{"name", "version", "status", "workers", "readyNodes", "endpoint", "id"})
 	}
-	usage := errors.New("usage: pgcloud kubernetes [ls | create NAME [--size S] [--count N] [--version V] [--ha] [--wait] | get ID | kubeconfig ID | pools ID [add NAME --size S --count N | scale POOL_ID N | rm POOL_ID] | delete ID]")
+	usage := errors.New("usage: prgd kubernetes [ls | create NAME [--size S] [--count N] [--version V] [--ha] [--wait] | get ID | kubeconfig ID | pools ID [add NAME --size S --count N | scale POOL_ID N | rm POOL_ID] | delete ID]")
 	var c map[string]any
 	switch args[0] {
 	case "create":
@@ -2144,7 +2144,7 @@ func cmdApp(args []string) error {
 	if len(args) == 0 || args[0] == "ls" {
 		return cmdList("/v1/app-platform/apps", nil, []string{"name", "status", "url", "branch", "instances", "id"})
 	}
-	usage := errors.New("usage: pgcloud app [ls | create NAME REPO_URL [--branch B] [--port P] [--size app-xs] [--instances N] [--env K=V] [--git-token T] [--wait] | get ID | deploy ID | logs ID [--runtime] [--follow] | scale ID N | env ID K=V... | domains ID [add D | rm D] | stop ID | start ID | delete ID]")
+	usage := errors.New("usage: prgd app [ls | create NAME REPO_URL [--branch B] [--port P] [--size app-xs] [--instances N] [--env K=V] [--git-token T] [--wait] | get ID | deploy ID | logs ID [--runtime] [--follow] | scale ID N | env ID K=V... | domains ID [add D | rm D] | stop ID | start ID | delete ID]")
 	var a map[string]any
 	switch args[0] {
 	case "create":
@@ -2344,7 +2344,7 @@ func waitApp(id string) error {
 			fmt.Fprintf(stdout, "✓ %v is live at %v\n", a["name"], a["url"])
 			return nil
 		case "failed":
-			return fmt.Errorf("app failed: %v (see: pgcloud app logs %s)", orEmpty(a["statusMessage"]), id)
+			return fmt.Errorf("app failed: %v (see: prgd app logs %s)", orEmpty(a["statusMessage"]), id)
 		}
 		time.Sleep(10 * time.Second)
 	}

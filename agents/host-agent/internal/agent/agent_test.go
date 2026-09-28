@@ -14,11 +14,11 @@ import (
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 
-	"github.com/pgcloud/host-agent/internal/agent"
-	"github.com/pgcloud/host-agent/internal/config"
-	"github.com/pgcloud/host-agent/internal/protocol"
-	"github.com/pgcloud/host-agent/internal/proxmox"
-	"github.com/pgcloud/host-agent/internal/pvesim"
+	"github.com/prgd/host-agent/internal/agent"
+	"github.com/prgd/host-agent/internal/config"
+	"github.com/prgd/host-agent/internal/protocol"
+	"github.com/prgd/host-agent/internal/proxmox"
+	"github.com/prgd/host-agent/internal/pvesim"
 )
 
 // harness runs an embedded NATS server, the Proxmox simulator and one agent, exactly
@@ -45,7 +45,7 @@ func newHarness(t *testing.T) *harness {
 
 	sim := pvesim.New("pve1")
 	t.Cleanup(sim.Close)
-	os.Setenv("PGCLOUD_SNIPPETS_DIR", t.TempDir())
+	os.Setenv("PRGD_SNIPPETS_DIR", t.TempDir())
 
 	cfg := &config.Config{
 		HostID: "host_test", NATSURL: ns.ClientURL(), Heartbeat: 300 * time.Millisecond,
@@ -67,7 +67,7 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(nc.Close)
 	old := agent.SetRbdDu(sim.RbdDu)
 	t.Cleanup(func() { agent.SetRbdDu(old) })
-	h := &harness{t: t, nc: nc, sim: sim, cfg: cfg, subj: "pgcloud.host.host_test.jobs"}
+	h := &harness{t: t, nc: nc, sim: sim, cfg: cfg, subj: "prgd.host.host_test.jobs"}
 	// Wait until the agent's subscription is live.
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
@@ -153,10 +153,10 @@ func TestCreateConfiguresCloneAndBoots(t *testing.T) {
 	if h := handleOf(t, r); h.PrivateIP != "10.96.0.2" {
 		t.Fatalf("create result lacks the private address: %+v", h)
 	}
-	if !strings.HasPrefix(vm.Config["cicustom"], "user=local:snippets/pgcloud-") {
+	if !strings.HasPrefix(vm.Config["cicustom"], "user=local:snippets/prgd-") {
 		t.Fatalf("cloud-init snippet not referenced: %v", vm.Config)
 	}
-	if b, err := os.ReadFile(filepath.Join(os.Getenv("PGCLOUD_SNIPPETS_DIR"), "pgcloud-"+itoa(vmid)+"-user.yaml")); err != nil || !strings.Contains(string(b), "hostname: web-1") {
+	if b, err := os.ReadFile(filepath.Join(os.Getenv("PRGD_SNIPPETS_DIR"), "prgd-"+itoa(vmid)+"-user.yaml")); err != nil || !strings.Contains(string(b), "hostname: web-1") {
 		t.Fatalf("user-data snippet not written: %v", err)
 	} else if !strings.Contains(string(b), "ssh-ed25519 AAAA test") || !strings.Contains(string(b), "fqdn: web-1") {
 		t.Fatalf("user-data snippet lacks the SSH key or hostname: %s", b)
@@ -213,7 +213,7 @@ func TestPowerSnapshotFirewallResizeDelete(t *testing.T) {
 
 	r = h.mustOK(h.job(protocol.JobSnapshot, map[string]interface{}{"vmRef": ref, "snapshotId": "SNAP1"}))
 	res := r.Result.(map[string]interface{})
-	if !strings.Contains(res["snapshotRef"].(string), `"name":"pgsnap1"`) || len(h.sim.VM(vmid).Snaps) != 1 {
+	if !strings.Contains(res["snapshotRef"].(string), `"name":"prgdsnap1"`) || len(h.sim.VM(vmid).Snaps) != 1 {
 		t.Fatalf("snapshot not taken: %v / %v", res, h.sim.VM(vmid).Snaps)
 	}
 	if res["sizeGb"] != float64(pvesim.SnapshotBytes)/(1<<30) {
@@ -322,7 +322,7 @@ func TestRollbackAndCreateFromSnapshot(t *testing.T) {
 	// Restore: the control plane stops the VM, rolls back, and starts it again.
 	h.mustOK(h.job(protocol.JobStop, map[string]interface{}{"vmRef": ref, "force": true}))
 	h.mustOK(h.job(protocol.JobRollback, map[string]interface{}{"vmRef": ref, "snapshotRef": snapRef}))
-	if h.sim.VM(vmid).RolledBackTo != "pgs1" {
+	if h.sim.VM(vmid).RolledBackTo != "prgds1" {
 		t.Fatalf("rollback not done: %+v", h.sim.VM(vmid))
 	}
 	h.mustOK(h.job(protocol.JobStart, map[string]interface{}{"vmRef": ref}))
@@ -333,7 +333,7 @@ func TestRollbackAndCreateFromSnapshot(t *testing.T) {
 		t.Fatalf("expected bad_ref for a foreign snapshot, got %+v", r)
 	}
 	// A snapshot that does not exist is a Proxmox error.
-	r = h.job(protocol.JobRollback, map[string]interface{}{"vmRef": ref, "snapshotRef": strings.Replace(snapRef, "pgs1", "pgnope", 1)})
+	r = h.job(protocol.JobRollback, map[string]interface{}{"vmRef": ref, "snapshotRef": strings.Replace(snapRef, "prgds1", "prgdnope", 1)})
 	if r.OK || !strings.Contains(r.Error.Message, "does not exist") {
 		t.Fatalf("expected a missing snapshot error, got %+v", r)
 	}
@@ -342,8 +342,8 @@ func TestRollbackAndCreateFromSnapshot(t *testing.T) {
 	sp := spec("srv_from_snap")
 	sp.ImageRef = snapRef
 	newID, _ := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": sp})))
-	if src := h.sim.VM(newID).Source; src != itoa(vmid)+"@pgs1" {
-		t.Fatalf("new vm cloned from %q, want %d@pgs1", src, vmid)
+	if src := h.sim.VM(newID).Source; src != itoa(vmid)+"@prgds1" {
+		t.Fatalf("new vm cloned from %q, want %d@prgds1", src, vmid)
 	}
 	if !strings.Contains(h.sim.VM(newID).Tags, "server-srv_from_snap") {
 		t.Fatalf("clone from snapshot not configured: %+v", h.sim.VM(newID))
@@ -517,7 +517,7 @@ func TestFindByTag(t *testing.T) {
 func TestGuestAddressesAfterBootAndInHeartbeat(t *testing.T) {
 	h := newHarness(t)
 	hb := make(chan *nats.Msg, 256)
-	sub, _ := h.nc.ChanSubscribe("pgcloud.host.host_test.heartbeat", hb)
+	sub, _ := h.nc.ChanSubscribe("prgd.host.host_test.heartbeat", hb)
 	defer sub.Unsubscribe()
 
 	vmid, ref := vmidOf(t, h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_ga")})))
@@ -567,9 +567,9 @@ func TestHeartbeatAndUsage(t *testing.T) {
 	hb := make(chan *nats.Msg, 256)
 	usage := make(chan *nats.Msg, 1024)
 	metrics := make(chan *nats.Msg, 1024)
-	sub1, _ := h.nc.ChanSubscribe("pgcloud.host.host_test.heartbeat", hb)
-	sub2, _ := h.nc.ChanSubscribe("pgcloud.usage", usage)
-	sub3, _ := h.nc.ChanSubscribe("pgcloud.metrics", metrics)
+	sub1, _ := h.nc.ChanSubscribe("prgd.host.host_test.heartbeat", hb)
+	sub2, _ := h.nc.ChanSubscribe("prgd.usage", usage)
+	sub3, _ := h.nc.ChanSubscribe("prgd.metrics", metrics)
 	defer sub1.Unsubscribe()
 	defer sub2.Unsubscribe()
 	defer sub3.Unsubscribe()
@@ -645,8 +645,8 @@ func TestBandwidthIsSentAsDelta(t *testing.T) {
 	h := newHarness(t)
 	hb := make(chan *nats.Msg, 256)
 	usage := make(chan *nats.Msg, 1024)
-	sub1, _ := h.nc.ChanSubscribe("pgcloud.host.host_test.heartbeat", hb)
-	sub2, _ := h.nc.ChanSubscribe("pgcloud.usage", usage)
+	sub1, _ := h.nc.ChanSubscribe("prgd.host.host_test.heartbeat", hb)
+	sub2, _ := h.nc.ChanSubscribe("prgd.usage", usage)
 	defer sub1.Unsubscribe()
 	defer sub2.Unsubscribe()
 

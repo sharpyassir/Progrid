@@ -11,10 +11,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/pgcloud/terraform-provider-pgcloud/internal/client"
+	"github.com/prgd/terraform-provider-prgd/internal/client"
 )
 
-// ---- pgcloud_bucket ----
+// ---- prgd_bucket ----
 
 type bucketResource struct{ c *client.Client }
 
@@ -125,7 +125,7 @@ func (r *bucketResource) ImportState(ctx context.Context, req resource.ImportSta
 	resource.ImportStatePassthroughID(ctx, path.Root("name"), req, res)
 }
 
-// ---- pgcloud_storage_key ----
+// ---- prgd_storage_key ----
 
 type storageKeyResource struct{ c *client.Client }
 

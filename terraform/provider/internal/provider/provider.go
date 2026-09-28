@@ -1,4 +1,4 @@
-// Package provider implements the pgcloud Terraform provider on terraform-plugin-framework.
+// Package provider implements the prgd Terraform provider on terraform-plugin-framework.
 package provider
 
 import (
@@ -11,10 +11,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/pgcloud/terraform-provider-pgcloud/internal/client"
+	"github.com/prgd/terraform-provider-prgd/internal/client"
 )
 
-type pgcloudProvider struct{ version string }
+type prgdProvider struct{ version string }
 
 type providerModel struct {
 	Token  types.String `tfsdk:"token"`
@@ -22,25 +22,25 @@ type providerModel struct {
 }
 
 func New(version string) func() provider.Provider {
-	return func() provider.Provider { return &pgcloudProvider{version: version} }
+	return func() provider.Provider { return &prgdProvider{version: version} }
 }
 
-func (p *pgcloudProvider) Metadata(_ context.Context, _ provider.MetadataRequest, res *provider.MetadataResponse) {
-	res.TypeName = "pgcloud"
+func (p *prgdProvider) Metadata(_ context.Context, _ provider.MetadataRequest, res *provider.MetadataResponse) {
+	res.TypeName = "prgd"
 	res.Version = p.version
 }
 
-func (p *pgcloudProvider) Schema(_ context.Context, _ provider.SchemaRequest, res *provider.SchemaResponse) {
+func (p *prgdProvider) Schema(_ context.Context, _ provider.SchemaRequest, res *provider.SchemaResponse) {
 	res.Schema = schema.Schema{
-		Description: "Manage pgcloud servers, firewalls and SSH keys. Create an API token under Managed Agents, Agent Access.",
+		Description: "Manage prgd servers, firewalls and SSH keys. Create an API token under Managed Agents, Agent Access.",
 		Attributes: map[string]schema.Attribute{
-			"token":   schema.StringAttribute{Optional: true, Sensitive: true, Description: "API token (pgc_...). Defaults to PGCLOUD_TOKEN."},
-			"api_url": schema.StringAttribute{Optional: true, Description: "API base URL. Defaults to PGCLOUD_API_URL or https://api.pgcloud.example."},
+			"token":   schema.StringAttribute{Optional: true, Sensitive: true, Description: "API token (prgd_...). Defaults to PRGD_TOKEN."},
+			"api_url": schema.StringAttribute{Optional: true, Description: "API base URL. Defaults to PRGD_API_URL or https://api.prgd.example."},
 		},
 	}
 }
 
-func (p *pgcloudProvider) Configure(ctx context.Context, req provider.ConfigureRequest, res *provider.ConfigureResponse) {
+func (p *prgdProvider) Configure(ctx context.Context, req provider.ConfigureRequest, res *provider.ConfigureResponse) {
 	var m providerModel
 	res.Diagnostics.Append(req.Config.Get(ctx, &m)...)
 	if res.Diagnostics.HasError() {
@@ -48,29 +48,29 @@ func (p *pgcloudProvider) Configure(ctx context.Context, req provider.ConfigureR
 	}
 	token := m.Token.ValueString()
 	if token == "" {
-		token = os.Getenv("PGCLOUD_TOKEN")
+		token = os.Getenv("PRGD_TOKEN")
 	}
 	if token == "" {
-		res.Diagnostics.AddError("Missing token", "Set provider token or the PGCLOUD_TOKEN environment variable.")
+		res.Diagnostics.AddError("Missing token", "Set provider token or the PRGD_TOKEN environment variable.")
 		return
 	}
 	url := m.APIURL.ValueString()
 	if url == "" {
-		url = os.Getenv("PGCLOUD_API_URL")
+		url = os.Getenv("PRGD_API_URL")
 	}
 	if url == "" {
-		url = "https://api.pgcloud.example"
+		url = "https://api.prgd.example"
 	}
 	c := client.New(url, token)
 	res.ResourceData = c
 	res.DataSourceData = c
 }
 
-func (p *pgcloudProvider) Resources(_ context.Context) []func() resource.Resource {
+func (p *prgdProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{NewServerResource, NewVolumeResource, NewLoadBalancerResource, NewDomainResource, NewDnsRecordResource, NewBucketResource, NewStorageKeyResource, NewDatabaseResource, NewKubernetesResource, NewAppResource, NewFirewallResource, NewSshKeyResource}
 }
 
-func (p *pgcloudProvider) DataSources(_ context.Context) []func() datasource.DataSource {
+func (p *prgdProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{NewSizesDataSource, NewImagesDataSource}
 }
 

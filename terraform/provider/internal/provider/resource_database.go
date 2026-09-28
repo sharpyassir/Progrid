@@ -13,7 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/pgcloud/terraform-provider-pgcloud/internal/client"
+	"github.com/prgd/terraform-provider-prgd/internal/client"
 )
 
 // databaseResource manages a managed database cluster. Trusted sources and the backup hour

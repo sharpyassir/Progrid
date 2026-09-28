@@ -1,7 +1,7 @@
 name: release
 
 # Tag `v1.2.3` → cross-compile the CLI and host agent, attach tarballs to a GitHub Release.
-# `curl -fsSL https://get.pgcloud.example | sh` downloads pgcloud_<os>_<arch>.tar.gz from here.
+# `curl -fsSL https://get.prgd.example | sh` downloads prgd_<os>_<arch>.tar.gz from here.
 on:
   push:
     tags: ["v*"]
@@ -15,11 +15,11 @@ jobs:
     strategy:
       matrix:
         include:
-          - { dir: cli, name: pgcloud, os: linux, arch: amd64 }
-          - { dir: cli, name: pgcloud, os: linux, arch: arm64 }
-          - { dir: cli, name: pgcloud, os: darwin, arch: amd64 }
-          - { dir: cli, name: pgcloud, os: darwin, arch: arm64 }
-          - { dir: cli, name: pgcloud, os: windows, arch: amd64 }
+          - { dir: cli, name: prgd, os: linux, arch: amd64 }
+          - { dir: cli, name: prgd, os: linux, arch: arm64 }
+          - { dir: cli, name: prgd, os: darwin, arch: amd64 }
+          - { dir: cli, name: prgd, os: darwin, arch: arm64 }
+          - { dir: cli, name: prgd, os: windows, arch: amd64 }
           - { dir: agents/host-agent, name: host-agent, os: linux, arch: amd64 }
     steps:
       - uses: actions/checkout@v4

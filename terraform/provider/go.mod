@@ -1,4 +1,4 @@
-module github.com/pgcloud/terraform-provider-pgcloud
+module github.com/prgd/terraform-provider-prgd
 
 go 1.24
 

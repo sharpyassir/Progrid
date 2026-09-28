@@ -12,10 +12,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/pgcloud/terraform-provider-pgcloud/internal/client"
+	"github.com/prgd/terraform-provider-prgd/internal/client"
 )
 
-// ---- pgcloud_domain: a hosted zone ----
+// ---- prgd_domain: a hosted zone ----
 
 type domainResource struct{ c *client.Client }
 
@@ -33,7 +33,7 @@ func (r *domainResource) Metadata(_ context.Context, req resource.MetadataReques
 
 func (r *domainResource) Schema(_ context.Context, _ resource.SchemaRequest, res *resource.SchemaResponse) {
 	res.Schema = schema.Schema{
-		Description: "A DNS zone hosted on pgcloud nameservers. Point the domain's nameservers at the `nameservers` output. Records are pgcloud_dns_record resources.",
+		Description: "A DNS zone hosted on prgd nameservers. Point the domain's nameservers at the `nameservers` output. Records are prgd_dns_record resources.",
 		Attributes: map[string]schema.Attribute{
 			"id":          schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 			"name":        schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
@@ -100,7 +100,7 @@ func (r *domainResource) ImportState(ctx context.Context, req resource.ImportSta
 	resource.ImportStatePassthroughID(ctx, path.Root("name"), req, res)
 }
 
-// ---- pgcloud_dns_record ----
+// ---- prgd_dns_record ----
 
 type dnsRecordResource struct{ c *client.Client }
 
@@ -122,7 +122,7 @@ func (r *dnsRecordResource) Metadata(_ context.Context, req resource.MetadataReq
 
 func (r *dnsRecordResource) Schema(_ context.Context, _ resource.SchemaRequest, res *resource.SchemaResponse) {
 	res.Schema = schema.Schema{
-		Description: "A record in a pgcloud_domain. name is relative to the zone (\"@\" for the apex). Type changes replace the record; everything else updates in place.",
+		Description: "A record in a prgd_domain. name is relative to the zone (\"@\" for the apex). Type changes replace the record; everything else updates in place.",
 		Attributes: map[string]schema.Attribute{
 			"id":       schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 			"domain":   schema.StringAttribute{Required: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},

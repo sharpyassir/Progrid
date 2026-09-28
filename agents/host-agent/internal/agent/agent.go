@@ -18,15 +18,15 @@ import (
 
 	"github.com/nats-io/nats.go"
 
-	"github.com/pgcloud/host-agent/internal/config"
-	"github.com/pgcloud/host-agent/internal/protocol"
-	"github.com/pgcloud/host-agent/internal/proxmox"
+	"github.com/prgd/host-agent/internal/config"
+	"github.com/prgd/host-agent/internal/protocol"
+	"github.com/prgd/host-agent/internal/proxmox"
 )
 
 // snippetsDir is where cloud-init user-data lands so Proxmox can serve it as a snippet.
-// PGCLOUD_SNIPPETS_DIR overrides it (the test harness points it at a temp dir).
+// PRGD_SNIPPETS_DIR overrides it (the test harness points it at a temp dir).
 func snippetsDir() string {
-	if d := os.Getenv("PGCLOUD_SNIPPETS_DIR"); d != "" {
+	if d := os.Getenv("PRGD_SNIPPETS_DIR"); d != "" {
 		return d
 	}
 	return "/var/lib/vz/snippets"
@@ -79,7 +79,7 @@ const jobRetention = time.Hour
 
 func New(cfg *config.Config, pve *proxmox.Client, version string, log *slog.Logger) (*Agent, error) {
 	opts := []nats.Option{
-		nats.Name("pgcloud-agent-" + cfg.Proxmox.Node),
+		nats.Name("prgd-agent-" + cfg.Proxmox.Node),
 		nats.MaxReconnects(-1),
 		nats.ReconnectWait(2 * time.Second),
 	}
@@ -97,7 +97,7 @@ func New(cfg *config.Config, pve *proxmox.Client, version string, log *slog.Logg
 }
 
 func (a *Agent) Run(ctx context.Context) error {
-	subject := "pgcloud.host." + a.cfg.HostID + ".jobs"
+	subject := "prgd.host." + a.cfg.HostID + ".jobs"
 	sub, err := a.nc.QueueSubscribe(subject, "agent", func(m *nats.Msg) { go a.handle(ctx, m) })
 	if err != nil {
 		return err
@@ -162,17 +162,17 @@ func (a *Agent) tick(ctx context.Context) {
 
 		// Servers are metered whenever they exist (running or off), like the control plane fallback.
 		if ref.ServerID != "" {
-			a.publish("pgcloud.usage", protocol.UsageEvent{
+			a.publish("prgd.usage", protocol.UsageEvent{
 				V: 1, At: now.Format(time.RFC3339), ResourceType: "server", ResourceID: ref.ServerID, ProjectID: ref.ProjectID,
 				HostID: a.cfg.HostID, Quantity: 1, Unit: "minute", Meta: map[string]interface{}{"power": vm.Status, "cpu": vm.CPU},
 			})
-			a.publish("pgcloud.metrics", protocol.MetricSample{
+			a.publish("prgd.metrics", protocol.MetricSample{
 				V: 1, At: now.Format(time.RFC3339), ServerID: ref.ServerID, HostID: a.cfg.HostID, Power: vm.Status,
 				CpuPercent: vm.CPU * 100, MemoryUsedMb: vm.Mem >> 20, MemoryTotalMb: vm.MaxMem >> 20,
 				NetInBytes: vm.NetIn, NetOutBytes: vm.NetOut, DiskReadBytes: vm.DiskRead, DiskWriteBytes: vm.DiskWrite,
 			})
 			if delta := a.netOutDelta(vm.VMID, vm.NetOut); delta > 0 {
-				a.publish("pgcloud.usage", protocol.UsageEvent{
+				a.publish("prgd.usage", protocol.UsageEvent{
 					V: 1, At: now.Format(time.RFC3339), ResourceType: "bandwidth", ResourceID: ref.ServerID, ProjectID: ref.ProjectID,
 					HostID: a.cfg.HostID, Quantity: float64(delta), Unit: "byte", Meta: map[string]interface{}{"delta": true},
 				})
@@ -189,7 +189,7 @@ func (a *Agent) tick(ctx context.Context) {
 			delete(a.guest, vmid)
 		}
 	}
-	a.publish("pgcloud.host."+a.cfg.HostID+".heartbeat", hb)
+	a.publish("prgd.host."+a.cfg.HostID+".heartbeat", hb)
 }
 
 // netOutDelta returns the outbound bytes since the previous tick. The counter restarts at
@@ -352,7 +352,7 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 		case protocol.JobReboot:
 			return nil, a.pve.Reboot(ctx, ref.VMID)
 		case protocol.JobDelete:
-			os.Remove(filepath.Join(snippetsDir(), fmt.Sprintf("pgcloud-%d-user.yaml", ref.VMID)))
+			os.Remove(filepath.Join(snippetsDir(), fmt.Sprintf("prgd-%d-user.yaml", ref.VMID)))
 			return nil, a.pve.Delete(ctx, ref.VMID)
 		default:
 			return a.status(ctx, ref.VMID)
@@ -399,7 +399,7 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 		if err != nil {
 			return nil, err
 		}
-		name := "pg" + strings.ToLower(p.SnapshotID)
+		name := "prgd" + strings.ToLower(p.SnapshotID)
 		if err := a.pve.Snapshot(ctx, ref.VMID, name); err != nil {
 			return nil, err
 		}
@@ -593,7 +593,7 @@ func (a *Agent) create(ctx context.Context, spec protocol.VmSpec, log *slog.Logg
 			userData = spec.UserData
 		}
 		if err := os.MkdirAll(snippetsDir(), 0o755); err == nil {
-			path := filepath.Join(snippetsDir(), fmt.Sprintf("pgcloud-%d-user.yaml", vmid))
+			path := filepath.Join(snippetsDir(), fmt.Sprintf("prgd-%d-user.yaml", vmid))
 			if err := os.WriteFile(path, []byte(userData), 0o600); err == nil {
 				userDataRef = a.pve.SnippetRef(vmid)
 			} else {
@@ -605,7 +605,7 @@ func (a *Agent) create(ctx context.Context, spec protocol.VmSpec, log *slog.Logg
 	cfg := proxmox.VMConfig{
 		Cores: spec.Vcpu, MemoryMb: spec.MemoryMb, SSHKeys: spec.SshKeys, UserData: userDataRef, Hostname: spec.Hostname,
 		PrivateIP: "dhcp", Bridge: a.cfg.Proxmox.Bridge, PublicBr: a.cfg.Proxmox.PublicBridge,
-		Tags: "pgcloud;server-" + spec.ServerID + ";project-" + strings.TrimPrefix(spec.NetworkRef, "vpc-"),
+		Tags: "prgd;server-" + spec.ServerID + ";project-" + strings.TrimPrefix(spec.NetworkRef, "vpc-"),
 	}
 	if spec.PrivateBridge != "" {
 		// The project's own VNet; VXLAN leaves 1450 bytes, which the NIC takes from the bridge.

@@ -1,11 +1,11 @@
-# pgcloud host agent
+# prgd host agent
 
 A single static Go binary that runs on every Proxmox VE node.
 
 ```
-control plane ──NATS request──▶ pgcloud.host.<hostId>.jobs ──▶ agent ──▶ local PVE API
-control plane ◀──NATS publish── pgcloud.host.<hostId>.heartbeat (every minute)
-control plane ◀──NATS publish── pgcloud.usage (usage.v1, per resource per minute)
+control plane ──NATS request──▶ prgd.host.<hostId>.jobs ──▶ agent ──▶ local PVE API
+control plane ◀──NATS publish── prgd.host.<hostId>.heartbeat (every minute)
+control plane ◀──NATS publish── prgd.usage (usage.v1, per resource per minute)
 ```
 
 - Jobs are request/reply; the agent de-duplicates on job id for one hour.
@@ -14,7 +14,7 @@ control plane ◀──NATS publish── pgcloud.usage (usage.v1, per resource 
   enable `qemu-guest-agent` as the last cloud-init step.
 - cloud-init user-data is written to `/var/lib/vz/snippets/` and referenced via `cicustom`.
 - Firewalls are applied on the host (`/qemu/<vmid>/firewall`), default policy DROP in.
-- VMs are tagged `pgcloud;server-<id>;project-<id>` so usage is attributable offline.
+- VMs are tagged `prgd;server-<id>;project-<id>` so usage is attributable offline.
 
 Build: `go build -ldflags "-X main.version=$(git describe --tags --always)" -o host-agent .`
 
@@ -46,4 +46,4 @@ heartbeat and per minute usage events; token rejection.
 
 Not covered, and only a real node can show: token permissions, Ceph timing, SDN reload
 across nodes and VXLAN traffic between them, ipfilter enforcement, cloud-init inside the guest. Run the same jobs against the first node with
-`PGCLOUD_SNIPPETS_DIR` unset before calling the data plane done.
+`PRGD_SNIPPETS_DIR` unset before calling the data plane done.

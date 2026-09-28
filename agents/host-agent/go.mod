@@ -1,4 +1,4 @@
-module github.com/pgcloud/host-agent
+module github.com/prgd/host-agent
 
 go 1.24
 

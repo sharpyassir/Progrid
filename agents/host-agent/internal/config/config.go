@@ -11,7 +11,7 @@ import (
 type Proxmox struct {
 	URL          string `yaml:"url"`           // https://127.0.0.1:8006
 	Node         string `yaml:"node"`          // pve1
-	TokenID      string `yaml:"token_id"`      // pgcloud@pve!agent
+	TokenID      string `yaml:"token_id"`      // prgd@pve!agent
 	TokenSecret  string `yaml:"token_secret"`  // from Vault / env PVE_TOKEN_SECRET
 	Storage      string `yaml:"storage"`       // Ceph RBD pool storage id, e.g. "vm-disks"
 	CephPool     string `yaml:"ceph_pool"`     // Ceph pool behind that storage, used by rbd resize for detached volumes

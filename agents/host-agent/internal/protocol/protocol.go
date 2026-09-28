@@ -68,7 +68,7 @@ type VmSpec struct {
 	MemoryMb int    `json:"memoryMb"`
 	DiskGb   int    `json:"diskGb"`
 	// ImageRef is a template ref {"template":9000} or, to create from a snapshot, the
-	// snapshot ref {"vmid":123,"node":"pve1","name":"pgsnap"}.
+	// snapshot ref {"vmid":123,"node":"pve1","name":"prgdsnap"}.
 	ImageRef   string    `json:"imageRef"`
 	SshKeys    []string  `json:"sshKeys"`
 	UserData   string    `json:"userData"`

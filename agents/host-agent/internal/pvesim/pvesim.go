@@ -98,7 +98,7 @@ type Sim struct {
 // New starts the simulator with one template (vmid 9000) ready to clone.
 func New(node string) *Sim {
 	s := &Sim{
-		Node: node, Storage: "vm-disks", TokenID: "pgcloud@pve!agent", TokenSecret: "secret",
+		Node: node, Storage: "vm-disks", TokenID: "prgd@pve!agent", TokenSecret: "secret",
 		BootDelay: 200 * time.Millisecond, TaskDelay: 50 * time.Millisecond,
 		vms:   map[int]*VM{9000: {VMID: 9000, Name: "ubuntu-24-04-template", Template: true, Status: "stopped", Cores: 1, MemoryMb: 1024, DiskGb: 10}},
 		tasks: map[string]task{}, nextID: 100, fail: map[string]int{}, Volumes: map[string]int{},

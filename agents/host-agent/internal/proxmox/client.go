@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pgcloud/host-agent/internal/config"
+	"github.com/prgd/host-agent/internal/config"
 )
 
 type Client struct {
@@ -719,5 +719,5 @@ func (c *Client) ListVMs(ctx context.Context) ([]VMListEntry, error) {
 // WriteSnippet stores cloud-init user-data on the node's snippets storage via the
 // PVE file API is not available; the agent writes it to the local snippets dir instead.
 func (c *Client) SnippetRef(vmid int) string {
-	return "local:snippets/pgcloud-" + fmt.Sprint(vmid) + "-user.yaml"
+	return "local:snippets/prgd-" + fmt.Sprint(vmid) + "-user.yaml"
 }

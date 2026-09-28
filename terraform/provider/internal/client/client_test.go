@@ -21,7 +21,7 @@ func TestDoSendsAuthAndIdempotencyAndMapsErrors(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"id": "srv_1"})
 	}))
 	defer srv.Close()
-	c := New(srv.URL+"/v1", "pgc_x")
+	c := New(srv.URL+"/v1", "prgd_x")
 	if c.BaseURL != srv.URL {
 		t.Fatalf("base url not normalized: %s", c.BaseURL)
 	}
@@ -29,7 +29,7 @@ func TestDoSendsAuthAndIdempotencyAndMapsErrors(t *testing.T) {
 	if err := c.Do(context.Background(), http.MethodPost, "/v1/servers", map[string]string{"name": "a"}, &out); err != nil || out.ID != "srv_1" {
 		t.Fatalf("post: %v %+v", err, out)
 	}
-	if got.Header.Get("Authorization") != "Bearer pgc_x" || got.Header.Get("Idempotency-Key") == "" {
+	if got.Header.Get("Authorization") != "Bearer prgd_x" || got.Header.Get("Idempotency-Key") == "" {
 		t.Fatalf("headers: %v", got.Header)
 	}
 	if err := c.Do(context.Background(), http.MethodGet, "/v1/sizes", nil, &out); err != nil {

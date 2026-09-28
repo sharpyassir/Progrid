@@ -61,7 +61,7 @@ func renderUserData(userData, hostname string, keys []string) (string, error) {
 	if isMultipart(trimmed) {
 		return appendPart(trimmed, part)
 	}
-	const boundary = "==pgcloud-access=="
+	const boundary = "==prgd-access=="
 	body := strings.TrimRight(userData, "\n") + "\n"
 	ctype := "text/plain" // cloud-init detects the type from the first line
 	if strings.HasPrefix(trimmed, "#!") {
@@ -143,7 +143,7 @@ func accessPart(hostname string, keys []string) (string, error) {
 		`Content-Type: text/cloud-config; charset="us-ascii"`,
 		"MIME-Version: 1.0",
 		"Content-Transfer-Encoding: 7bit",
-		`Content-Disposition: attachment; filename="pgcloud-access.yaml"`,
+		`Content-Disposition: attachment; filename="prgd-access.yaml"`,
 		"Merge-Type: " + accessMergeType,
 		"",
 		"#cloud-config",

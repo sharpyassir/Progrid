@@ -1,31 +1,31 @@
-# terraform-provider-pgcloud
+# terraform-provider-prgd
 
-Manage pgcloud from Terraform or OpenTofu. Built on terraform-plugin-framework and the public API.
+Manage prgd from Terraform or OpenTofu. Built on terraform-plugin-framework and the public API.
 
 | Kind | Name | Notes |
 |---|---|---|
-| resource | `pgcloud_server` | create waits until active; `size` changes resize in place; image, region, project, user_data and name replace |
-| resource | `pgcloud_volume` | block storage; `size_gb` grows in place, `server_id` attaches, detaches or moves it |
-| resource | `pgcloud_load_balancer` | managed HAProxy; `forwarding_rule` blocks, `server_ids` or `tag` targets |
-| resource | `pgcloud_domain` | hosted zone; `nameservers` output for the registrar |
-| resource | `pgcloud_dns_record` | one record; `name` relative to the zone |
-| resource | `pgcloud_bucket` | S3 compatible bucket; `public` toggles anonymous read |
-| resource | `pgcloud_storage_key` | S3 access key pair, secret in state |
-| resource | `pgcloud_database` | managed PostgreSQL cluster; connection outputs, `password` and `uri` sensitive |
-| resource | `pgcloud_firewall` | rules as `rule` blocks; a rule change replaces the firewall |
-| resource | `pgcloud_ssh_key` | public key on the account |
-| data | `pgcloud_sizes` | sizes with vCPU, memory, disk and transfer |
-| data | `pgcloud_images` | distribution images and marketplace apps, filter with `kind` |
+| resource | `prgd_server` | create waits until active; `size` changes resize in place; image, region, project, user_data and name replace |
+| resource | `prgd_volume` | block storage; `size_gb` grows in place, `server_id` attaches, detaches or moves it |
+| resource | `prgd_load_balancer` | managed HAProxy; `forwarding_rule` blocks, `server_ids` or `tag` targets |
+| resource | `prgd_domain` | hosted zone; `nameservers` output for the registrar |
+| resource | `prgd_dns_record` | one record; `name` relative to the zone |
+| resource | `prgd_bucket` | S3 compatible bucket; `public` toggles anonymous read |
+| resource | `prgd_storage_key` | S3 access key pair, secret in state |
+| resource | `prgd_database` | managed PostgreSQL cluster; connection outputs, `password` and `uri` sensitive |
+| resource | `prgd_firewall` | rules as `rule` blocks; a rule change replaces the firewall |
+| resource | `prgd_ssh_key` | public key on the account |
+| data | `prgd_sizes` | sizes with vCPU, memory, disk and transfer |
+| data | `prgd_images` | distribution images and marketplace apps, filter with `kind` |
 
-See `examples/main.tf`. The provider reads `PGCLOUD_TOKEN` and `PGCLOUD_API_URL` when the block leaves them out.
+See `examples/main.tf`. The provider reads `PRGD_TOKEN` and `PRGD_API_URL` when the block leaves them out.
 
 ## Local build
 
 ```sh
-go build -o terraform-provider-pgcloud .
+go build -o terraform-provider-prgd .
 cat > ~/.terraformrc <<'EOF2'
 provider_installation {
-  dev_overrides { "pgcloud/pgcloud" = "/path/to/terraform/provider" }
+  dev_overrides { "prgd/prgd" = "/path/to/terraform/provider" }
   direct {}
 }
 EOF2

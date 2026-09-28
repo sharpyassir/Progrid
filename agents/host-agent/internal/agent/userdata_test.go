@@ -56,30 +56,30 @@ func TestUserDataKeepsSuppliedHostname(t *testing.T) {
 
 func TestUserDataAddsPartToMultipart(t *testing.T) {
 	in := strings.Join([]string{
-		`Content-Type: multipart/mixed; boundary="==pgcloud-managed=="`,
+		`Content-Type: multipart/mixed; boundary="==prgd-managed=="`,
 		"MIME-Version: 1.0",
 		"",
-		"--==pgcloud-managed==",
+		"--==prgd-managed==",
 		`Content-Type: text/cloud-config; charset="us-ascii"`,
 		"",
 		"#cloud-config",
 		"packages: [nginx]",
-		"--==pgcloud-managed==",
+		"--==prgd-managed==",
 		`Content-Type: text/x-shellscript; charset="us-ascii"`,
 		"",
 		"#!/bin/sh",
 		"echo managed",
-		"--==pgcloud-managed==--",
+		"--==prgd-managed==--",
 		"",
 	}, "\n")
 	out, err := renderUserData(in, "web-1", testKeys)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(out, "--==pgcloud-managed==\n") != 3 || !strings.HasSuffix(out, "--==pgcloud-managed==--\n") {
+	if strings.Count(out, "--==prgd-managed==\n") != 3 || !strings.HasSuffix(out, "--==prgd-managed==--\n") {
 		t.Fatalf("part not added inside the document: %s", out)
 	}
-	access := out[strings.LastIndex(out, "--==pgcloud-managed==\n"):]
+	access := out[strings.LastIndex(out, "--==prgd-managed==\n"):]
 	for _, want := range []string{"Content-Type: text/cloud-config", "Merge-Type: list(append)", "hostname: web-1", "ssh-ed25519 AAAA alice", "ssh_pwauth: false"} {
 		if !strings.Contains(access, want) {
 			t.Fatalf("access part lacks %q: %s", want, access)

@@ -1,3 +1,3 @@
-module github.com/pgcloud/cli
+module github.com/prgd/cli
 
 go 1.24

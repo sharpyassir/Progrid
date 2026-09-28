@@ -13,7 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
-	"github.com/pgcloud/terraform-provider-pgcloud/internal/client"
+	"github.com/prgd/terraform-provider-prgd/internal/client"
 )
 
 type serverResource struct{ c *client.Client }
@@ -45,11 +45,11 @@ func (r *serverResource) Metadata(_ context.Context, req resource.MetadataReques
 func (r *serverResource) Schema(_ context.Context, _ resource.SchemaRequest, res *resource.SchemaResponse) {
 	forceNew := []planmodifier.String{stringplanmodifier.RequiresReplace()}
 	res.Schema = schema.Schema{
-		Description: "A pgcloud server. Changing size resizes in place (the server restarts); changing image, region, project, user_data or name replaces it.",
+		Description: "A prgd server. Changing size resizes in place (the server restarts); changing image, region, project, user_data or name replaces it.",
 		Attributes: map[string]schema.Attribute{
 			"id":           schema.StringAttribute{Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 			"name":         schema.StringAttribute{Required: true, PlanModifiers: forceNew, Description: "Hostname label."},
-			"size":         schema.StringAttribute{Required: true, Description: "Size id, for example s-1vcpu-1gb. See data.pgcloud_sizes."},
+			"size":         schema.StringAttribute{Required: true, Description: "Size id, for example s-1vcpu-1gb. See data.prgd_sizes."},
 			"image":        schema.StringAttribute{Required: true, PlanModifiers: forceNew, Description: "Image id or marketplace app slug."},
 			"region":       schema.StringAttribute{Optional: true, Computed: true, PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplaceIfConfigured(), stringplanmodifier.UseStateForUnknown()}},
 			"project":      schema.StringAttribute{Optional: true, PlanModifiers: forceNew, Description: "Project id or slug. Defaults to the token's project."},

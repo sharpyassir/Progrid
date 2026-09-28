@@ -28,7 +28,7 @@ type APIError struct {
 }
 
 func (e *APIError) Error() string {
-	return fmt.Sprintf("pgcloud %s (%d): %s", e.Code, e.Status, e.Message)
+	return fmt.Sprintf("prgd %s (%d): %s", e.Code, e.Status, e.Message)
 }
 
 // DoText performs a request whose answer is plain text or YAML, such as the kubeconfig.
@@ -39,7 +39,7 @@ func (c *Client) DoText(ctx context.Context, method, path string) (string, error
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	req.Header.Set("Accept", "*/*")
-	req.Header.Set("User-Agent", "terraform-provider-pgcloud/0.1.0")
+	req.Header.Set("User-Agent", "terraform-provider-prgd/0.1.0")
 	res, err := c.HTTP.Do(req)
 	if err != nil {
 		return "", err
@@ -80,7 +80,7 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out interfac
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Token)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "terraform-provider-pgcloud/0.1.0")
+	req.Header.Set("User-Agent", "terraform-provider-prgd/0.1.0")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Idempotency-Key", uuid.NewString())

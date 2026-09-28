@@ -1,4 +1,4 @@
-// pgcloud host agent — runs on every Proxmox VE node.
+// prgd host agent — runs on every Proxmox VE node.
 //
 // It is the only custom code in the data plane: it subscribes to its job subject on
 // NATS, executes jobs against the local Proxmox API, and publishes a heartbeat and
@@ -14,15 +14,15 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/pgcloud/host-agent/internal/agent"
-	"github.com/pgcloud/host-agent/internal/config"
-	"github.com/pgcloud/host-agent/internal/proxmox"
+	"github.com/prgd/host-agent/internal/agent"
+	"github.com/prgd/host-agent/internal/config"
+	"github.com/prgd/host-agent/internal/proxmox"
 )
 
 var version = "dev"
 
 func main() {
-	cfgPath := flag.String("config", "/etc/pgcloud/agent.yaml", "path to agent config")
+	cfgPath := flag.String("config", "/etc/prgd/agent.yaml", "path to agent config")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
