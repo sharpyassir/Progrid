@@ -761,3 +761,47 @@ describe('ops console contractor payouts', () => {
     expect(await s.prisma.auditLog.count({ where: { resource: `contractor_payout:${p.id}`, action: { in: ['ops.payout_issued', 'ops.payout_paid'] } } })).toBe(2);
   });
 });
+
+describe('ops console offboarding', () => {
+  it('revokes grants, kills sessions, ends shifts, removes assignments and asks for secret rotation', async () => {
+    const x = await activeGrant();
+    const opened = await x.eng.client.ok('POST', '/ops/v1/sessions', { grantId: x.grantId }, 201);
+    expect((await gateway('session-check', { token: opened.token, publicKey: ephemeralKey().line })).status).toBe(200);
+    await x.eng.client.ok('POST', '/ops/v1/timers/start', { ticketId: x.ticketId }, 201);
+    const future = await s.prisma.onCallShift.create({ data: { userId: x.eng.userId, role: 'PRIMARY', startsAt: new Date(Date.now() + 5 * 86_400_000), endsAt: new Date(Date.now() + 5 * 86_400_000 + 8 * 3600_000) } });
+    const current = await s.prisma.onCallShift.findFirstOrThrow({ where: { userId: x.eng.userId, startsAt: { lte: new Date() }, endsAt: { gt: new Date() } } });
+
+    const off = await admin.client.ok('PATCH', `/admin/ops/engineers/${x.eng.profileId}`, { status: 'OFFBOARDED', statusReason: 'Contract ended' });
+    expect(off).toMatchObject({ status: 'OFFBOARDED', contractIds: [] });
+
+    const grant = await s.prisma.accessGrant.findUniqueOrThrow({ where: { id: x.grantId }, include: { certificates: true } });
+    expect(grant).toMatchObject({ status: 'REVOKED', revokeReason: 'offboarded' });
+    expect(grant.certificates.every((c) => c.revokedAt)).toBe(true);
+    expect((await s.prisma.terminalSession.findUniqueOrThrow({ where: { id: opened.sessionId } })).status).toBe('KILLED');
+    expect((await gateway('session-events', { sessionId: opened.sessionId, type: 'heartbeat' })).body.action).toBe('kill');
+    const timer = await s.prisma.workTimer.findFirstOrThrow({ where: { userId: x.eng.userId } });
+    expect(timer).toMatchObject({ stopReason: 'offboarded' });
+    expect(timer.stoppedAt).toBeTruthy();
+    expect((await s.prisma.onCallShift.findUniqueOrThrow({ where: { id: current.id } })).endedAt).toBeTruthy();
+    expect(await s.prisma.onCallShift.findUnique({ where: { id: future.id } })).toBeNull();
+    expect(await s.prisma.engineerAssignment.count({ where: { engineerId: x.eng.profileId } })).toBe(0);
+
+    // The engineer is out: the ops session is gone and signing in is refused.
+    expect((await x.eng.client.get('/ops/v1/me')).status).toBe(401);
+    const login = await new Client(s.baseUrl).post('/ops/v1/auth/login', { email: x.eng.email, password: x.eng.password });
+    expect(login.status).toBe(403);
+    expect(login.body.error.code).toBe('engineer_inactive');
+    // Offboarded engineers cannot come back.
+    expect((await admin.client.patch(`/admin/ops/engineers/${x.eng.profileId}`, { status: 'ACTIVE' })).status).toBe(409);
+
+    // A rotate secrets ticket for the asset they accessed.
+    const rotate = await s.prisma.ticket.findMany({ where: { assetId: x.assetId, source: 'offboarding' }, include: { messages: true } });
+    expect(rotate).toHaveLength(1);
+    expect(rotate[0]).toMatchObject({ managedPriority: 'P3', status: 'open', contractId: x.contractId });
+    expect(rotate[0].messages.some((m) => m.internal && m.body.includes(`assets/${x.assetId}`))).toBe(true);
+    const customer = await x.owner.client.ok('GET', `/v1/managed/tickets/${rotate[0].id}`);
+    expect(JSON.stringify(customer)).not.toContain('Contract ended');
+    const audit = await s.prisma.auditLog.findFirstOrThrow({ where: { resource: `engineer:${x.eng.profileId}`, action: 'ops.engineer_access_removed' } });
+    expect(audit.request).toMatchObject({ grantsRevoked: 1, timerStopped: true, assignmentsRemoved: 1, rotateTickets: [rotate[0].id] });
+  });
+});

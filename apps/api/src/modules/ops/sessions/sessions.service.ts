@@ -290,6 +290,16 @@ export class SessionsService implements OnModuleInit {
     return live.length;
   }
 
+  /** Every live session of an engineer (suspension, offboarding). */
+  async killForUser(userId: string, reason: string) {
+    const live = await this.prisma.terminalSession.findMany({ where: { userId, status: { in: LIVE } } });
+    for (const s of live) {
+      await this.markKilled(s, reason, null);
+      await this.audit.emit('ops.session_killed', null, { contractId: s.contractId, assetId: s.assetId, ticketId: s.ticketId, sessionId: s.id, reason }, `terminal_session:${s.id}`);
+    }
+    return live.length;
+  }
+
   // ---- jobs ----
 
   /** Daily: deletes recordings older than the retention period (12 months) and marks them expired. */
