@@ -30,6 +30,7 @@ export const ALL_SCOPES = [
   'apps:read', 'apps:write',
   'billing:read', 'billing:write',
   'support:read', 'support:write',
+  'managed:read', 'managed:write',
   'iam:read', 'iam:write',
   'admin',
 ] as const;
@@ -51,7 +52,13 @@ export function scopesForRole(role: TeamRole): Set<string> {
   }
 }
 
-export const STAFF_ROLES = ['support', 'finance', 'ops'] as const;
+/**
+ * Limited staff roles. `engineer` works managed cloud tickets, logs time, runs maintenance and
+ * edits runbooks; `support_lead` can do all of that plus assign tickets, manage on call,
+ * contracts, assets and the responsibility matrix. Full staff (no roles) can do everything.
+ */
+export const STAFF_ROLES = ['support', 'finance', 'ops', 'engineer', 'support_lead'] as const;
+export type StaffRole = (typeof STAFF_ROLES)[number];
 
 /** Back office scopes for a staff user: `admin` for full staff, `admin:<area>` for limited staff. */
 export function staffScopes(user: { isStaff: boolean; staffRoles: string[] }): string[] {
@@ -61,3 +68,6 @@ export function staffScopes(user: { isStaff: boolean; staffRoles: string[] }): s
 }
 
 export const hasStaffScope = (scopes: Set<string>) => [...scopes].some((s) => s === 'admin' || s.startsWith('admin:'));
+
+/** Full staff or a staff member holding one of `areas`. */
+export const hasStaffArea = (scopes: Set<string>, ...areas: StaffRole[]) => scopes.has('admin') || areas.some((a) => scopes.has(`admin:${a}`));

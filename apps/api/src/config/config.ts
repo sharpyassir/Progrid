@@ -101,6 +101,36 @@ const schema = z.object({
   FX_PROVIDER_URL: z.string().url().default('https://open.er-api.com/v6/latest/USD'),
   /** Where the control plane reaches platform VMs from. SSH and the agents on :9009 accept only this range. */
   CONTROL_PLANE_CIDR: z.string().regex(/^[0-9a-fA-F.:]+\/\d{1,3}$/).default('10.0.0.0/12'),
+
+  // ---- managed cloud (docs/managed-cloud-operations.md) ----
+  /** Shared secret Alertmanager sends as a Bearer token or X-Prgd-Webhook-Secret. Empty refuses every call. */
+  ALERTMANAGER_WEBHOOK_SECRET: z.string().optional(),
+  /** log records pages without sending them (development, tests); live sends through the channel adapters below. */
+  PAGING_MODE: z.enum(['log', 'live']).default('log'),
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
+  /** Sender number for SMS pages, E.164. */
+  TWILIO_FROM: z.string().optional(),
+  /** WhatsApp sender, E.164 (sent as whatsapp:+966...). */
+  TWILIO_WHATSAPP_FROM: z.string().optional(),
+  TWILIO_BASE_URL: z.string().url().default('https://api.twilio.com'),
+  /** Generic push webhook: receives {userId, email, urgency, message, pageId} as JSON. Empty disables push. */
+  PUSH_WEBHOOK_URL: z.string().optional(),
+  /** Seconds a high urgency page waits for an acknowledgement before the support lead is paged. */
+  PAGE_ACK_TIMEOUT_SECONDS: z.coerce.number().int().min(1).default(600),
+  /** An external asset whose last heartbeat is older than this is marked unhealthy and raises an alert. */
+  MANAGED_HEARTBEAT_STALE_MINUTES: z.coerce.number().int().min(1).default(10),
+  /** fake records a plausible log without touching servers; ansible runs ansible-playbook. */
+  MAINTENANCE_RUNNER: z.enum(['fake', 'ansible']).default('fake'),
+  /** Directory with the maintenance playbooks (patching.yml, backup-test.yml). */
+  MAINTENANCE_PLAYBOOK_DIR: z.string().default('infra/ansible/maintenance'),
+  /** SSH user the Ansible runner connects as over the management network. */
+  MAINTENANCE_SSH_USER: z.string().default('prgd'),
+  /** Private key for that user; empty uses the worker's SSH agent or default key. */
+  MAINTENANCE_SSH_KEY_FILE: z.string().optional(),
+  MAINTENANCE_TIMEOUT_MINUTES: z.coerce.number().int().min(1).default(60),
+  /** Day of the month a draft monthly report is sent automatically when nobody sent it (reports are drafted on the 1st). */
+  MANAGED_REPORT_AUTOSEND_DAY: z.coerce.number().int().min(1).max(28).default(3),
 });
 
 export type AppConfig = z.infer<typeof schema>;

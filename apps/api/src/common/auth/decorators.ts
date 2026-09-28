@@ -15,7 +15,7 @@ export const CurrentActor = createParamDecorator((_: unknown, ctx: ExecutionCont
 });
 
 export const STAFF_AREA_KEY = 'staffArea';
-export type StaffArea = 'support' | 'finance' | 'ops' | 'any';
+export type StaffArea = 'support' | 'finance' | 'ops' | 'engineer' | 'support_lead' | 'any';
 /**
  * Marks a back office route with the staff areas that may use it. Full staff (the `admin`
  * scope) can use every route; staff limited to some areas get `admin:<area>` scopes instead.

@@ -16,12 +16,13 @@ import { FirewallsService } from '../modules/network/firewalls.service';
 import { PrivateNetworksService } from '../modules/network/private-networks.service';
 import { EventsService } from '../modules/events/events.service';
 import { ApiError } from '../common/errors/api-error';
+import { createManagedActivities, type ManagedActivities } from './managed/activities';
 
 /**
  * Activities are the only place workflows touch the database or the hypervisor.
  * Every activity is idempotent by serverId so Temporal can retry it safely.
  */
-export interface Activities {
+export interface Activities extends ManagedActivities {
   setStatus(serverId: string, status: ServerStatus, message?: string): Promise<void>;
   setImage(serverId: string, imageId: string): Promise<void>;
   placeServer(serverId: string, avoid: string[]): Promise<void>;
@@ -133,6 +134,8 @@ export function createActivities(app: INestApplicationContext): Activities {
   }
 
   return {
+    ...createManagedActivities(app),
+
     async setStatus(serverId, status, message) {
       await prisma.server.update({ where: { id: serverId }, data: { status, statusMessage: message ?? null } });
     },

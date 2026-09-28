@@ -45,8 +45,12 @@ model User {
   totpRecoveryHashes String[] @default([])
   /// Staff members may hold the `admin` scope (back-office). Never settable via the API.
   isStaff       Boolean   @default(false)
-  /// Empty means full back office access. Otherwise a subset of support, finance, ops.
+  /// Empty means full back office access. Otherwise a subset of support, finance, ops, engineer, support_lead.
   staffRoles    String[]  @default([])
+  /// Staff paging contact for managed cloud on call (E.164, e.g. +9665...). Never shown to customers.
+  phone         String?
+  /// Preferred channel for urgent pages; null means SMS when a phone is set, email otherwise.
+  pagingChannel PageChannel?
   sessions      Session[]
   emailVerified DateTime?
   phoneVerified DateTime?
@@ -59,6 +63,15 @@ model User {
   auditLogs   AuditLog[]
   emailTokens EmailToken[]
   decidedApprovals Approval[]
+  // managed cloud
+  assignedTickets   Ticket[]          @relation("TicketAssignee")
+  signedContracts   ManagedContract[]
+  onboardingItemsDone OnboardingItem[]
+  acknowledgedAlerts Alert[]
+  onCallShifts      OnCallShift[]
+  pages             Page[]
+  workLogs          WorkLog[]
+  runbooksUpdated   Runbook[]
 }
 
 /// One time links for email verification and password reset (hash stored, raw token mailed).
@@ -112,6 +125,7 @@ model Team {
   creditNotes CreditNote[]
   abuseFlags AbuseFlag[]
   webhooks  Webhook[]
+  managedContracts ManagedContract[]
 }
 
 model TeamMember {
@@ -424,6 +438,7 @@ model Server {
   dbNode    DbNode?
   kubeNode  KubeNode?
   appHost   AppHost?
+  managedAssets ManagedAsset[]
 }
 
 enum ActionType {
@@ -679,6 +694,10 @@ enum ResourceType {
   support
   kubernetes
   app_instance
+  /// Managed cloud plan fee, one record per contract per month (resourceId = contract id).
+  managed_plan
+  /// Managed cloud engineer time beyond the plan's included minutes (resourceId = contract id).
+  managed_overage
 }
 
 /// Raw per-minute usage from host agents (TimescaleDB hypertable on `at`, created in
@@ -791,6 +810,7 @@ model Invoice {
   records UsageRecord[]
   payments Payment[]
   creditNotes CreditNote[]
+  managedWorkLogs WorkLog[]
 
   @@unique([teamId, periodStart, periodEnd])
   @@index([status, dueAt])
@@ -1569,6 +1589,34 @@ model Ticket {
   updatedAt DateTime       @updatedAt
   messages  TicketMessage[]
 
+  // Managed cloud: set on tickets tied to a managed contract. `priority` mirrors
+  // managedPriority (P1 urgent, P2 high, P3 normal, P4 low) so the support queue sorts them too.
+  contractId      String?
+  assetId         String?
+  managedPriority ManagedPriority?
+  /// Staff user working the ticket.
+  assigneeId      String?
+  /// Due times from the contract plan's per priority targets and calendar (see modules/managed/sla).
+  responseDueAt   DateTime?
+  resolveDueAt    DateTime?
+  /// First SLA warning (75 percent of a target) and first breach, whichever timer fired first.
+  warnedAt        DateTime?
+  breachedAt      DateTime?
+  responseBreached Boolean @default(false)
+  resolveBreached  Boolean @default(false)
+  /// Set when an alert or a failed maintenance run opened the ticket.
+  source          String?
+
+  contract ManagedContract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  asset    ManagedAsset?    @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  assignee User?            @relation("TicketAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  alerts   Alert[]
+  pages    Page[]
+  workLogs WorkLog[]
+  maintenanceRuns MaintenanceRun[]
+
+  @@index([contractId, status])
+  @@index([assigneeId, status])
   @@index([teamId, status])
   @@index([status, priority, createdAt])
 }
@@ -1581,6 +1629,8 @@ model TicketMessage {
   authorId   String? // user id; null for system notes
   authorName String
   body       String
+  /// Staff only note. Customer endpoints never return internal messages.
+  internal   Boolean  @default(false)
   createdAt  DateTime @default(now())
 
   @@index([ticketId, createdAt])
@@ -1797,4 +1847,463 @@ model Session {
   revokedAt  DateTime?
 
   @@index([userId, revokedAt])
+}
+
+/// ---------------------------------------------------------------------------
+/// Managed cloud: we operate customer servers under an SLA.
+/// Money is integer minor units plus a currency code. See docs/managed-cloud-operations.md.
+/// ---------------------------------------------------------------------------
+enum ManagedCoverage {
+  BUSINESS_HOURS
+  TWENTY_FOUR_SEVEN
+}
+
+enum ManagedContractStatus {
+  DRAFT
+  ONBOARDING
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+/// Working calendar for business hours SLAs: SA is Sunday to Thursday in Asia/Riyadh, TR is Monday to Friday in Europe/Istanbul.
+enum ManagedCalendar {
+  SA
+  TR
+}
+
+enum ManagedPriority {
+  P1
+  P2
+  P3
+  P4
+}
+
+enum ManagedAssetKind {
+  PLATFORM_SERVER
+  EXTERNAL_SERVER
+  SITE
+}
+
+enum ManagedAssetStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ManagedAssetHealth {
+  UNKNOWN
+  HEALTHY
+  DEGRADED
+  UNHEALTHY
+}
+
+enum ResponsibilityOwner {
+  PROGRID
+  CUSTOMER
+  SHARED
+}
+
+enum AlertSeverity {
+  CRITICAL
+  WARNING
+  INFO
+}
+
+enum AlertStatus {
+  FIRING
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum OnCallRole {
+  PRIMARY
+  SECONDARY
+}
+
+enum PageChannel {
+  SMS
+  WHATSAPP
+  PUSH
+  EMAIL
+}
+
+enum MaintenanceKind {
+  PATCHING
+  BACKUP_TEST
+  CUSTOM
+}
+
+enum MaintenanceRunStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum MonthlyReportStatus {
+  DRAFT
+  SENT
+}
+
+/// A managed cloud plan. priceMinor null means a custom price set on each contract.
+model ManagedPlan {
+  id          String          @id @default(cuid())
+  code        String          @unique
+  name        String
+  description String?
+  priceMinor  Int?
+  currency    Currency        @default(SAR)
+  /// null means no fixed limit (set per contract).
+  maxAssets   Int?
+  coverage    ManagedCoverage
+  includedEngineerMinutes Int @default(0)
+  /// Overage rate for billable engineer time beyond the included minutes, per hour.
+  hourlyRateMinor Int
+  /// Minutes per priority: {"P1":240,"P2":480,"P3":960,"P4":2400}. Business minutes on BUSINESS_HOURS plans.
+  responseTargets Json
+  resolveTargets  Json
+  active      Boolean         @default(true)
+  sortOrder   Int             @default(0)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  contracts ManagedContract[]
+}
+
+model ManagedContract {
+  id        String                @id @default(cuid())
+  teamId    String
+  planId    String
+  status    ManagedContractStatus @default(DRAFT)
+  calendar  ManagedCalendar       @default(SA)
+  /// Billing currency (the team's invoice currency).
+  currency  Currency
+  /// Monthly fee in `currency` minor units; overrides the plan price (required for custom plans).
+  priceOverrideMinor Int?
+  includedMinutesOverride Int?
+  maxAssetsOverride Int?
+  liabilityCapMinor Int?
+  /// Customer signatory named on the signed contract.
+  signedByName String?
+  signedAt     DateTime?
+  /// Staff member who countersigned and activated the contract.
+  signedById   String?
+  /// Activated a 24/7 plan with fewer than two people on call (recorded in the audit log too).
+  onCallOverride Boolean @default(false)
+  termMonths  Int       @default(12)
+  termEndsAt  DateTime?
+  renewedAt   DateTime?
+  requestedById String?
+  notes       String?
+  onboardingStartedAt DateTime?
+  /// Start of billing: the plan fee accrues from here.
+  activatedAt DateTime?
+  suspendedAt DateTime?
+  /// Past suspensions [{from, to}] so the plan fee skips them.
+  suspensions Json @default("[]")
+  cancelledAt DateTime?
+  cancelReason String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  team     Team        @relation(fields: [teamId], references: [id])
+  plan     ManagedPlan @relation(fields: [planId], references: [id])
+  signedBy User?       @relation(fields: [signedById], references: [id], onDelete: SetNull)
+  onboardingItems  OnboardingItem[]
+  assets           ManagedAsset[]
+  responsibilities Responsibility[]
+  alerts           Alert[]
+  tickets          Ticket[]
+  maintenanceTasks MaintenanceTask[]
+  workLogs         WorkLog[]
+  reports          MonthlyReport[]
+
+  @@index([teamId, status])
+  @@index([status])
+}
+
+model OnboardingItem {
+  id         String    @id @default(cuid())
+  contractId String
+  key        String
+  title      String
+  sortOrder  Int       @default(0)
+  done       Boolean   @default(false)
+  doneById   String?
+  doneAt     DateTime?
+  note       String?
+  createdAt  DateTime  @default(now())
+
+  contract ManagedContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  doneBy   User?           @relation(fields: [doneById], references: [id], onDelete: SetNull)
+
+  @@unique([contractId, key])
+}
+
+model ManagedAsset {
+  id         String             @id @default(cuid())
+  contractId String
+  kind       ManagedAssetKind
+  /// Set for PLATFORM_SERVER assets: the Progrid server.
+  serverId   String?
+  name       String
+  /// Public address or URL (a site's URL, a server's public IP or hostname).
+  address    String?
+  /// Management network address (WireGuard or private IP) maintenance runs connect to.
+  managementAddress String?
+  /// Hosting provider for external assets (AWS, Hetzner, on premises ...).
+  provider   String?
+  os         String?
+  status     ManagedAssetStatus @default(PENDING)
+  monitoringEnabled Boolean     @default(true)
+  backupEnabled     Boolean     @default(false)
+  lastHeartbeatAt   DateTime?
+  health     ManagedAssetHealth @default(UNKNOWN)
+  /// Last heartbeat body from the monitoring agent.
+  heartbeatReport Json?
+  /// sha256 of the agent token; the token itself is shown once.
+  heartbeatTokenHash String?    @unique
+  requestedById String?
+  approvedById  String?
+  approvedAt    DateTime?
+  rejectedReason String?
+  notes      String?
+  removedAt  DateTime?
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  contract ManagedContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  server   Server?         @relation(fields: [serverId], references: [id], onDelete: SetNull)
+  alerts   Alert[]
+  tickets  Ticket[]
+  maintenanceTasks MaintenanceTask[]
+
+  @@index([contractId, status])
+  @@index([status, kind, lastHeartbeatAt])
+}
+
+/// Shared responsibility matrix row: who owns an area of operations.
+model Responsibility {
+  id         String              @id @default(cuid())
+  contractId String
+  area       String
+  owner      ResponsibilityOwner
+  notes      String?
+  sortOrder  Int                 @default(0)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  contract ManagedContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@unique([contractId, area])
+}
+
+/// An alert from Alertmanager or the heartbeat monitor, deduplicated by fingerprint while open.
+model Alert {
+  id          String        @id @default(cuid())
+  assetId     String
+  contractId  String
+  fingerprint String
+  /// Equals fingerprint while the alert is open and null once resolved: at most one open alert per fingerprint.
+  openKey     String?       @unique
+  name        String
+  summary     String?
+  severity    AlertSeverity
+  status      AlertStatus   @default(FIRING)
+  /// alertmanager | heartbeat
+  source      String        @default("alertmanager")
+  labels      Json          @default("{}")
+  annotations Json          @default("{}")
+  startsAt    DateTime
+  endsAt      DateTime?
+  lastReceivedAt DateTime   @default(now())
+  ticketId    String?
+  acknowledgedById String?
+  acknowledgedAt   DateTime?
+  resolvedAt  DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  asset          ManagedAsset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  contract       ManagedContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  ticket         Ticket?         @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  acknowledgedBy User?           @relation(fields: [acknowledgedById], references: [id], onDelete: SetNull)
+  pages          Page[]
+
+  @@index([contractId, status])
+  @@index([assetId, startsAt])
+  @@index([status, severity])
+}
+
+model OnCallShift {
+  id          String     @id @default(cuid())
+  userId      String
+  role        OnCallRole @default(PRIMARY)
+  startsAt    DateTime
+  endsAt      DateTime
+  note        String?
+  createdById String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([startsAt, endsAt])
+  @@index([userId, startsAt])
+}
+
+/// One notification to one staff member about an alert or a ticket.
+model Page {
+  id        String      @id @default(cuid())
+  alertId   String?
+  ticketId  String?
+  userId    String
+  channel   PageChannel
+  /// Adapter that delivered it: log, twilio_sms, twilio_whatsapp, push_webhook, email.
+  provider  String
+  /// high pages the on call engineer and escalates without an acknowledgement; low is a warning.
+  urgency   String      @default("high")
+  message   String
+  error     String?
+  sentAt    DateTime?
+  ackAt     DateTime?
+  ackById   String?
+  escalatedAt DateTime?
+  /// The page this one escalated from.
+  escalatedFromId String?
+  createdAt DateTime    @default(now())
+
+  alert  Alert?  @relation(fields: [alertId], references: [id], onDelete: SetNull)
+  ticket Ticket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, ackAt])
+  @@index([alertId])
+  @@index([ticketId])
+}
+
+model MaintenanceTask {
+  id         String          @id @default(cuid())
+  contractId String
+  /// null runs against every approved asset of the contract with a management address.
+  assetId    String?
+  kind       MaintenanceKind
+  name       String
+  /// Five field cron expression in `timezone`, e.g. "0 3 * * 5" (Friday 03:00).
+  cron       String
+  timezone   String          @default("Asia/Riyadh")
+  /// Playbook file in MAINTENANCE_PLAYBOOK_DIR, e.g. patching.yml.
+  playbook   String
+  /// Extra variables for the playbook.
+  vars       Json            @default("{}")
+  enabled    Boolean         @default(true)
+  lastRunAt  DateTime?
+  nextRunAt  DateTime?
+  createdById String?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  contract ManagedContract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  asset    ManagedAsset?    @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  runs     MaintenanceRun[]
+
+  @@index([enabled, nextRunAt])
+  @@index([contractId])
+}
+
+model MaintenanceRun {
+  id         String               @id @default(cuid())
+  taskId     String
+  status     MaintenanceRunStatus @default(QUEUED)
+  /// schedule | manual
+  trigger    String               @default("schedule")
+  startedById String?
+  runner     String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  log        String               @default("")
+  error      String?
+  ticketId   String?
+  createdAt  DateTime             @default(now())
+
+  task   MaintenanceTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  ticket Ticket?         @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+
+  @@index([taskId, createdAt])
+  @@index([status])
+}
+
+/// Engineer time. Billable minutes beyond the plan's included minutes are billed as overage at month end.
+model WorkLog {
+  id         String    @id @default(cuid())
+  contractId String
+  ticketId   String?
+  userId     String
+  minutes    Int
+  billable   Boolean   @default(true)
+  note       String?
+  workedAt   DateTime  @default(now())
+  /// Month (UTC start) whose overage calculation counted this entry; set by the billing hook.
+  billedPeriod    DateTime?
+  /// Invoice that carried that month's managed lines.
+  billedInvoiceId String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  contract      ManagedContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  ticket        Ticket?         @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  user          User            @relation(fields: [userId], references: [id])
+  billedInvoice Invoice?        @relation(fields: [billedInvoiceId], references: [id], onDelete: SetNull)
+
+  @@index([contractId, workedAt])
+  @@index([contractId, billedPeriod])
+}
+
+/// Internal knowledge base article (markdown).
+model Runbook {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  body        String
+  tags        String[] @default([])
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  updatedBy User? @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([title])
+}
+
+model MonthlyReport {
+  id         String              @id @default(cuid())
+  contractId String
+  /// "2026-09"
+  period     String
+  status     MonthlyReportStatus @default(DRAFT)
+  data       Json
+  /// Engineer written, editable until the report is sent.
+  recommendations String         @default("")
+  /// Rendered PDF (a few tens of kilobytes).
+  pdf        Bytes?
+  generatedAt DateTime           @default(now())
+  sentAt     DateTime?
+  sentById   String?
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  contract ManagedContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@unique([contractId, period])
+}
+
+/// Public holidays for business hours SLAs. Hijri based dates must be confirmed by staff every year.
+model Holiday {
+  id      String          @id @default(cuid())
+  country ManagedCalendar
+  date    DateTime        @db.Date
+  name    String
+
+  @@unique([country, date])
 }

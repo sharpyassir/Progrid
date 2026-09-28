@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { createHash, randomBytes } from 'node:crypto';
 import { MARKETPLACE_APPS } from './seed-apps';
+import { HOLIDAYS, MANAGED_HOURLY_RATE_MINOR, MANAGED_PLANS } from './seed-managed';
 
 const prisma = new PrismaClient();
 
@@ -107,6 +108,16 @@ async function main() {
     });
   }
 
+  // Managed cloud plans: created once, then edited in the back office (the seed never overwrites them).
+  for (const p of MANAGED_PLANS) {
+    await prisma.managedPlan.upsert({ where: { code: p.code }, update: {}, create: { ...p, currency: BOOK, hourlyRateMinor: MANAGED_HOURLY_RATE_MINOR } });
+  }
+  // Public holidays for business hours SLAs.
+  for (const h of HOLIDAYS) {
+    const date = new Date(`${h.date}T00:00:00Z`);
+    await prisma.holiday.upsert({ where: { country_date: { country: h.country, date } }, update: { name: h.name }, create: { country: h.country, date, name: h.name } });
+  }
+
   // Everything below is demo data for development and CI: a fake host, a documentation IP range and a
   // staff user with a known password. It never runs in production unless SEED_DEMO=true is set on purpose.
   const demo = (process.env.SEED_DEMO ?? (process.env.NODE_ENV === 'production' ? 'false' : 'true')) === 'true';
@@ -147,7 +158,7 @@ async function main() {
     await prisma.credit.create({ data: { teamId: team.id, kind: 'promo', currency: 'SAR', amountMinor: 37500, remainingMinor: 37500, reason: 'dev seed ($100 at 3.75)' } });
     const raw = 'prgd_' + randomBytes(32).toString('base64url');
     await prisma.apiToken.create({
-      data: { teamId: team.id, userId: user.id, name: 'dev', prefix: raw.slice(0, 12), hash: createHash('sha256').update(raw).digest('hex'), scopes: ['servers:read', 'servers:write', 'servers:delete', 'images:read', 'snapshots:read', 'snapshots:write', 'volumes:read', 'volumes:write', 'dns:read', 'dns:write', 'storage:read', 'storage:write', 'databases:read', 'databases:write', 'kubernetes:read', 'kubernetes:write', 'network:read', 'network:write', 'apps:read', 'apps:write', 'billing:read', 'billing:write', 'support:read', 'support:write', 'iam:read', 'iam:write'] },
+      data: { teamId: team.id, userId: user.id, name: 'dev', prefix: raw.slice(0, 12), hash: createHash('sha256').update(raw).digest('hex'), scopes: ['servers:read', 'servers:write', 'servers:delete', 'images:read', 'snapshots:read', 'snapshots:write', 'volumes:read', 'volumes:write', 'dns:read', 'dns:write', 'storage:read', 'storage:write', 'databases:read', 'databases:write', 'kubernetes:read', 'kubernetes:write', 'network:read', 'network:write', 'apps:read', 'apps:write', 'billing:read', 'billing:write', 'support:read', 'support:write', 'managed:read', 'managed:write', 'iam:read', 'iam:write'] },
     });
     const admin = 'prgd_' + randomBytes(32).toString('base64url');
     await prisma.apiToken.create({ data: { teamId: team.id, userId: user.id, name: 'staff-admin', prefix: admin.slice(0, 12), hash: createHash('sha256').update(admin).digest('hex'), scopes: ['admin'] } });

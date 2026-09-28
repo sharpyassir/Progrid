@@ -6,6 +6,9 @@
 import { ApplicationFailure, proxyActivities } from '@temporalio/workflow';
 import type { Activities } from './activities';
 
+// Managed cloud workflows live in ./managed; the worker loads this one file, so they are re-exported here.
+export * from './managed';
+
 const act = proxyActivities<Activities>({
   startToCloseTimeout: '5 minutes',
   retry: { initialInterval: '2s', backoffCoefficient: 2, maximumInterval: '1 minute', maximumAttempts: 5, nonRetryableErrorTypes: ['NonRetryable'] },
