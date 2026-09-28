@@ -185,6 +185,30 @@ end to end through the public API against simulated hosts and agents, and runs i
     driver and the host agent against a real node, the real Python agents (the simulator
     follows their code but does not run it), Moyasar, PowerDNS and RGW, and the console.
 
+## DevOps console (added 28 September 2026)
+
+The backend for external and internal on call engineers is in `apps/api/src/modules/ops`
+(`docs/devops-console.md`): engineer profiles and contract assignments, residency policies,
+explicit masking mappers, ops sign in with TOTP or WebAuthn on separate twelve hour sessions,
+work timers and timesheet approval (only approved time is billed and paid), access grants with
+SSH certificates from step-ca or a local CA, the internal gateway contract with recordings and
+two kill paths, shift checklists and handovers, P1 postmortems, contractor payouts with PDF
+statements, offboarding with secret rotation tickets, and maintenance with a live log. It is
+covered by unit tests and `ops.it.ts` in the integration suite. Every table now carries the
+`prgd_` prefix (renamed in place by the `20260929100800_prgd_table_prefix` migration).
+
+Still open before external engineers work on customer servers:
+
+- The terminal gateway (`services/prgd-gateway`) and the ops app (`apps/ops`) are not built yet;
+  the API side of their contract is.
+- step-ca, Vault or Infisical, and the WireGuard management network have never run against the
+  adapters; the step-ca, Vault and Infisical adapters are tested against stubs only.
+- Revoked certificates are only refused by step-ca's own checks and by short lifetimes; hosts do
+  not load a revocation list. Keep grants short and the gateway pinned with
+  `PRGD_GATEWAY_SOURCE_ADDRESSES`.
+- Engineers with the `ops` session cookie are protected against cross site requests only because
+  the cookie is accepted on GET requests alone; keep it that way.
+
 ## E. Claims to correct on the website until built
 
 - "Every invoice is a ZATCA e-invoice" (about page and home copy) is not true yet.

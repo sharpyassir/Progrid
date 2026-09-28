@@ -42,6 +42,8 @@ Shifts have a role, `PRIMARY` or `SECONDARY`, and a time window (`/admin/managed
 
 **Two person rule.** A 24/7 plan (BUSINESS, ENTERPRISE) can only be activated when at least two different staff members have shifts in the next 14 days. Otherwise activation answers `409 on_call_rule`. A support lead can pass `"overrideOnCallRule": true`; the contract records `onCallOverride` and the audit log gets `managed.on_call_rule_overridden`. Do not sell a 24/7 plan until the rota really has two people.
 
+**External engineers.** Active engineer profiles from the DevOps console can hold shifts too. Paging and automatic ticket assignment only pick someone who may work on the contract: an external engineer must be assigned to it, and everyone must satisfy the contract's residency policy (`accessPolicy`). Otherwise the secondary, or the support lead, is paged instead. See `docs/devops-console.md`.
+
 **Who gets paged.** P1 and P2 tickets, from customers or from critical alerts, page the current primary with high urgency. If nobody acknowledges within `PAGE_ACK_TIMEOUT_SECONDS` (600, ten minutes), the `managedPageEscalation` workflow pages the support lead: the current secondary if one is on shift, otherwise the longest serving staff member with the `support_lead` role. When nobody is on call at all, the page goes straight to the support lead.
 
 **Acknowledging.** `POST /admin/managed/pages/{id}/ack` acknowledges a page and every other open page about the same alert or ticket. `POST /admin/managed/alerts/{id}/ack` acknowledges the alert and its pages. `GET /admin/managed/pages?open=true&mine=true` lists your open pages.
@@ -67,6 +69,8 @@ High urgency pages use the person's `pagingChannel`, or SMS when they have a pho
 ## SLA timers
 
 Due times come from the plan's `responseTargets` and `resolveTargets` (minutes per priority) and the contract calendar. Business hours plans count 09:00 to 17:00 on working days (Sunday to Thursday in Asia/Riyadh for `SA`, Monday to Friday in Europe/Istanbul for `TR`) and skip the `Holiday` table. The calculator is `modules/managed/sla/sla-calculator.ts`.
+
+**P1 postmortems.** Closing a P1 moves it to `resolved_pending_pm` until its postmortem is submitted in the DevOps console. Customers see it as closed, and the resolve timer stops at the resolution.
 
 Each ticket gets two `managedSlaTimer` workflows, one for the response target and one for the resolve target. At 75 percent of the target the assignee (or the primary on call) gets an email and a low urgency page and `warnedAt` is set. At 100 percent `breachedAt` and `responseBreached` or `resolveBreached` are set and the support lead is paged and emailed. The response timer ends at the first public staff reply; the resolve timer ends when the ticket is closed. Internal notes do not count as a response. Changing the priority recomputes the due times from the opening time and starts new timers.
 
@@ -143,12 +147,12 @@ Each run is a `managedMaintenanceRun` workflow. The status and log are stored on
 
 ## Engineer time and billing
 
-Log time with `POST /admin/managed/worklogs` (`contractId`, `minutes`, optional `ticketId`, `billable`, `note`, `workedAt`). Engineers edit their own entries, support leads anyone's. `GET /admin/managed/contracts/{id}/usage?period=2026-09` shows the included, used and overage minutes and any managed lines already accrued.
+Log time with `POST /admin/managed/worklogs` (`contractId`, `minutes`, optional `ticketId`, `billable`, `note`, `workedAt`). Engineers edit their own entries, support leads anyone's. Entries logged here are APPROVED at once. Engineers in the DevOps console log time with timers instead; their worklogs start as DRAFT and count only once a support lead approves them (see `docs/devops-console.md`). Only APPROVED (and PAID) worklogs count for overage, the usage view and the reports; the usage view also shows `pendingApprovalMinutes`. `GET /admin/managed/contracts/{id}/usage?period=2026-09` shows the included, used and overage minutes and any managed lines already accrued.
 
 At 00:30 UTC on the 1st, before the invoice run, the billing hook writes two usage records per contract on the team's oldest project:
 
 1. `managed_plan`: the monthly fee times the share of the month the contract was active. The first month counts from activation, suspensions are skipped, and a cancelled contract is billed up to its cancellation date.
-2. `managed_overage`: billable minutes beyond the included minutes, at the hourly rate (250 SAR by default).
+2. `managed_overage`: approved billable minutes beyond the included minutes, at the hourly rate (250 SAR by default).
 
 Amounts are in the team's invoice currency; the invoice adds VAT. The worklogs counted get `billedPeriod`, and the invoice run stamps them with `billedInvoiceId`. A counted entry can no longer be edited; log a correcting entry instead. Entries logged late for a closed month are counted in the next run.
 

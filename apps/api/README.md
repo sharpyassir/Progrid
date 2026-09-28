@@ -17,7 +17,10 @@ failover), Valkey and MySQL, Kubernetes (scaling, the cloud controller), App Pla
 domains, host failure) and Git Deploy, hourly rating, the monthly invoice, dunning, limited
 staff with two factor sign in, and managed cloud (contracts and onboarding, SLA due times and
 timers, internal notes, Alertmanager alerts with paging and escalation, heartbeats, plan fee
-and overage billing, maintenance runs and monthly reports). The suite lives in `test/integration` and has its
+and overage billing, maintenance runs and monthly reports), and the DevOps console (ops sign in
+with TOTP and WebAuthn, assignment scoping, residency, masking, timers and timesheets, access
+grants with SSH certificates, the gateway contract, shifts, postmortems, payouts and
+offboarding). The suite lives in `test/integration` and has its
 own vitest config, so `pnpm test` stays fast.
 
 It boots the API and a Temporal worker with the real workflows and activities in the test
