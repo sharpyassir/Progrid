@@ -130,7 +130,7 @@ export class ManagedAlertsService {
     if (!supported || alert.severity === 'INFO') return { created: true, alert };
 
     const critical = alert.severity === 'CRITICAL';
-    const primary = critical ? await this.oncall.primary() : null;
+    const primary = critical ? await this.oncall.primary(new Date(), asset.contractId) : null;
     const ticket = await this.tickets.openSystemTicket({
       contract: asset.contract,
       assetId: asset.id,
@@ -143,7 +143,7 @@ export class ManagedAlertsService {
     });
     alert = await this.prisma.alert.update({ where: { id: alert.id }, data: { ticketId: ticket.id } });
     if (critical) {
-      await this.paging.pageOnCall({ urgency: 'high', subject: `[P1] ${alert.name} on ${asset.name}`, message: `${alert.summary ?? 'Critical alert'} (ticket #${ticket.number})`, alertId: alert.id, ticketId: ticket.id })
+      await this.paging.pageOnCall({ urgency: 'high', subject: `[P1] ${alert.name} on ${asset.name}`, message: `${alert.summary ?? 'Critical alert'} (ticket #${ticket.number})`, alertId: alert.id, ticketId: ticket.id, contractId: asset.contractId })
         .catch((e) => this.log.error(`paging for alert ${alert.id} failed: ${(e as Error).message}`));
     }
     return { created: true, alert };

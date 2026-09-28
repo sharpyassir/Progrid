@@ -58,9 +58,11 @@ export class IamService {
   async login(dto: LoginDto, meta: { ip?: string; userAgent?: string } = {}) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email.toLowerCase() },
-      include: { memberships: { include: { team: true }, orderBy: { teamId: 'asc' } } },
+      include: { memberships: { include: { team: true }, orderBy: { teamId: 'asc' } } , engineerProfile: { select: { kind: true } } },
     });
     if (!user || !(await argon2.verify(user.passwordHash, dto.password))) throw ApiError.unauthorized('Wrong email or password');
+    // External engineers sign in to the ops console only (POST /ops/v1/auth/login).
+    if (user.engineerProfile?.kind === 'EXTERNAL') throw new ApiError(403, 'ops_console_only', 'This account signs in to the ops console only');
     if (user.totpEnabled) {
       if (!dto.totp) throw new ApiError(401, 'totp_required', 'Enter the code from your authenticator app');
       if (!this.security.checkSecondFactor(user, dto.totp)) throw new ApiError(401, 'totp_invalid', 'That code is not valid');

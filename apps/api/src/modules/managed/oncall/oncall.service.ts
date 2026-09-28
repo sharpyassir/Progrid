@@ -4,6 +4,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ApiError } from '../../../common/errors/api-error';
 import type { Actor } from '../../../common/auth/actor';
 import { EventsService } from '../../events/events.service';
+import { checkEligibility } from '../../ops/guards/residency';
 
 export type StaffContact = Pick<User, 'id' | 'name' | 'email' | 'phone' | 'pagingChannel' | 'staffRoles'>;
 const contactSelect = { id: true, name: true, email: true, phone: true, pagingChannel: true, staffRoles: true, isStaff: true } as const;
@@ -27,8 +28,18 @@ export class OnCallService {
     return { at, primary: pick('PRIMARY'), secondary: pick('SECONDARY'), shifts: shifts.map(presentShift) };
   }
 
-  async primary(at = new Date()): Promise<StaffContact | null> {
-    return (await this.current(at)).primary;
+  /**
+   * The person to page and assign. With a contract, only someone who may work on it: the
+   * primary, or the secondary when the primary is an external engineer not assigned to the
+   * contract or outside its residency policy (docs/devops-console.md).
+   */
+  async primary(at = new Date(), contractId?: string | null): Promise<StaffContact | null> {
+    const { primary, secondary } = await this.current(at);
+    if (!contractId) return primary;
+    for (const who of [primary, secondary]) {
+      if (who && (await checkEligibility(this.prisma, who.id, contractId)).ok) return who;
+    }
+    return null;
   }
 
   /** Who a missed page escalates to. Never the person who missed it. */
@@ -73,13 +84,13 @@ export class OnCallService {
 
   /** Staff who can be put on call, with their paging contact. */
   async staff() {
-    const rows = await this.prisma.user.findMany({ where: { isStaff: true }, select: contactSelect, orderBy: { name: 'asc' } });
+    const rows = await this.prisma.user.findMany({ where: { OR: [{ isStaff: true }, { engineerProfile: { status: 'ACTIVE' } }] }, select: contactSelect, orderBy: { name: 'asc' } });
     return { data: rows.map((u) => ({ id: u.id, name: u.name, email: u.email, phone: u.phone, pagingChannel: u.pagingChannel, staffRoles: u.staffRoles })) };
   }
 
   async setContact(actor: Actor, userId: string, dto: { phone?: string | null; pagingChannel?: 'SMS' | 'WHATSAPP' | 'PUSH' | 'EMAIL' | null }) {
-    const u = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!u || !u.isStaff) throw ApiError.notFound('staff user', userId);
+    const u = await this.prisma.user.findUnique({ where: { id: userId }, include: { engineerProfile: { select: { id: true } } } });
+    if (!u || (!u.isStaff && !u.engineerProfile)) throw ApiError.notFound('staff user', userId);
     const updated = await this.prisma.user.update({ where: { id: userId }, data: { phone: dto.phone, pagingChannel: dto.pagingChannel }, select: contactSelect });
     await this.events.emit('managed.paging_contact_updated', { userId, pagingChannel: updated.pagingChannel, hasPhone: !!updated.phone }, { actor, resource: `user:${userId}` });
     return { id: updated.id, name: updated.name, email: updated.email, phone: updated.phone, pagingChannel: updated.pagingChannel, staffRoles: updated.staffRoles };
@@ -87,8 +98,8 @@ export class OnCallService {
 
   private async checkShift(s: { userId: string; startsAt: Date; endsAt: Date; role?: OnCallRole }, id?: string) {
     if (s.endsAt <= s.startsAt) throw ApiError.invalid('endsAt must be after startsAt');
-    const u = await this.prisma.user.findUnique({ where: { id: s.userId }, select: { isStaff: true } });
-    if (!u?.isStaff) throw ApiError.invalid('On call shifts are for staff users');
+    const u = await this.prisma.user.findUnique({ where: { id: s.userId }, select: { isStaff: true, engineerProfile: { select: { status: true } } } });
+    if (!u?.isStaff && u?.engineerProfile?.status !== 'ACTIVE') throw ApiError.invalid('On call shifts are for staff and active engineers');
     const clash = await this.prisma.onCallShift.findFirst({ where: { userId: s.userId, startsAt: { lt: s.endsAt }, endsAt: { gt: s.startsAt }, ...(id ? { id: { not: id } } : {}) } });
     if (clash) throw ApiError.conflict('shift_overlap', 'This person already has a shift in that window');
   }

@@ -33,6 +33,8 @@ import { KubernetesModule } from './modules/kubernetes/k8s.module';
 import { AppPlatformModule } from './modules/app-platform/app.module';
 import { TeamModule } from './modules/team/team.module';
 import { ManagedModule } from './modules/managed/managed.module';
+import { OpsSettingsModule } from './modules/ops/settings/ops-settings.service';
+import { OpsModule } from './modules/ops/ops.module';
 import { JobsModule } from './jobs/jobs.module';
 import { HealthController } from './health.controller';
 
@@ -44,7 +46,7 @@ import { HealthController } from './health.controller';
     // domain
     IamModule,
     ApprovalsModule, EventsModule, ComputeModule, SchedulerModule, NetworkModule, StorageModule, MarketplaceModule, BillingModule, TrustModule, AdminModule, DeployModule, GithubModule, MonitoringModule, LbModule, DnsModule, ObjectsModule, DatabasesModule,
-    SupportModule, KubernetesModule, AppPlatformModule, TeamModule, ManagedModule,
+    SupportModule, KubernetesModule, AppPlatformModule, TeamModule, OpsSettingsModule, ManagedModule, OpsModule,
     // background
     JobsModule,
   ],

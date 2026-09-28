@@ -26,6 +26,7 @@
     "@nestjs/schedule": "^4.1.2",
     "@nestjs/swagger": "^8.1.0",
     "@prisma/client": "^6.1.0",
+    "@simplewebauthn/server": "^13.3.3",
     "@temporalio/activity": "^1.11.5",
     "@temporalio/client": "^1.11.5",
     "@temporalio/worker": "^1.11.5",

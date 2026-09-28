@@ -78,6 +78,9 @@ model User {
   pages             Page[]
   workLogs          WorkLog[]
   runbooksUpdated   Runbook[]
+  // DevOps console
+  engineerProfile     EngineerProfile?
+  webAuthnCredentials WebAuthnCredential[]
 
   @@map("prgd_users")
 }
@@ -1825,6 +1828,8 @@ model TicketMessage {
   body       String
   /// Staff only note. Customer endpoints never return internal messages.
   internal   Boolean  @default(false)
+  /// Internal note recording the root cause, required before an engineer closes a managed ticket from the ops console.
+  rootCause  Boolean  @default(false)
   createdAt  DateTime @default(now())
 
   @@index([ticketId, createdAt])
@@ -2049,12 +2054,17 @@ model AppDeploy {
   @@map("prgd_app_deploys")
 }
 
-/// A console sign in. The session JWT carries this id; revoking the row ends the session at once.
+/// A console or ops console sign in. The session JWT carries this id; revoking the row ends the session at once.
 model Session {
   id         String    @id @default(cuid())
   userId     String
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  teamId     String
+  /// The team the console session works in; null for ops sessions.
+  teamId     String?
+  /// console (apps/console, /v1 and /admin) or ops (apps/ops, /ops/v1 only). A token never works for the other audience.
+  audience   String    @default("console")
+  /// Second factor used to open an ops session: totp or webauthn.
+  secondFactor String?
   userAgent  String?
   ip         String?
   createdAt  DateTime  @default(now())
@@ -2063,6 +2073,7 @@ model Session {
   revokedAt  DateTime?
 
   @@index([userId, revokedAt])
+  @@index([userId, audience, createdAt])
 
   @@map("prgd_sessions")
 }
@@ -2254,11 +2265,14 @@ model ManagedContract {
   suspensions Json @default("[]")
   cancelledAt DateTime?
   cancelReason String?
+  /// Which engineers may be assigned, paged and granted access (checked against EngineerProfile.country).
+  accessPolicy ContractAccessPolicy @default(ANY)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   team     Team        @relation(fields: [teamId], references: [id])
   plan     ManagedPlan @relation(fields: [planId], references: [id])
+  engineerAssignments EngineerAssignment[]
   signedBy User?       @relation(fields: [signedById], references: [id], onDelete: SetNull)
   onboardingItems  OnboardingItem[]
   assets           ManagedAsset[]
@@ -2582,4 +2596,114 @@ model Holiday {
   @@unique([country, date])
 
   @@map("prgd_holidays")
+}
+
+/// ---------------------------------------------------------------------------
+/// DevOps console (apps/ops, /ops/v1): engineers who operate managed contracts.
+/// See docs/devops-console.md.
+/// ---------------------------------------------------------------------------
+enum EngineerKind {
+  /// Hourly paid contractor. Not staff: never reaches /admin or customer endpoints.
+  EXTERNAL
+  /// Progrid employee (usually also staff with the engineer or support_lead area).
+  INTERNAL
+
+  @@map("prgd_engineer_kind")
+}
+
+enum EngineerStatus {
+  ACTIVE
+  SUSPENDED
+  OFFBOARDED
+
+  @@map("prgd_engineer_status")
+}
+
+/// Who may work on a contract, by the engineer's country.
+enum ContractAccessPolicy {
+  ANY
+  SAUDI_ONLY
+  TURKIYE_ONLY
+
+  @@map("prgd_contract_access_policy")
+}
+
+/// An engineer who works in the ops console. Paging phone and channel come from the User.
+model EngineerProfile {
+  id              String         @id @default(cuid())
+  userId          String         @unique
+  kind            EngineerKind   @default(EXTERNAL)
+  status          EngineerStatus @default(ACTIVE)
+  /// ISO 3166-1 alpha-2 country the engineer works from (SA, TR, JO, IN ...).
+  country         String
+  /// IANA zone the ops console shows times in.
+  timezone        String         @default("Asia/Riyadh")
+  /// Contractor pay per hour of approved work, in `currency` minor units. Null until set by full staff.
+  hourlyRateMinor Int?
+  /// Standby fee per completed on call shift, in `currency` minor units.
+  standbyFeeMinor Int?
+  currency        Currency       @default(USD)
+  /// Pay multiplier for work between 22:00 and 06:00 contract local time.
+  nightMultiplier Float          @default(1.5)
+  /// CIDRs the engineer may use the ops console from; empty allows any address.
+  ipAllowlist     String[]       @default([])
+  statusReason    String?
+  suspendedAt     DateTime?
+  offboardedAt    DateTime?
+  createdById     String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignments EngineerAssignment[]
+
+  @@index([status])
+  @@map("prgd_engineer_profiles")
+}
+
+/// A contract an engineer may work on. External engineers see nothing else.
+model EngineerAssignment {
+  id          String   @id @default(cuid())
+  engineerId  String
+  contractId  String
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  engineer EngineerProfile @relation(fields: [engineerId], references: [id], onDelete: Cascade)
+  contract ManagedContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@unique([engineerId, contractId])
+  @@index([contractId])
+  @@map("prgd_engineer_assignments")
+}
+
+/// A WebAuthn authenticator (security key or passkey) for ops console sign in.
+model WebAuthnCredential {
+  id           String    @id @default(cuid())
+  userId       String
+  /// base64url credential id from the authenticator.
+  credentialId String    @unique
+  publicKey    Bytes
+  counter      Int       @default(0)
+  transports   String[]  @default([])
+  deviceType   String?
+  backedUp     Boolean   @default(false)
+  name         String
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("prgd_webauthn_credentials")
+}
+
+/// Ops console settings (one row). Missing keys fall back to the defaults in modules/ops/settings.
+model OpsSettings {
+  id          String   @id @default("default")
+  data        Json     @default("{}")
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("prgd_ops_settings")
 }

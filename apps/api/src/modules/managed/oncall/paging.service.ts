@@ -19,6 +19,8 @@ export interface PageRequest {
   ticketId?: string;
   /** Start the escalation timer (high urgency pages to the on call engineer). */
   escalate?: boolean;
+  /** Contract the page is about: only someone eligible for it is paged as on call (assignment and residency). */
+  contractId?: string | null;
   escalatedFromId?: string;
 }
 
@@ -88,7 +90,7 @@ export class PagingService {
 
   /** Pages the current primary on call, if any, with escalation. */
   async pageOnCall(req: Omit<PageRequest, 'userId' | 'escalate'>) {
-    const primary = await this.oncall.primary();
+    const primary = await this.oncall.primary(new Date(), req.contractId);
     if (!primary) {
       // Nobody on call: go straight to the support lead so the page is not lost.
       const lead = await this.oncall.supportLead();

@@ -16,6 +16,8 @@ const RULES: { test: RegExp; limit: number; windowSec: number }[] = [
   { test: /^\/v1\/auth\/password\/forgot$/, limit: 5, windowSec: 600 },
   { test: /^\/v1\/auth\/(verify|password\/reset|totp\/verify)$/, limit: 20, windowSec: 600 },
   { test: /^\/v1\/deploys\/[^/]+\/hook$/, limit: 120, windowSec: 60 },
+  { test: /^\/ops\/v1\/auth\/login$/, limit: 10, windowSec: 60 },
+  { test: /^\/ops\/v1\/auth\/(totp|totp\/enable|webauthn\/authenticate\/verify|password\/forgot|password\/reset)$/, limit: 20, windowSec: 600 },
 ];
 const AUTHED = { limit: 600, windowSec: 60 };
 const ANON = { limit: 120, windowSec: 60 };

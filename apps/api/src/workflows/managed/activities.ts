@@ -1,12 +1,12 @@
 import type { INestApplicationContext } from '@nestjs/common';
 import type { ManagedPriority } from '@prisma/client';
-import { loadConfig } from '../../config/config';
 import { OnboardingService } from '../../modules/managed/onboarding/onboarding.service';
 import { ManagedTicketsService } from '../../modules/managed/tickets/tickets.service';
 import { PagingService } from '../../modules/managed/oncall/paging.service';
 import { MaintenanceService } from '../../modules/managed/maintenance/maintenance.service';
 import { Context } from '@temporalio/activity';
 import { ReportsService } from '../../modules/managed/reports/reports.service';
+import { OpsSettingsService } from '../../modules/ops/settings/ops-settings.service';
 
 /**
  * Activities of the managed cloud workflows. Thin wrappers over the managed module services so
@@ -34,6 +34,7 @@ export function createManagedActivities(app: INestApplicationContext): ManagedAc
   const paging = app.get(PagingService);
   const maintenance = app.get(MaintenanceService);
   const reports = app.get(ReportsService);
+  const opsSettings = app.get(OpsSettingsService);
 
   return {
     async managedEnsureChecklist(contractId) {
@@ -49,7 +50,8 @@ export function createManagedActivities(app: INestApplicationContext): ManagedAc
     managedSlaBreach: (ticketId, kind, priority) => tickets.timerBreach(ticketId, kind, priority),
 
     async managedPageAckTimeout() {
-      return loadConfig().PAGE_ACK_TIMEOUT_SECONDS;
+      // The ops settings (alertAckTargetSeconds) default to PAGE_ACK_TIMEOUT_SECONDS.
+      return (await opsSettings.get()).alertAckTargetSeconds;
     },
 
     managedEscalatePage: (pageId) => paging.escalate(pageId),

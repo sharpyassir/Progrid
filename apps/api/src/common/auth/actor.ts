@@ -21,6 +21,11 @@ export interface Actor {
   locale: string;
   /** The team's account status when the credential was resolved (suspended teams may only use billing). */
   teamStatus?: AccountStatus;
+  /** console for console sessions and API tokens, ops for ops console sessions (/ops/v1 only). */
+  audience?: 'console' | 'ops';
+  /** Client address and user agent of the request, written to the audit log. */
+  ip?: string;
+  userAgent?: string;
 }
 
 export const ALL_SCOPES = [

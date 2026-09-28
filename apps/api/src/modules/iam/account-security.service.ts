@@ -58,6 +58,24 @@ export class AccountSecurityService {
     });
   }
 
+  /**
+   * Ops console password link: a welcome mail for a new engineer account (valid seven days)
+   * or a reset (one hour). The link opens the ops console, which calls
+   * POST /ops/v1/auth/password/reset with the token.
+   */
+  async sendOpsPasswordLink(userId: string, kind: 'welcome' | 'reset') {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    const token = await this.issueToken(userId, 'reset', kind === 'welcome' ? 7 * 86_400 : 3600);
+    const url = `${loadConfig().PRGD_OPS_URL}/set-password?token=${token}`;
+    await this.mail.send({
+      to: user.email,
+      subject: kind === 'welcome' ? 'Your Progrid ops console account' : 'Reset your Progrid ops console password',
+      text: kind === 'welcome'
+        ? `Hi ${user.name},\n\nAn account was created for you on the Progrid ops console. Choose a password here, then set up two factor sign in:\n${url}\n\nThe link is valid for seven days.`
+        : `Hi ${user.name},\n\nSomeone asked to reset your ops console password. If that was you, choose a new password here:\n${url}\n\nThe link is valid for one hour. If you did not ask for this, tell your support lead.`,
+    });
+  }
+
   async resetPassword(token: string, password: string) {
     const row = await this.consumeToken(token, 'reset');
     await this.prisma.user.update({ where: { id: row.userId }, data: { passwordHash: await argon2.hash(password) } });

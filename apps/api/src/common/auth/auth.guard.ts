@@ -10,7 +10,8 @@ import { PrismaService } from '../prisma/prisma.service';
 
 /**
  * Resolves `Authorization: Bearer …` into an Actor and enforces `@RequireScopes`.
- * Accepts API tokens (`prgd_…`) and console session JWTs.
+ * Accepts API tokens (`prgd_…`) and console session JWTs everywhere except /ops/, and only
+ * ops console sessions on /ops/ (see resolveOps). A token never crosses between the two.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -21,12 +22,14 @@ export class AuthGuard implements CanActivate {
     if (isPublic) return true;
 
     const req = ctx.switchToHttp().getRequest<Request & { actor?: Actor }>();
+    if (req.path.startsWith('/ops/')) return this.resolveOps(req);
     const header = req.headers.authorization ?? '';
     const [scheme, credential] = header.split(' ');
     if (scheme?.toLowerCase() !== 'bearer' || !credential) throw ApiError.unauthorized();
 
     const actor = await this.tokens.resolveBearer(credential);
     if (!actor) throw ApiError.unauthorized();
+    Object.assign(actor, clientOf(req));
     req.actor = actor;
 
     // Owners must have two factor sign in when the policy is on. API tokens are exempt (they are scoped and revocable).
@@ -61,6 +64,43 @@ export class AuthGuard implements CanActivate {
     }
     return true;
   }
+
+  /**
+   * The ops console API (/ops/v1) takes only ops console sessions: a Bearer token, or on GET
+   * requests (Server Sent Events and downloads, where the browser cannot set a header) the
+   * HttpOnly `prgd_ops_session` cookie. The engineer context, IP allowlist, assignment and
+   * residency checks run in the ops guards (modules/ops/guards).
+   */
+  private async resolveOps(req: Request & { actor?: Actor }): Promise<boolean> {
+    const header = req.headers.authorization ?? '';
+    const [scheme, bearer] = header.split(' ');
+    let credential = scheme?.toLowerCase() === 'bearer' ? bearer : undefined;
+    if (!credential && (req.method === 'GET' || req.method === 'HEAD')) credential = readCookie(req.headers.cookie, OPS_SESSION_COOKIE);
+    if (!credential) throw ApiError.unauthorized();
+    const session = await this.tokens.resolveOpsSession(credential);
+    if (!session) throw ApiError.unauthorized('Sign in to the ops console again');
+    req.actor = {
+      userId: session.userId, teamId: '', role: 'member', scopes: new Set(), sessionId: session.sessionId, isAgent: false,
+      requireApprovalFor: new Set(), locale: 'en', audience: 'ops', ...clientOf(req),
+    };
+    return true;
+  }
+}
+
+export const OPS_SESSION_COOKIE = 'prgd_ops_session';
+
+/** Client address (Caddy sets X-Forwarded-For) and user agent of a request. */
+export function clientOf(req: Request) {
+  const fwd = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
+  return { ip: (fwd || req.ip || '').slice(0, 64), userAgent: String(req.headers['user-agent'] ?? '').slice(0, 300) };
+}
+
+export function readCookie(header: string | undefined, name: string): string | undefined {
+  for (const part of (header ?? '').split(';')) {
+    const [k, ...v] = part.trim().split('=');
+    if (k === name) return decodeURIComponent(v.join('='));
+  }
+  return undefined;
 }
 
 /**

@@ -14,6 +14,7 @@ import { OnboardingService } from '../onboarding/onboarding.service';
 import { ResponsibilityService } from '../responsibility/responsibility.service';
 import { ContractTermsService } from './contract-terms.service';
 import { ManagedAccessService } from './access.service';
+import { OpsSettingsService } from '../../ops/settings/ops-settings.service';
 import type { ActivateContractDto, AdminListContractsQuery, RequestContractDto, StaffCreateContractDto, UpdateContractDto } from './contracts.dto';
 
 type ContractWithPlan = ManagedContract & { plan: ManagedPlan };
@@ -36,6 +37,7 @@ export class ContractsService {
     private readonly onboarding: OnboardingService,
     private readonly responsibility: ResponsibilityService,
     private readonly access: ManagedAccessService,
+    private readonly opsSettings: OpsSettingsService,
   ) {}
 
   // ---- customer ----
@@ -228,9 +230,10 @@ export class ContractsService {
     const plan = await this.prisma.managedPlan.findFirst({ where: { code: dto.plan.toUpperCase(), active: true } });
     if (!plan) throw ApiError.invalid(`Unknown or inactive plan "${dto.plan}"`);
     const team = await this.prisma.team.findUniqueOrThrow({ where: { id: teamId } });
+    const accessPolicy = (await this.opsSettings.get()).defaultAccessPolicy;
     const c = await this.prisma.$transaction(async (tx) => {
       const created = await tx.managedContract.create({
-        data: { teamId, planId: plan.id, status: 'DRAFT', calendar: dto.calendar ?? (team.country === 'TR' ? 'TR' : 'SA'), currency: team.currency, notes: dto.notes ?? null, requestedById: actor.userId, ...extra },
+        data: { teamId, planId: plan.id, status: 'DRAFT', calendar: dto.calendar ?? (team.country === 'TR' ? 'TR' : 'SA'), currency: team.currency, notes: dto.notes ?? null, requestedById: actor.userId, accessPolicy, ...extra },
         include: { plan: true },
       });
       await this.responsibility.ensureDefaults(created.id, tx);

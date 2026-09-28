@@ -9,6 +9,7 @@ import { DEFAULT_PLAYBOOK } from '../managed.constants';
 import { ManagedWorkflows } from '../managed-workflows.service';
 import { ManagedTicketsService } from '../tickets/tickets.service';
 import { OnCallService } from '../oncall/oncall.service';
+import { checkEligibility } from '../../ops/guards/residency';
 import { isValidCron, nextRun } from './cron';
 import { PLAYBOOK_NAME, runnerFor, type MaintenanceTarget } from './runners';
 
@@ -193,7 +194,9 @@ export class MaintenanceService {
     if (run.ticketId) return run.ticketId;
     const t = run.task;
     const what = `${t.name}${t.asset ? ` on ${t.asset.name}` : ''}`;
-    const onCall = await this.oncall.primary();
+    // A run an engineer started goes back to them; scheduled runs go to the on call engineer.
+    const starter = run.startedById && (await checkEligibility(this.prisma, run.startedById, t.contractId)).ok ? run.startedById : null;
+    const onCall = starter ? { id: starter } : await this.oncall.primary(new Date(), t.contractId);
     const ticket = await this.tickets.openSystemTicket({
       contract: t.contract,
       assetId: t.assetId,

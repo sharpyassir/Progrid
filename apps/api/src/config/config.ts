@@ -131,6 +131,20 @@ const schema = z.object({
   MAINTENANCE_TIMEOUT_MINUTES: z.coerce.number().int().min(1).default(60),
   /** Day of the month a draft monthly report is sent automatically when nobody sent it (reports are drafted on the 1st). */
   MANAGED_REPORT_AUTOSEND_DAY: z.coerce.number().int().min(1).max(28).default(3),
+
+  // ---- DevOps console (docs/devops-console.md) ----
+  /** Origin of the ops console app (apps/ops); links in mails and the WebAuthn origin. */
+  PRGD_OPS_URL: z.string().url().default('http://localhost:3002'),
+  /** WebAuthn relying party id: the ops console's registrable domain (ops.progrid.sa or progrid.sa). */
+  PRGD_OPS_RP_ID: z.string().default('localhost'),
+  PRGD_OPS_RP_NAME: z.string().default('Progrid Ops'),
+  /** Ops console session lifetime; twelve hours. */
+  PRGD_OPS_SESSION_TTL_SECONDS: z.coerce.number().int().min(300).default(43_200),
+  /** Grafana base URL for the asset view's metric and log links; empty hides them. */
+  PRGD_GRAFANA_URL: z.string().optional(),
+  /** Defaults for the ops settings (PATCH /admin/ops/settings overrides them). Seconds so tests can use short values. */
+  PRGD_OPS_TIMER_IDLE_PROMPT_SECONDS: z.coerce.number().int().min(1).default(3600),
+  PRGD_OPS_TIMER_AUTO_STOP_SECONDS: z.coerce.number().int().min(1).default(5400),
 });
 
 export type AppConfig = z.infer<typeof schema>;

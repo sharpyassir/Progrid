@@ -12,6 +12,7 @@ import { ManagedNotify } from '../managed-notify.service';
 import { SlaService } from '../sla/sla.service';
 import { PagingService } from '../oncall/paging.service';
 import { OnCallService } from '../oncall/oncall.service';
+import { checkEligibility } from '../../ops/guards/residency';
 import type { AdminListManagedTicketsQuery, CreateManagedTicketDto, ListManagedTicketsQuery, StaffMessageDto, UpdateManagedTicketDto } from './tickets.dto';
 
 type ContractWithPlan = ManagedContract & { plan: ManagedPlan };
@@ -159,8 +160,13 @@ export class ManagedTicketsService {
     if (dto.assigneeId !== undefined && dto.assigneeId !== t.assigneeId) {
       if (!isLead(actor) && dto.assigneeId !== actor.userId) throw ApiError.forbidden('Only a support lead can assign tickets to someone else');
       if (dto.assigneeId) {
-        const u = await this.prisma.user.findUnique({ where: { id: dto.assigneeId }, select: { isStaff: true } });
-        if (!u?.isStaff) throw ApiError.invalid('Tickets can only be assigned to staff');
+        // Staff, or an engineer allowed on this contract (assigned and within its residency policy).
+        const u = await this.prisma.user.findUnique({ where: { id: dto.assigneeId }, select: { isStaff: true, engineerProfile: { select: { id: true } } } });
+        if (!u?.isStaff && !u?.engineerProfile) throw ApiError.invalid('Tickets can only be assigned to staff and engineers');
+        if (u.engineerProfile) {
+          const ok = await checkEligibility(this.prisma, dto.assigneeId, t.contract.id);
+          if (!ok.ok) throw new ApiError(403, ok.reason === 'residency' ? 'residency_blocked' : 'forbidden', ok.message);
+        }
       }
       data.assigneeId = dto.assigneeId;
       changes.assigneeId = dto.assigneeId;
@@ -237,7 +243,7 @@ export class ManagedTicketsService {
     if (!t) return 'done';
     await this.prisma.ticket.update({ where: { id: ticketId }, data: { warnedAt: t.warnedAt ?? new Date() } });
     const due = kind === 'response' ? t.responseDueAt : t.resolveDueAt;
-    const who = t.assigneeId ?? (await this.oncall.primary())?.id;
+    const who = t.assigneeId ?? (await this.oncall.primary(new Date(), t.contractId))?.id;
     const subject = `SLA warning: [#${t.number}] [${priority}] ${kind} due ${due?.toISOString().slice(11, 16)} UTC`;
     const message = `${t.subject}. The ${kind} target is 75 percent used; due at ${due?.toISOString()}.`;
     if (who) {
@@ -277,7 +283,7 @@ export class ManagedTicketsService {
     const now = new Date();
     const due = await this.sla.dueDates(i.contract, i.priority, now);
     const urgent = i.priority === 'P1' || i.priority === 'P2';
-    const assigneeId = i.assigneeId !== undefined ? i.assigneeId : urgent ? (await this.oncall.primary())?.id ?? null : null;
+    const assigneeId = i.assigneeId !== undefined ? i.assigneeId : urgent ? (await this.oncall.primary(now, i.contract.id))?.id ?? null : null;
     const ticket = await this.prisma.ticket.create({
       data: {
         teamId: i.contract.teamId,
@@ -300,7 +306,7 @@ export class ManagedTicketsService {
     });
     await this.startTimers(ticket);
     if (i.page && urgent) {
-      await this.paging.pageOnCall({ urgency: 'high', subject: `[#${ticket.number}] [${i.priority}] ${ticket.subject}`, message: `New ${i.priority} ticket. Response due ${due.responseDueAt.toISOString()}.`, ticketId: ticket.id })
+      await this.paging.pageOnCall({ urgency: 'high', subject: `[#${ticket.number}] [${i.priority}] ${ticket.subject}`, message: `New ${i.priority} ticket. Response due ${due.responseDueAt.toISOString()}.`, ticketId: ticket.id, contractId: i.contract.id })
         .catch((e) => this.log.error(`paging for ticket ${ticket.id} failed: ${(e as Error).message}`));
     }
     return ticket;

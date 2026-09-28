@@ -33,6 +33,8 @@ interface EmitContext {
   teamId?: string;
   actor?: Actor;
   resource?: string;
+  /** Client address; defaults to the actor's. */
+  ip?: string;
 }
 
 /**
@@ -48,7 +50,8 @@ export class EventsService {
   constructor(private readonly prisma: PrismaService, private readonly nats: NatsService) {}
 
   async emit(name: EventName, payload: Record<string, unknown>, ctx: EmitContext = {}) {
-    const teamId = ctx.teamId ?? ctx.actor?.teamId;
+    // Ops console actors have no team (empty teamId); the event names the team when there is one.
+    const teamId = ctx.teamId || ctx.actor?.teamId || undefined;
     this.log.debug(`${name} ${JSON.stringify(payload)}`);
 
     await this.prisma.auditLog.create({
@@ -59,6 +62,8 @@ export class EventsService {
         tokenId: ctx.actor?.tokenId,
         action: name,
         resource: ctx.resource,
+        ip: (ctx.ip ?? ctx.actor?.ip)?.slice(0, 64),
+        userAgent: ctx.actor?.userAgent?.slice(0, 300),
         request: payload as Prisma.InputJsonValue,
         status: 200,
       },

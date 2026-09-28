@@ -370,6 +370,10 @@ export class AdminController {
   @Post('staff/:userId')
   async setStaff(@CurrentActor() actor: Actor, @Param('userId') userId: string, @Body() body: SetStaffDto) {
     if (userId === actor.userId && !body.isStaff) throw ApiError.invalid('You cannot remove your own staff access');
+    // External engineers work only in the ops console; they are never staff.
+    if (body.isStaff && (await this.prisma.engineerProfile.findUnique({ where: { userId }, select: { kind: true } }))?.kind === 'EXTERNAL') {
+      throw ApiError.invalid('This user is an external engineer; external engineers cannot be staff');
+    }
     const user = await this.prisma.user.update({ where: { id: userId }, data: { isStaff: body.isStaff, staffRoles: body.isStaff ? body.staffRoles ?? [] : [] } });
     await this.events.emit('staff.updated', { userId, isStaff: user.isStaff, staffRoles: user.staffRoles }, { actor });
     // Access changes take effect on the next request; end old sessions so nothing lingers.
