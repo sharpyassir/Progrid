@@ -60,7 +60,7 @@ Legend: ✅ shipped in repo · 🔨 MVP scope · 2️⃣ phase 2 · 3️⃣ phas
 
 ## What DO does not have (our edge)
 
-- **SAR billing, ZATCA e-invoicing, Moyasar, a Saudi company and Saudi business hours support** — table stakes for Saudi SMEs, absent from every global cloud.
+- **SAR billing, ZATCA e-invoicing, Moyasar, a Saudi company and Saudi business hours support**: table stakes for Saudi SMEs, absent from every global cloud.
 - **Agent-safe tokens**: per-token monthly spend cap and approval rules for destructive actions. DO tokens have scopes only.
 - **Console and docs in Saudi and Arabic (RTL)**.
 - **Transparent status model** — provisioning is visible step by step, not a spinner on `new`.
