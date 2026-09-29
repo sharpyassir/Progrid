@@ -119,6 +119,8 @@ export class JobsService {
   @Cron('30 0 1 * *') // 00:30 UTC on the 1st
   monthly() {
     return this.locked('monthly', 30 * 60_000, async () => {
+      // Contracts that ended at the month boundary are cancelled first (safe to repeat), so their fee stops there.
+      await this.managedContracts.runRenewals();
       // Managed cloud plan fees and overage become usage records first, so they land on the same invoice.
       await this.managedBilling.accruePreviousMonth();
       await this.invoices.issueForPreviousMonth();
@@ -198,6 +200,11 @@ export class JobsService {
   @Cron('0 40 * * * *') // forty past every hour: managed contracts follow the team's billing suspension
   managedContractSync() {
     return this.locked('managed-contract-sync', 10 * 60_000, () => this.managedContracts.syncWithTeamStatus());
+  }
+
+  @Cron('0 10 0 * * *') // 00:10 UTC daily, before the monthly accrual at 00:30 on the 1st: renew, end or cancel contracts and send renewal reminders
+  managedRenewals() {
+    return this.locked('managed-renewals', 30 * 60_000, () => this.managedContracts.runRenewals());
   }
 
   // ---- DevOps console ----

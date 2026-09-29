@@ -15,6 +15,7 @@ import { ResponsibilityService } from '../responsibility/responsibility.service'
 import { ContractTermsService } from './contract-terms.service';
 import { ManagedAccessService } from './access.service';
 import { OpsSettingsService } from '../../ops/settings/ops-settings.service';
+import { CUSTOMER_CANCEL_REASON, NOT_RENEWED_REASON, endOfCurrentMonth, termDecision } from './renewal';
 import type { ActivateContractDto, AdminListContractsQuery, RequestContractDto, StaffCreateContractDto, UpdateContractDto } from './contracts.dto';
 
 type ContractWithPlan = ManagedContract & { plan: ManagedPlan };
@@ -86,6 +87,10 @@ export class ContractsService {
         onboarding: onboarding ? { done: onboarding.done, total: onboarding.total } : null,
         createdAt: current.createdAt,
         activatedAt: current.activatedAt,
+        termMonths: current.termMonths,
+        termEndsAt: current.termEndsAt,
+        autoRenew: current.autoRenew,
+        cancelAt: current.cancelAt,
       };
     }
     return {
@@ -94,6 +99,57 @@ export class ContractsService {
       openTickets,
       previous: !current && cancelled ? { planName: cancelled.plan.name, cancelledAt: cancelled.cancelledAt } : null,
     };
+  }
+
+  /** Owner: turns automatic renewal at the end of the term on or off. */
+  async setAutoRenew(actor: Actor, id: string, autoRenew: boolean) {
+    assertOwner(actor);
+    const c = await this.owned(actor, id);
+    if (c.status === 'CANCELLED') throw ApiError.invalidState('A cancelled contract cannot change');
+    if (c.autoRenew !== autoRenew) {
+      await this.prisma.managedContract.update({ where: { id }, data: { autoRenew } });
+      await this.events.emit(autoRenew ? 'managed.contract_auto_renew_on' : 'managed.contract_auto_renew_off', { contractId: id, autoRenew, termEndsAt: c.termEndsAt?.toISOString() ?? null }, { teamId: c.teamId, actor, resource: `managed_contract:${id}` });
+    }
+    return this.present(await this.load(id), { detail: true });
+  }
+
+  /**
+   * Owner: cancel at any time. A billed contract (ACTIVE or SUSPENDED) ends at the start of next
+   * month so the handover can happen, and the fee is prorated up to then; the renewal job
+   * cancels it at that moment. A contract that was never billed (DRAFT or ONBOARDING) ends now.
+   */
+  async cancelForTeam(actor: Actor, id: string, reason?: string) {
+    assertOwner(actor);
+    const c = await this.owned(actor, id);
+    if (c.status === 'CANCELLED') throw ApiError.invalidState('The contract is already cancelled');
+    const why = reason?.trim() || CUSTOMER_CANCEL_REASON;
+    if (c.status === 'DRAFT' || c.status === 'ONBOARDING') {
+      await this.endContract(actor, c, { at: new Date(), reason: why, via: 'customer' });
+      return this.present(await this.load(id), { detail: true });
+    }
+    if (c.cancelAt) return this.present(c, { detail: true });
+    const cancelAt = endOfCurrentMonth(new Date());
+    const moved = await this.prisma.managedContract.updateMany({ where: { id, status: { in: ['ACTIVE', 'SUSPENDED'] }, cancelAt: null }, data: { cancelAt, cancelReason: why } });
+    if (moved.count === 1) {
+      await this.events.emit('managed.contract_cancel_scheduled', { contractId: id, cancelAt: cancelAt.toISOString(), reason: why }, { teamId: c.teamId, actor, resource: `managed_contract:${id}` });
+      await this.notify.toOwners(c.teamId, {
+        subject: `Your ${c.plan.name} managed cloud contract ends on ${day(cancelAt)}`,
+        text: `We received your cancellation. Your ${c.plan.name} contract ends on ${day(cancelAt)}. Until then our engineers keep working as usual, and the monthly fee is billed only up to that day.\n\nOn that day we remove our access and email you a handover document. Changed your mind? Undo the cancellation in the console before then.\n\n${loadConfig().CONSOLE_URL}/managed/contract`,
+      });
+    }
+    return this.present(await this.load(id), { detail: true });
+  }
+
+  /** Owner: withdraws a scheduled cancellation before it takes effect. */
+  async undoCancelForTeam(actor: Actor, id: string) {
+    assertOwner(actor);
+    const c = await this.owned(actor, id);
+    if (c.status === 'CANCELLED') throw ApiError.invalidState('The contract is already cancelled');
+    if (!c.cancelAt) throw ApiError.invalidState('No cancellation is scheduled for this contract');
+    const moved = await this.prisma.managedContract.updateMany({ where: { id, status: { in: ['ACTIVE', 'SUSPENDED'] }, cancelAt: { gt: new Date() } }, data: { cancelAt: null, cancelReason: null } });
+    if (moved.count !== 1) throw ApiError.invalidState('The cancellation already took effect');
+    await this.events.emit('managed.contract_cancel_undone', { contractId: id, cancelAt: c.cancelAt.toISOString() }, { teamId: c.teamId, actor, resource: `managed_contract:${id}` });
+    return this.present(await this.load(id), { detail: true });
   }
 
   /** A contract of the actor's team; any role (members may use it to scope tickets and assets). */
@@ -225,21 +281,31 @@ export class ContractsService {
     return this.present(await this.load(id), { detail: true, staff: true });
   }
 
-  /** Cancels a contract: billing stops today, access is revoked and a handover document is emailed to the owners. */
+  /** Staff: cancels a contract now. Billing stops today, access is revoked and a handover document is emailed to the owners. */
   async cancel(actor: Actor, id: string, reason?: string) {
     const c = await this.load(id);
     if (c.status === 'CANCELLED') throw ApiError.invalidState('The contract is already cancelled');
-    const now = new Date();
-    await this.prisma.managedContract.update({ where: { id }, data: { status: 'CANCELLED', cancelledAt: now, cancelReason: reason ?? null } });
-    const revoked = await this.access.revoke(id, c.teamId);
-    await this.events.emit('managed.contract_cancelled', { contractId: id, reason: reason ?? null, from: c.status, assetsRevoked: revoked }, { teamId: c.teamId, actor, resource: `managed_contract:${id}` });
-    await this.workflows.signal(ManagedWorkflows.onboardingId(id), 'checklistUpdated');
-    const handover = await this.handoverDocument(id);
-    await this.notify.toOwners(c.teamId, { subject: `Handover: your ${c.plan.name} managed cloud contract ended`, text: handover });
+    if (!(await this.endContract(actor, c, { at: new Date(), reason: reason ?? null, via: 'staff' }))) throw ApiError.invalidState('The contract is already cancelled');
     return this.present(await this.load(id), { detail: true, staff: true });
   }
 
-  /** Extends the term from its current end (or today, when it already ended). */
+  /**
+   * The one cancel path: CANCELLED with cancelledAt = `at` (billing proration stops there),
+   * access revoked, onboarding workflow woken, handover document emailed to the owners.
+   * Returns false when the contract was already cancelled (safe to call twice).
+   */
+  private async endContract(actor: Actor | null, c: ContractWithPlan, opts: { at: Date; reason: string | null; via: 'staff' | 'customer' | 'scheduled' | 'not_renewed' }) {
+    const moved = await this.prisma.managedContract.updateMany({ where: { id: c.id, status: { not: 'CANCELLED' } }, data: { status: 'CANCELLED', cancelledAt: opts.at, cancelReason: opts.reason } });
+    if (moved.count !== 1) return false;
+    const revoked = await this.access.revoke(c.id, c.teamId);
+    await this.events.emit('managed.contract_cancelled', { contractId: c.id, reason: opts.reason, from: c.status, assetsRevoked: revoked, via: opts.via, cancelledAt: opts.at.toISOString() }, { teamId: c.teamId, actor: actor ?? undefined, resource: `managed_contract:${c.id}` });
+    await this.workflows.signal(ManagedWorkflows.onboardingId(c.id), 'checklistUpdated');
+    const handover = await this.handoverDocument(c.id);
+    await this.notify.toOwners(c.teamId, { subject: `Handover: your ${c.plan.name} managed cloud contract ended`, text: handover });
+    return true;
+  }
+
+  /** Staff: extends the term from its current end (or today, when it already ended). */
   async renew(actor: Actor, id: string, termMonths?: number) {
     const c = await this.load(id);
     if (c.status !== 'ACTIVE' && c.status !== 'SUSPENDED') throw ApiError.invalidState(`Only an ACTIVE or SUSPENDED contract can be renewed (this one is ${c.status})`);
@@ -247,9 +313,74 @@ export class ContractsService {
     const now = new Date();
     const from = c.termEndsAt && c.termEndsAt > now ? new Date(c.termEndsAt) : now;
     from.setUTCMonth(from.getUTCMonth() + months);
-    await this.prisma.managedContract.update({ where: { id }, data: { termEndsAt: from, renewedAt: now, termMonths: months } });
-    await this.events.emit('managed.contract_renewed', { contractId: id, termMonths: months, termEndsAt: from.toISOString() }, { teamId: c.teamId, actor, resource: `managed_contract:${id}` });
+    if (!(await this.extendTerm(actor, c, { termEndsAt: from, termMonths: months, auto: false }))) throw ApiError.invalidState('The contract changed while renewing; reload and try again');
     return this.present(await this.load(id), { detail: true, staff: true });
+  }
+
+  /**
+   * Moves the term end to `termEndsAt`, stamps renewedAt and clears the reminder for the new
+   * term. Only applies when the term end is still the one read, so a second run is a no-op.
+   */
+  private async extendTerm(actor: Actor | null, c: ContractWithPlan, next: { termEndsAt: Date; termMonths: number; auto: boolean }) {
+    const now = new Date();
+    const moved = await this.prisma.managedContract.updateMany({
+      where: { id: c.id, status: { in: ['ACTIVE', 'SUSPENDED'] }, termEndsAt: c.termEndsAt },
+      data: { termEndsAt: next.termEndsAt, renewedAt: now, termMonths: next.termMonths, renewalNoticeAt: null },
+    });
+    if (moved.count !== 1) return false;
+    await this.events.emit('managed.contract_renewed', { contractId: c.id, termMonths: next.termMonths, termEndsAt: next.termEndsAt.toISOString(), auto: next.auto }, { teamId: c.teamId, actor: actor ?? undefined, resource: `managed_contract:${c.id}` });
+    return true;
+  }
+
+  /**
+   * Daily: renews contracts whose term ended (auto renewal on), cancels those that end (auto
+   * renewal off, at the term end) or reached a scheduled cancellation (at cancelAt), and emails
+   * the reminder 30 days before the term ends. Every step is idempotent. See termDecision.
+   */
+  async runRenewals(now = new Date()) {
+    const out = { renewed: 0, cancelled: 0, notices: 0 };
+    const due = await this.prisma.managedContract.findMany({
+      where: { status: { in: ['ACTIVE', 'SUSPENDED'] }, OR: [{ termEndsAt: { lte: new Date(now.getTime() + 31 * dayMs) } }, { cancelAt: { lte: now } }] },
+      include: { plan: true },
+    });
+    for (const c of due) {
+      const d = termDecision(c, now);
+      try {
+        if (d.kind === 'renew') {
+          if (await this.extendTerm(null, c, { termEndsAt: d.termEndsAt, termMonths: c.termMonths, auto: true })) out.renewed++;
+        } else if (d.kind === 'cancel') {
+          const reason = d.why === 'not_renewed' ? NOT_RENEWED_REASON : c.cancelReason ?? CUSTOMER_CANCEL_REASON;
+          if (await this.endContract(null, c, { at: d.at, reason, via: d.why })) out.cancelled++;
+        } else if (d.kind === 'notice') {
+          if (await this.sendRenewalNotice(c, now)) out.notices++;
+        }
+      } catch (e) {
+        this.log.error(`renewal job for contract ${c.id} (${d.kind}) failed: ${(e as Error).message}`);
+      }
+    }
+    if (out.renewed || out.cancelled || out.notices) this.log.log(`managed renewals: ${out.renewed} renewed, ${out.cancelled} cancelled, ${out.notices} reminders`);
+    return out;
+  }
+
+  /** The reminder 30 days before the term ends, sent once per term (renewalNoticeAt). */
+  private async sendRenewalNotice(c: ContractWithPlan, now: Date) {
+    const marked = await this.prisma.managedContract.updateMany({ where: { id: c.id, renewalNoticeAt: null, termEndsAt: c.termEndsAt }, data: { renewalNoticeAt: now } });
+    if (marked.count !== 1 || !c.termEndsAt) return false;
+    const terms = await this.terms.terms(c);
+    const url = `${loadConfig().CONSOLE_URL}/managed/contract`;
+    const on = day(c.termEndsAt);
+    const mail = c.autoRenew
+      ? {
+          subject: `Your ${c.plan.name} managed cloud contract renews on ${on}`,
+          text: `Your ${c.plan.name} managed cloud contract renews on ${on} for another ${c.termMonths} ${c.termMonths === 1 ? 'month' : 'months'}. The monthly fee is ${money(terms.monthlyFeeMinor, c.currency)}, excluding VAT. You do not need to do anything.\n\nIf you do not want to renew, turn off auto renewal in the console before ${on}. You can also cancel at any time. The contract then ends at the end of that month.\n\n${url}`,
+        }
+      : {
+          subject: `Your ${c.plan.name} managed cloud contract ends on ${on}`,
+          text: `Auto renewal is off, so your ${c.plan.name} managed cloud contract ends on ${on}. On that day we remove our access and email you a handover document. No fee is billed after that day.\n\nWant to keep the service? Turn auto renewal back on in the console before ${on}.\n\n${url}`,
+        };
+    await this.notify.toOwners(c.teamId, mail);
+    await this.events.emit('managed.contract_renewal_notice', { contractId: c.id, termEndsAt: c.termEndsAt.toISOString(), autoRenew: c.autoRenew }, { teamId: c.teamId, resource: `managed_contract:${c.id}` });
+    return true;
   }
 
   /**
@@ -359,6 +490,9 @@ export class ContractsService {
       termMonths: c.termMonths,
       termEndsAt: c.termEndsAt,
       renewedAt: c.renewedAt,
+      autoRenew: c.autoRenew,
+      cancelAt: c.cancelAt,
+      renewalNoticeAt: c.renewalNoticeAt,
       notes: c.notes,
       onboardingStartedAt: c.onboardingStartedAt,
       activatedAt: c.activatedAt,
@@ -396,4 +530,14 @@ export class ContractsService {
     const nonBillable = agg.find((a) => !a.billable)?._sum.minutes ?? 0;
     return { periodStart, billableMinutes: billable, nonBillableMinutes: nonBillable, includedMinutes, overageMinutes: Math.max(0, billable - includedMinutes) };
   }
+}
+
+/** A date as the mails write it, e.g. October 1, 2026 (UTC). */
+function day(d: Date) {
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
+}
+
+function money(minor: number | null, currency: string) {
+  if (minor === null) return 'as agreed in your contract';
+  return `${currency} ${(minor / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }

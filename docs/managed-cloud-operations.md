@@ -24,9 +24,20 @@ On the customer side, team owners request plans, read contracts and reports, and
 2. **ONBOARDING.** `POST /admin/managed/contracts/{id}/activate` with `liabilityCapMinor` and `signedByName` (and `signedAt` when the signature was earlier). It records the signing lead, creates the onboarding checklist and starts the `managedOnboarding` workflow.
 3. **ACTIVE.** Ticking the last checklist item signals the workflow, which moves the contract to ACTIVE, sets `activatedAt` (billing starts) and `termEndsAt`, and emails the owners. If the signal cannot be delivered, the API runs the same check inline.
 4. **SUSPENDED.** `POST .../suspend`. An hourly job also suspends contracts of teams that dunning suspended, and resumes them when the team is reinstated (only contracts the job suspended). Monitoring and alerts continue; tickets, SLA timers, paging and maintenance stop; no fee accrues.
-5. **CANCELLED.** `POST .../cancel`. Billing stops that day. The access revocation hook disables maintenance tasks and monitoring, clears heartbeat tokens and resolves open alerts, then the owners get the handover document by email (`GET .../handover` shows it).
+5. **CANCELLED.** `POST .../cancel` (staff, immediate), or the renewal job (see below). Billing stops at `cancelledAt`. The access revocation hook disables maintenance tasks and monitoring, clears heartbeat tokens and resolves open alerts, then the owners get the handover document by email (`GET .../handover` shows it).
 
 `POST .../resume` returns a suspended contract to ACTIVE (or ONBOARDING if it never went live). `POST .../renew` extends the term by `termMonths`.
+
+### Renewal and cancellation
+
+Contracts auto renew by default (`autoRenew`, true for every contract unless the owner or a support lead turns it off). The `managedRenewals` job runs daily at 00:10 UTC, and once more before the monthly accrual at 00:30 UTC on the 1st. For each ACTIVE or SUSPENDED contract it does one of these, and every step is safe to repeat:
+
+- **Renew.** `termEndsAt` has passed and `autoRenew` is true: the term end moves forward by `termMonths` (repeated until it is in the future, counted from the old end), `renewedAt` is set, `renewalNoticeAt` is cleared, and `managed.contract_renewed` is emitted with `auto: true`.
+- **End at term.** `termEndsAt` has passed and `autoRenew` is false: the contract is cancelled through the normal cancel path with reason "Not renewed" and `cancelledAt = termEndsAt`, so the fee stops at the term end.
+- **Scheduled cancellation.** `cancelAt` has passed: cancelled through the normal cancel path with `cancelledAt = cancelAt` and the reason the owner gave. A contract with a scheduled cancellation is never renewed.
+- **Reminder.** 30 days before `termEndsAt` the owners get one email (renews on, monthly fee, how to turn auto renewal off, or that the contract ends on that date). `renewalNoticeAt` records it so it is sent once per term.
+
+Owners cancel with `POST /v1/managed/contracts/{id}/cancel`: an ACTIVE or SUSPENDED contract gets `cancelAt` at the start of next month (UTC) and `managed.contract_cancel_scheduled`; a DRAFT or ONBOARDING contract is cancelled at once. `POST .../cancel/undo` clears `cancelAt` (`managed.contract_cancel_undone`). `PATCH /v1/managed/contracts/{id}` with `autoRenew` emits `managed.contract_auto_renew_on` or `managed.contract_auto_renew_off`. Support leads can set `autoRenew` with `PATCH /admin/managed/contracts/{id}`; the staff cancel stays immediate. The back office contract page shows the auto renew toggle, any scheduled cancellation and when the reminder went out.
 
 ### Access revocation checklist
 

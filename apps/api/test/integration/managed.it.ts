@@ -7,6 +7,7 @@ import { InvoicesService } from '../../src/modules/billing/invoices.service';
 import { startOfMonth } from '../../src/modules/billing/pricing';
 import { MaintenanceService } from '../../src/modules/managed/maintenance/maintenance.service';
 import { ReportsService } from '../../src/modules/managed/reports/reports.service';
+import { ContractsService } from '../../src/modules/managed/contracts/contracts.service';
 
 const DAY = 86_400_000;
 
@@ -144,6 +145,129 @@ describe('managed cloud contracts', () => {
     expect(handover?.text).toContain('web-1');
     const after = await s.prisma.managedAsset.findUniqueOrThrow({ where: { id: asset.id } });
     expect(after.monitoringEnabled).toBe(false);
+  });
+});
+
+describe('managed cloud renewal and cancellation', () => {
+  const renewals = () => s.get(ContractsService).runRenewals();
+  const actions = async (contractId: string, action: string) => s.prisma.auditLog.findMany({ where: { resource: `managed_contract:${contractId}`, action }, orderBy: { at: 'asc' } });
+
+  it('renews by default and lets the owner turn auto renewal off, then ends the contract at the term end', async () => {
+    const { owner, contractId } = await activeContract();
+    const c = await owner.client.ok('GET', `/v1/managed/contracts/${contractId}`);
+    expect(c).toMatchObject({ autoRenew: true, cancelAt: null, renewalNoticeAt: null });
+    expect(new Date(c.termEndsAt).getTime()).toBeGreaterThan(Date.now() + 300 * DAY);
+    // Members see the renewal state in the summary but cannot change it.
+    const m = await member(owner);
+    expect((await m.client.ok('GET', '/v1/managed/summary')).contract).toMatchObject({ autoRenew: true, cancelAt: null });
+    expect((await m.client.patch(`/v1/managed/contracts/${contractId}`, { autoRenew: false })).status).toBe(403);
+    expect((await owner.client.patch(`/v1/managed/contracts/${contractId}`, {})).status).toBe(400);
+
+    const off = await owner.client.ok('PATCH', `/v1/managed/contracts/${contractId}`, { autoRenew: false });
+    expect(off.autoRenew).toBe(false);
+    expect(off.priceOverrideMinor).toBeUndefined();
+    expect(await actions(contractId, 'managed.contract_auto_renew_off')).toHaveLength(1);
+
+    // 20 days before the term ends: one reminder that says the contract ends.
+    await s.prisma.managedContract.update({ where: { id: contractId }, data: { termEndsAt: new Date(Date.now() + 20 * DAY) } });
+    await renewals();
+    await renewals();
+    const notices = s.outbox.filter((mail) => mail.to === owner.email && /managed cloud contract ends on/.test(mail.subject));
+    expect(notices).toHaveLength(1);
+    expect(notices[0].text).toContain('Auto renewal is off');
+    expect((await owner.client.ok('GET', `/v1/managed/contracts/${contractId}`)).renewalNoticeAt).toBeTruthy();
+
+    // The term ended an hour ago: cancelled at the term end, not now.
+    const termEndsAt = new Date(Date.now() - 3600_000);
+    await s.prisma.managedContract.update({ where: { id: contractId }, data: { termEndsAt } });
+    expect((await renewals()).cancelled).toBeGreaterThanOrEqual(1);
+    const ended = await s.prisma.managedContract.findUniqueOrThrow({ where: { id: contractId } });
+    expect(ended).toMatchObject({ status: 'CANCELLED', cancelReason: 'Not renewed' });
+    expect(ended.cancelledAt?.toISOString()).toBe(termEndsAt.toISOString());
+    expect(s.outbox.some((mail) => mail.to === owner.email && mail.subject.startsWith('Handover'))).toBe(true);
+    const cancelled = await actions(contractId, 'managed.contract_cancelled');
+    expect(cancelled).toHaveLength(1);
+    expect(cancelled[0].request).toMatchObject({ via: 'not_renewed', reason: 'Not renewed' });
+    // Running again changes nothing.
+    await renewals();
+    expect(await actions(contractId, 'managed.contract_cancelled')).toHaveLength(1);
+  });
+
+  it('renews a contract whose term ended when auto renewal is on, once', async () => {
+    const { owner, contractId } = await activeContract();
+    await s.prisma.managedContract.update({ where: { id: contractId }, data: { termEndsAt: new Date(Date.now() + 10 * DAY) } });
+    await renewals();
+    const notice = s.outbox.filter((mail) => mail.to === owner.email && /renews on/.test(mail.subject));
+    expect(notice).toHaveLength(1);
+    expect(notice[0].text).toContain('SAR 1,100.00');
+    expect(notice[0].text).toContain('turn off auto renewal in the console');
+
+    const ended = new Date(Date.now() - 3600_000);
+    await s.prisma.managedContract.update({ where: { id: contractId }, data: { termEndsAt: ended } });
+    await renewals();
+    await renewals();
+    const c = await owner.client.ok('GET', `/v1/managed/contracts/${contractId}`);
+    expect(c.status).toBe('ACTIVE');
+    const expected = new Date(ended);
+    expected.setUTCFullYear(expected.getUTCFullYear() + 1);
+    expect(new Date(c.termEndsAt).toISOString()).toBe(expected.toISOString());
+    expect(c.renewedAt).toBeTruthy();
+    // The reminder is cleared for the new term.
+    expect(c.renewalNoticeAt).toBeNull();
+    const renewed = await actions(contractId, 'managed.contract_renewed');
+    expect(renewed).toHaveLength(1);
+    expect(renewed[0].request).toMatchObject({ auto: true, termMonths: 12 });
+
+    // Staff can switch it off from the back office too.
+    const staffView = await lead.client.ok('PATCH', `/admin/managed/contracts/${contractId}`, { autoRenew: false });
+    expect(staffView.autoRenew).toBe(false);
+  });
+
+  it('lets the owner cancel at the end of the month and undo it until then', async () => {
+    const { owner, contractId } = await activeContract();
+    const m = await member(owner);
+    expect((await m.client.post(`/v1/managed/contracts/${contractId}/cancel`, {})).status).toBe(403);
+    expect((await m.client.post(`/v1/managed/contracts/${contractId}/cancel/undo`, {})).status).toBe(403);
+    expect((await (await signup(s)).client.post(`/v1/managed/contracts/${contractId}/cancel`, {})).status).toBe(404);
+
+    const scheduled = await owner.client.ok('POST', `/v1/managed/contracts/${contractId}/cancel`, { reason: 'Moving in house' }, 200);
+    const nextMonth = startOfMonth(new Date(startOfMonth(new Date()).getTime() + 32 * DAY));
+    expect(scheduled.status).toBe('ACTIVE');
+    expect(new Date(scheduled.cancelAt).toISOString()).toBe(nextMonth.toISOString());
+    expect(scheduled.cancelReason).toBe('Moving in house');
+    expect(await actions(contractId, 'managed.contract_cancel_scheduled')).toHaveLength(1);
+    expect(s.outbox.some((mail) => mail.to === owner.email && /ends on/.test(mail.subject))).toBe(true);
+    // Asking again keeps the same date.
+    expect((await owner.client.ok('POST', `/v1/managed/contracts/${contractId}/cancel`, {}, 200)).cancelAt).toBe(scheduled.cancelAt);
+    expect((await m.client.ok('GET', '/v1/managed/summary')).contract.cancelAt).toBe(scheduled.cancelAt);
+    // Nothing happens before the date.
+    await renewals();
+    expect((await owner.client.ok('GET', `/v1/managed/contracts/${contractId}`)).status).toBe('ACTIVE');
+
+    const undone = await owner.client.ok('POST', `/v1/managed/contracts/${contractId}/cancel/undo`, {}, 200);
+    expect(undone).toMatchObject({ status: 'ACTIVE', cancelAt: null, cancelReason: null });
+    expect(await actions(contractId, 'managed.contract_cancel_undone')).toHaveLength(1);
+    expect((await owner.client.post(`/v1/managed/contracts/${contractId}/cancel/undo`, {})).status).toBe(409);
+
+    // Scheduled again, and the date passes: cancelled at cancelAt, so the fee stops there.
+    await owner.client.ok('POST', `/v1/managed/contracts/${contractId}/cancel`, {}, 200);
+    const cancelAt = new Date(Date.now() - 60_000);
+    await s.prisma.managedContract.update({ where: { id: contractId }, data: { cancelAt } });
+    await renewals();
+    const after = await s.prisma.managedContract.findUniqueOrThrow({ where: { id: contractId } });
+    expect(after).toMatchObject({ status: 'CANCELLED', cancelReason: 'Cancelled by the customer' });
+    expect(after.cancelledAt?.toISOString()).toBe(cancelAt.toISOString());
+    expect((await actions(contractId, 'managed.contract_cancelled'))[0].request).toMatchObject({ via: 'scheduled' });
+    expect(s.outbox.some((mail) => mail.to === owner.email && mail.subject.startsWith('Handover'))).toBe(true);
+    expect((await owner.client.post(`/v1/managed/contracts/${contractId}/cancel`, {})).status).toBe(409);
+  });
+
+  it('cancels a contract that was never billed at once', async () => {
+    const owner = await signup(s);
+    const c = await owner.client.ok('POST', '/v1/managed/contracts', { plan: 'ESSENTIAL' }, 201);
+    const r = await owner.client.ok('POST', `/v1/managed/contracts/${c.id}/cancel`, { reason: 'Changed our mind' }, 200);
+    expect(r).toMatchObject({ status: 'CANCELLED', cancelReason: 'Changed our mind', cancelAt: null });
+    expect(r.cancelledAt).toBeTruthy();
   });
 });
 

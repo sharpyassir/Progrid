@@ -812,6 +812,28 @@ paths:
       description: Team owners only.
       parameters: [{ $ref: "#/components/parameters/id" }]
       responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ManagedCloudContract" } } } }, "404": { $ref: "#/components/responses/NotFound" } }
+    patch:
+      tags: [managed-cloud]
+      summary: Turn automatic renewal on or off
+      description: Team owners only (scope `managed:write`). With autoRenew false the contract ends at `termEndsAt`, access is removed and the handover document is emailed. Owners get a reminder 30 days before the term ends either way.
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [autoRenew], properties: { autoRenew: { type: boolean } } } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ManagedCloudContract" } } } }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { description: The contract is cancelled (`invalid_state`) } }
+  /managed/contracts/{id}/cancel:
+    post:
+      tags: [managed-cloud]
+      summary: Cancel the contract
+      description: Team owners only (scope `managed:write`). An ACTIVE or SUSPENDED contract is scheduled to end at the start of next month (00:00 UTC) and `cancelAt` is set; the monthly fee is prorated up to then. Calling it again keeps the same date. A DRAFT or ONBOARDING contract has not been billed and is cancelled right away.
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { reason: { type: string, maxLength: 2000 } } } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ManagedCloudContract" } } } }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { description: Already cancelled (`invalid_state`) } }
+  /managed/contracts/{id}/cancel/undo:
+    post:
+      tags: [managed-cloud]
+      summary: Withdraw a scheduled cancellation
+      description: Team owners only (scope `managed:write`). Clears `cancelAt` before it takes effect; the contract continues as before.
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ManagedCloudContract" } } } }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { description: "No cancellation is scheduled, or it already took effect (`invalid_state`)" } }
   /managed/contracts/{id}/assets:
     get:
       tags: [managed-cloud]
@@ -1476,11 +1498,16 @@ components:
         signedByName: { type: [string, "null"] }
         signedAt: { type: [string, "null"], format: date-time }
         termMonths: { type: integer }
-        termEndsAt: { type: [string, "null"], format: date-time }
+        termEndsAt: { type: [string, "null"], format: date-time, description: End of the current term. The contract renews here when autoRenew is true and ends here when it is false }
+        renewedAt: { type: [string, "null"], format: date-time }
+        autoRenew: { type: boolean, description: "Renew for another termMonths at termEndsAt. Default true" }
+        cancelAt: { type: [string, "null"], format: date-time, description: A cancellation the owner scheduled. The contract is cancelled at this moment and billed up to it }
+        renewalNoticeAt: { type: [string, "null"], format: date-time, description: When the renewal reminder for the current term was emailed (30 days before termEndsAt) }
         notes: { type: [string, "null"] }
         activatedAt: { type: [string, "null"], format: date-time, description: Billing starts here }
         suspendedAt: { type: [string, "null"], format: date-time }
         cancelledAt: { type: [string, "null"], format: date-time }
+        cancelReason: { type: [string, "null"] }
         createdAt: { type: string, format: date-time }
         sla:
           type: object

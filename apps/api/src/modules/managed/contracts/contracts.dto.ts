@@ -26,6 +26,14 @@ export class UpdateContractDto {
   @IsOptional() @IsInt() @Min(1) maxAssetsOverride?: number | null;
   @IsOptional() @IsInt() @Min(0) liabilityCapMinor?: number;
   @IsOptional() @IsInt() @Min(1) @Max(60) termMonths?: number;
+  /** Renew for another term when the term ends. */
+  @IsOptional() @IsBoolean() autoRenew?: boolean;
+}
+
+/** Customer (owner): the only contract field a team changes itself. */
+export class CustomerUpdateContractDto {
+  /** Renew for another term when the term ends; when false the contract ends at termEndsAt. */
+  @IsBoolean() autoRenew: boolean;
 }
 
 export class ActivateContractDto {
