@@ -2292,6 +2292,12 @@ model ManagedContract {
   termMonths  Int       @default(12)
   termEndsAt  DateTime?
   renewedAt   DateTime?
+  /// Renew for another termMonths when the term ends; when false the contract ends at termEndsAt.
+  autoRenew   Boolean   @default(true)
+  /// Cancellation the customer scheduled (start of the next month); the renewal job cancels at that moment.
+  cancelAt    DateTime?
+  /// When the renewal reminder for the current term was emailed (cleared on renewal).
+  renewalNoticeAt DateTime?
   requestedById String?
   notes       String?
   onboardingStartedAt DateTime?

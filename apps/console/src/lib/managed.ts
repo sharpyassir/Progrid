@@ -43,6 +43,7 @@ export interface Contract {
   monthlyFeeMinor: number | null; hourlyRateMinor: number; includedEngineerMinutes: number; maxAssets: number | null;
   liabilityCapMinor: number | null; signedByName: string | null; signedAt: string | null; termMonths: number; termEndsAt: string | null; renewedAt: string | null;
   notes: string | null; onboardingStartedAt: string | null; activatedAt: string | null; suspendedAt: string | null; cancelledAt: string | null; cancelReason: string | null;
+  autoRenew: boolean; cancelAt: string | null; renewalNoticeAt: string | null;
   createdAt: string; updatedAt: string; sla: Sla; assetCount?: number;
   // detail
   onboarding?: { done: number; total: number; items: OnboardingItem[] };
@@ -110,7 +111,7 @@ export interface WorkLogTotals {
 /** GET /v1/managed/summary: what every team member may see about the managed cloud contract. */
 export interface ManagedSummary {
   hasContract: boolean;
-  contract: { id: string; status: ContractStatus; planName: string; planCode: string; coverage: Coverage; calendar: 'SA' | 'TR'; sla: Sla; onboarding: { done: number; total: number } | null; createdAt: string; activatedAt: string | null } | null;
+  contract: { id: string; status: ContractStatus; planName: string; planCode: string; coverage: Coverage; calendar: 'SA' | 'TR'; sla: Sla; onboarding: { done: number; total: number } | null; createdAt: string; activatedAt: string | null; termMonths: number; termEndsAt: string | null; autoRenew: boolean; cancelAt: string | null } | null;
   openTickets: number;
   previous: { planName: string; cancelledAt: string | null } | null;
 }
@@ -176,6 +177,9 @@ export const fmtDateTime = (d: string | null | undefined, locale: Locale) =>
   d ? new Date(d).toLocaleString(locale === 'ar' ? 'ar-SA-u-nu-latn-ca-gregory' : locale, { dateStyle: 'medium', timeStyle: 'short' }) : '';
 export const fmtDay = (d: string | null | undefined, locale: Locale) =>
   d ? new Date(d).toLocaleDateString(locale === 'ar' ? 'ar-SA-u-nu-latn-ca-gregory' : locale, { dateStyle: 'medium' }) : '';
+/** A date in UTC, as the API and the renewal emails use it (a cancellation at 00:00 UTC stays on its own day). */
+export const fmtDayUtc = (d: string | null | undefined, locale: Locale) =>
+  d ? new Date(d).toLocaleDateString(locale === 'ar' ? 'ar-SA-u-nu-latn-ca-gregory' : locale, { dateStyle: 'medium', timeZone: 'UTC' }) : '';
 /** "September 2026" for "2026-09". */
 export const fmtPeriod = (period: string, locale: Locale) =>
   new Date(`${period}-01T00:00:00Z`).toLocaleDateString(locale === 'ar' ? 'ar-SA-u-nu-latn-ca-gregory' : locale, { month: 'long', year: 'numeric', timeZone: 'UTC' });

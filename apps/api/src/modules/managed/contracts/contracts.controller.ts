@@ -4,7 +4,7 @@ import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Matches } from 'c
 import { CurrentActor, RequireScopes, StaffAreas } from '../../../common/auth/decorators';
 import type { Actor } from '../../../common/auth/actor';
 import { ContractsService } from './contracts.service';
-import { ActivateContractDto, AdminListContractsQuery, ReasonDto, RenewContractDto, RequestContractDto, StaffCreateContractDto, UpdateContractDto } from './contracts.dto';
+import { ActivateContractDto, AdminListContractsQuery, CustomerUpdateContractDto, ReasonDto, RenewContractDto, RequestContractDto, StaffCreateContractDto, UpdateContractDto } from './contracts.dto';
 import { OnboardingService } from '../onboarding/onboarding.service';
 import { ResponsibilityService } from '../responsibility/responsibility.service';
 
@@ -64,7 +64,7 @@ export class AdminManagedTeamsController {
   }
 }
 
-/** Customer: request and read managed cloud contracts. Team owners only. */
+/** Customer: request, read, renew and cancel managed cloud contracts. Team owners only. */
 @ApiTags('managed')
 @ApiBearerAuth()
 @Controller('v1/managed/contracts')
@@ -84,6 +84,24 @@ export class ManagedContractsController {
   @Get(':id') @RequireScopes('managed:read')
   get(@CurrentActor() actor: Actor, @Param('id') id: string) {
     return this.contracts.getForTeam(actor, id);
+  }
+
+  /** Turn automatic renewal at the end of the term on or off. */
+  @Patch(':id') @RequireScopes('managed:write')
+  update(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: CustomerUpdateContractDto) {
+    return this.contracts.setAutoRenew(actor, id, dto.autoRenew);
+  }
+
+  /** Cancel at any time: an ACTIVE or SUSPENDED contract ends at the start of next month, one not yet billed ends now. */
+  @Post(':id/cancel') @RequireScopes('managed:write') @HttpCode(200)
+  cancel(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: ReasonDto) {
+    return this.contracts.cancelForTeam(actor, id, dto.reason);
+  }
+
+  /** Withdraw a scheduled cancellation before it takes effect. */
+  @Post(':id/cancel/undo') @RequireScopes('managed:write') @HttpCode(200)
+  undoCancel(@CurrentActor() actor: Actor, @Param('id') id: string) {
+    return this.contracts.undoCancelForTeam(actor, id);
   }
 }
 

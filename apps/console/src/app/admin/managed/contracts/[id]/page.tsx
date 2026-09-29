@@ -8,7 +8,7 @@ import { t, tf } from '@/lib/i18n';
 import { AdminShell } from '@/components/admin-shell';
 import { useShell } from '@/components/shell';
 import { AssetStatusBadge, Cell, ContractStatusBadge, ErrorBox, Field, HealthBadge, Loading, OkBox, OwnerBadge, Row, Table, tk, Toggle, ToneBadge, useAccount } from '@/components/managed';
-import { ASSET_KINDS, errText, fmtDateTime, fmtDay, fmtRelative, hours, isLeadRoles, OWNERS, periodOf, type Asset, type AssetKind, type Contract, type OnboardingItem, type Owner, type Responsibility } from '@/lib/managed';
+import { ASSET_KINDS, errText, fmtDateTime, fmtDay, fmtDayUtc, fmtRelative, hours, isLeadRoles, OWNERS, periodOf, type Asset, type AssetKind, type Contract, type OnboardingItem, type Owner, type Responsibility } from '@/lib/managed';
 
 interface UsageDetail { period: string; currency: string; monthlyFeeMinor: number | null; hourlyRateMinor: number; includedMinutes: number; billableMinutes: number; nonBillableMinutes: number; overageMinutes: number; estimatedOverageMinor: number; lines: { resourceType: string; amountMinor: number; currency: string; quantity: number; invoiceId: string | null }[] }
 
@@ -174,8 +174,19 @@ function Terms({ c, lead, busy, run, patch }: { c: Contract; lead: boolean; busy
           </div>
           {c.signedByName && <p className="text-xs text-neutral-500">{tf(locale, 'mcSignedBy')(c.signedByName, fmtDay(c.signedAt, locale))}</p>}
           <div className="grid gap-3 border-t border-neutral-100 pt-3 sm:grid-cols-4 dark:border-neutral-800">{dates.filter(([, d]) => d).map(([l, d]) => <div key={l}><div className="text-xs text-neutral-500">{l}</div><div>{fmtDay(d, locale)}</div></div>)}</div>
+          {c.status !== 'CANCELLED' && (
+            <div className="space-y-2 border-t border-neutral-100 pt-3 dark:border-neutral-800">
+              <div className="flex flex-wrap items-center gap-3">
+                <Toggle on={c.autoRenew} disabled={!lead || busy} label={t(locale, 'admMcAutoRenewLabel')} onChange={(v) => run(() => patch(`contracts/${c.id}`, { autoRenew: v }), t(locale, v ? 'admMcAutoRenewOnOk' : 'admMcAutoRenewOffOk'))} />
+                <span>{t(locale, 'admMcAutoRenewLabel')}</span>
+                {c.termEndsAt && <span className="text-neutral-500">{c.autoRenew ? tf(locale, 'mcRenewsOn')(fmtDayUtc(c.termEndsAt, locale)) : tf(locale, 'mcEndsOn')(fmtDayUtc(c.termEndsAt, locale))}</span>}
+              </div>
+              {c.cancelAt && <p className="rounded border border-amber-200 bg-amber-50 p-2 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100">{tf(locale, 'admMcCancelScheduled')(fmtDayUtc(c.cancelAt, locale), c.cancelReason ?? '')}</p>}
+              {c.renewalNoticeAt && <p className="text-xs text-neutral-500">{tf(locale, 'admMcRenewalNoticeSent')(fmtDay(c.renewalNoticeAt, locale))}</p>}
+            </div>
+          )}
           {c.notes && <p className="whitespace-pre-wrap border-t border-neutral-100 pt-3 text-neutral-600 dark:border-neutral-800 dark:text-neutral-300">{c.notes}</p>}
-          {c.cancelReason && <p className="text-xs text-neutral-500">{tf(locale, 'mcCancelReason')(c.cancelReason)}</p>}
+          {c.cancelReason && !c.cancelAt && <p className="text-xs text-neutral-500">{tf(locale, 'mcCancelReason')(c.cancelReason)}</p>}
           {!!c.suspensions?.length && <p className="text-xs text-neutral-500">{t(locale, 'admMcPastSuspensions')}: {c.suspensions.map((s) => tf(locale, 'admMcRange')(fmtDay(s.from, locale), fmtDay(s.to, locale))).join(', ')}</p>}
         </div>
       ) : (

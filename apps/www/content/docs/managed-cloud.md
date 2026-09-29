@@ -114,6 +114,22 @@ Every contract has a responsibility matrix that says who owns each area: **Progr
 
 For servers on another cloud, the provider remains responsible for its hardware and network.
 
+## Renewal and cancellation
+
+A contract runs for a term, usually 12 months, from the day it becomes active. It renews on its own for another term at the end, at the same monthly fee. We email the team owners 30 days before the term ends.
+
+- **Auto renewal.** On by default. A team owner can turn it off on the contract page in the console, or with `PATCH /v1/managed/contracts/{id}` and `{"autoRenew": false}`. The contract then ends on the term end date, and you receive the handover document that day. You can turn it back on any time before then.
+- **Cancel at any time.** A team owner can cancel from the contract page or with `POST /v1/managed/contracts/{id}/cancel`. The contract ends at the end of the current month (00:00 UTC on the 1st), so there is time for the handover. The monthly fee is prorated, so you pay only up to that day. A contract that is not active yet (requested or onboarding) has not been billed and ends right away.
+- **Changed your mind?** Until the cancellation takes effect, undo it from the same page or with `POST /v1/managed/contracts/{id}/cancel/undo`.
+
+Team members see the renewal date and any scheduled cancellation, but only owners can change them.
+
+```sh
+curl -X PATCH https://api.progrid.sa/v1/managed/contracts/$CONTRACT \
+  -H "Authorization: Bearer $PRGD_TOKEN" -H "content-type: application/json" \
+  -d '{"autoRenew": false}'
+```
+
 ## Suspension and cancellation
 
 If an invoice stays unpaid and your account is suspended, the contract is suspended too. We keep monitoring your assets, but engineers do not work tickets or run maintenance, and no monthly fee accrues until it is resumed. It resumes on its own once the invoice is paid.
