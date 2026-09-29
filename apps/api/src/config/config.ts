@@ -78,6 +78,8 @@ const schema = z.object({
   SUPPORT_INBOX: z.string().default('support@progrid.sa'),
   /** Shared secret the mail provider sends with inbound email webhooks (POST /v1/support/inbound). Empty disables intake. */
   SUPPORT_INBOUND_SECRET: z.string().optional(),
+  /** Svix signing secret (whsec_...) of the Resend webhook for email.received (POST /v1/support/inbound/resend). Empty disables it. */
+  RESEND_WEBHOOK_SECRET: z.string().optional(),
   /** App Platform: hostnames are <app>.<APPS_DOMAIN>; the zone must be hosted on the platform's DNS. */
   APPS_DOMAIN: z.string().default('apps.progrid.sa'),
   /** Server size for shared app hosts; the platform adds one when a region is full. */

@@ -88,7 +88,7 @@ In `group_vars/all/vars.yml` change these lines and leave the rest:
 
 ```yaml
 hypervisor_driver: fake           # until the Proxmox machine exists
-mail_provider: log                # postmark once step 9 is done
+mail_provider: log                # resend once step 9 is done
 dns_provider: fake                # powerdns later
 object_storage_provider: fake     # rgw later
 payment_provider: moyasar         # never fake on a public server
@@ -111,6 +111,7 @@ vault_support_inbound_secret: <from above>
 vault_alertmanager_webhook_secret: <from above>
 vault_twilio_auth_token: ""
 vault_mail_api_key: ""
+vault_resend_webhook_secret: ""
 vault_moyasar_secret_key: ""
 vault_moyasar_webhook_secret: ""
 vault_ghcr_user: <your GitHub username>
@@ -151,13 +152,35 @@ cd /opt/prgd && docker compose --env-file /etc/prgd/prgd.env run --rm staff you@
 
 Sign out and in again, turn on two factor sign in under **Security**, and the back office opens.
 
-## 9. Mail (Postmark)
+## 9. Mail (Resend)
 
-Create a Postmark server, add the sender signature for progrid.sa and the DKIM and Return Path
-DNS records it shows. Put the server token in the vault as `vault_mail_api_key`, set
-`mail_provider: postmark`, and run the playbook again. For support email, add an inbound stream
-with the webhook `https://api.progrid.sa/v1/support/inbound?secret=<vault_support_inbound_secret>`
-and forward support@progrid.sa to Postmark's inbound address.
+**Sending.** In Resend, add the domain progrid.sa with region **eu-west-1** (Ireland). Resend shows
+the DNS records to add where progrid.sa is hosted: the DKIM TXT record (`resend._domainkey`), and
+the SPF TXT and MX records on the `send` subdomain it uses for bounces. Add them exactly as shown and
+wait until the domain reads **Verified**. Create an API key with sending access (full access if the
+same key also reads inbound mail, see below) and put it in the vault as `vault_mail_api_key`. In
+`group_vars/all/vars.yml` set `mail_provider: resend` (`mail_from` stays
+`Progrid <no-reply@progrid.sa>`).
+
+**Receiving support mail.** Mail to support@progrid.sa becomes a ticket, or a reply on an existing
+ticket when the subject carries `[#<number>]`.
+
+1. In Resend, open the progrid.sa domain and enable **Receiving**. Add the MX record it shows at the
+   root (`@`) of progrid.sa, pointing at Resend's inbound host exactly as Resend displays it, with
+   the lowest priority number of any MX on the root. Every address @progrid.sa is then delivered
+   to Resend, so do this only if no other mailbox provider serves the root domain; the API only
+   turns mail addressed to `support_inbox` (support@progrid.sa) into tickets and ignores the rest.
+2. Under **Webhooks**, add an endpoint `https://api.progrid.sa/v1/support/inbound/resend` for the
+   event `email.received`. Copy its signing secret (it starts with `whsec_`) into the vault as
+   `vault_resend_webhook_secret`.
+3. The API fetches the message body from Resend with `vault_mail_api_key`, so that key must be
+   allowed to read received emails (a full access key).
+4. Run the playbook again (step 6). Send a test mail to support@progrid.sa from the address of a
+   user with an account; it appears in the back office support queue. Resend's webhook page shows
+   each delivery and the API's answer; retries of the same email never open a second ticket.
+
+The generic endpoint `POST /v1/support/inbound` (guarded by `vault_support_inbound_secret`) still
+accepts `{from, subject, text}` from any other relay.
 
 ## 10. Deploys from GitHub
 

@@ -10,7 +10,7 @@ proxmox_url: https://pve1.mgmt.internal:8006
 proxmox_token_id: prgd@pve!control-plane
 proxmox_ceph_pool: vm-disks
 proxmox_vxlan_zone: customers
-mail_provider: postmark
+mail_provider: resend
 mail_from: "Progrid <no-reply@progrid.sa>"
 support_inbox: support@progrid.sa
 require_totp_for_owners: true
@@ -69,6 +69,7 @@ microsoft_tenant: common            # common accepts work, school and personal a
 # vault_moyasar_secret_key: ...
 # vault_moyasar_webhook_secret: ...
 # vault_support_inbound_secret: ...
+# vault_resend_webhook_secret: ""       # Resend webhook signing secret (whsec_...) for inbound support mail
 # vault_alertmanager_webhook_secret: ...  # shared secret for POST /internal/alerts/alertmanager
 # vault_twilio_auth_token: ""             # Twilio SMS and WhatsApp paging
 # vault_prgd_gateway_secret: ...          # shared secret prgd-gateway sends to /internal/gateway
