@@ -36,7 +36,7 @@ const en: Copy = {
   },
   terminal: { ready: 'WordPress is ready at https://185.0.113.42 and billing at 0.04 SAR per hour', orAgent: '# or let your agent do it, with a cap', capNote: '# 50 SAR per month cap, delete needs approval' },
   trust: [
-    ['🇸🇦', 'Region in Saudi Arabia', 'Low latency across Saudi Arabia and the Gulf'],
+    ['🇸🇦', 'A Saudi cloud platform', 'Priced in SAR, with support in Arabic and English'],
     ['$', 'Priced in dollars, paid in riyals or dollars', 'ZATCA e-invoices; mada, cards and Apple Pay through Moyasar'],
     ['🔒', 'Secure from day one', 'Firewalls, SSH keys, two step sign in and an audit log for every call'],
     ['⏱', 'Hourly billing, monthly cap', 'Pay for 3 hours, not 30 days'],
@@ -79,7 +79,7 @@ const en: Copy = {
     eyebrow: 'Why Progrid', h2: 'The developer experience of a global cloud. The invoices of a local one.',
     cols: ['Progrid', 'Global clouds', 'Local hosts'],
     rows: [
-      ['Latency from Saudi Arabia', 'Low', 'Higher', 'Low'],
+      ['Support in Arabic, Saudi business hours', 'Yes', 'Rarely', 'Yes'],
       ['Billing', 'Hourly, in dollars or riyals', 'Monthly or hourly, in dollars', 'Monthly, in riyals'],
       ['ZATCA e-invoicing', 'Built in', 'No', 'Varies'],
       ['Public API and Terraform', 'Yes', 'Yes', 'Rarely'],
@@ -101,7 +101,7 @@ const en: Copy = {
 };
 
 const tr: Copy = {
-  meta: { title: 'Progrid: Suudi Arabistan için geliştirici bulutu, insanlar ve yapay zeka ajanları için', description: '60 saniyede sunucu. Dolar veya riyal ile saatlik faturalama ve ZATCA e-fatura, Suudi Arabistan’da kalan veri, tek tıkla uygulamalar ve yapay zeka ajanlarının güvenle kullanabileceği API tokenları.' },
+  meta: { title: 'Progrid: Suudi Arabistan için geliştirici bulutu, insanlar ve yapay zeka ajanları için', description: '60 saniyede sunucu. Dolar veya riyal ile saatlik faturalama ve ZATCA e-fatura, tek tıkla uygulamalar ve yapay zeka ajanlarının güvenle kullanabileceği API tokenları.' },
   nav: { products: 'Ürünler', agents: 'Yapay zeka ajanları', pricing: 'Fiyatlar', marketplace: 'Uygulama Mağazası', docs: 'Belgeler', signIn: 'Giriş yap', startFree: 'Ücretsiz başla', menu: 'Menü' },
   hero: {
     badge: '2027’de açılıyor',
@@ -112,7 +112,7 @@ const tr: Copy = {
   },
   terminal: { ready: 'WordPress https://185.0.113.42 adresinde hazır, saatlik ücret 0,04 SAR', orAgent: '# ya da limitli bir tokenla ajanınıza bırakın', capNote: '# aylık 15 $ limit, silme onay ister' },
   trust: [
-    ['🇸🇦', 'Suudi Arabistan’da bölge', 'Suudi Arabistan ve Körfez’de düşük gecikme'],
+    ['🇸🇦', 'Bir Suudi bulut platformu', 'SAR ile fiyatlandırma, Arapça ve İngilizce destek'],
     ['$', 'Dolar bazlı fiyat, riyal veya dolar ile ödeme', 'ZATCA e-faturası; Moyasar ile mada, kart ve Apple Pay'],
     ['🔒', 'İlk günden güvenli', 'Güvenlik duvarı, SSH anahtarları, iki adımlı giriş ve her çağrı için denetim kaydı'],
     ['⏱', 'Saatlik faturalama, aylık tavan', '30 gün değil, 3 saat için ödeyin'],
@@ -155,12 +155,12 @@ const tr: Copy = {
     eyebrow: 'Neden Progrid', h2: 'Küresel bir bulutun geliştirici deneyimi. Yerel bir bulutun faturaları.',
     cols: ['Progrid', 'Küresel bulutlar', 'Yerel sağlayıcılar'],
     rows: [
-      ['Suudi Arabistan’dan gecikme', 'Düşük', 'Daha yüksek', 'Düşük'],
+      ['Suudi mesai saatlerinde Arapça destek', 'Evet', 'Nadiren', 'Evet'],
       ['Faturalama', 'Saatlik, dolar veya riyal', 'Aylık veya saatlik, dolar', 'Aylık, riyal'],
       ['ZATCA e-fatura', 'Yerleşik', 'Hayır', 'Değişir'],
       ['Açık API ve Terraform', 'Evet', 'Evet', 'Nadiren'],
       ['Harcama limitli ajan tokenları', 'Evet', 'Hayır', 'Hayır'],
-      ['Türkçe ve Arapça konsol', 'Evet', 'Hayır', 'Yalnızca Türkçe'],
+      ['Arapça ve İngilizce konsol', 'Evet', 'Hayır', 'Yalnızca İngilizce'],
     ],
   },
   cta: { h2: 'Bugün geliştirmeye başlayın.', lead: 'Yeni takımlara 100 $ ücretsiz kredi. Harcayana kadar kart gerekmez. İstediğiniz saat iptal edin.', create: 'Hesap oluştur', docs: 'API belgelerini oku' },
@@ -188,7 +188,7 @@ const ar: Copy = {
   },
   terminal: { ready: 'WordPress جاهز على https://185.0.113.42 والحساب 0.04 ريال بالساعة', orAgent: '# أو خلّ مساعدك الذكي يسويها، بحد إنفاق', capNote: '# حد 50 ريال بالشهر، والحذف يبي موافقة' },
   trust: [
-    ['🇸🇦', 'مبني للسعودية', 'استجابة سريعة من السعودية والخليج، ودعم بالعربي'],
+    ['🇸🇦', 'منصة سحابية سعودية', 'الأسعار بالريال، والدعم بالعربي والإنجليزي'],
     ['﷼', 'الأسعار بالريال', 'فاتورة زاتكا الإلكترونية، وتدفع بمدى أو البطاقة أو Apple Pay عبر Moyasar'],
     ['🔒', 'أمان من أول يوم', 'جدار حماية ومفاتيح SSH ودخول بخطوتين وسجل تدقيق لكل طلب'],
     ['⏱', 'تحاسب بالساعة وبسقف شهري', 'استخدمت 3 ساعات؟ تدفع 3 ساعات، مو 30 يوم'],
@@ -230,7 +230,7 @@ const ar: Copy = {
     eyebrow: 'ليش Progrid', h2: 'تجربة زي السحابة العالمية. وفاتورة محلية بالريال.',
     cols: ['Progrid', 'السحابات العالمية', 'الاستضافة المحلية'],
     rows: [
-      ['الاستجابة من السعودية', 'سريعة', 'أبطأ', 'سريعة'],
+      ['دعم بالعربي في أوقات الدوام السعودي', 'نعم', 'نادرًا', 'نعم'],
       ['المحاسبة', 'بالساعة، بالريال', 'بالشهر أو بالساعة، بالدولار', 'بالشهر، بالريال'],
       ['فاتورة زاتكا الإلكترونية', 'مدمجة', 'لا', 'نعم'],
       ['API عام وTerraform', 'نعم', 'نعم', 'نادرًا'],

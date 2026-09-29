@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { api, ApiError, Firewall, Image, money, Price, Server, ServerAction, Size, Snapshot, Volume } from '@/lib/api';
-import { Locale, t, tf } from '@/lib/i18n';
+import { Locale, regionLabel, t, tf } from '@/lib/i18n';
 import { useShell } from '@/components/shell';
 import { StatusBadge } from '@/components/status-badge';
 import { ServerMetrics } from '@/components/server-metrics';
@@ -100,7 +100,7 @@ export default function ServerDetailPage() {
           <h1 className="text-2xl font-semibold">{server.name}</h1>
           <StatusBadge status={server.status} />
           {ip && <code className="rounded bg-neutral-100 px-2 py-0.5 font-mono text-sm dark:bg-neutral-800">{ip}</code>}
-          <span className="text-sm text-neutral-500">{server.size.vcpu} vCPU · {server.size.memoryMb / 1024} GB · {server.size.diskGb} GB SSD · {server.region.name}</span>
+          <span className="text-sm text-neutral-500">{server.size.vcpu} vCPU · {server.size.memoryMb / 1024} GB · {server.size.diskGb} GB SSD · {regionLabel(locale, server.region.name)}</span>
           <div className="ms-auto flex gap-1">
             {server.status === 'active' && <button className="btn-ghost" disabled={busy} onClick={() => act({ type: 'reboot' })}>{t(locale, 'reboot')}</button>}
             {server.status === 'active' && <button className="btn-ghost" disabled={busy} onClick={() => act({ type: 'stop' })}>{t(locale, 'stop')}</button>}
@@ -126,7 +126,7 @@ export default function ServerDetailPage() {
             <Row k="ID"><code className="font-mono text-xs">{server.id}</code></Row>
             <Row k={t(locale, 'image')}>{server.image.name}</Row>
             <Row k={t(locale, 'size')}>{server.size.id}</Row>
-            <Row k={t(locale, 'region')}>{server.region.name}</Row>
+            <Row k={t(locale, 'region')}>{regionLabel(locale, server.region.name)}</Row>
             <Row k={t(locale, 'privateIp')}>{server.networks.private[0]?.ipAddress ?? '—'}</Row>
             <Row k={t(locale, 'backups')}>{t(locale, server.backupsEnabled ? 'on' : 'off')} <button className="btn-ghost ms-2" disabled={busy} onClick={() => run(() => api(`/v1/servers/${id}`, { method: 'PATCH', body: JSON.stringify({ backups: !server.backupsEnabled }) }))}>{t(locale, server.backupsEnabled ? 'backupsOff' : 'backupsOn')}</button><div className="text-xs text-neutral-500">{tf(locale, 'backupsNote')(`${priceOf('backups_pct')?.monthlyMinor ?? 20}%`)}</div></Row>
             <Row k={t(locale, 'managedTier')}>{t(locale, server.managed ? 'on' : 'off')} <button className="btn-ghost ms-2" disabled={busy} onClick={() => run(() => api(`/v1/servers/${id}`, { method: 'PATCH', body: JSON.stringify({ managed: !server.managed }) }))}>{t(locale, server.managed ? 'managedOff' : 'managedOn')}</button><div className="text-xs text-neutral-500">{priceOf(`managed-${server.size.id}`) ? tf(locale, 'managedNote')(`${money((priceOf(server.size.id)?.monthlyMinor ?? 0) + (priceOf(`managed-${server.size.id}`)?.monthlyMinor ?? 0), currency, locale)}${t(locale, 'perMonth')}`) : t(locale, 'managedNotOnPlan')}</div></Row>

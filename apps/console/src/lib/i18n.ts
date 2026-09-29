@@ -121,7 +121,8 @@ const en = {
   mcStatusNote_CANCELLED: 'This contract has ended.',
   mcStatus_DRAFT: 'Requested', mcStatus_ONBOARDING: 'Onboarding', mcStatus_ACTIVE: 'Active', mcStatus_SUSPENDED: 'Suspended', mcStatus_CANCELLED: 'Cancelled',
   mcCoverage_BUSINESS_HOURS: 'Business hours', mcCoverage_TWENTY_FOUR_SEVEN: '24/7',
-  mcCalendar_SA: 'Saudi Arabia, Sunday to Thursday', mcCalendar_TR: 'Türkiye, Monday to Friday',
+  mcCalendar_SA: 'Saudi Arabia, Sunday to Thursday', mcCalendar_TR: 'Monday to Friday',
+  admMcCalendar_SA: 'Saudi Arabia, Sunday to Thursday', admMcCalendar_TR: 'Türkiye, Monday to Friday',
   mcPrioShort_P1: 'Production down', mcPrioShort_P2: 'Degraded', mcPrioShort_P3: 'Normal request', mcPrioShort_P4: 'Question',
   mcPrioHint_P1: 'Production is down or data is at risk', mcPrioHint_P2: 'Service is degraded or a key feature is broken', mcPrioHint_P3: 'A normal request or a problem with a workaround', mcPrioHint_P4: 'A question or a low impact change',
   mcOnboard_monitoring: 'Monitoring set up for every asset', mcOnboard_backups: 'Backups configured and a restore tested', mcOnboard_access: 'Access through the management network', mcOnboard_documentation: 'Documentation and runbook written', mcOnboard_responsibility_matrix: 'Responsibility matrix agreed',
@@ -145,7 +146,7 @@ const en = {
   mcIn: (s: string) => `in ${s}`, mcAgo: (s: string) => `${s} ago`, mcLeft: (s: string) => `${s} left`, mcOverdueBy: (s: string) => `overdue by ${s}`,
   mcNoTarget: 'no target', mcMet: 'met', mcMetLate: 'met late',
   mcRequestTitle: 'Request managed cloud', mcPlan: 'Plan', mcCalendar: 'Working calendar',
-  mcCalendarHint: 'Business hours plans count SLA time on these working days, from 09:00 to 17:00 local time.',
+  mcCalendarHint: 'Business hours plans count SLA time in Saudi business hours: 09:00 to 17:00 Saudi time, Sunday to Thursday. Saudi public holidays do not count.',
   mcWhatToManage: 'What should we manage?', mcWhatToManageHint: 'List your servers and sites, where they run and anything we should know. Optional.',
   mcRequestNext: 'A support lead reviews your request, agrees the scope with you and sends the contract to sign. Nothing is billed until onboarding is complete.',
   mcSending: 'Sending…', mcSendRequest: 'Send request', mcIncludedHoursLine: (h: string) => `${h} ${hrs(h)} of engineer time included each month.`,
@@ -415,7 +416,8 @@ const tr: Dict = {
   mcStatusNote_CANCELLED: 'Bu sözleşme sona erdi.',
   mcStatus_DRAFT: 'Talep edildi', mcStatus_ONBOARDING: 'Devreye alınıyor', mcStatus_ACTIVE: 'Aktif', mcStatus_SUSPENDED: 'Askıda', mcStatus_CANCELLED: 'İptal edildi',
   mcCoverage_BUSINESS_HOURS: 'Mesai saatleri', mcCoverage_TWENTY_FOUR_SEVEN: '7/24',
-  mcCalendar_SA: 'Suudi Arabistan, pazar ile perşembe arası', mcCalendar_TR: 'Türkiye, pazartesi ile cuma arası',
+  mcCalendar_SA: 'Suudi Arabistan, pazar ile perşembe arası', mcCalendar_TR: 'Pazartesi ile cuma arası',
+  admMcCalendar_SA: 'Suudi Arabistan, pazar ile perşembe arası', admMcCalendar_TR: 'Türkiye, pazartesi ile cuma arası',
   mcPrioShort_P1: 'Üretim çöktü', mcPrioShort_P2: 'Performans düştü', mcPrioShort_P3: 'Normal talep', mcPrioShort_P4: 'Soru',
   mcPrioHint_P1: 'Üretim ortamı çalışmıyor ya da veri risk altında', mcPrioHint_P2: 'Hizmet yavaşladı ya da önemli bir özellik bozuk', mcPrioHint_P3: 'Normal bir talep ya da geçici çözümü olan bir sorun', mcPrioHint_P4: 'Bir soru ya da etkisi düşük bir değişiklik',
   mcOnboard_monitoring: 'Her varlık için izleme kuruldu', mcOnboard_backups: 'Yedekleme yapılandırıldı ve geri yükleme test edildi', mcOnboard_access: 'Yönetim ağı üzerinden erişim', mcOnboard_documentation: 'Dokümantasyon ve runbook yazıldı', mcOnboard_responsibility_matrix: 'Sorumluluk matrisi üzerinde anlaşıldı',
@@ -439,7 +441,7 @@ const tr: Dict = {
   mcIn: (s) => `${s} içinde`, mcAgo: (s) => `${s} önce`, mcLeft: (s) => `${s} kaldı`, mcOverdueBy: (s) => `${s} gecikti`,
   mcNoTarget: 'hedef yok', mcMet: 'karşılandı', mcMetLate: 'geç karşılandı',
   mcRequestTitle: 'Yönetilen bulut talebi', mcPlan: 'Plan', mcCalendar: 'Çalışma takvimi',
-  mcCalendarHint: 'Mesai saatleri planları SLA süresini bu iş günlerinde, yerel saatle 09:00 ile 17:00 arasında sayar.',
+  mcCalendarHint: 'Mesai saatleri planları SLA süresini Suudi mesai saatlerinde sayar: Suudi saatiyle 09:00 ile 17:00 arası, pazar ile perşembe. Suudi resmi tatilleri sayılmaz.',
   mcWhatToManage: 'Neyi yönetelim?', mcWhatToManageHint: 'Sunucularınızı ve sitelerinizi, nerede çalıştıklarını ve bilmemiz gerekenleri yazın. İsteğe bağlı.',
   mcRequestNext: 'Bir destek lideri talebinizi inceler, kapsamı sizinle netleştirir ve imzalamanız için sözleşmeyi gönderir. Devreye alma tamamlanana kadar hiçbir şey faturalanmaz.',
   mcSending: 'Gönderiliyor…', mcSendRequest: 'Talebi gönder', mcIncludedHoursLine: (h) => `Her ay ${h} saat mühendis zamanı dahildir.`,
@@ -705,7 +707,8 @@ const ar: Dict = {
   mcStatusNote_CANCELLED: 'هذا العقد انتهى.',
   mcStatus_DRAFT: 'مطلوب', mcStatus_ONBOARDING: 'قيد التجهيز', mcStatus_ACTIVE: 'فعّال', mcStatus_SUSPENDED: 'موقوف', mcStatus_CANCELLED: 'ملغي',
   mcCoverage_BUSINESS_HOURS: 'أوقات الدوام', mcCoverage_TWENTY_FOUR_SEVEN: 'على مدار الساعة',
-  mcCalendar_SA: 'السعودية، من الأحد للخميس', mcCalendar_TR: 'تركيا، من الاثنين للجمعة',
+  mcCalendar_SA: 'السعودية، من الأحد للخميس', mcCalendar_TR: 'من الاثنين للجمعة',
+  admMcCalendar_SA: 'السعودية، من الأحد للخميس', admMcCalendar_TR: 'تركيا، من الاثنين للجمعة',
   mcPrioShort_P1: 'الإنتاج واقف', mcPrioShort_P2: 'أداء متأثر', mcPrioShort_P3: 'طلب عادي', mcPrioShort_P4: 'استفسار',
   mcPrioHint_P1: 'بيئة الإنتاج واقفة أو البيانات في خطر', mcPrioHint_P2: 'الخدمة بطيئة أو ميزة مهمة خربانة', mcPrioHint_P3: 'طلب عادي أو مشكلة لها حل مؤقت', mcPrioHint_P4: 'استفسار أو تغيير تأثيره بسيط',
   mcOnboard_monitoring: 'المراقبة مجهّزة لكل أصل', mcOnboard_backups: 'النسخ الاحتياطي مضبوط وجرّبنا الاسترجاع', mcOnboard_access: 'الوصول عن طريق شبكة الإدارة', mcOnboard_documentation: 'التوثيق ودليل التشغيل مكتوبين', mcOnboard_responsibility_matrix: 'اتفقنا على مصفوفة المسؤوليات',
@@ -735,7 +738,7 @@ const ar: Dict = {
   mcIn: (s) => `بعد ${s}`, mcAgo: (s) => `قبل ${s}`, mcLeft: (s) => `باقي ${s}`, mcOverdueBy: (s) => `متأخرة ${s}`,
   mcNoTarget: 'بدون هدف', mcMet: 'تحقق', mcMetLate: 'تحقق متأخر',
   mcRequestTitle: 'طلب السحابة المُدارة', mcPlan: 'الباقة', mcCalendar: 'تقويم الدوام',
-  mcCalendarHint: 'باقات أوقات الدوام تحسب وقت SLA بأيام الدوام هذي، من 09:00 إلى 17:00 بالتوقيت المحلي.',
+  mcCalendarHint: 'باقات أوقات الدوام تحسب وقت SLA في أوقات الدوام السعودي: من 09:00 إلى 17:00 بتوقيت السعودية، من الأحد للخميس. الإجازات الرسمية في السعودية ما تنحسب.',
   mcWhatToManage: 'وش تبينا ندير؟', mcWhatToManageHint: 'اكتب خوادمك ومواقعك ووين شغّالة وأي شي لازم نعرفه. اختياري.',
   mcRequestNext: 'قائد الدعم بيراجع طلبك ويتفق معك على النطاق ويرسل لك العقد توقّعه. ما نفوتر شي لين يخلص التجهيز.',
   mcSending: 'جاري الإرسال…', mcSendRequest: 'أرسل الطلب', mcIncludedHoursLine: (h) => `كل شهر يشمل ${h} ساعة من وقت المهندسين.`,
@@ -912,6 +915,13 @@ export function t(locale: Locale, key: StringKey): string {
 /** Lookup for strings that take arguments, e.g. `tf(locale, 'resizeConfirm')(name, size)`. */
 export function tf<K extends Key>(locale: Locale, key: K): Dict[K] {
   return dict[locale][key] ?? dict.en[key];
+}
+
+/** Region names from the API are neutral ("Region 1"); show them in the viewer's language. */
+export function regionLabel(locale: Locale, name: string): string {
+  const m = /^Region (\d+)$/.exec(name);
+  if (!m) return name;
+  return locale === 'ar' ? `المنطقة ${m[1]}` : locale === 'tr' ? `Bölge ${m[1]}` : name;
 }
 
 /** Product group names live in products.ts as English identifiers; this maps them for display. */

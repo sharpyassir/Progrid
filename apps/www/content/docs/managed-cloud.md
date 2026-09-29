@@ -30,7 +30,7 @@ Managed cloud is a contract with a team, not a switch on a server. It covers a s
 
 Prices are in Saudi riyals and exclude 15 percent VAT, which your invoice adds. Engineer time beyond the included hours costs 250 SAR an hour, excluding VAT. Servers themselves are billed as usual; the managed fee covers the work, not the hardware.
 
-**Business hours** means 09:00 to 17:00 local time on working days. Contracts use one of two calendars: Saudi Arabia (Sunday to Thursday, Riyadh time) or Türkiye (Monday to Friday, Istanbul time). Public holidays in that country do not count, so a P2 ticket opened on Thursday at 16:00 in Riyadh on the Essential plan is due for a first response on Sunday at 16:00. A business day is 8 working hours. On 24/7 plans every hour counts, and a day is 24 hours.
+**Business hours** means Saudi business hours: 09:00 to 17:00 Saudi time, Sunday to Thursday. Saudi public holidays do not count. So a P2 ticket opened on Thursday at 16:00 on the Essential plan is due for a first response on Sunday at 16:00. A business day is 8 working hours. On 24/7 plans every hour counts, and a day is 24 hours.
 
 The response target is the time to the first answer from an engineer. The resolution target is the time to fix or to a workaround that restores service. Both start when the ticket is opened.
 
@@ -46,7 +46,7 @@ The response target is the time to the first answer from an engineer. The resolu
 ## Getting started
 
 1. A team owner requests a plan from **Managed** in the console or with `POST /v1/managed/contracts`. The contract starts as **DRAFT**. Every team member can check the plan, status and service levels with `GET /v1/managed/summary`; prices and contract terms stay with the owners.
-2. We contact you to agree the scope, the liability cap and the calendar, and sign the contract. The contract moves to **ONBOARDING**.
+2. We contact you to agree the scope and the liability cap, and sign the contract. The contract moves to **ONBOARDING**.
 3. During onboarding our engineers install monitoring, configure backups and test a restore, get access through the management network, write the documentation and runbook for your setup, and agree the shared responsibility matrix with you.
 4. When the checklist is complete the contract becomes **ACTIVE** and billing starts that day. The first month is charged for the days it was active.
 

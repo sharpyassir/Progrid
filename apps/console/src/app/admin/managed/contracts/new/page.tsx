@@ -62,7 +62,7 @@ export default function AdminNewContract() {
             </select>
           </Field>
           <Field label={t(locale, 'mcCalendar')}>
-            <select className="input" name="calendar" defaultValue={team?.country === 'TR' ? 'TR' : 'SA'}><option value="SA">{t(locale, 'mcCalendar_SA')}</option><option value="TR">{t(locale, 'mcCalendar_TR')}</option></select>
+            <select className="input" name="calendar" defaultValue={team?.country === 'TR' ? 'TR' : 'SA'}><option value="SA">{t(locale, 'admMcCalendar_SA')}</option><option value="TR">{t(locale, 'admMcCalendar_TR')}</option></select>
           </Field>
           <Field label={t(locale, 'admMcPriceOverride')} hint={selected?.custom ? t(locale, 'admMcPriceRequiredCustom') : t(locale, 'admMcOverrideHint')}>
             <input className="input" name="price" type="number" min={0} step="0.01" required={!!selected?.custom} dir="ltr" />

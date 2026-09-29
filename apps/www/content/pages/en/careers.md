@@ -1,6 +1,6 @@
 ---
 title: Careers
-description: A small team building cloud infrastructure in Saudi Arabia. Engineers who like to run what they build.
+description: A small Saudi team building a cloud platform. Engineers who like to run what they build.
 updated: 27 September 2026
 ---
 

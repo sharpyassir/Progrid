@@ -22,7 +22,7 @@ Legend: ✅ shipped in repo · 🔨 MVP scope · 2️⃣ phase 2 · 3️⃣ phas
 |---|---|---|---|
 | Agent Runtime ("Harness Runtime") | **Agent workspace**: agent-safe tokens + MCP server | 🔨→2️⃣ | Tokens already carry scopes, monthly spend cap and `requireApprovalFor`. MCP server exposes the API as tools. **Recommendation: pull MCP into the MVP** (open decision #7) — it is the headline. |
 | Action Gateway | **Approval queue** | 2️⃣ | Destructive actions from agents park in a queue a human approves in console/Slack/Telegram; DO has no per-token spend caps. |
-| Serverless Inference | **Inference gateway** (OpenAI-compatible) | 3️⃣ (can start as reseller earlier) | Per-token billing in SAR with ZATCA e-invoice; routes to partner APIs first, own GPUs later. TR data residency for prompts when on our GPUs. |
+| Serverless Inference | **Inference gateway** (OpenAI-compatible) | 3️⃣ (can start as reseller earlier) | Per-token billing in SAR with ZATCA e-invoice; routes to partner APIs first, own GPUs later. |
 | Dedicated Inference | Dedicated model endpoints on GPU servers | 3️⃣ | vLLM one-click on a GPU size. |
 | Batch Inference | Batch jobs on the gateway | 3️⃣ | Queue + cheaper off-peak rate. |
 | Knowledge Base | ➖ (marketplace: n8n + Open WebUI RAG) | ✅ | Templates instead of a managed product until demand is proven. |
@@ -60,7 +60,7 @@ Legend: ✅ shipped in repo · 🔨 MVP scope · 2️⃣ phase 2 · 3️⃣ phas
 
 ## What DO does not have (our edge)
 
-- **SAR billing, ZATCA e-invoicing, PDPL residency, Moyasar** — table stakes for Saudi SMEs, absent from every global cloud.
+- **SAR billing, ZATCA e-invoicing, Moyasar, a Saudi company and Saudi business hours support**: table stakes for Saudi SMEs, absent from every global cloud.
 - **Agent-safe tokens**: per-token monthly spend cap and approval rules for destructive actions. DO tokens have scopes only.
 - **Console and docs in Saudi and Arabic (RTL)**.
 - **Transparent status model** — provisioning is visible step by step, not a spinner on `new`.

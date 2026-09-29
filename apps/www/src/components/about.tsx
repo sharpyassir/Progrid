@@ -18,7 +18,7 @@ interface AboutCopy {
 const COPY: Record<Lang, AboutCopy> = {
   en: {
     metaTitle: 'About Progrid Arabia', metaDescription: 'Progrid Arabia builds the developer cloud for Saudi Arabia: servers, managed databases, Kubernetes and an app platform, priced in riyals and built for people and AI tools alike.',
-    eyebrow: 'About us', h1: 'Cloud infrastructure, built in Saudi Arabia for the people who build.',
+    eyebrow: 'About us', h1: 'A Saudi cloud platform for the people who build.',
     lead: 'Progrid Arabia is a Saudi company. We give developers, startups and IT teams the cloud they expect from the global providers, with riyal pricing, local invoicing and support that answers in Arabic.',
     storyH2: 'Why we started',
     story: [
@@ -46,7 +46,7 @@ const COPY: Record<Lang, AboutCopy> = {
   },
   tr: {
     metaTitle: 'Progrid Arabia hakkında', metaDescription: 'Progrid Arabia, Suudi Arabistan için geliştirici bulutunu kurar: sunucular, yönetilen veritabanları, Kubernetes ve uygulama platformu, riyal fiyatlı, insanlar ve yapay zeka araçları için.',
-    eyebrow: 'Hakkımızda', h1: 'Suudi Arabistan’da, üretenler için kurulan bulut altyapısı.',
+    eyebrow: 'Hakkımızda', h1: 'Üretenler için bir Suudi bulut platformu.',
     lead: 'Progrid Arabia bir Suudi şirketidir. Geliştiricilere, girişimlere ve BT ekiplerine küresel sağlayıcılardan bekledikleri bulutu, riyal fiyat, yerel fatura ve Arapça yanıt veren destekle sunar.',
     storyH2: 'Neden başladık',
     story: [
@@ -74,7 +74,7 @@ const COPY: Record<Lang, AboutCopy> = {
   },
   ar: {
     metaTitle: 'عن بروجريد العربية', metaDescription: 'بروجريد العربية شركة سعودية تبني الخدمات السحابية للمطورين: سيرفرات وقواعد بيانات مُدارة وKubernetes ومنصة تطبيقات، بأسعار بالريال، للناس ولأدوات الذكاء الاصطناعي.',
-    eyebrow: 'من نحن', h1: 'بنية تحتية سحابية، مبنية في السعودية لأهل البناء.',
+    eyebrow: 'من نحن', h1: 'منصة سحابية سعودية لأهل البناء.',
     lead: 'بروجريد العربية شركة سعودية. نعطي المطورين والشركات الناشئة وفرق تقنية المعلومات السحابة اللي يتوقعونها من المزودين العالميين، بأسعار بالريال وفاتورة محلية ودعم يرد عليك بالعربي.',
     storyH2: 'ليش بدأنا',
     story: [
