@@ -73,10 +73,8 @@ function RequestForm() {
               </div>
             </fieldset>
             <Field label={t(locale, 'mcCalendar')} hint={t(locale, 'mcCalendarHint')}>
-              <select className="input" name="calendar" defaultValue={account.team.country === 'TR' ? 'TR' : 'SA'}>
-                <option value="SA">{t(locale, 'mcCalendar_SA')}</option>
-                <option value="TR">{t(locale, 'mcCalendar_TR')}</option>
-              </select>
+              <input type="hidden" name="calendar" value="SA" />
+              <div className="input bg-neutral-50 dark:bg-neutral-900">{t(locale, 'mcCalendar_SA')}</div>
             </Field>
             <Field label={t(locale, 'mcWhatToManage')} hint={t(locale, 'mcWhatToManageHint')}>
               <textarea className="input min-h-32" name="notes" maxLength={4000} />

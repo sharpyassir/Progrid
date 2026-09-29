@@ -304,7 +304,7 @@ model Approval {
 
 model Region {
   id        String  @id // "sa1"
-  name      String // "Saudi Arabia 1"
+  name      String // "Region 1", shown to customers; never a city or country
   country   String // "SA"
   available Boolean @default(true)
   hosts     Host[]

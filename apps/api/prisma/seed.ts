@@ -36,7 +36,7 @@ const DISTROS = [
 ];
 
 async function main() {
-  await prisma.region.upsert({ where: { id: 'sa1' }, update: {}, create: { id: 'sa1', name: 'Saudi Arabia 1', country: 'SA' } });
+  await prisma.region.upsert({ where: { id: 'sa1' }, update: { name: 'Region 1' }, create: { id: 'sa1', name: 'Region 1', country: 'SA' } });
 
   const BOOK = 'SAR' as const;
   for (const [i, s] of SIZES.entries()) {

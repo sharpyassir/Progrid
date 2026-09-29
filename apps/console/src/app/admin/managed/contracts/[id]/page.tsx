@@ -52,7 +52,7 @@ export default function AdminContractDetail() {
     <AdminShell title={title} actions={<Link href="/admin/managed/contracts" className="btn-ghost">{t(locale, 'back')}</Link>}>
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <ContractStatusBadge s={c.status} />
-        <span className="text-neutral-500">{tk(locale, `mcCoverage_${c.plan.coverage}`)} · {tk(locale, `mcCalendar_${c.calendar}`)} · {c.currency}</span>
+        <span className="text-neutral-500">{tk(locale, `mcCoverage_${c.plan.coverage}`)} · {tk(locale, `admMcCalendar_${c.calendar}`)} · {c.currency}</span>
         {c.onCallOverride && <ToneBadge tone="amber">{t(locale, 'admMcOnCallOverride')}</ToneBadge>}
         {c.team && <span className="text-neutral-500">· {c.team.slug}{c.team.status && c.team.status !== 'active' ? ` · ${c.team.status}` : ''}</span>}
       </div>
@@ -181,7 +181,7 @@ function Terms({ c, lead, busy, run, patch }: { c: Contract; lead: boolean; busy
       ) : (
         <form onSubmit={save} className="card space-y-3">
           <div className="grid gap-3 sm:grid-cols-3">
-            <Field label={t(locale, 'mcCalendar')}><select className="input" name="calendar" defaultValue={c.calendar}><option value="SA">{t(locale, 'mcCalendar_SA')}</option><option value="TR">{t(locale, 'mcCalendar_TR')}</option></select></Field>
+            <Field label={t(locale, 'mcCalendar')}><select className="input" name="calendar" defaultValue={c.calendar}><option value="SA">{t(locale, 'admMcCalendar_SA')}</option><option value="TR">{t(locale, 'admMcCalendar_TR')}</option></select></Field>
             <Field label={t(locale, 'admMcPriceOverride')} hint={t(locale, 'admMcOverrideHint')}><input className="input" name="price" type="number" min={0} step="0.01" dir="ltr" defaultValue={c.priceOverrideMinor != null ? c.priceOverrideMinor / 100 : ''} /></Field>
             <Field label={t(locale, 'admMcIncludedHoursOverride')}><input className="input" name="hours" type="number" min={0} step="0.5" dir="ltr" defaultValue={c.includedMinutesOverride != null ? c.includedMinutesOverride / 60 : ''} /></Field>
             <Field label={t(locale, 'admMcMaxAssetsOverride')}><input className="input" name="maxAssets" type="number" min={1} dir="ltr" defaultValue={c.maxAssetsOverride ?? ''} /></Field>

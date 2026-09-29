@@ -79,7 +79,7 @@ function DeploysPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Git Deploy</h1>
-        <p className="text-sm text-neutral-500">Link a repository with a Dockerfile or docker-compose.yml. We build it on a server in Saudi Arabia and redeploy on every push.</p>
+        <p className="text-sm text-neutral-500">Link a repository with a Dockerfile or docker-compose.yml. We build it on our servers and redeploy on every push.</p>
       </div>
       {justConnected && <p className="rounded border border-green-200 bg-green-50 p-2 text-sm text-green-800 dark:bg-green-950/30">GitHub is connected. Pick a repository below.</p>}
       {error && <p className="rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:bg-red-950/30">{error}</p>}

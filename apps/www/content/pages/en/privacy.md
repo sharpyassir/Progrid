@@ -1,7 +1,7 @@
 ---
 title: Privacy policy
 description: What personal data Progrid Arabia collects, why, how long we keep it, and your rights under the Personal Data Protection Law.
-updated: 27 September 2026
+updated: 29 September 2026
 ---
 
 Progrid Arabia (بروجريد العربية) ("Progrid", "we") is the controller of the personal data described in this policy. We follow the Personal Data Protection Law of the Kingdom of Saudi Arabia (PDPL) and its implementing regulations. Questions and requests: **support@progrid.sa**.
@@ -35,7 +35,9 @@ We do not sell personal data and we do not use it for automated decisions with l
 - **Authorities**, when a lawful request or court order requires it. We notify you unless the law prevents it.
 - **A successor**, if Progrid is acquired or merges, under the same protections.
 
-Where data leaves the Kingdom, we do so only as permitted by the PDPL, with appropriate safeguards.
+## Where your data is stored
+
+Our infrastructure providers store and process data for us on their servers. These servers may be outside the Kingdom of Saudi Arabia. We transfer personal data outside the Kingdom only as the PDPL permits, with appropriate safeguards.
 
 ## How long we keep it
 

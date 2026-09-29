@@ -160,8 +160,8 @@ volumes: { db: {}, n8n: {} }`),
   },
   {
     slug: 'nextcloud', name: 'Nextcloud', category: 'collaboration', version: '30', minSizeId: 's-2vcpu-4gb', ports: [80, 443],
-    summary: 'Self-hosted files, calendar and office — data stays in Saudi Arabia.',
-    description: 'Nextcloud Hub with MariaDB and Redis. PDPL friendly: all data lives on your server in the Saudi region.',
+    summary: 'Self-hosted files, calendar and office on your own server.',
+    description: 'Nextcloud Hub with MariaDB and Redis. Your files live on your own server, not on a third party service.',
     variables: [adminPassword, domain],
     cloudInit: dockerCompose('nextcloud', `services:
   db:

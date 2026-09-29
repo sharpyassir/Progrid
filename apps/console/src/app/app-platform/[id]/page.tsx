@@ -7,6 +7,7 @@ import { api, ApiError } from '@/lib/api';
 import { useShell } from '@/components/shell';
 import { StatusBadge } from '@/components/status-badge';
 import { APP_STATUS_BADGE, AppSize, PlatformApp } from '@/lib/app-platform';
+import { regionLabel } from '@/lib/i18n';
 
 interface Logs { id: string; type: string; log: string; live: boolean; updatedAt: string }
 
@@ -56,7 +57,7 @@ export default function PlatformAppPage() {
           <h1 className="text-xl font-semibold">{a.name}</h1>
           <StatusBadge status={APP_STATUS_BADGE[a.status] ?? a.status} />
           <a className="font-mono text-sm text-blue-600" href={a.url} target="_blank" rel="noreferrer">{a.hostname}</a>
-          <span className="text-sm text-neutral-500">{a.size.id} × {a.instances} · {a.region.name}</span>
+          <span className="text-sm text-neutral-500">{a.size.id} × {a.instances} · {regionLabel(locale, a.region.name)}</span>
           <div className="ms-auto flex gap-1">
             <button className="btn-ghost" disabled={busy || !settled} onClick={() => run(() => api(`/v1/app-platform/apps/${id}/deploy`, { method: 'POST', idempotent: true }))}>Deploy now</button>
             {a.status === 'stopped'

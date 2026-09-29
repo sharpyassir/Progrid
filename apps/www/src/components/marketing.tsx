@@ -99,7 +99,7 @@ function Terminal() {
     <div className="code relative">
       <div className="mb-3 flex gap-1.5"><i className="h-2.5 w-2.5 rounded-full bg-red-400/80" /><i className="h-2.5 w-2.5 rounded-full bg-amber-300/80" /><i className="h-2.5 w-2.5 rounded-full bg-emerald-400/80" /></div>
       <div><span className="c">$</span> <span className="k">prgd</span> servers create <span className="p">--name</span> web-1 <span className="p">--size</span> s-2vcpu-4gb <span className="p">--image</span> wordpress</div>
-      <div className="c mt-1">202 Accepted. id srv_9f1c, region tr1</div>
+      <div className="c mt-1">202 Accepted. id srv_9f1c, region sa1</div>
       <div className="mt-3"><span className="c">$</span> <span className="k">prgd</span> servers get srv_9f1c <span className="p">--watch</span></div>
       <div className="mt-1">status: <span className={status === 'active' ? 's' : 'p'}>{status}</span>{step >= 1 && <span className="c">  ip: 185.0.113.42</span>}</div>
       {step >= 3 && <div className="s mt-1">{c.terminal.ready}</div>}
