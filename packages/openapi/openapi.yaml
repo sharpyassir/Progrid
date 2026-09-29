@@ -803,7 +803,7 @@ paths:
       tags: [managed-cloud]
       summary: Request a managed cloud plan
       description: Team owners only. Creates a DRAFT contract with the default responsibility matrix. A support lead reviews it, signs it and starts onboarding; the contract becomes ACTIVE, and billing starts, when onboarding is complete. One pending request per team.
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [plan], properties: { plan: { type: string, example: ESSENTIAL }, calendar: { type: string, enum: [SA, TR], description: Business hours calendar; defaults from the team country }, notes: { type: string, maxLength: 4000 } } } } } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [plan], properties: { plan: { type: string, example: ESSENTIAL }, calendar: { type: string, enum: [SA], default: SA, description: "Business hours calendar. SA is Saudi business hours: Sunday to Thursday, 09:00 to 17:00 Saudi time." }, notes: { type: string, maxLength: 4000 } } } } } }
       responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ManagedCloudContract" } } } }, "409": { description: A request is already pending (`request_pending`) }, "422": { $ref: "#/components/responses/Invalid" } }
   /managed/contracts/{id}:
     get:
@@ -1466,7 +1466,7 @@ components:
         teamId: { type: string }
         status: { type: string, enum: [DRAFT, ONBOARDING, ACTIVE, SUSPENDED, CANCELLED] }
         plan: { $ref: "#/components/schemas/ManagedCloudPlan" }
-        calendar: { type: string, enum: [SA, TR] }
+        calendar: { type: string, example: SA, description: "Business hours calendar code. SA is Saudi business hours, Sunday to Thursday." }
         currency: { type: string, enum: [SAR, USD] }
         monthlyFeeMinor: { type: [integer, "null"], description: "In the contract currency, excluding VAT" }
         hourlyRateMinor: { type: integer }
@@ -1486,7 +1486,7 @@ components:
           type: object
           properties:
             coverage: { type: string, enum: [BUSINESS_HOURS, TWENTY_FOUR_SEVEN] }
-            calendar: { type: string, enum: [SA, TR] }
+            calendar: { type: string, example: SA, description: "Business hours calendar code. SA is Saudi business hours, Sunday to Thursday." }
             timeZone: { type: string, example: Asia/Riyadh }
             businessHours: { type: [object, "null"], properties: { workdays: { type: array, items: { type: integer }, description: 0 is Sunday }, start: { type: string, example: "09:00" }, end: { type: string, example: "17:00" } } }
             responseTargets: { $ref: "#/components/schemas/ManagedTargets" }

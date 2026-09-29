@@ -46,7 +46,7 @@ export class ContractsService {
     assertOwner(actor);
     const pending = await this.prisma.managedContract.findFirst({ where: { teamId: actor.teamId, status: 'DRAFT' } });
     if (pending) throw ApiError.conflict('request_pending', 'Your team already has a managed cloud request waiting for review');
-    const c = await this.createDraft(actor, actor.teamId, dto, {});
+    const c = await this.createDraft(actor, actor.teamId, { ...dto, calendar: 'SA' }, {});
     await this.notify.toStaff({ subject: `Managed cloud request: ${c.plan.name}`, text: `A team asked for the ${c.plan.name} plan.\n\n${dto.notes ?? ''}\n\n${loadConfig().CONSOLE_URL}/admin/managed/contracts/${c.id}` });
     return this.present(c, { detail: true });
   }
@@ -281,7 +281,7 @@ export class ContractsService {
 
   // ---- helpers ----
 
-  private async createDraft(actor: Actor, teamId: string, dto: RequestContractDto, extra: Partial<Prisma.ManagedContractUncheckedCreateInput>) {
+  private async createDraft(actor: Actor, teamId: string, dto: { plan: string; calendar?: 'SA' | 'TR'; notes?: string }, extra: Partial<Prisma.ManagedContractUncheckedCreateInput>) {
     const plan = await this.prisma.managedPlan.findFirst({ where: { code: dto.plan.toUpperCase(), active: true } });
     if (!plan) throw ApiError.invalid(`Unknown or inactive plan "${dto.plan}"`);
     const team = await this.prisma.team.findUniqueOrThrow({ where: { id: teamId } });

@@ -2,15 +2,20 @@ import { Type } from 'class-transformer';
 import { IsBoolean, IsDate, IsIn, IsInt, IsOptional, IsString, Length, Max, Min } from 'class-validator';
 import { PaginationQuery } from '../../../common/pagination';
 
-export class RequestContractDto {
+class ContractRequestBase {
   /** Plan code, e.g. ESSENTIAL. */
   @IsString() @Length(2, 32) plan: string;
-  @IsOptional() @IsIn(['SA', 'TR']) calendar?: 'SA' | 'TR';
   /** What should be managed and anything the team wants us to know. */
   @IsOptional() @IsString() @Length(0, 4000) notes?: string;
 }
 
-export class StaffCreateContractDto extends RequestContractDto {
+/** Customer request. Customers are offered Saudi business hours only; the TR calendar is set by staff. */
+export class RequestContractDto extends ContractRequestBase {
+  @IsOptional() @IsIn(['SA']) calendar?: 'SA';
+}
+
+export class StaffCreateContractDto extends ContractRequestBase {
+  @IsOptional() @IsIn(['SA', 'TR']) calendar?: 'SA' | 'TR';
   @IsString() teamId: string;
   @IsOptional() @IsInt() @Min(0) priceOverrideMinor?: number;
   @IsOptional() @IsInt() @Min(0) includedMinutesOverride?: number;
