@@ -78,7 +78,9 @@ token that never touches our database.
 - **Rate limits** live in `RateLimitGuard` (fixed windows in Redis, keyed by token after auth, by IP before).
   They degrade open if Redis is down so a cache outage never takes the API with it.
 - **Mail** goes through `MailService`: `MAIL_PROVIDER=log` prints to the API log in development;
-  `postmark` and `resend` are wired for production with `MAIL_API_KEY` and `MAIL_FROM`.
+  `postmark` and `resend` are wired for production with `MAIL_API_KEY` and `MAIL_FROM` (production uses
+  `resend`). Mail to the support inbox arrives through Resend inbound receiving at
+  `POST /v1/support/inbound/resend` (Svix signed, `RESEND_WEBHOOK_SECRET`) and becomes a ticket.
 
 ## Approval queue for agents
 

@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Headers, HttpCode, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, Post, Put, Query, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { timingSafeEqual } from 'node:crypto';
 import { loadConfig } from '../../config/config';
 import { ApiError } from '../../common/errors/api-error';
@@ -6,13 +7,17 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentActor, Public, RequireScopes, StaffAreas } from '../../common/auth/decorators';
 import type { Actor } from '../../common/auth/actor';
 import { SupportService } from './support.service';
+import { ResendInboundService } from './resend-inbound.service';
 import { AdminListTicketsQuery, CreateTicketDto, ListTicketsQuery, SetPlanDto, TicketMessageDto } from './support.dto';
 
 @ApiTags('support')
 @ApiBearerAuth()
 @Controller('v1/support')
 export class SupportController {
-  constructor(private readonly support: SupportService) {}
+  constructor(
+    private readonly support: SupportService,
+    private readonly resendInbound: ResendInboundService,
+  ) {}
 
   /** Plan catalog with prices; public so the website can show it. */
   @Public() @Get('plans')
@@ -34,6 +39,16 @@ export class SupportController {
     const fromRaw = str(raw.From) || str(raw.from) || str((raw.sender as Record<string, unknown> | undefined)?.email);
     const from = /<([^>]+)>/.exec(fromRaw)?.[1] ?? fromRaw;
     return this.support.inbound({ from, subject: str(raw.Subject) || str(raw.subject), text: str(raw.StrippedTextReply) || str(raw.TextBody) || str(raw.text) });
+  }
+
+  /**
+   * Resend inbound receiving: the `email.received` webhook, signed with Svix using
+   * RESEND_WEBHOOK_SECRET. Mail to SUPPORT_INBOX is fetched from Resend and handled like the
+   * generic inbound endpoint; repeated deliveries of the same email are ignored.
+   */
+  @Public() @Post('inbound/resend') @HttpCode(200)
+  inboundResend(@Req() req: Request & { rawBody?: Buffer }, @Headers('svix-id') id?: string, @Headers('svix-timestamp') timestamp?: string, @Headers('svix-signature') signature?: string) {
+    return this.resendInbound.handle(req.rawBody ?? Buffer.from(JSON.stringify(req.body ?? {})), { id, timestamp, signature });
   }
 
   @Get('plan') @RequireScopes('support:read')
