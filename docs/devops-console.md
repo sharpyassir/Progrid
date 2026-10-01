@@ -664,10 +664,11 @@ through its presigned URLs (`S3_ENDPOINT`, for example `https://s3.sa1.progrid.s
 which lives on the WireGuard management network. The management host must therefore be a
 WireGuard peer of every managed customer network, and route that range out of `wg0`; containers
 on the compose bridge reach it through the host's routing and NAT, so the SSH connections leave
-from the host's WireGuard address. Set `PRGD_GATEWAY_SOURCE_ADDRESSES` to that address (for example
-`10.8.0.2/32`) so certificates only work from there, and make sure each asset's firewall allows
-port 22 from it. The Ansible role does not set WireGuard up yet; configure `wg0` on the host (and
-the peers on the customer side) before the first terminal session.
+from the host's WireGuard address. Set `PRGD_GATEWAY_SOURCE_ADDRESSES` to that address (`10.9.0.1/32`
+with the Ansible role `wireguard`) so certificates only work from there, and make sure each asset's
+firewall allows port 22 from it. The role sets up `wg0` between the management host and the Proxmox
+nodes (`10.9.0.0/24`, docs/hosting.md); managed customer networks are not peers yet, so add their peers
+and route their range out of `wg0` before the first terminal session on them.
 
 **Host keys.** Without `PRGD_GATEWAY_KNOWN_HOSTS` the gateway trusts the first host key an asset
 presents and pins it in memory until it restarts (the key is in the audit log either way). That is

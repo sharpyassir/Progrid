@@ -1,9 +1,12 @@
 # WireGuard first: the management host publishes NATS on its WireGuard address, so wg0 must be
 # up before the management role (re)starts the compose stack, and the nodes reach NATS over it.
+# Hosts without wireguard_address in the inventory are left alone (NATS stays on mgmt_ip).
 - name: Management network (WireGuard)
   hosts: management:pve_nodes
   become: true
-  roles: [wireguard]
+  roles:
+    - role: wireguard
+      when: wireguard_address is defined
 
 - name: Control plane host
   hosts: management
