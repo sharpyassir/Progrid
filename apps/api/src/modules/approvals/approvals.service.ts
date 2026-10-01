@@ -22,6 +22,7 @@ export interface ApprovalRequest {
 }
 
 type Executor = (actor: Actor, approval: Approval) => Promise<unknown>;
+type DenyHandler = (actor: Actor, approval: Approval, reason?: string) => Promise<void>;
 
 const TTL_HOURS = 24;
 
@@ -35,11 +36,42 @@ const TTL_HOURS = 24;
 export class ApprovalsService {
   private readonly log = new Logger(ApprovalsService.name);
   private readonly executors = new Map<string, Executor>();
+  private readonly denyHandlers = new Map<string, DenyHandler>();
 
   constructor(private readonly prisma: PrismaService, private readonly mail: MailService, private readonly events: EventsService) {}
 
   registerExecutor(kind: string, fn: Executor) {
     this.executors.set(kind, fn);
+  }
+
+  /** Runs after a person denies a request of this kind (Connect fails the waiting run). */
+  onDenied(kind: string, fn: DenyHandler) {
+    this.denyHandlers.set(kind, fn);
+  }
+
+  /**
+   * Records a pending request and notifies the team without throwing. Used by callers that
+   * park their own work (Connect runs wait in waiting_approval) instead of failing the request.
+   */
+  async createPending(actor: Actor, req: ApprovalRequest): Promise<Approval> {
+    const approval = await this.prisma.approval.create({
+      data: {
+        teamId: actor.teamId,
+        projectId: req.projectId,
+        tokenId: actor.tokenId,
+        requestedById: actor.userId,
+        kind: req.kind,
+        resourceType: req.resourceType,
+        resourceId: req.resourceId,
+        resourceName: req.resourceName,
+        summary: req.summary,
+        payload: req.payload as Prisma.InputJsonValue,
+        expiresAt: new Date(Date.now() + TTL_HOURS * 3600_000),
+      },
+    });
+    await this.events.emit('approval.requested', { approvalId: approval.id, kind: req.kind, summary: req.summary, tokenId: actor.tokenId }, { actor, resource: `approval:${approval.id}` });
+    this.notifyOwners(approval).catch((e) => this.log.warn(`approval mail failed: ${e.message}`));
+    return approval;
   }
 
   /** True when this actor must ask before performing `kind`. */
@@ -139,6 +171,8 @@ export class ApprovalsService {
     const approval = await this.takeDecision(actor, id);
     const done = await this.prisma.approval.update({ where: { id }, data: { status: 'denied', decidedById: actor.userId, decidedAt: new Date(), reason } });
     await this.events.emit('approval.decided', { approvalId: id, decision: 'denied', kind: approval.kind, summary: approval.summary, reason }, { actor, resource: `approval:${id}` });
+    const handler = this.denyHandlers.get(approval.kind);
+    if (handler) await handler(actor, done, reason).catch((e) => this.log.warn(`deny handler for ${approval.kind} failed: ${(e as Error).message}`));
     return done;
   }
 
@@ -175,7 +209,7 @@ export class ApprovalsService {
     await Promise.all(owners.map((m) => this.mail.send({
       to: m.user.email,
       subject: `Approval needed: ${approval.summary}`,
-      text: `Hi ${m.user.name},\n\nThe agent token "${token?.name ?? 'agent'}" wants to do this:\n\n    ${approval.summary}\n\nReview it here:\n${url}\n\nThe request expires in ${TTL_HOURS} hours if nobody decides. Nothing runs until you approve.`,
+      text: `Hi ${m.user.name},\n\n${token ? `The agent token "${token.name}"` : approval.resourceType === 'connect_run' ? `The Connect agent "${approval.resourceName ?? 'agent'}"` : 'An agent'} wants to do this:\n\n    ${approval.summary}\n\nReview it here:\n${url}\n\nThe request expires in ${TTL_HOURS} hours if nobody decides. Nothing runs until you approve.`,
     })));
   }
 }

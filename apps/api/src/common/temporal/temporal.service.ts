@@ -52,4 +52,12 @@ export class TemporalService implements OnModuleInit {
     const client = await this.connect();
     await client.workflow.getHandle(workflowId).signal(signal, ...args);
   }
+
+  /** Stops a workflow (e.g. a cron schedule). A workflow that is not running is fine. */
+  async terminate(workflowId: string, reason: string) {
+    const client = await this.connect();
+    await client.workflow.getHandle(workflowId).terminate(reason).catch((err: Error & { name?: string }) => {
+      if (err.name !== 'WorkflowNotFoundError') throw err;
+    });
+  }
 }
