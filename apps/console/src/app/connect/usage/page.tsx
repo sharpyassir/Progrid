@@ -30,7 +30,7 @@ export default function UsagePage() {
   return (
     <div>
       <PageHeader title={c('nUsage')} subtitle={c('usageNote')} actions={
-        <label className="flex items-center gap-2 text-sm">{c('billingPeriod')}
+        <label className="flex items-center gap-2 whitespace-nowrap text-sm">{c('billingPeriod')}
           <select className="input w-auto py-1.5" value={period} onChange={(e) => setPeriod(e.target.value)}>{periods().map((p) => <option key={p} value={p}>{monthLabel(p)}</option>)}</select>
         </label>} />
       <div className="space-y-5">

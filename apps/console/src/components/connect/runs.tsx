@@ -84,9 +84,10 @@ export function useLiveRun(initial: Run | null) {
 }
 
 /** Run view used by Test and the run drawer: summary, response, timeline and a raw JSON switch. */
-export function RunView({ run: initial }: { run: Run }) {
+export function RunView({ run: initial, onStatus }: { run: Run; onStatus?: (s: Run['status']) => void }) {
   const { c } = useC();
   const { run, steps, lost } = useLiveRun(initial);
+  useEffect(() => { if (run) onStatus?.(run.status); }, [run?.status]); // eslint-disable-line react-hooks/exhaustive-deps
   const [view, setView] = useState<'timeline' | 'raw'>('timeline');
   if (!run) return null;
   return (

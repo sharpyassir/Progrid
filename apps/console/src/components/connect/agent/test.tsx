@@ -12,6 +12,7 @@ export function TestTab({ agent }: AgentTabProps) {
   const [message, setMessage] = useState('');
   const [json, setJson] = useState('{\n  "email": "sara@company.com",\n  "company": "Company Ltd",\n  "message": "We need a CRM for 200 people."\n}');
   const [run, setRun] = useState<Run | null>(null);
+  const [status, setStatus] = useState<Run['status'] | null>(null);
   const { busy, error, run: act } = useAction();
 
   async function send(e: FormEvent) {
@@ -37,14 +38,14 @@ export function TestTab({ agent }: AgentTabProps) {
         <p className="text-xs text-neutral-500">{c('testDraftNote')}</p>
         <div className="flex flex-wrap gap-2">
           <button className="btn-primary" disabled={busy}>{busy ? c('runningTest') : `▶ ${c('runTestBtn')}`}</button>
-          {run && !FINISHED.includes(run.status) && <button type="button" className="btn-ghost" onClick={cancel}>{c('cancelRun')}</button>}
+          {run && status && !FINISHED.includes(status) && <button type="button" className="btn-ghost" onClick={cancel}>{c('cancelRun')}</button>}
         </div>
         <ErrorBox error={error} />
       </form>
       <section aria-live="polite" className="min-w-0">
         {busy && !run && <p role="status" className="card animate-pulse text-sm text-neutral-500">{c('runningTest')}</p>}
         {!busy && !run && <div className="card py-10 text-center text-sm text-neutral-500">{c('noTestYet')}</div>}
-        {run && <div className="card"><RunView run={run} /></div>}
+        {run && <div className="card"><RunView run={run} onStatus={setStatus} /></div>}
       </section>
     </div>
   );
