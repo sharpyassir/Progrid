@@ -36,6 +36,7 @@ export const ALL_SCOPES = [
   'billing:read', 'billing:write',
   'support:read', 'support:write',
   'managed:read', 'managed:write',
+  'connect:read', 'connect:write',
   'iam:read', 'iam:write',
   'admin',
 ] as const;
@@ -49,7 +50,8 @@ export function scopesForRole(role: TeamRole): Set<string> {
     case 'admin':
       return new Set(ALL_SCOPES.filter((s) => s !== 'admin'));
     case 'member':
-      return new Set(ALL_SCOPES.filter((s) => !s.startsWith('billing') && !s.startsWith('iam') && s !== 'admin'));
+      // Connect: members read agents, runs and logs; owners and admins build, deploy and hold credentials.
+      return new Set(ALL_SCOPES.filter((s) => !s.startsWith('billing') && !s.startsWith('iam') && s !== 'admin' && s !== 'connect:write'));
     case 'billing':
       return new Set(['billing:read', 'billing:write', 'servers:read', 'iam:read']);
     case 'readonly':
