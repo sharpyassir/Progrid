@@ -18,7 +18,17 @@ control plane ◀──NATS publish── prgd.usage (usage.v1, per resource per
 
 Build: `go build -ldflags "-X main.version=$(git describe --tags --always)" -o host-agent .`
 
-Node prerequisites (Ansible role to come): PVE API token with `PVEVMAdmin` + `PVEDatastoreUser` on the Ceph storage, `snippets` content enabled on `local`, the shared bridge `customers`, and for per project VNets (`PRIVATE_NETWORK_MODE=sdn_vnet`) a VXLAN zone on every node plus the `PVESDNAdmin` role on `/sdn` for the token (see docs/hosting.md), `vmbr0` with the public block routed.
+Node prerequisites: the Ansible role `pve_node` (infra/ansible) creates the `prgd@pve` user, the
+`PrgdAgent` role and the `agent` API token, enables `snippets` on `local`, builds and installs this
+binary and writes `/etc/prgd/agent.yaml`. The node itself must already have the storage named in
+`proxmox.storage`, the shared private bridge `customers`, the public bridge `vmbr0` with the public
+block routed, and for per project VNets (`PRIVATE_NETWORK_MODE=sdn_vnet`) a VXLAN zone on every node
+(see docs/hosting.md). The first node is set up by hand following docs/first-proxmox-node.md.
+
+Storage: `proxmox.storage_type: rbd` (default) expects Ceph RBD; detached volume resize runs
+`rbd resize` and snapshot sizes come from `rbd du`. `lvmthin` is for a single node on a local LVM
+thin pool: detached volumes grow with `lvextend` on the path `pvesm path` gives, and snapshot sizes
+are estimated. Everything else goes through the Proxmox API and works the same on both.
 
 ## Testing without a Proxmox node
 
@@ -44,6 +54,6 @@ the shrink refusal; delete idempotency; error codes (`bad_ref`, `unknown_job`,
 `bad_image_ref`, `not_implemented`, `proxmox_500`, `job_failed`); duplicate job ids; the
 heartbeat and per minute usage events; token rejection.
 
-Not covered, and only a real node can show: token permissions, Ceph timing, SDN reload
+Not covered, and only a real node can show: token permissions, Ceph and LVM timing, SDN reload
 across nodes and VXLAN traffic between them, ipfilter enforcement, cloud-init inside the guest. Run the same jobs against the first node with
 `PRGD_SNIPPETS_DIR` unset before calling the data plane done.

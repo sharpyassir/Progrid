@@ -33,6 +33,12 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	return newHarnessWith(t, nil)
+}
+
+// newHarnessWith lets a test change the agent config before the agent starts.
+func newHarnessWith(t *testing.T, tweak func(*config.Config)) *harness {
+	t.Helper()
 	ns, err := natsserver.NewServer(&natsserver.Options{Port: -1, Host: "127.0.0.1", NoLog: true, NoSigs: true})
 	if err != nil {
 		t.Fatal(err)
@@ -50,6 +56,9 @@ func newHarness(t *testing.T) *harness {
 	cfg := &config.Config{
 		HostID: "host_test", NATSURL: ns.ClientURL(), Heartbeat: 300 * time.Millisecond,
 		Proxmox: config.Proxmox{URL: sim.URL(), Node: "pve1", TokenID: sim.TokenID, TokenSecret: sim.TokenSecret, Storage: sim.Storage, Bridge: "customers", PublicBridge: "vmbr0"},
+	}
+	if tweak != nil {
+		tweak(cfg)
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	a, err := agent.New(cfg, proxmox.New(cfg.Proxmox, log), "test", log)
@@ -771,6 +780,42 @@ func TestVolumeLifecycle(t *testing.T) {
 		t.Fatal("image not freed")
 	}
 	h.mustOK(h.job(protocol.JobVolumeDelete, map[string]interface{}{"volumeRef": volRef})) // idempotent
+}
+
+// On a single node lab the disks sit on an LVM thin pool: detached volumes grow with lvextend
+// (never the rbd tool), and snapshot sizes are estimated without calling rbd du.
+func TestLVMThinStorage(t *testing.T) {
+	h := newHarnessWith(t, func(c *config.Config) { c.Proxmox.StorageType = config.StorageLVMThin })
+	oldRbd := agent.SetRbdResize(func(context.Context, string, string, int) error {
+		t.Error("rbd resize called on an lvmthin storage")
+		return nil
+	})
+	defer agent.SetRbdResize(oldRbd)
+	oldDu := agent.SetRbdDu(func(context.Context, string, string, string) (int64, error) {
+		t.Error("rbd du called on an lvmthin storage")
+		return 0, nil
+	})
+	defer agent.SetRbdDu(oldDu)
+	called := ""
+	oldLv := agent.SetLvResize(func(_ context.Context, volid string, sizeGb int) error {
+		called = volid + "=" + itoa(sizeGb)
+		return nil
+	})
+	defer agent.SetLvResize(oldLv)
+
+	r := h.mustOK(h.job(protocol.JobVolumeCreate, map[string]interface{}{"volumeId": "VOL9", "sizeGb": 10}))
+	volRef := r.Result.(map[string]interface{})["volumeRef"].(string)
+	h.mustOK(h.job(protocol.JobVolumeResize, map[string]interface{}{"volumeRef": volRef, "sizeGb": 20}))
+	if called != "vm-disks:vm-900000-vol-vol9=20" {
+		t.Fatalf("lvextend not called as expected: %q", called)
+	}
+
+	r = h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_lvm")}))
+	_, ref := vmidOf(t, r)
+	r = h.mustOK(h.job(protocol.JobSnapshot, map[string]interface{}{"vmRef": ref, "snapshotId": "SNAPL"}))
+	if got := r.Result.(map[string]interface{})["sizeGb"]; got != float64(3) {
+		t.Fatalf("snapshot size should be the estimate on lvmthin: %v", got)
+	}
 }
 
 func TestRejectsWrongToken(t *testing.T) {
