@@ -5,6 +5,15 @@ one IPv4 address, booted into the rescue system) into a Proxmox VE 8 node that t
 on the DigitalOcean droplet drives through the host agent. Do the steps in order, one at a time.
 Every command is meant to be pasted as is after you replace the placeholders.
 
+> **Used for pve1 (October 2026): Debian 13 (trixie) and Proxmox VE 9.** Proxmox VE 8 reached the
+> end of its support in 2026, so the first node runs VE 9. The differences from Parts 1 and 2 below:
+> installimage image `Debian-1305-trixie-amd64-base.tar.zst` (the rescue system's images end in
+> `.tar.zst`); repository file `/etc/apt/sources.list.d/pve-install-repo.sources` (deb822, suite
+> `trixie`) with the key `proxmox-archive-keyring-trixie.gpg` in `/usr/share/keyrings/`; kernel
+> packages `linux-image-6.12*`. The server boots in legacy BIOS mode, so after the Proxmox
+> packages tried to install the UEFI loader, `grub-install --target=i386-pc` was run on both NVMe
+> drives. The pve_node role maps `VM.Monitor` to `VM.GuestAgent.Audit` on VE 9 by itself.
+
 Time: about three hours, most of it waiting for installs and reboots.
 
 ## What you end up with

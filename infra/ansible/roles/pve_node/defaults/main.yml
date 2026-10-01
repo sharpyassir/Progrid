@@ -20,7 +20,7 @@ pve_agent_token_name: agent
 pve_agent_token_file: /etc/prgd/pve-token-secret
 pve_agent_role: PrgdAgent
 # Exactly what the agent's Proxmox calls need (agents/host-agent/internal/proxmox/client.go).
-# Proxmox VE 8 names; on Proxmox VE 9 replace VM.Monitor with VM.GuestAgent.Audit.
+# Proxmox VE 8 names; on Proxmox VE 9 the role swaps VM.Monitor for VM.GuestAgent.Audit itself.
 pve_agent_privs:
   - VM.Allocate            # delete VMs (and own the new VMID of a clone)
   - VM.Clone               # clone templates and snapshots

@@ -105,6 +105,20 @@
   changed_when: pve_user_add.rc == 0
   failed_when: pve_user_add.rc != 0 and 'already exists' not in pve_user_add.stderr
 
+- name: Proxmox VE version
+  command: pveversion
+  register: pve_version
+  changed_when: false
+
+# Proxmox VE 9 replaced VM.Monitor with the VM.GuestAgent.* privileges; Audit covers the agent's
+# ping and network-get-interfaces calls.
+- name: Agent privileges for this Proxmox VE version
+  set_fact:
+    pve_agent_privs_effective: >-
+      {{ (pve_agent_privs | reject('equalto', 'VM.Monitor') | list) + ['VM.GuestAgent.Audit']
+         if (pve_version.stdout.split('/')[1].split('.')[0] | int) >= 9
+         else pve_agent_privs }}
+
 - name: Existing roles
   command: pveum role list --output-format json
   register: pve_roles
@@ -115,9 +129,9 @@
     current: "{{ (pve_roles.stdout | from_json) | selectattr('roleid', 'equalto', pve_agent_role) | list }}"
   command: >-
     pveum role {{ 'modify' if current | length > 0 else 'add' }} {{ pve_agent_role }}
-    --privs "{{ pve_agent_privs | join(',') }}"
+    --privs "{{ pve_agent_privs_effective | join(',') }}"
   changed_when: true
-  when: current | length == 0 or (current[0].privs.split(',') | map('trim') | sort) != (pve_agent_privs | sort)
+  when: current | length == 0 or (current[0].privs.split(',') | map('trim') | sort) != (pve_agent_privs_effective | sort)
 
 # privsep=1: the token holds only the ACLs given to it below (and never more than the user).
 # Its secret is shown once, at creation, so it goes straight into a root only file. When the
