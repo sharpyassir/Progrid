@@ -1,0 +1,4 @@
+# reload runs `wg syncconf`: peers change without dropping the tunnel. A changed Address or
+# ListenPort needs `systemctl restart wg-quick@wg0`.
+- name: reload wireguard
+  systemd: { name: "wg-quick@{{ wireguard_interface }}", state: reloaded }

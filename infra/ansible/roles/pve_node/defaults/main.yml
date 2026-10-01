@@ -1,0 +1,45 @@
+# Source of the host agent on the machine that runs Ansible (the management host runs it from
+# /opt/progrid-src, so this is /opt/progrid-src/agents/host-agent). It is built there in a Go
+# container and copied to each node; there are no release downloads.
+host_agent_src: "{{ playbook_dir }}/../../agents/host-agent"
+host_agent_build_dir: /var/cache/prgd/host-agent
+# Go toolchain image, from the go directive in agents/host-agent/go.mod (go 1.24 -> golang:1.24).
+host_agent_go_image: "golang:{{ lookup('file', host_agent_src ~ '/go.mod') | regex_search('(?m)^go ([0-9]+\\.[0-9]+)', '\\1') | first }}"
+
+# Storage, bridges and SDN zone the agent uses (see docs/first-proxmox-node.md).
+proxmox_storage: vm-disks           # storage id for VM disks and volumes
+proxmox_storage_type: rbd           # rbd (Ceph) or lvmthin (single node lab)
+proxmox_ceph_pool: vm-disks         # rbd only
+proxmox_private_bridge: customers   # shared private bridge (PRIVATE_NETWORK_MODE=shared_bridge)
+proxmox_public_bridge: vmbr0        # routed bridge that carries the public IP blocks
+
+# Proxmox API identity of the agent. The token secret is created on the node, kept in
+# pve_agent_token_file (root only) and never leaves it.
+pve_agent_user: prgd@pve
+pve_agent_token_name: agent
+pve_agent_token_file: /etc/prgd/pve-token-secret
+pve_agent_role: PrgdAgent
+# Exactly what the agent's Proxmox calls need (agents/host-agent/internal/proxmox/client.go).
+# Proxmox VE 8 names; on Proxmox VE 9 replace VM.Monitor with VM.GuestAgent.Audit.
+pve_agent_privs:
+  - VM.Allocate            # delete VMs (and own the new VMID of a clone)
+  - VM.Clone               # clone templates and snapshots
+  - VM.Audit               # status, config, VM list, firewall reads
+  - VM.PowerMgmt           # start, stop, shutdown, reboot
+  - VM.Snapshot            # create and delete snapshots
+  - VM.Snapshot.Rollback   # rollback
+  - VM.Monitor             # QEMU guest agent ping and network-get-interfaces
+  - VM.Config.CPU          # cores
+  - VM.Config.Memory       # memory
+  - VM.Config.Disk         # resize, attach and detach volumes
+  - VM.Config.Network      # net0/net1, per VM firewall options, rules and IP sets
+  - VM.Config.Options      # name, tags, onboot, agent
+  - VM.Config.Cloudinit    # ciuser, sshkeys, ipconfig, cicustom, cloud-init regenerate
+  - Datastore.AllocateSpace  # full clones, volume allocation, disk growth, cloud-init snippets
+  - Datastore.Allocate     # free detached volumes
+  - Datastore.Audit        # storage status for the heartbeat
+  - Sys.Audit              # node status and task status
+  - SDN.Audit              # read the VXLAN zone and VNets
+  - SDN.Allocate           # create VNets and apply the SDN config
+  - SDN.Use                # put a NIC on a bridge or VNet (Proxmox VE 8 checks it for every bridge)
+pve_agent_acl_paths: ["/vms", "/storage", "/nodes/{{ pve_node_name }}", "/sdn"]

@@ -1,12 +1,19 @@
-# Managed by Ansible.
+# Managed by Ansible (role pve_node). Edit group_vars and the inventory, then re-run the playbook.
+{% set mgmt = hostvars[groups['management'][0]] %}
 host_id: "{{ host_id }}"
-nats_url: "nats://{{ hostvars[groups['management'][0]].mgmt_ip }}:4222"
+# NATS on the management host, over the WireGuard management network
+nats_url: "nats://{{ mgmt.wireguard_address | default(mgmt.mgmt_ip) }}:4222"
 heartbeat: 60s
 proxmox:
   url: "https://127.0.0.1:8006"
   node: "{{ pve_node_name }}"
-  token_id: "prgd@pve!agent"
-  storage: "{{ proxmox_ceph_pool }}"
-  bridge: "{{ proxmox_vxlan_zone }}"
-  public_bridge: "vmbr0"
+  token_id: "{{ pve_agent_user }}!{{ pve_agent_token_name }}"
+  # token_secret: from PVE_TOKEN_SECRET in /etc/prgd/agent.env, never in this file
+  storage: "{{ proxmox_storage }}"
+  storage_type: "{{ proxmox_storage_type }}"
+{% if proxmox_storage_type == 'rbd' %}
+  ceph_pool: "{{ proxmox_ceph_pool }}"
+{% endif %}
+  bridge: "{{ proxmox_private_bridge }}"
+  public_bridge: "{{ proxmox_public_bridge }}"
   insecure: true

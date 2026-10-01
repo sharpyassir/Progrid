@@ -1,0 +1,78 @@
+# One hub (the management host) and one spoke per Proxmox node. Every host generates its own
+# key pair; only public keys are read back (from the peers themselves), so no private key is
+# ever in the repository, the vault or the Ansible output.
+- name: Inventory has what WireGuard needs
+  assert:
+    that:
+      - wireguard_address is defined
+      - inventory_hostname in groups['pve_nodes'] or wireguard_endpoint is defined
+    fail_msg: >-
+      Set wireguard_address for {{ inventory_hostname }} in the inventory (management 10.9.0.1,
+      nodes 10.9.0.2 and up), and wireguard_endpoint (its public IPv4) on the management host.
+
+- name: WireGuard tools (and ufw on the management host, which opens the port below)
+  apt:
+    name: "{{ ['wireguard-tools'] + (['ufw'] if inventory_hostname in groups['management'] else []) }}"
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Key directory
+  file: { path: /etc/wireguard, state: directory, mode: "0700" }
+
+- name: Key pair (generated once, on this host)
+  shell: |
+    set -eu
+    umask 077
+    wg genkey > /etc/wireguard/private.key.new
+    wg pubkey < /etc/wireguard/private.key.new > /etc/wireguard/public.key
+    mv /etc/wireguard/private.key.new /etc/wireguard/private.key
+  args: { creates: /etc/wireguard/private.key }
+
+- name: Peers of this host (the hub peers with every node, a node with the hub)
+  set_fact:
+    wireguard_peer_hosts: >-
+      {{ (groups['pve_nodes'] | default([])) if inventory_hostname in groups['management']
+         else groups['management'][:1] }}
+
+# Read each peer's public key from the peer itself. Delegation reaches peers outside --limit too,
+# so a run limited to one group never drops the other side's peers from the config.
+- name: Public keys of the peers
+  slurp: { src: /etc/wireguard/public.key }
+  delegate_to: "{{ item }}"
+  loop: "{{ wireguard_peer_hosts }}"
+  when: hostvars[item].wireguard_address is defined
+  register: wireguard_peer_keys
+  failed_when: false
+
+- name: Peer list starts empty
+  set_fact: { wireguard_peers: [] }
+
+- name: Peer list
+  set_fact:
+    wireguard_peers: >-
+      {{ wireguard_peers + [{
+           'name': item.item,
+           'address': hostvars[item.item].wireguard_address,
+           'endpoint': hostvars[item.item].wireguard_endpoint | default(hostvars[item.item].ansible_host),
+           'key': item.content | b64decode | trim }] }}
+  loop: "{{ wireguard_peer_keys.results }}"
+  loop_control: { label: "{{ item.item }}" }
+  when: item.content is defined
+
+- name: Peers left out (no key yet, or unreachable)
+  debug:
+    msg: "{{ item.item }} has no WireGuard key yet; run the playbook for it, then again here."
+  loop: "{{ wireguard_peer_keys.results }}"
+  loop_control: { label: "{{ item.item }}" }
+  when: item.skipped is not defined and item.content is not defined
+
+- name: Interface config
+  template: { src: wg0.conf.j2, dest: "/etc/wireguard/{{ wireguard_interface }}.conf", mode: "0600" }
+  notify: reload wireguard
+
+- name: Firewall allows WireGuard on the management host
+  community.general.ufw: { rule: allow, port: "{{ wireguard_port }}", proto: udp }
+  when: inventory_hostname in groups['management']
+
+- name: Interface up now and at boot
+  systemd: { name: "wg-quick@{{ wireguard_interface }}", enabled: true, state: started }
