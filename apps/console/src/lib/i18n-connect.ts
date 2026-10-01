@@ -126,7 +126,7 @@ const en = {
   revoke: 'Revoke', revokeConfirm: 'Revoke this key? Apps that use it stop working right away.', noKeys: 'No keys yet.', prefix: 'Prefix', lastUsed: 'Last used',
   webhookUrls: 'Webhook URLs', addWebhook: 'Add webhook', webhookPath: 'Path', rotate: 'Rotate URL', rotateConfirm: 'Rotate this URL? The old URL stops working right away.',
   signing: 'Signature', signingNote: (h: string, a: string) => `Optional. Verify the ${h} header (${a}).`, noWebhooks: 'No webhooks yet.', readDocs: 'Read the docs',
-  seeApiTab: 'See the API tab', urlIsSecret: 'Treat this URL like a password.',
+  seeApiTab: 'See the API tab', deleteWebhookConfirm: 'Delete this webhook? Calls to its URL stop working.', urlIsSecret: 'Treat this URL like a password.',
   // api
   requestSchema: 'Request schema', responseSchema: 'Response schema', authNote: 'Send an agent key as a bearer token in the Authorization header.',
   exampleRequest: 'Example request', syncNote: 'Runs wait up to 60 seconds. Send "async": true to get a run ID at once and poll the status URL.',
