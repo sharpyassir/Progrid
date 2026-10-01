@@ -1,0 +1,6 @@
+# Same value as the wireguard role; repeated here because role defaults are not shared.
+wireguard_cidr: 10.9.0.0/24
+wireguard_interface: wg0
+# Address NATS is published on (MGMT_IP in prgd.env). With WireGuard that is the management
+# host's tunnel address, which only the nodes can reach; without it the old mgmt_ip.
+nats_bind_ip: "{{ wireguard_address | default(mgmt_ip) }}"

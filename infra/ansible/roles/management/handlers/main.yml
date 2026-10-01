@@ -3,3 +3,6 @@
 
 - name: apply sysctl
   command: sysctl --system
+
+- name: systemd daemon-reload
+  systemd: { daemon_reload: true }

@@ -1,0 +1,15 @@
+# Managed by Ansible (role wireguard). Edit the inventory and re-run the playbook.
+# The private key never leaves this host: wg-quick loads it from /etc/wireguard/private.key.
+[Interface]
+Address = {{ wireguard_address }}/{{ wireguard_cidr.split('/')[1] }}
+ListenPort = {{ wireguard_port }}
+PostUp = wg set %i private-key /etc/wireguard/private.key
+{% for peer in wireguard_peers %}
+
+[Peer]
+# {{ peer.name }}
+PublicKey = {{ peer.key }}
+AllowedIPs = {{ peer.address }}/32
+Endpoint = {{ peer.endpoint }}:{{ wireguard_port }}
+PersistentKeepalive = {{ wireguard_keepalive }}
+{% endfor %}

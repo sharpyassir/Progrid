@@ -2,7 +2,7 @@
 
 This puts progrid.sa, the console and the API live on one DigitalOcean droplet in Frankfurt.
 Customer servers are not possible yet: that needs the dedicated Proxmox machine (see
-`docs/hosting.md`). Until then signups work, the console works, and creating resources stops at
+`docs/hosting.md`, and `docs/first-proxmox-node.md` to add it). Until then signups work, the console works, and creating resources stops at
 the payment step because no Moyasar keys are set.
 
 Time: about one hour, most of it waiting for DNS and the first image build.

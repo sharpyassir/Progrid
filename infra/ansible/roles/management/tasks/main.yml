@@ -38,6 +38,23 @@
   file: { path: "{{ item }}", state: directory, mode: "0750" }
   loop: [/opt/prgd, /etc/prgd, /var/backups/prgd]
 
+# NATS is published on the WireGuard address (MGMT_IP). Docker can only bind it once wg0 exists,
+# so Docker must start after the tunnel at boot. The wireguard play brings wg0 up before this role.
+- name: Docker starts after WireGuard
+  block:
+    - name: Docker drop-in directory
+      file: { path: /etc/systemd/system/docker.service.d, state: directory, mode: "0755" }
+    - name: Docker drop-in
+      copy:
+        dest: /etc/systemd/system/docker.service.d/10-after-wireguard.conf
+        mode: "0644"
+        content: |
+          [Unit]
+          After=wg-quick@{{ wireguard_interface }}.service
+          Wants=wg-quick@{{ wireguard_interface }}.service
+      notify: systemd daemon-reload
+  when: wireguard_address is defined
+
 # No secrets in these files (those live in /etc/prgd/prgd.env); containers that run as a
 # normal user, such as Temporal, must be able to read the files mounted into them.
 - name: Compose bundle
@@ -81,8 +98,10 @@
 - name: Firewall allow QUIC
   community.general.ufw: { rule: allow, port: "443", proto: udp }
 
+# Docker publishes ports past ufw, so what really limits NATS is the bind address (MGMT_IP, the
+# WireGuard address); this rule documents the intent and covers a NATS run outside Docker.
 - name: Firewall allow NATS from the management network only
-  community.general.ufw: { rule: allow, port: "4222", proto: tcp, src: "{{ mgmt_cidr | default('10.0.0.0/24') }}" }
+  community.general.ufw: { rule: allow, port: "4222", proto: tcp, src: "{{ wireguard_cidr if wireguard_address is defined else (mgmt_cidr | default('10.0.0.0/24')) }}" }
 
 - name: Restrict ssh sources when configured
   community.general.ufw: { rule: allow, port: "22", proto: tcp, src: "{{ item }}" }

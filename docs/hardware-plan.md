@@ -14,6 +14,21 @@ Progrid launches on rented dedicated servers in Europe, then moves to Saudi loca
 - The primary IPv4 address is an add on at 1.70 EUR a month. Extra addresses come as a /29 or larger subnet, which is what the platform's IP blocks map to.
 - Hetzner holds an ISO 27001:2022 certificate, which helps with CST registration.
 
+## The first server (ordered)
+
+An auction server in Falkenstein: Intel i7-6700 (4 cores, 8 threads), 64 GB RAM, 2 x 512 GB NVMe,
+1 Gbit/s, one IPv4 address. It runs as a single Proxmox VE 8 node (lab and first customers), set up
+by hand with `docs/first-proxmox-node.md`:
+
+- Debian 12 by installimage, software RAID 1 over both NVMe drives, LVM: 80 GB root, 8 GB swap, the
+  rest (about 385 GB) as the LVM thin pool behind the `vm-disks` storage. No Ceph on one node; the
+  host agent runs with `storage_type: lvmthin`.
+- Public addresses are routed: the main IP on the NIC, an additional subnet routed by Hetzner to the
+  main IP and on to the bridge `vmbr0`. No virtual MACs needed. Order a /29 (5 usable server
+  addresses after network, broadcast and the gateway kept by the node) or larger; single
+  additional IPs do not fit the platform's IP blocks yet.
+- It reaches the control plane on the DigitalOcean droplet over WireGuard (`10.9.0.0/24`).
+
 ## Backups: Hetzner Storage Box
 
 Same provider and network, so backups are fast and cheap (about 4 to 5 EUR a month). The platform's object storage provider for backups can point at it over SFTP or through a small S3 gateway until Ceph RGW exists.
@@ -38,6 +53,6 @@ Once there are paying clients, compare Saudi located options (Riyadh or Jeddah) 
 
 - One region, `sa1` "Saudi Arabia 1", stays the customer facing region name; the first host lives in Falkenstein and the region description can say so until the move.
 - One AX41 or AX42 (64 GB) hosts about 20 Starter servers, 12 Standard, 6 Pro or 3 Business at full commitment, before shared app hosts and managed database nodes. Order the second server when memory commitment passes 70 percent.
-- Public IPs come from a Hetzner subnet on the host; register it as an IP block in the back office.
+- Public IPs come from a Hetzner subnet routed to the host; register it as an IP block in the back office with the node's address on `vmbr0` (the subnet's first usable address) as the gateway.
 - Daily backups and managed database backups go to the Storage Box through the platform's object storage endpoint.
 - The failover server at OVH runs the control plane database replica and can take new servers if Hetzner is unavailable; it is a second region in the back office, hidden until needed.

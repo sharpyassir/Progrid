@@ -519,7 +519,10 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 				}
 				return nil, a.pve.ResizeAttachedDisk(ctx, ref.VMID, volid, p.SizeGb)
 			}
-			// Detached images have no Proxmox API for resize; use the rbd tool on the node.
+			// Detached images have no Proxmox API for resize; use the storage's own tool on the node.
+			if a.cfg.Proxmox.StorageType == config.StorageLVMThin {
+				return nil, lvResize(ctx, volid, p.SizeGb)
+			}
 			pool := a.cfg.Proxmox.CephPool
 			if pool == "" {
 				pool = vol.Storage
@@ -901,7 +904,11 @@ func (a *Agent) cachedGuestAddresses(ctx context.Context, vmid int, uptimeSec in
 // When that fails (no Ceph CLI, a non RBD disk) it falls back to the old estimate of the used
 // memory in GB plus one, so the snapshot is still billed.
 func (a *Agent) snapshotSizeGb(ctx context.Context, vmid int, snap string, log *slog.Logger) float64 {
-	cfg, err := a.pve.Config(ctx, vmid)
+	var cfg map[string]string
+	err := errors.New("storage " + a.cfg.Proxmox.StorageType + " has no per snapshot usage")
+	if a.cfg.Proxmox.StorageType != config.StorageLVMThin {
+		cfg, err = a.pve.Config(ctx, vmid)
+	}
 	if err == nil {
 		volid := strings.SplitN(cfg["scsi0"], ",", 2)[0]
 		image := volid
@@ -970,6 +977,31 @@ var rbdResize = func(ctx context.Context, pool, image string, sizeGb int) error 
 		return fmt.Errorf("rbd resize: %s: %w", strings.TrimSpace(string(out)), err)
 	}
 	return nil
+}
+
+// lvResize grows a detached image on an LVM thin storage: `pvesm path` names the logical volume
+// and lvextend grows it (lvextend refuses to shrink, like rbd resize without --allow-shrink).
+// Replaced in tests.
+var lvResize = func(ctx context.Context, volid string, sizeGb int) error {
+	out, err := exec.CommandContext(ctx, "pvesm", "path", volid).Output()
+	if err != nil {
+		return fmt.Errorf("pvesm path %s: %w", volid, err)
+	}
+	dev := strings.TrimSpace(string(out))
+	if !strings.HasPrefix(dev, "/dev/") {
+		return fmt.Errorf("pvesm path %s: %q is not a block device", volid, dev)
+	}
+	if out, err := exec.CommandContext(ctx, "lvextend", "--size", fmt.Sprintf("%dG", sizeGb), dev).CombinedOutput(); err != nil {
+		return fmt.Errorf("lvextend: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+// SetLvResize swaps the LVM thin detached resize implementation (tests). Returns the previous one.
+func SetLvResize(f func(ctx context.Context, volid string, sizeGb int) error) func(ctx context.Context, volid string, sizeGb int) error {
+	old := lvResize
+	lvResize = f
+	return old
 }
 
 // SetRbdResize swaps the detached resize implementation (tests). Returns the previous one.

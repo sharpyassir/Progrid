@@ -67,6 +67,11 @@ end to end through the public API against simulated hosts and agents, and runs i
    snippets on local storage, or turns on the datacenter firewall. All of it is assumed. Write an
    Ansible role for a Proxmox node that does these steps, or a documented manual runbook for the
    first two Hetzner boxes.
+   Partly done for the first single node: `docs/first-proxmox-node.md` installs Proxmox on the
+   Hetzner box (RAID 1, LVM thin `vm-disks`, routed `vmbr0`, the `customers` bridge, the datacenter
+   firewall, snippets, template 9000), and the Ansible roles `wireguard` and `pve_node` build the
+   management tunnel, the agent's API user, role and token, and install the agent built from source.
+   Ceph, cluster forming and the SDN zone are still open for the multi node cluster.
 7. **No golden images.** Servers clone template VMIDs 9000 to 9003 and marketplace apps 9100 and
    up. Nothing builds them. Add a Packer pipeline that produces Ubuntu, Debian, Rocky and app
    templates with cloud-init and the QEMU guest agent enabled, and an admin API to register them.

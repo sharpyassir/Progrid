@@ -1,14 +1,180 @@
+- name: Inventory has what the node needs
+  assert:
+    that:
+      - host_id is defined and host_id is not match('REPLACE')
+      - pve_node_name is defined and pve_node_name == ansible_hostname
+    fail_msg: >-
+      Set host_id (the Host id from the back office) and pve_node_name (the Proxmox node name,
+      which is the hostname, here {{ ansible_hostname }}) for {{ inventory_hostname }}.
+
 - name: Config directory
   file: { path: /etc/prgd, state: directory, mode: "0750" }
 
-- name: Download host-agent {{ host_agent_version }}
-  unarchive:
-    src: "https://github.com/sharpyassir/TurkeyProject/releases/download/{{ host_agent_version }}/host-agent_linux_amd64.tar.gz"
-    dest: /usr/local/bin
-    remote_src: true
-    mode: "0755"
-    creates: "/usr/local/bin/host-agent"
+# ---- host agent binary: built on the Ansible machine from the checked out source ----
+
+- name: Source revision of the host agent
+  command: git -C "{{ host_agent_src }}" rev-parse --short=12 HEAD
+  register: host_agent_sha
+  changed_when: false
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Uncommitted changes in the host agent source
+  command: git -C "{{ host_agent_src }}" status --porcelain -- .
+  register: host_agent_dirty
+  changed_when: false
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Version string
+  set_fact:
+    host_agent_version: "{{ host_agent_sha.stdout }}{{ '-dirty' if host_agent_dirty.stdout | length > 0 else '' }}"
+    host_agent_binary: "{{ host_agent_build_dir }}/host-agent-{{ host_agent_sha.stdout }}{{ '-dirty' if host_agent_dirty.stdout | length > 0 else '' }}"
+
+- name: Build directory
+  file: { path: "{{ host_agent_build_dir }}", state: directory, mode: "0755" }
+  delegate_to: localhost
+  run_once: true
+
+- name: Existing build of this revision
+  stat: { path: "{{ host_agent_binary }}" }
+  register: host_agent_built
+  delegate_to: localhost
+  run_once: true
+
+# A clean revision is built once; a dirty tree is rebuilt on every run.
+- name: Build the host agent in {{ host_agent_go_image }}
+  command: >-
+    docker run --rm
+    -v {{ host_agent_src | realpath }}:/src:ro
+    -v {{ host_agent_build_dir }}:/out
+    -v prgd-host-agent-gomod:/go/pkg/mod
+    -w /src
+    -e CGO_ENABLED=0 -e GOOS=linux -e GOARCH=amd64 -e GOFLAGS=-buildvcs=false
+    {{ host_agent_go_image }}
+    go build -trimpath -ldflags "-s -w -X main.version={{ host_agent_version }}"
+    -o /out/{{ host_agent_binary | basename }} .
+  changed_when: true
+  when: not host_agent_built.stat.exists or host_agent_version is search('-dirty$')
+  delegate_to: localhost
+  run_once: true
+
+- name: Drop builds older than 30 days
+  command: find "{{ host_agent_build_dir }}" -name 'host-agent-*' ! -name "{{ host_agent_binary | basename }}" -mtime +30 -print -delete
+  register: host_agent_pruned
+  changed_when: host_agent_pruned.stdout | length > 0
+  delegate_to: localhost
+  run_once: true
+
+- name: Install the host agent binary {{ host_agent_version }}
+  copy: { src: "{{ host_agent_binary }}", dest: /usr/local/bin/host-agent, mode: "0755" }
   notify: restart host-agent
+
+# ---- node checks and settings ----
+
+- name: Storage for VM disks exists ({{ proxmox_storage }})
+  command: pvesm status --storage {{ proxmox_storage }}
+  changed_when: false
+  register: pve_storage_check
+  failed_when: pve_storage_check.rc != 0
+  # Create it first: docs/first-proxmox-node.md (LVM thin) or the Ceph runbook.
+
+- name: Bridges exist
+  command: ip link show {{ item }}
+  loop: ["{{ proxmox_private_bridge }}", "{{ proxmox_public_bridge }}"]
+  changed_when: false
+
+- name: Content types of the local storage
+  command: pvesh get /storage/local --output-format json
+  register: pve_local_storage
+  changed_when: false
+
+# The agent writes cloud-init user-data to /var/lib/vz/snippets and references local:snippets/.
+- name: Snippets enabled on local
+  command: pvesm set local --content {{ ((pve_local_storage.stdout | from_json).content.split(',') + ['snippets']) | unique | join(',') }}
+  changed_when: true
+  when: "'snippets' not in (pve_local_storage.stdout | from_json).content.split(',')"
+
+# ---- Proxmox API user, role and token for the agent ----
+
+- name: Agent user ({{ pve_agent_user }})
+  command: pveum user add {{ pve_agent_user }} --comment "prgd host agent (API token only)"
+  register: pve_user_add
+  changed_when: pve_user_add.rc == 0
+  failed_when: pve_user_add.rc != 0 and 'already exists' not in pve_user_add.stderr
+
+- name: Proxmox VE version
+  command: pveversion
+  register: pve_version
+  changed_when: false
+
+# Proxmox VE 9 replaced VM.Monitor with the VM.GuestAgent.* privileges; Audit covers the agent's
+# ping and network-get-interfaces calls.
+- name: Agent privileges for this Proxmox VE version
+  set_fact:
+    pve_agent_privs_effective: >-
+      {{ (pve_agent_privs | reject('equalto', 'VM.Monitor') | list) + ['VM.GuestAgent.Audit']
+         if (pve_version.stdout.split('/')[1].split('.')[0] | int) >= 9
+         else pve_agent_privs }}
+
+- name: Existing roles
+  command: pveum role list --output-format json
+  register: pve_roles
+  changed_when: false
+
+- name: Agent role with exactly the agent's privileges ({{ pve_agent_role }})
+  vars:
+    current: "{{ (pve_roles.stdout | from_json) | selectattr('roleid', 'equalto', pve_agent_role) | list }}"
+  command: >-
+    pveum role {{ 'modify' if current | length > 0 else 'add' }} {{ pve_agent_role }}
+    --privs "{{ pve_agent_privs_effective | join(',') }}"
+  changed_when: true
+  when: current | length == 0 or (current[0].privs.split(',') | map('trim') | sort) != (pve_agent_privs_effective | sort)
+
+# privsep=1: the token holds only the ACLs given to it below (and never more than the user).
+# Its secret is shown once, at creation, so it goes straight into a root only file. When the
+# token exists but the file is gone, the token is recreated: only this agent uses it.
+- name: Agent API token
+  shell: |
+    set -euo pipefail
+    umask 077
+    f="{{ pve_agent_token_file }}"
+    have=$(pveum user token list {{ pve_agent_user }} --output-format json | python3 -c 'import json,sys; print(any(t.get("tokenid") == "{{ pve_agent_token_name }}" for t in json.load(sys.stdin)))')
+    if [ "$have" = True ] && [ -s "$f" ]; then echo unchanged; exit 0; fi
+    if [ "$have" = True ]; then pveum user token remove {{ pve_agent_user }} {{ pve_agent_token_name }}; fi
+    pveum user token add {{ pve_agent_user }} {{ pve_agent_token_name }} --privsep 1 --comment "prgd host agent" --output-format json \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])' > "$f.new"
+    mv "$f.new" "$f"
+    echo created
+  args: { executable: /bin/bash }
+  register: pve_token
+  changed_when: "'created' in pve_token.stdout"
+  notify: restart host-agent
+
+- name: Existing ACLs
+  command: pveum acl list --output-format json
+  register: pve_acls
+  changed_when: false
+
+- name: Role on the agent's paths, for the user and its token
+  vars:
+    ugid: "{{ pve_agent_user if item.1 == 'user' else pve_agent_user ~ '!' ~ pve_agent_token_name }}"
+    present: >-
+      {{ (pve_acls.stdout | from_json) | selectattr('path', 'equalto', item.0)
+         | selectattr('ugid', 'equalto', ugid) | selectattr('roleid', 'equalto', pve_agent_role) | list | length > 0 }}
+  command: pveum acl modify {{ item.0 }} --roles {{ pve_agent_role }} --{{ item.1 }}s '{{ ugid }}' --propagate 1
+  loop: "{{ pve_agent_acl_paths | product(['user', 'token']) | list }}"
+  changed_when: true
+  when: not present
+
+- name: Read the token secret
+  slurp: { src: "{{ pve_agent_token_file }}" }
+  register: pve_token_secret
+  no_log: true
+
+# ---- agent config and service ----
 
 - name: Agent config
   template: { src: agent.yaml.j2, dest: /etc/prgd/agent.yaml, mode: "0640" }
@@ -19,8 +185,9 @@
     dest: /etc/prgd/agent.env
     mode: "0600"
     content: |
-      PVE_TOKEN_SECRET={{ vault_pve_agent_token_secret }}
+      PVE_TOKEN_SECRET={{ pve_token_secret.content | b64decode | trim }}
       NATS_TOKEN={{ vault_nats_token }}
+  no_log: true
   notify: restart host-agent
 
 - name: systemd unit

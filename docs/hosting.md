@@ -15,12 +15,31 @@ variables. Settings and secrets live in one file on the management host, rendere
 | Postgres with TimescaleDB, Redis, NATS, Temporal | management host | containers with named volumes |
 | Caddy | management host | container, ports 80 and 443, Let's Encrypt |
 | Nightly backups | management host | container writing `/var/backups/prgd`, optional S3 copy |
-| Host agent (`agents/host-agent`) | every Proxmox node | static binary under systemd, talks to NATS over the management network |
-| Customer servers | Proxmox nodes | virtual machines on Ceph, created by the host agent |
+| Host agent (`agents/host-agent`) | every Proxmox node | static binary under systemd, built from this repository by Ansible, talks to NATS over the WireGuard management network |
+| Customer servers | Proxmox nodes | virtual machines on Ceph (on the first single node: local LVM thin), created by the host agent |
 | CLI, MCP server | the developer's machine | GitHub release binaries, npm package |
 
-The management host is the only machine with a public address besides the customer IP blocks.
-Proxmox nodes sit on the management network and reach the host through NATS on port 4222.
+The management host and the Proxmox nodes reach each other over the WireGuard management network
+(below); the nodes reach NATS on the management host's WireGuard address, port 4222.
+
+## Management network (WireGuard)
+
+The control plane runs on a DigitalOcean droplet and the nodes at Hetzner, so there is no shared
+private network. The Ansible role `wireguard` builds one: `wg0` on `10.9.0.0/24`, the management
+host `10.9.0.1`, nodes `10.9.0.2` and up (`wireguard_address` per host in the inventory). The range
+sits inside `CONTROL_PLANE_CIDR` (`10.0.0.0/12`) and clear of the tenant pool, the DigitalOcean VPC
+(`10.114.0.0/20`), Docker's ranges and the `10.8.0.0/24` examples used for managed customer assets.
+
+- Each host generates its own key; Ansible reads back only public keys. No private key is in the
+  repository or the vault.
+- NATS is published on `MGMT_IP`, which Ansible sets to the management host's WireGuard address,
+  so only peers reach it (Docker publishes ports past ufw; the bind address is what protects it).
+  Docker starts after `wg-quick@wg0` at boot so that address exists when NATS binds.
+- ufw opens UDP 51820 on the management host. The Proxmox nodes allow 51820, and port 8006 only
+  from `10.9.0.0/24`, in their datacenter firewall (docs/first-proxmox-node.md, step 15).
+- The terminal gateway and the maintenance runner run in containers on the management host and
+  will reach nodes over the same tunnel: their connections leave through `wg0` from `10.9.0.1`, so
+  `PRGD_GATEWAY_SOURCE_ADDRESSES=10.9.0.1/32`.
 
 ## Phase 0: one rented box
 
@@ -29,7 +48,7 @@ Goal: a public demo and the first design partners, before our own hardware is ra
 1. Rent one dedicated server with a public IP (8 cores, 32 GB, NVMe is plenty). Install Ubuntu 24.04.
 2. Point DNS: `<domain>`, `www.<domain>`, `console.<domain>`, `ops.<domain>`, `api.<domain>` to that address.
 3. Fill `infra/ansible/inventory.ini`, `group_vars/all/vars.yml` and the vault in `group_vars/all/vault.yml`. Set `hypervisor_driver: fake`
-   if there is no Proxmox yet, or install Proxmox on the same box and point the agent at it.
+   until there is a Proxmox node; `docs/first-proxmox-node.md` adds the first one (a Hetzner server) and switches to `proxmox`.
 4. `ansible-playbook -i inventory.ini site.yml --ask-vault-pass`. The role installs Docker, copies the
    compose bundle to `/opt/prgd`, writes `/etc/prgd/prgd.env`, opens the firewall and starts everything.
 5. Add the GitHub secrets (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`). The public addresses baked into the
@@ -83,7 +102,7 @@ address from it on net0 (no gateway; the default route stays on the public NIC n
 | `PRIVATE_NETWORK_POOL` | `10.96.0.0/12` | Pool the project networks come from. One CIDR, or per region: `sa1=10.96.0.0/12,sa2=10.112.0.0/12` |
 | `PRIVATE_NETWORK_PREFIX` | `24` | Size of each project network |
 | `PRIVATE_NETWORK_MODE` | `shared_bridge` | `shared_bridge` or `sdn_vnet`, one value or per region: `sa1=sdn_vnet` (unlisted regions use `shared_bridge`) |
-| `PROXMOX_VXLAN_ZONE` | `customers` | SDN zone the project VNets are created in (`sdn_vnet` only) |
+| `PROXMOX_VXLAN_ZONE` | `customers` | SDN zone the project VNets are created in (`sdn_vnet` only). Proxmox zone ids are at most 8 characters, so set a shorter name such as `tenants` (`proxmox_vxlan_zone` in Ansible) |
 | `PRIVATE_NETWORK_VXLAN_BASE` | `100000` | VXLAN tag of the first pool network; a network's tag is this plus its index in the pool |
 
 The pool must not overlap the management network, a DHCP range on the shared bridge or any other routed
@@ -107,7 +126,7 @@ VNet. Prerequisites, done once per cluster before switching a region:
    on any other node fails to start.
 
    ```sh
-   pvesh create /cluster/sdn/zones --type vxlan --zone customers --peers 10.0.0.11,10.0.0.12,10.0.0.13 --mtu 1450
+   pvesh create /cluster/sdn/zones --type vxlan --zone tenants --peers 10.0.0.11,10.0.0.12,10.0.0.13 --mtu 1450
    pvesh set /cluster/sdn
    ```
 3. UDP 4789 open between the nodes' underlay addresses.
@@ -150,9 +169,12 @@ holds in flight host agent jobs; the worker retries them. Temporal state lives i
 - **Logs**: `docker compose logs -f api worker` on the host. JSON file logging is capped at 100 MB per service.
 - **Temporal UI**: `ssh -L 8080:127.0.0.1:8080 ops@<host>` then open `http://localhost:8080`. It is never public.
 - **Health**: Caddy answers `https://api.<domain>/healthz`. Point an external uptime check at it.
-- **Firewall**: ufw allows 22, 80, 443 to the world and 4222 only from the management network.
-- **Adding a Proxmox node**: create the `Host` row through the admin API, put its id in the inventory, run
-  the playbook with `--limit pve_nodes`. The agent starts sending heartbeats within a minute.
+- **Firewall**: ufw allows 22, 80, 443 and UDP 51820 (WireGuard) to the world; NATS (4222) is published only on
+  the WireGuard address.
+- **Adding a Proxmox node**: install it like docs/first-proxmox-node.md, create the `Host` row in the back office
+  (name = the node's hostname), put its id, `pve_node_name` and the next free `wireguard_address` in the
+  inventory, and run the whole playbook (the management host needs the new WireGuard peer too). The agent starts
+  sending heartbeats within a minute.
 
 ## Object storage (Ceph RADOS Gateway)
 

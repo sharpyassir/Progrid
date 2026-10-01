@@ -1,0 +1,8 @@
+# Management network between the control plane host and the Proxmox nodes.
+# 10.9.0.0/24 sits inside control_plane_cidr (10.0.0.0/12) and clear of the tenant pool
+# (10.96.0.0/12), the DigitalOcean VPC (10.114.0.0/20), Docker's 172.16.0.0/12 and the
+# 10.8.0.0/24 range the docs use for managed customer assets. Management is .1, nodes .2 and up.
+wireguard_cidr: 10.9.0.0/24
+wireguard_port: 51820
+wireguard_interface: wg0
+wireguard_keepalive: 25

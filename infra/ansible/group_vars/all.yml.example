@@ -4,12 +4,21 @@ domain: progrid.sa
 acme_email: support@progrid.sa
 registry: ghcr.io/sharpyassir
 image_tag: latest
-host_agent_version: v0.1.0          # GitHub release tag that carries host-agent_linux_amd64.tar.gz
 hypervisor_driver: proxmox          # fake for a demo box without Proxmox
-proxmox_url: https://pve1.mgmt.internal:8006
-proxmox_token_id: prgd@pve!control-plane
-proxmox_ceph_pool: vm-disks
-proxmox_vxlan_zone: customers
+# The control plane never calls Proxmox itself (every call is a NATS job to the host agent), so
+# proxmox_url and proxmox_token_id are informational; point them at the first node over WireGuard.
+proxmox_url: https://10.9.0.2:8006
+proxmox_token_id: prgd@pve!agent
+# Host agent (role pve_node). The binary is built from this checkout on the Ansible machine.
+proxmox_storage: vm-disks           # storage id for VM disks and volumes
+proxmox_storage_type: rbd           # rbd (Ceph cluster) or lvmthin (single node, docs/first-proxmox-node.md)
+proxmox_ceph_pool: vm-disks         # rbd only
+proxmox_private_bridge: customers   # shared private bridge on every node (PRIVATE_NETWORK_MODE=shared_bridge)
+proxmox_public_bridge: vmbr0        # routed bridge that carries the public IP blocks
+proxmox_vxlan_zone: tenants         # SDN zone for sdn_vnet mode; Proxmox zone ids are at most 8 characters
+# Management network (role wireguard); addresses per host in the inventory
+wireguard_cidr: 10.9.0.0/24         # inside control_plane_cidr, clear of the tenant pool and the DO VPC
+wireguard_port: 51820
 mail_provider: resend
 mail_from: "Progrid <no-reply@progrid.sa>"
 support_inbox: support@progrid.sa
@@ -48,7 +57,7 @@ prgd_stepca_provisioner: prgd-gateway
 prgd_stepca_root_fingerprint: ""
 prgd_ssh_login_user: prgd
 prgd_gateway_public_url: wss://gateway.progrid.sa
-prgd_gateway_source_addresses: ""   # the gateway's management network address, e.g. 10.8.0.2/32
+prgd_gateway_source_addresses: ""   # the gateway's management network address: the management host's WireGuard address, 10.9.0.1/32
 prgd_recordings_bucket: prgd-session-recordings
 prgd_secret_store: vault            # vault | infisical
 prgd_vault_addr: https://vault.internal.progrid.sa:8200
@@ -64,7 +73,7 @@ microsoft_tenant: common            # common accepts work, school and personal a
 # vault_nats_token: ...
 # vault_jwt_secret: ...
 # vault_secrets_key: ...            # encrypts TOTP seeds and webhook secrets at rest
-# vault_proxmox_token_secret: ...
+# vault_proxmox_token_secret: ""       # unused: the control plane has no Proxmox token (the agent's lives on the node)
 # vault_mail_api_key: ...
 # vault_moyasar_secret_key: ...
 # vault_moyasar_webhook_secret: ...
@@ -82,7 +91,6 @@ microsoft_tenant: common            # common accepts work, school and personal a
 # vault_pdns_api_key: ...
 # vault_rgw_admin_access_key: ...
 # vault_rgw_admin_secret_key: ...
-# vault_pve_agent_token_secret: ...
 # vault_backup_s3_key: ""
 # vault_backup_s3_secret: ""
 # vault_ghcr_user: ""               # only when images are private
