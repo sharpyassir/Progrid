@@ -3,30 +3,49 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { GROUPS, Group, PRODUCTS, phaseLabel } from '@/lib/products';
-import { groupDescription, groupLabel, Locale, t } from '@/lib/i18n';
+import { Locale, t } from '@/lib/i18n';
+import { activeGroup, itemActive, NAV, NavGroup, NavItem } from '@/lib/nav';
 import { useShell } from '@/components/shell';
 
-const GROUP_HOME: Partial<Record<Group, string>> = {
-  Projects: '/projects', 'Managed Agents': '/agents', 'Core Cloud': '/servers', Marketplace: '/apps', Security: '/firewalls',
-};
+const itemCls = 'flex items-center justify-between gap-3 rounded px-2 text-sm hover:bg-neutral-100 focus-visible:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:hover:bg-neutral-800 dark:focus-visible:bg-neutral-800';
 
-/** Paths reached from the always visible header links; everything else under a product counts as "Products". */
-const TOP_LINKS = ['/managed', '/support', '/billing', '/team', '/admin'];
-
-function GroupList({ group, onNavigate, compact, columns }: { group: Group; onNavigate?: () => void; compact?: boolean; columns?: boolean }) {
+/** One menu entry: internal link, external link (new tab) or roadmap item with a "Soon" badge. */
+function NavLink({ item, onNavigate, compact }: { item: NavItem; onNavigate?: () => void; compact?: boolean }) {
+  const { locale } = useShell();
+  const pathname = usePathname();
+  const active = itemActive(item, pathname);
+  const cls = `${itemCls} ${compact ? 'py-1' : 'py-2'} ${active ? 'bg-neutral-100 font-medium text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100' : ''} ${item.soon ? 'text-neutral-500' : ''}`;
+  const label = <span>{t(locale, item.label)}</span>;
+  if (item.external) {
+    return (
+      <a href={item.href} target="_blank" rel="noreferrer" onClick={onNavigate} className={cls}>
+        {label}<span aria-hidden className="text-neutral-400">↗</span><span className="sr-only">({t(locale, 'navExternal')})</span>
+      </a>
+    );
+  }
   return (
-    <ul className={columns ? 'grid grid-cols-2 gap-x-4 gap-y-0.5' : 'space-y-0.5'}>
-      {PRODUCTS.filter((p) => p.group === group).map((p) => (
-        <li key={p.slug}>
-          <Link href={p.href ?? `/products/${p.slug}`} onClick={onNavigate} title={p.blurb}
-            className={`flex items-center justify-between gap-3 rounded px-2 ${compact ? 'py-1' : 'py-1.5'} text-sm hover:bg-neutral-100 focus-visible:bg-neutral-100 focus-visible:outline-none dark:hover:bg-neutral-800 dark:focus-visible:bg-neutral-800 ${p.href ? '' : 'text-neutral-500'}`}>
-            <span>{p.name}</span>
-            {p.phase && <span className="badge shrink-0 whitespace-nowrap bg-neutral-100 text-neutral-500 dark:bg-neutral-800">{phaseLabel(p.phase)}</span>}
-          </Link>
-        </li>
+    <Link href={item.href} onClick={onNavigate} aria-current={active ? 'page' : undefined} className={cls}>
+      {label}
+      {item.soon && <span className="badge shrink-0 whitespace-nowrap bg-neutral-100 text-neutral-500 dark:bg-neutral-800">{t(locale, 'navSoon')}</span>}
+    </Link>
+  );
+}
+
+/** A group's sections as titled lists; used by the desktop dropdowns and the mobile sheet. */
+function GroupSections({ group, onNavigate, compact }: { group: NavGroup; onNavigate?: () => void; compact?: boolean }) {
+  const { locale } = useShell();
+  const many = group.sections.length > 1;
+  return (
+    <div className={compact && many ? 'grid gap-x-4 gap-y-4 sm:grid-cols-2 xl:grid-cols-3' : 'space-y-4'}>
+      {group.sections.map((s) => (
+        <section key={s.label} aria-labelledby={`nav-${group.id}-${s.label}`} className="min-w-0">
+          <h3 id={`nav-${group.id}-${s.label}`} className="mb-1 px-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 rtl:tracking-normal">{t(locale, s.label)}</h3>
+          <ul className={compact ? 'space-y-0.5' : 'space-y-0'}>
+            {s.items.map((i) => <li key={i.label}><NavLink item={i} onNavigate={onNavigate} compact={compact} /></li>)}
+          </ul>
+        </section>
       ))}
-    </ul>
+    </div>
   );
 }
 
@@ -87,55 +106,47 @@ const Chevron = ({ open }: { open: boolean }) => (
   <svg aria-hidden width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" className={`transition ${open ? 'rotate-180' : ''}`}><path d="M3 4.5 6 7.5 9 4.5" /></svg>
 );
 
-/** Groups with many products take two columns of the panel and list them in two columns. */
-const WIDE: Group[] = ['Core Cloud'];
-const groupId = (g: Group) => `pg-${g.replace(/\W+/g, '-')}`;
+const WIDTH: Record<NavGroup['id'], string> = {
+  cloud: 'w-[min(46rem,calc(100vw-2rem))]', build: 'w-[min(34rem,calc(100vw-2rem))]', connect: 'w-72', account: 'w-[min(34rem,calc(100vw-2rem))]',
+};
 
-/**
- * Desktop: one "Products" button opening a panel with every product area, a short description
- * of each and its products. Keeps the header to a single line on laptop widths.
- */
-export function ProductsMenu() {
+/** Desktop: one dropdown per group (Cloud, Build, Connect, Account) with its sections side by side. */
+function GroupMenu({ group }: { group: NavGroup }) {
   const { locale } = useShell();
   const pathname = usePathname();
   const { open, setOpen, buttonProps, panelProps, wrapProps } = useDropdown();
-  const inProducts = !TOP_LINKS.some((p) => pathname.startsWith(p)) && PRODUCTS.some((p) => p.href && pathname.startsWith(p.href.split(/[?#]/)[0]));
-
+  const here = activeGroup(pathname) === group.id;
+  const id = `menu-${group.id}`;
   return (
     <div className="relative" {...wrapProps}>
-      <button id="products-menu-button" type="button" aria-controls="products-menu" {...buttonProps}
-        className={`flex items-center gap-1 rounded px-2.5 py-1.5 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800 ${inProducts || open ? 'font-medium text-neutral-900 dark:text-neutral-100' : 'text-neutral-600 dark:text-neutral-300'}`}>
-        {t(locale, 'products')}<Chevron open={open} />
+      <button id={`${id}-button`} type="button" aria-controls={id} {...buttonProps}
+        className={`flex items-center gap-1 rounded px-2.5 py-1.5 text-sm hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:hover:bg-neutral-800 ${here || open ? 'font-medium text-neutral-900 dark:text-neutral-100' : 'text-neutral-600 dark:text-neutral-300'}`}>
+        {t(locale, group.label)}<Chevron open={open} />
       </button>
       {open && (
-        <div id="products-menu" role="region" aria-label={t(locale, 'products')} {...panelProps}
-          className="absolute start-0 z-30 mt-2 max-h-[calc(100vh-5rem)] w-[min(60rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-neutral-200 bg-white p-4 shadow-2xl dark:border-neutral-800 dark:bg-neutral-900">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-5 xl:grid-cols-4">
-            {GROUPS.map((g) => (
-              <section key={g} aria-labelledby={groupId(g)} className={`min-w-0 ${WIDE.includes(g) ? 'col-span-2' : ''}`}>
-                {GROUP_HOME[g]
-                  ? <Link id={groupId(g)} href={GROUP_HOME[g]!} onClick={() => setOpen(false)} className="block rounded px-2 text-xs font-semibold uppercase tracking-wide text-blue-700 hover:underline focus-visible:underline focus-visible:outline-none dark:text-blue-400">{groupLabel(locale, g)}</Link>
-                  : <h3 id={groupId(g)} className="px-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">{groupLabel(locale, g)}</h3>}
-                <p className="mb-1.5 mt-0.5 px-2 text-xs leading-snug text-neutral-500">{groupDescription(locale, g)}</p>
-                <GroupList group={g} onNavigate={() => setOpen(false)} compact columns={WIDE.includes(g)} />
-              </section>
-            ))}
-          </div>
+        <div id={id} role="region" aria-label={t(locale, group.label)} {...panelProps}
+          className={`absolute start-0 z-30 mt-2 max-h-[calc(100vh-5rem)] overflow-y-auto rounded-xl border border-neutral-200 bg-white p-4 shadow-2xl dark:border-neutral-800 dark:bg-neutral-900 ${WIDTH[group.id]}`}>
+          <Link href={group.home} onClick={() => setOpen(false)} className="mb-3 block rounded px-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+            <span className="block text-sm font-semibold text-blue-700 dark:text-blue-400">{t(locale, group.label)}</span>
+            <span className="block text-xs text-neutral-500">{t(locale, group.description)}</span>
+          </Link>
+          <GroupSections group={group} onNavigate={() => setOpen(false)} compact />
         </div>
       )}
     </div>
   );
 }
 
-/** Links that stay visible next to the Products menu (and head the mobile menu). */
+export function GroupMenus() {
+  return <>{NAV.map((g) => <GroupMenu key={g.id} group={g} />)}</>;
+}
+
+/** Links that stay visible next to the group menus (and head the mobile menu). */
 export function TopLinks({ isStaff, stacked }: { isStaff: boolean; stacked?: boolean }) {
   const { locale } = useShell();
   const pathname = usePathname();
   const links: { href: string; label: string; staff?: boolean }[] = [
-    { href: '/managed', label: t(locale, 'mcNav') },
     { href: '/support', label: t(locale, 'support') },
-    { href: '/billing', label: t(locale, 'billing') },
-    { href: '/team', label: t(locale, 'teamNav') },
     ...(isStaff ? [{ href: '/admin', label: t(locale, 'backOffice'), staff: true }] : []),
   ];
   return (
@@ -222,11 +233,13 @@ export function AccountMenu({ me }: { me: Me | null }) {
 export function MobileNav({ isStaff, me }: { isStaff: boolean; me: Me | null }) {
   const { locale } = useShell();
   const [open, setOpen] = useState(false);
-  const [expanded, setExpanded] = useState<Group | null>(null);
   const pathname = usePathname();
+  const [expanded, setExpanded] = useState<NavGroup['id'] | null>(null);
   const opener = useRef<HTMLButtonElement>(null);
   const closer = useRef<HTMLButtonElement>(null);
   useEffect(() => setOpen(false), [pathname]);
+  // Opening the sheet expands the group of the current page.
+  useEffect(() => { if (open) setExpanded(activeGroup(pathname)); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!open) return;
     closer.current?.focus();
@@ -248,16 +261,15 @@ export function MobileNav({ isStaff, me }: { isStaff: boolean; me: Me | null }) 
           </div>
           <div className="flex-1 overflow-y-auto">
             <nav className="border-b border-neutral-100 px-3 py-2 dark:border-neutral-800" aria-label={t(locale, 'menu')}><TopLinks isStaff={isStaff} stacked /></nav>
-            {GROUPS.map((g) => (
-              <div key={g} className="border-b border-neutral-100 dark:border-neutral-800">
-                <button className="flex w-full items-center justify-between gap-3 px-5 py-3 text-start" aria-expanded={expanded === g} onClick={() => setExpanded(expanded === g ? null : g)}>
-                  <span><span className="block text-lg">{groupLabel(locale, g)}</span><span className="block text-xs text-neutral-500">{groupDescription(locale, g)}</span></span>
-                  <span className={`text-neutral-400 transition ${expanded === g ? 'rotate-90' : 'rtl:rotate-180'}`} aria-hidden>›</span>
+            {NAV.map((g) => (
+              <div key={g.id} className="border-b border-neutral-100 dark:border-neutral-800">
+                <button className="flex w-full items-center justify-between gap-3 px-5 py-3 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500" aria-expanded={expanded === g.id} onClick={() => setExpanded(expanded === g.id ? null : g.id)}>
+                  <span><span className="block text-lg">{t(locale, g.label)}</span><span className="block text-xs text-neutral-500">{t(locale, g.description)}</span></span>
+                  <span className={`text-neutral-400 transition ${expanded === g.id ? 'rotate-90' : 'rtl:rotate-180'}`} aria-hidden>›</span>
                 </button>
-                {expanded === g && (
-                  <div className="px-4 pb-3">
-                    {GROUP_HOME[g] && <Link href={GROUP_HOME[g]!} onClick={() => setOpen(false)} className="mb-1 block px-2 text-xs font-medium uppercase tracking-wider text-blue-600">{groupLabel(locale, g)} <span aria-hidden className="inline-block rtl:rotate-180">→</span></Link>}
-                    <GroupList group={g} onNavigate={() => setOpen(false)} />
+                {expanded === g.id && (
+                  <div className="px-4 pb-4">
+                    <GroupSections group={g} onNavigate={() => setOpen(false)} />
                   </div>
                 )}
               </div>
