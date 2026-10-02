@@ -19,6 +19,9 @@ export const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
  *  - refusal fallbacks: on models that support it, `fallbacks: "default"` under the
  *    server-side-fallback-2026-07-01 beta (CONNECT_MODEL_FALLBACKS)
  *  - retries: the SDK retries 429 and 5xx with backoff (maxRetries); typed errors map to codes
+ *  - no premium features: fast mode (`speed: "fast"`) and server tools (web search, web fetch,
+ *    code execution, ...) cost more than the Connect token prices, so they are never sent.
+ *    assertPricedParams checks every request before it leaves.
  */
 export class AnthropicProvider implements ModelProvider {
   readonly name = 'anthropic';
@@ -53,6 +56,7 @@ export class AnthropicProvider implements ModelProvider {
       params.betas = [FALLBACK_BETA];
       params.fallbacks = 'default';
     }
+    assertPricedParams(params);
     return params;
   }
 
@@ -70,6 +74,7 @@ export class AnthropicProvider implements ModelProvider {
           outputTokens: res.usage.output_tokens ?? 0,
           cacheReadTokens: res.usage.cache_read_input_tokens ?? 0,
           cacheWriteTokens: res.usage.cache_creation_input_tokens ?? 0,
+          cacheWrite1hTokens: res.usage.cache_creation?.ephemeral_1h_input_tokens ?? 0,
         },
         servedBy: res.model,
         fallbacks: content.filter((b) => b.type === 'fallback').map((b) => ({ from: (b.from as { model?: string })?.model, to: (b.to as { model?: string })?.model })),
@@ -77,6 +82,26 @@ export class AnthropicProvider implements ModelProvider {
       };
     } catch (err) {
       throw mapError(err);
+    }
+  }
+}
+
+/**
+ * Connect prices cover standard speed tokens and the platform's own tools only. Fast mode
+ * (`speed: "fast"`, on the request or on a fallback hop) and Anthropic server tools such as web
+ * search are billed by Anthropic above those prices, so a request that carries any of them is
+ * refused before it is sent.
+ */
+export function assertPricedParams(params: object) {
+  const p = params as { speed?: unknown; fallbacks?: unknown; tools?: unknown; betas?: unknown };
+  if (p.speed !== undefined && p.speed !== null && p.speed !== 'standard') throw new ModelError('model_bad_request', 'Fast mode is not available in Connect.');
+  if (Array.isArray(p.fallbacks) && p.fallbacks.some((f) => f && typeof f === 'object' && (f as { speed?: unknown }).speed === 'fast')) throw new ModelError('model_bad_request', 'Fast mode is not available in Connect.');
+  if (Array.isArray(p.betas) && p.betas.some((b) => typeof b === 'string' && b.startsWith('fast-mode'))) throw new ModelError('model_bad_request', 'Fast mode is not available in Connect.');
+  if (Array.isArray(p.tools)) {
+    for (const t of p.tools as { type?: unknown; name?: unknown; input_schema?: unknown }[]) {
+      // Client tools have an input schema and no type (or "custom"). Anything else is a server tool.
+      const server = (t.type !== undefined && t.type !== null && t.type !== 'custom') || !t.input_schema;
+      if (server) throw new ModelError('model_bad_request', `Server tools such as web search are not available in Connect (${String(t.type ?? t.name)}).`);
     }
   }
 }

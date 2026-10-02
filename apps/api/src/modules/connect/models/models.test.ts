@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { FakeProvider, sample } from './fake.provider';
-import { AnthropicProvider, FALLBACK_BETA } from './anthropic.provider';
-import { MODELS, providerCostMicroUsd } from './catalog';
+import { AnthropicProvider, FALLBACK_BETA, assertPricedParams } from './anthropic.provider';
+import { MODELS, billingModel, providerCostMicroUsd } from './catalog';
 import { echoable, type ModelProvider, type ModelRequest, type ModelResponse, type ModelTool, type ToolUse } from './provider';
 import { initialState, runAgentLoop, type ToolOutcome } from '../runtime/agent-loop';
-import { priceUsage, quantities } from '../usage.service';
 
 const tool = (name: string, extra: Record<string, unknown> = {}): ModelTool => ({ name, description: `${name} tool`, input_schema: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'], additionalProperties: false, ...extra } });
 
@@ -178,6 +177,39 @@ describe('Anthropic request shape', () => {
   it('refuses unknown models', () => {
     expect(() => p.buildParams({ ...base, model: 'gpt-4' })).toThrow(/Unknown model/);
   });
+
+  it('never sends fast mode or server tools, which cost more than Connect prices', () => {
+    for (const m of MODELS) {
+      const params = p.buildParams({ ...base, model: m.id, effort: 'low' }) as unknown as Record<string, unknown>;
+      expect(params.speed).toBeUndefined();
+      expect(JSON.stringify(params)).not.toMatch(/"speed"|web_search|web_fetch|fast-mode/);
+      for (const t of params.tools as Record<string, unknown>[]) {
+        expect(t.type).toBeUndefined();
+        expect(t.input_schema).toBeDefined();
+      }
+    }
+  });
+
+  it('the guard refuses fast mode and server tools', () => {
+    const ok = p.buildParams(base);
+    expect(() => assertPricedParams(ok)).not.toThrow();
+    expect(() => assertPricedParams({ ...ok, speed: 'standard' })).not.toThrow();
+    expect(() => assertPricedParams({ ...ok, speed: 'fast' })).toThrow(/Fast mode/);
+    expect(() => assertPricedParams({ ...ok, betas: ['fast-mode-2026-02-01'] })).toThrow(/Fast mode/);
+    expect(() => assertPricedParams({ ...ok, fallbacks: [{ model: 'claude-opus-5', speed: 'fast' }] })).toThrow(/Fast mode/);
+    expect(() => assertPricedParams({ ...ok, tools: [...(ok.tools ?? []), { type: 'web_search_20260318', name: 'web_search', max_uses: 5 }] })).toThrow(/web search/);
+    expect(() => assertPricedParams({ ...ok, tools: [{ type: 'web_fetch_20260318', name: 'web_fetch' }] })).toThrow(/Server tools/);
+    expect(() => assertPricedParams({ ...ok, tools: [{ type: 'custom', name: 'x', input_schema: { type: 'object' } }] })).not.toThrow();
+  });
+
+  it('reports one hour cache writes apart from five minute ones', async () => {
+    const usage = { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100, cache_creation_input_tokens: 300, cache_creation: { ephemeral_5m_input_tokens: 200, ephemeral_1h_input_tokens: 100 } };
+    const fake = new AnthropicProvider('sk-test', { fallbacks: false, maxRetries: 0 });
+    (fake as unknown as { client: unknown }).client = { beta: { messages: { create: async () => ({ content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn', usage, model: 'claude-haiku-4-5-20251001' }) } } };
+    const r = await fake.complete({ ...base, model: 'claude-haiku-4-5' });
+    expect(r.usage).toEqual({ inputTokens: 10, outputTokens: 5, cacheReadTokens: 100, cacheWriteTokens: 300, cacheWrite1hTokens: 100 });
+    expect(billingModel(r.servedBy, 'claude-haiku-4-5')).toBe('claude-haiku-4-5');
+  });
 });
 
 describe('cost', () => {
@@ -189,10 +221,30 @@ describe('cost', () => {
     expect(MODELS.map((m) => m.id)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-4-5']);
   });
 
-  it('prices usage from per unit book prices and is 0 without prices', () => {
-    const u = { executions: 2000, inputTokens: 3_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 1_000_000, toolCalls: 500 };
-    expect(quantities(u)['connect-ai-input-tokens']).toBe(4_000_000);
-    expect(priceUsage(u, {})).toBe(0);
-    expect(priceUsage(u, { 'connect-executions': 100, 'connect-ai-input-tokens': 1500, 'connect-ai-output-tokens': 7500, 'connect-tool-calls': 20 })).toBe(2 * 100 + 4 * 1500 + 7500 + 0.5 * 20);
+  it('bills a response as the catalog model that answered, else as the agent model', () => {
+    expect(billingModel('claude-sonnet-5-5', 'claude-opus-5-5')).toBe('claude-sonnet-5-5');
+    expect(billingModel('claude-haiku-4-5-20251001', 'claude-opus-5-5')).toBe('claude-haiku-4-5');
+    // A refusal fallback to a model outside the catalog is billed as the agent's model.
+    expect(billingModel('claude-opus-5', 'claude-opus-5-5')).toBe('claude-opus-5-5');
+    expect(billingModel('', 'claude-sonnet-5-5')).toBe('claude-sonnet-5-5');
+  });
+});
+
+describe('fake provider usage', () => {
+  const req: ModelRequest = { model: 'claude-sonnet-5-5', effort: 'low', system: { preamble: 'platform preamble', instructions: 'agent instructions' }, tools: [], messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello there' }] }], maxTokens: 1000 };
+
+  it('reports a cache write on the first call and a cache read after it', async () => {
+    const f = new FakeProvider();
+    const first = await f.complete(req);
+    expect(first.usage.cacheWriteTokens).toBeGreaterThan(0);
+    expect(first.usage.cacheReadTokens).toBe(0);
+    const second = await f.complete({ ...req, messages: [...req.messages, { role: 'assistant', content: first.content }, { role: 'user', content: [{ type: 'text', text: 'more' }] }] });
+    expect(second.usage.cacheReadTokens).toBe(first.usage.cacheWriteTokens);
+    expect(second.usage.cacheWriteTokens).toBe(0);
+  });
+
+  it('reports fixed token counts when asked to', async () => {
+    const r = await new FakeProvider().complete({ ...req, messages: [{ role: 'user', content: [{ type: 'text', text: 'Hi fake:usage=12000,1500,40000,8000' }] }] });
+    expect(r.usage).toEqual({ inputTokens: 12000, outputTokens: 1500, cacheReadTokens: 40000, cacheWriteTokens: 8000 });
   });
 });

@@ -74,6 +74,21 @@ export function isKnownModel(id: string): boolean {
   return !!findModel(id);
 }
 
+/**
+ * The catalog model a response is billed as. A dated snapshot id (claude-haiku-4-5-20251001)
+ * maps to its catalog id. A model outside the catalog, such as a server side refusal fallback
+ * to Claude Opus 5, is billed as the model the agent asked for, so every token has a price.
+ */
+export function billingModel(servedBy: string | undefined, requested: string): string {
+  if (servedBy) {
+    const exact = findModel(servedBy);
+    if (exact) return exact.id;
+    const snapshot = MODELS.find((m) => servedBy.startsWith(`${m.id}-`) && /^\d{8}$/.test(servedBy.slice(m.id.length + 1)));
+    if (snapshot) return snapshot.id;
+  }
+  return requested;
+}
+
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;

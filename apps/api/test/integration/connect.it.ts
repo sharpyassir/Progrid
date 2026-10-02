@@ -475,49 +475,68 @@ describe('Connect Build with AI', () => {
 });
 
 describe('Connect usage, billing and back office', () => {
-  it('reports usage, meters it hourly and prices it only once staff set prices', async () => {
+  it('reports usage, meters it hourly at the launch prices and follows a price staff change', async () => {
     const c = owner.client;
     const usage = await c.ok('GET', '/v1/connect/usage');
     expect(usage.period).toMatch(/^\d{4}-\d{2}$/);
     expect(usage.totals.executions).toBeGreaterThan(5);
     expect(usage.totals.aiInputTokens).toBeGreaterThan(0);
+    expect(usage.totals.aiCacheWriteTokens).toBeGreaterThan(0);
     expect(usage.totals.toolCalls).toBeGreaterThan(0);
     expect(usage.totals.storageBytes).toBeGreaterThan(0);
-    expect(usage).toMatchObject({ estimatedCostMinor: 0, currency: 'SAR', pricingConfigured: false });
+    // The seed creates the approved launch prices, so pricing is configured from the start.
+    expect(usage).toMatchObject({ currency: 'SAR', pricingConfigured: true });
+    expect(usage.estimatedCostMinor).toBeGreaterThan(0);
+    // The total is the sum of the agents, up to rounding.
+    const agentSum = usage.byAgent.reduce((n: number, a: { estimatedCostMinor: number }) => n + a.estimatedCostMinor, 0);
+    expect(Math.abs(usage.estimatedCostMinor - agentSum)).toBeLessThanOrEqual(usage.byAgent.length);
     expect(usage.byAgent.length).toBeGreaterThan(0);
     expect(usage.byDay.length).toBeGreaterThan(0);
+    // Per model token breakdown: every fake run so far used the agents' default model.
+    expect(usage.byModel).toEqual([expect.objectContaining({ model: 'claude-opus-5-5', label: 'Claude Opus 5.5', aiInputTokens: usage.totals.aiInputTokens, aiOutputTokens: usage.totals.aiOutputTokens, aiCacheReadTokens: usage.totals.aiCacheReadTokens, aiCacheWriteTokens: usage.totals.aiCacheWriteTokens })]);
+    expect(usage.byModel[0].estimatedCostMinor).toBeGreaterThan(0);
+    expect(usage.prices.find((p: { sku: string }) => p.sku === 'connect-executions')).toEqual({ sku: 'connect-executions', per: 1000, amountMinor: 4000, currency: 'SAR' });
+    expect(usage.prices.find((p: { sku: string }) => p.sku === 'connect-ai-cache-write-tokens:claude-haiku-4-5')).toMatchObject({ model: 'claude-haiku-4-5', kind: 'cacheWrite', per: 1_000_000, amountMinor: 562.5 });
     const overview = await c.ok('GET', '/v1/connect/overview');
     expect(overview.agents).toBeGreaterThan(0);
     expect(overview.counts).toEqual({ connections: 4, webhooks: 1, keys: 2, templates: 7 });
-    expect(overview.usageThisPeriod).toEqual({ executions: usage.totals.executions, aiInputTokens: usage.totals.aiInputTokens, aiOutputTokens: usage.totals.aiOutputTokens, estimatedCostMinor: 0, currency: 'SAR', pricingConfigured: false });
+    expect(overview.usageThisPeriod).toEqual({ executions: usage.totals.executions, aiInputTokens: usage.totals.aiInputTokens, aiOutputTokens: usage.totals.aiOutputTokens, estimatedCostMinor: usage.estimatedCostMinor, currency: 'SAR', pricingConfigured: true });
     expect(overview.recentRuns[0].agentName).toEqual(expect.any(String));
-    expect(usage.byAgent[0]).toMatchObject({ agentId: expect.any(String), agentName: expect.any(String), executions: expect.any(Number), aiInputTokens: expect.any(Number), aiOutputTokens: expect.any(Number), toolCalls: expect.any(Number), estimatedCostMinor: 0 });
+    expect(usage.byAgent[0]).toMatchObject({ agentId: expect.any(String), agentName: expect.any(String), executions: expect.any(Number), aiInputTokens: expect.any(Number), aiOutputTokens: expect.any(Number), aiCacheWriteTokens: expect.any(Number), toolCalls: expect.any(Number), estimatedCostMinor: expect.any(Number) });
     expect(usage.byDay[0]).toMatchObject({ date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), executions: expect.any(Number), aiInputTokens: expect.any(Number), aiOutputTokens: expect.any(Number) });
     expect(overview.deployed).toBeGreaterThan(0);
     expect(overview.runs24h).toBe(usage.totals.executions);
     expect(overview.recentRuns.length).toBe(10);
 
-    // Hourly metering writes UsageRecords with no amount while the SKUs have no price.
+    // Hourly metering writes rated UsageRecords: tokens per agent and model, cache writes on their own SKU.
     const metering = s.get(ConnectUsageService);
     await metering.meterHour(startOfHour(new Date()));
     const project = owner.projectId;
-    const records = await s.prisma.usageRecord.findMany({ where: { projectId: project, resourceType: { in: ['connect_execution', 'connect_ai_input', 'connect_ai_output', 'connect_tool_call'] } } });
-    expect(records.map((r) => r.resourceType)).toEqual(expect.arrayContaining(['connect_execution', 'connect_ai_input', 'connect_ai_output', 'connect_tool_call']));
-    expect(records.every((r) => r.amountMinor === 0)).toBe(true);
+    const records = await s.prisma.usageRecord.findMany({ where: { projectId: project, resourceType: { in: ['connect_execution', 'connect_ai_input', 'connect_ai_output', 'connect_ai_cache_read', 'connect_ai_cache_write', 'connect_tool_call'] } } });
+    expect(records.map((r) => r.resourceType)).toEqual(expect.arrayContaining(['connect_execution', 'connect_ai_input', 'connect_ai_output', 'connect_ai_cache_write', 'connect_tool_call']));
+    expect(records.filter((r) => r.resourceType.startsWith('connect_ai_')).every((r) => r.resourceId.endsWith(':claude-opus-5-5') && r.unit === 'token')).toBe(true);
+    expect(records.filter((r) => r.resourceType === 'connect_execution').every((r) => !r.resourceId.includes(':') && r.amountMinor === Math.round(r.quantity * 4))).toBe(true);
+    // Small fake token counts can round to 0 halalas; every row still carries its price.
+    expect(records.every((r) => r.priceId && r.amountMinor >= 0)).toBe(true);
+    expect(records.reduce((n, r) => n + r.amountMinor, 0)).toBeGreaterThan(0);
 
-    // Staff set a price in the back office; estimates and metering follow.
+    // The back office lists every Connect SKU with its launch price and can change one.
     const finance = await staff(['finance']);
     const prices = await finance.client.ok('GET', '/admin/v1/prices');
-    expect(prices.data.filter((p: { sku: string }) => p.sku.startsWith('connect-')).map((p: { monthlyMinor: number }) => p.monthlyMinor)).toEqual([0, 0, 0, 0, 0]);
+    const connect = Object.fromEntries(prices.data.filter((p: { sku: string }) => p.sku.startsWith('connect-')).map((p: { sku: string; monthlyMinor: number; unit: string }) => [p.sku, [p.monthlyMinor, p.unit]]));
+    expect(Object.keys(connect)).toHaveLength(17);
+    expect(connect['connect-executions']).toEqual([4000, 'per_1k']);
+    expect(connect['connect-tool-calls']).toEqual([2000, 'per_1k']);
+    expect(connect['connect-ai-input-tokens:claude-opus-5-5']).toEqual([18000, 'per_10m']);
+    expect(connect['connect-ai-cache-write-tokens:claude-haiku-4-5']).toEqual([5625, 'per_10m']);
+    expect(connect['connect-ai-input-tokens']).toBeUndefined();
     await finance.client.ok('POST', '/admin/v1/prices', { sku: 'connect-executions', monthlyMinor: 1000 }, 201);
     try {
       (metering as unknown as { cache: null }).cache = null;
       const priced = await c.ok('GET', '/v1/connect/usage');
       expect(priced.pricingConfigured).toBe(true);
-      expect(priced.estimatedCostMinor).toBe(Math.round((priced.totals.executions / 1000) * 1000));
-      await metering.meterHour(startOfHour(new Date()));
-      const exec = await s.prisma.usageRecord.findMany({ where: { projectId: project, resourceType: 'connect_execution' } });
-      expect(exec.reduce((n, r) => n + r.amountMinor, 0)).toBeGreaterThan(0);
+      expect(priced.estimatedCostMinor).toBeLessThan(usage.estimatedCostMinor);
+      expect(priced.prices.find((p: { sku: string }) => p.sku === 'connect-executions').amountMinor).toBe(1000);
 
       const admin = await finance.client.ok('GET', '/admin/v1/connect/overview');
       const mine = admin.teams.find((t: { teamId: string }) => t.teamId === owner.teamId);
@@ -526,9 +545,58 @@ describe('Connect usage, billing and back office', () => {
       expect(admin.totals.runs).toBeGreaterThanOrEqual(mine.runs);
       expect((await c.get('/admin/v1/connect/overview')).status).toBe(403);
     } finally {
-      await finance.client.ok('POST', '/admin/v1/prices', { sku: 'connect-executions', monthlyMinor: 0 }, 201);
+      await finance.client.ok('POST', '/admin/v1/prices', { sku: 'connect-executions', monthlyMinor: 4000 }, 201);
       (metering as unknown as { cache: null }).cache = null;
     }
+  });
+
+  it('prices a run with known token counts per model in riyals, cache writes included', async () => {
+    const team = await readyTeam(s);
+    const c = team.client;
+    const models = await c.ok('GET', '/v1/connect/models');
+    expect(models.pricing).toEqual({ currency: 'SAR', configured: true, executionMinor: 4, toolCallMinor: 2 });
+    expect(models.data.find((m: { id: string }) => m.id === 'claude-opus-5-5').prices).toEqual({ currency: 'SAR', inputPerMTokMinor: 1800, outputPerMTokMinor: 9000, cacheReadPerMTokMinor: 90, cacheWritePerMTokMinor: 2250, cacheWrite1hPerMTokMinor: 3600 });
+    expect(models.data.find((m: { id: string }) => m.id === 'claude-sonnet-5-5').prices).toMatchObject({ inputPerMTokMinor: 900, outputPerMTokMinor: 4500, cacheReadPerMTokMinor: 90, cacheWritePerMTokMinor: 1125 });
+    expect(models.data.find((m: { id: string }) => m.id === 'claude-haiku-4-5').prices).toMatchObject({ inputPerMTokMinor: 450, outputPerMTokMinor: 2250, cacheReadPerMTokMinor: 45, cacheWritePerMTokMinor: 562.5 });
+
+    // Every model call of the fake reports 12,000 input, 1,500 output, 40,000 cache read and 8,000 cache write tokens.
+    const known = 'fake:usage=12000,1500,40000,8000';
+    const { agent: opus } = await agentWithTool(c, 'Priced opus');
+    const one = await c.ok('POST', `/v1/connect/agents/${opus.id}/test`, { message: `Hello ${known}` }, 200);
+    expect(one.usage).toMatchObject({ inputTokens: 12000, outputTokens: 1500, cacheReadTokens: 40000, cacheWriteTokens: 8000, toolCalls: 0 });
+    expect(one.usage.byModel).toEqual({ 'claude-opus-5-5': { input: 12000, output: 1500, cacheRead: 40000, cacheWrite: 8000, cacheWrite1h: 0 } });
+    // SAR 0.04 + 12k x 18 + 1.5k x 90 + 40k x 0.90 + 8k x 22.50 per 1M = 4 + 21.6 + 13.5 + 3.6 + 18 = 60.7 halalas.
+    expect(one.costEstimateMinor).toBe(61);
+
+    const { agent: haiku } = await agentWithTool(c, 'Priced haiku');
+    await c.ok('PATCH', `/v1/connect/agents/${haiku.id}`, { model: 'claude-haiku-4-5' }, 200);
+    const two = await c.ok('POST', `/v1/connect/agents/${haiku.id}/test`, { message: `List my servers ${known}` }, 200);
+    expect(two.usage).toMatchObject({ model: 'claude-haiku-4-5', toolCalls: 1, inputTokens: 24000, outputTokens: 3000, cacheReadTokens: 80000, cacheWriteTokens: 16000 });
+    // Two model calls and one tool call on Haiku 4.5: 4 + 2 + 2 x (5.4 + 3.375 + 1.8 + 4.5) = 36.15 halalas.
+    expect(two.costEstimateMinor).toBe(36);
+
+    const usage = await c.ok('GET', '/v1/connect/usage');
+    expect(usage.estimatedCostMinor).toBe(97); // 60.7 + 36.15 = 96.85
+    expect(usage.byModel.map((m: { model: string; estimatedCostMinor: number }) => [m.model, m.estimatedCostMinor])).toEqual([['claude-opus-5-5', 57], ['claude-haiku-4-5', 30]]);
+    expect(usage.byModel.find((m: { model: string }) => m.model === 'claude-haiku-4-5')).toMatchObject({ aiInputTokens: 24000, aiOutputTokens: 3000, aiCacheReadTokens: 80000, aiCacheWriteTokens: 16000 });
+
+    // Metering: one rated record per SKU, tokens per agent and model.
+    await s.get(ConnectUsageService).meterHour(startOfHour(new Date()));
+    const records = await s.prisma.usageRecord.findMany({ where: { projectId: team.projectId } });
+    const rec = Object.fromEntries(records.map((r) => [`${r.resourceType} ${r.resourceId.replace(opus.id, 'opus').replace(haiku.id, 'haiku')}`, [r.quantity, r.amountMinor, r.currency]]));
+    expect(rec).toEqual({
+      'connect_execution opus': [1, 4, 'SAR'],
+      'connect_ai_input opus:claude-opus-5-5': [12000, 22, 'SAR'],
+      'connect_ai_output opus:claude-opus-5-5': [1500, 14, 'SAR'],
+      'connect_ai_cache_read opus:claude-opus-5-5': [40000, 4, 'SAR'],
+      'connect_ai_cache_write opus:claude-opus-5-5': [8000, 18, 'SAR'],
+      'connect_execution haiku': [1, 4, 'SAR'],
+      'connect_tool_call haiku': [1, 2, 'SAR'],
+      'connect_ai_input haiku:claude-haiku-4-5': [24000, 11, 'SAR'],
+      'connect_ai_output haiku:claude-haiku-4-5': [3000, 7, 'SAR'],
+      'connect_ai_cache_read haiku:claude-haiku-4-5': [80000, 4, 'SAR'],
+      'connect_ai_cache_write haiku:claude-haiku-4-5': [16000, 9, 'SAR'],
+    });
   });
 
   it('refuses runs over the spend limit (402) and for teams that never topped up', async () => {

@@ -40,7 +40,10 @@ export interface ModelUsage {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
+  /** All prompt cache writes (five minute and one hour). */
   cacheWriteTokens: number;
+  /** The part of cacheWriteTokens written with the one hour TTL (billed at 2x input). Connect only sends five minute breakpoints today. */
+  cacheWrite1hTokens?: number;
 }
 
 export interface ModelResponse {

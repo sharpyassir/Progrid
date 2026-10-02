@@ -997,9 +997,25 @@ paths:
   /connect/models:
     get:
       tags: [connect]
-      summary: Models agents can use
+      summary: Models agents can use, with their prices
+      description: Prices are in the team currency, in minor units, excluding VAT. Token prices are per 1M tokens and can have a fraction of a minor unit (Claude Haiku 4.5 cache writes are 562.5 halalas per 1M).
       responses:
-        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { provider: { type: string, enum: [anthropic, fake] }, data: { type: array, items: { $ref: "#/components/schemas/ConnectModel" } } } } } } }
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  provider: { type: string, enum: [anthropic, fake] }
+                  pricing:
+                    type: object
+                    properties:
+                      currency: { type: string, example: SAR }
+                      configured: { type: boolean }
+                      executionMinor: { type: number, description: "Price of one execution", example: 4 }
+                      toolCallMinor: { type: number, description: "Price of one tool call", example: 2 }
+                  data: { type: array, items: { $ref: "#/components/schemas/ConnectModel" } }
   /connect/templates:
     get:
       tags: [connect]
@@ -2051,6 +2067,28 @@ components:
         efforts: { type: array, items: { type: string, enum: [low, medium, high] } }
         contextWindow: { type: integer }
         available: { type: boolean }
+        prices: { $ref: "#/components/schemas/ConnectModelPrices" }
+    ConnectModelPrices:
+      type: object
+      description: Price per 1M tokens in minor units of `currency`, excluding VAT.
+      properties:
+        currency: { type: string, example: SAR }
+        inputPerMTokMinor: { type: number, example: 1800 }
+        outputPerMTokMinor: { type: number, example: 9000 }
+        cacheReadPerMTokMinor: { type: number, example: 90 }
+        cacheWritePerMTokMinor: { type: number, description: "Five minute prompt cache writes", example: 2250 }
+        cacheWrite1hPerMTokMinor: { type: number, description: "One hour prompt cache writes (not used by Connect today)", example: 3600 }
+    ConnectTokensByModel:
+      type: object
+      description: Tokens per model id.
+      additionalProperties:
+        type: object
+        properties:
+          input: { type: integer }
+          output: { type: integer }
+          cacheRead: { type: integer }
+          cacheWrite: { type: integer }
+          cacheWrite1h: { type: integer }
     ConnectLimits:
       type: object
       properties:
@@ -2264,7 +2302,8 @@ components:
             toolCalls: { type: integer }
             apiCalls: { type: integer }
             steps: { type: integer }
-        costEstimateMinor: { type: integer }
+            byModel: { $ref: "#/components/schemas/ConnectTokensByModel" }
+        costEstimateMinor: { type: integer, description: "Price of the run in minor units of currency, excluding VAT: one execution, its tool calls and its tokens at each model's prices" }
         currency: { type: string }
         workflow: { type: boolean }
         createdAt: { type: string, format: date-time }
@@ -2345,8 +2384,33 @@ components:
             apiCalls: { type: integer }
             computeSeconds: { type: integer }
             storageBytes: { type: integer }
-        byAgent: { type: array, items: { type: object, properties: { agentId: { type: string }, agentName: { type: [string, "null"] }, executions: { type: integer }, aiInputTokens: { type: integer }, aiOutputTokens: { type: integer }, toolCalls: { type: integer }, estimatedCostMinor: { type: integer } } } }
-        byDay: { type: array, items: { type: object, properties: { date: { type: string, format: date }, executions: { type: integer }, aiInputTokens: { type: integer }, aiOutputTokens: { type: integer } } } }
+        byAgent: { type: array, items: { type: object, properties: { agentId: { type: string }, agentName: { type: [string, "null"] }, executions: { type: integer }, aiInputTokens: { type: integer }, aiOutputTokens: { type: integer }, aiCacheReadTokens: { type: integer }, aiCacheWriteTokens: { type: integer }, toolCalls: { type: integer }, estimatedCostMinor: { type: integer } } } }
+        byModel:
+          type: array
+          description: Tokens and their estimated price per model
+          items:
+            type: object
+            properties:
+              model: { type: string, example: claude-opus-5-5 }
+              label: { type: string }
+              aiInputTokens: { type: integer }
+              aiOutputTokens: { type: integer }
+              aiCacheReadTokens: { type: integer }
+              aiCacheWriteTokens: { type: integer }
+              estimatedCostMinor: { type: integer }
+        byDay: { type: array, items: { type: object, properties: { date: { type: string, format: date }, executions: { type: integer }, aiInputTokens: { type: integer }, aiOutputTokens: { type: integer }, aiCacheReadTokens: { type: integer }, aiCacheWriteTokens: { type: integer }, toolCalls: { type: integer } } } }
         estimatedCostMinor: { type: integer }
         currency: { type: string }
         pricingConfigured: { type: boolean }
+        prices:
+          type: array
+          description: "Current prices in the team currency, excluding VAT. Executions and tool calls per 1,000; tokens per 1M, per model"
+          items:
+            type: object
+            properties:
+              sku: { type: string, example: "connect-ai-input-tokens:claude-opus-5-5" }
+              model: { type: string }
+              kind: { type: string, enum: [input, output, cacheRead, cacheWrite, cacheWrite1h] }
+              per: { type: integer, example: 1000000 }
+              amountMinor: { type: number, example: 1800 }
+              currency: { type: string }
