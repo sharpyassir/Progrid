@@ -51,6 +51,10 @@ tags:
   - name: managed-cloud
     description: Managed cloud contracts. Progrid engineers operate your servers and sites under an SLA. Contracts and reports are for team owners; members can open and read tickets and see assets.
   - name: webhooks
+  - name: connect
+    description: Progrid Connect. Build, test and deploy AI agents that connect to your infrastructure, APIs and applications. Members read; owners and admins change.
+  - name: connect-public
+    description: The run API of deployed agents and inbound webhooks. Authenticated with an agent key, a team token with connect:write, or the webhook URL token.
 
 paths:
   /auth/signup:
@@ -970,9 +974,443 @@ paths:
   /webhooks/{id}:
     delete: { tags: [webhooks], summary: Delete a webhook, parameters: [{ $ref: "#/components/parameters/id" }], responses: { "204": { description: Deleted } } }
 
+  # ───────────── Progrid Connect (docs/connect.md) ─────────────
+  /connect/overview:
+    get:
+      tags: [connect]
+      summary: Connect overview (agents, runs in the last 24 hours, usage this period, recent runs)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents: { type: integer }
+                  deployed: { type: integer }
+                  runs24h: { type: integer }
+                  failed24h: { type: integer }
+                  counts: { type: object, properties: { connections: { type: integer }, webhooks: { type: integer }, keys: { type: integer }, templates: { type: integer } } }
+                  usageThisPeriod: { type: object, properties: { executions: { type: integer }, aiInputTokens: { type: integer }, aiOutputTokens: { type: integer }, estimatedCostMinor: { type: integer }, currency: { type: string }, pricingConfigured: { type: boolean } } }
+                  recentRuns: { type: array, items: { $ref: "#/components/schemas/ConnectRun" } }
+  /connect/models:
+    get:
+      tags: [connect]
+      summary: Models agents can use
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { provider: { type: string, enum: [anthropic, fake] }, data: { type: array, items: { $ref: "#/components/schemas/ConnectModel" } } } } } } }
+  /connect/templates:
+    get:
+      tags: [connect]
+      summary: Agent templates (Customer Support, Sales, Data Analyst, Monitoring, Research, Developer, Invoice)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/ConnectTemplate" } } } } } } }
+  /connect/agents:
+    get:
+      tags: [connect]
+      summary: List agents
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/ConnectAgent" } } } } } } }
+    post:
+      tags: [connect]
+      summary: Create an agent (blank or from a template)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 80 }
+                description: { type: string }
+                instructions: { type: string }
+                model: { type: string, example: claude-opus-5-5 }
+                effort: { type: string, enum: [low, medium, high] }
+                templateSlug: { type: string, example: customer-support }
+                project: { type: string, description: Project id or slug billed for the agent's usage }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectAgent" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Invalid" }
+  /connect/agents/generate:
+    post:
+      tags: [connect]
+      summary: Build with AI. Drafts an agent from a description; nothing is saved
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [prompt], properties: { prompt: { type: string, minLength: 10, maxLength: 4000 } } } } } }
+      responses:
+        "200":
+          description: A validated draft
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  draft: { $ref: "#/components/schemas/ConnectDraft" }
+                  issues: { type: array, items: { $ref: "#/components/schemas/ConnectIssue" } }
+                  model: { type: string }
+                  usage: { type: object, properties: { inputTokens: { type: integer }, outputTokens: { type: integer } } }
+        "429": { description: Too many drafts this hour, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /connect/agents/from-draft:
+    post:
+      tags: [connect]
+      summary: Save a draft (or a template) as an agent with its tools and workflow
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [draft]
+              properties:
+                draft: { $ref: "#/components/schemas/ConnectDraft" }
+                connections: { type: object, additionalProperties: { type: string }, description: "Maps connectionsNeeded refs (or names) to connection ids" }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectAgent" } } } }
+        "422": { $ref: "#/components/responses/Invalid" }
+  /connect/agents/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [connect]
+      summary: Get an agent with its tools, workflow, webhooks, keys and setup issues
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectAgentDetail" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [connect]
+      summary: Edit an agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                description: { type: string }
+                instructions: { type: string }
+                model: { type: string }
+                effort: { type: string, enum: [low, medium, high] }
+                variables: { type: array, items: { $ref: "#/components/schemas/ConnectVariableDef" } }
+                limits: { $ref: "#/components/schemas/ConnectLimits" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectAgent" } } } }
+    delete:
+      tags: [connect]
+      summary: Delete an agent (its keys stop working; runs and usage are kept)
+      responses: { "204": { description: Deleted } }
+  /connect/agents/{id}/variables/{key}:
+    put:
+      tags: [connect]
+      summary: Set a variable value. Secret values are write only and never reach the model
+      parameters: [{ $ref: "#/components/parameters/id" }, { name: key, in: path, required: true, schema: { type: string } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [value], properties: { value: { type: string, description: An empty string clears the value } } } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectVariable" } } } }
+  /connect/agents/{id}/versions:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [connect]
+      summary: List immutable versions
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/ConnectAgentVersion" } } } } } } } }
+    post:
+      tags: [connect]
+      summary: Snapshot the current draft as a new version
+      requestBody: { content: { application/json: { schema: { type: object, properties: { note: { type: string } } } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectAgentVersion" } } } } }
+  /connect/agents/{id}/deploy:
+    post:
+      tags: [connect]
+      summary: Deploy a version (without one, the draft is snapshotted first)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { version: { type: integer } } } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectAgent" } } } }
+        "409": { description: "agent_incomplete: the agent is missing connections or variables", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /connect/agents/{id}/pause:
+    post:
+      tags: [connect]
+      summary: Pause a deployed agent (the run API answers 409 until it is deployed again)
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectAgent" } } } } }
+  /connect/agents/{id}/test:
+    post:
+      tags: [connect]
+      summary: Test run. Synchronous (up to 120 s) with the full step timeline, or async to stream it
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                input: { description: Any JSON value }
+                message: { type: string }
+                useDraft: { type: boolean, default: true }
+                async: { type: boolean, description: "Return the queued run at once and stream it from /connect/runs/{runId}/events" }
+      responses:
+        "200": { description: The run with its steps, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectRunWithSteps" } } } }
+        "402": { description: "payment_required (top up first) or spend_limit_reached", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { description: too_many_runs, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /connect/agents/{id}/runs:
+    get:
+      tags: [connect]
+      summary: Runs of one agent
+      parameters:
+        - { $ref: "#/components/parameters/id" }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/ConnectRunStatus" } }
+        - { name: source, in: query, schema: { $ref: "#/components/schemas/ConnectRunSource" } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { $ref: "#/components/parameters/limit" }
+        - { $ref: "#/components/parameters/cursor" }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectRunPage" } } } } }
+  /connect/agents/{id}/docs:
+    get:
+      tags: [connect]
+      summary: How to call the agent, with cURL, JavaScript, Python and PHP examples
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  endpoint: { type: string, format: uri }
+                  auth: { type: object }
+                  requestSchema: { type: object }
+                  responseSchema: { type: object }
+                  examples: { type: object, properties: { curl: { type: string }, javascript: { type: string }, python: { type: string }, php: { type: string } } }
+  /connect/agents/{id}/tools:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [connect]
+      summary: List an agent's tools
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/ConnectTool" } } } } } } } }
+    post:
+      tags: [connect]
+      summary: Add a tool
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectToolInput" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectTool" } } } }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /connect/agents/{id}/tools/{toolId}:
+    parameters: [{ $ref: "#/components/parameters/id" }, { name: toolId, in: path, required: true, schema: { type: string } }]
+    patch:
+      tags: [connect]
+      summary: Edit a tool
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectToolInput" } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectTool" } } } } }
+    delete:
+      tags: [connect]
+      summary: Delete a tool
+      responses: { "204": { description: Deleted } }
+  /connect/agents/{id}/tools/{toolId}/test:
+    post:
+      tags: [connect]
+      summary: Run one tool with a given input (calls that need approval only run inside a run)
+      parameters: [{ $ref: "#/components/parameters/id" }, { name: toolId, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { input: { description: Tool input } } } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { ok: { type: boolean }, output: {}, durationMs: { type: integer }, error: { type: [string, "null"] } } } } } } }
+  /connect/agents/{id}/workflow:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [connect]
+      summary: Get the workflow (null when the agent has none)
+      responses: { "200": { description: OK, content: { application/json: { schema: { oneOf: [{ $ref: "#/components/schemas/ConnectWorkflow" }, { type: "null" }] } } } } }
+    put:
+      tags: [connect]
+      summary: Save the workflow graph (validated; an empty graph removes it)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [graph], properties: { graph: { $ref: "#/components/schemas/ConnectGraph" } } } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { oneOf: [{ $ref: "#/components/schemas/ConnectWorkflow" }, { type: "null" }] } } } }
+        "422": { $ref: "#/components/responses/Invalid" }
+  /connect/agents/{id}/webhooks:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [connect]
+      summary: List the agent's inbound webhooks
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/ConnectWebhook" } } } } } } } }
+    post:
+      tags: [connect]
+      summary: Create an inbound webhook (the URL token and signing secret are shown once)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string }, path: { type: string }, signing: { type: boolean }, enabled: { type: boolean } } } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectWebhookCreated" } } } } }
+  /connect/agents/{id}/webhooks/{hookId}:
+    parameters: [{ $ref: "#/components/parameters/id" }, { name: hookId, in: path, required: true, schema: { type: string } }]
+    patch:
+      tags: [connect]
+      summary: Edit a webhook
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, path: { type: string }, signing: { type: boolean }, enabled: { type: boolean } } } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectWebhook" } } } } }
+    delete:
+      tags: [connect]
+      summary: Delete a webhook
+      responses: { "204": { description: Deleted } }
+  /connect/agents/{id}/webhooks/{hookId}/rotate:
+    post:
+      tags: [connect]
+      summary: New URL token (and signing secret); the old ones stop working at once
+      parameters: [{ $ref: "#/components/parameters/id" }, { name: hookId, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectWebhookCreated" } } } } }
+  /connect/agents/{id}/keys:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [connect]
+      summary: List the agent's run API keys
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/ConnectAgentKey" } } } } } } } }
+    post:
+      tags: [connect]
+      summary: Create a run API key (the secret is shown once)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string } } } } } }
+      responses: { "201": { description: Created, content: { application/json: { schema: { type: object, properties: { key: { $ref: "#/components/schemas/ConnectAgentKey" }, secret: { type: string, example: prgd_ca_x7Yh... } } } } } } }
+  /connect/agents/{id}/keys/{keyId}:
+    delete:
+      tags: [connect]
+      summary: Revoke a key
+      parameters: [{ $ref: "#/components/parameters/id" }, { name: keyId, in: path, required: true, schema: { type: string } }]
+      responses: { "204": { description: Revoked } }
+  /connect/webhooks:
+    get:
+      tags: [connect]
+      summary: Inbound webhooks of every agent
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { allOf: [{ $ref: "#/components/schemas/ConnectWebhook" }, { type: object, properties: { agentName: { type: string } } }] } } } } } } } }
+  /connect/keys:
+    get:
+      tags: [connect]
+      summary: Run API keys of every agent
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { allOf: [{ $ref: "#/components/schemas/ConnectAgentKey" }, { type: object, properties: { agentName: { type: string } } }] } } } } } } } }
+  /connect/runs/{runId}:
+    get:
+      tags: [connect]
+      summary: A run with its steps
+      parameters: [{ name: runId, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectRunWithSteps" } } } } }
+  /connect/runs/{runId}/events:
+    get:
+      tags: [connect]
+      summary: "Live run updates as Server Sent Events: step, run and a final end event"
+      description: Authenticate with the Authorization header (or the console session cookie). A heartbeat comment arrives every 15 seconds.
+      parameters: [{ name: runId, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: An event stream, content: { text/event-stream: { schema: { type: string } } } } }
+  /connect/runs/{runId}/cancel:
+    post:
+      tags: [connect]
+      summary: Cancel a queued, running or waiting run
+      parameters: [{ name: runId, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectRunWithSteps" } } } }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /connect/logs:
+    get:
+      tags: [connect]
+      summary: Runs across agents, newest first
+      parameters:
+        - { name: agentId, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/ConnectRunStatus" } }
+        - { name: source, in: query, schema: { $ref: "#/components/schemas/ConnectRunSource" } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { $ref: "#/components/parameters/limit" }
+        - { $ref: "#/components/parameters/cursor" }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectRunPage" } } } } }
+  /connect/usage:
+    get:
+      tags: [connect]
+      summary: Usage for a month with the estimated price (0 until pricing is configured)
+      parameters: [{ name: period, in: query, schema: { type: string, pattern: '^\d{4}-\d{2}$', example: "2026-10" } }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectUsage" } } } } }
+  /connect/connections:
+    get:
+      tags: [connect]
+      summary: List connections (secrets are never returned)
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/ConnectConnection" } } } } } } } }
+    post:
+      tags: [connect]
+      summary: Create a connection. Secrets are write only and stored encrypted
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectConnectionInput" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectConnection" } } } }
+        "422": { $ref: "#/components/responses/Invalid" }
+  /connect/connections/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [connect]
+      summary: Get a connection
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectConnection" } } } } }
+    patch:
+      tags: [connect]
+      summary: Edit a connection (secret fields given replace the stored ones; null removes one)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectConnectionInput" } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectConnection" } } } } }
+    delete:
+      tags: [connect]
+      summary: Delete a connection (refused while tools use it)
+      responses:
+        "204": { description: Deleted }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /connect/connections/{id}/test:
+    post:
+      tags: [connect]
+      summary: Reach the service with the stored credentials
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { ok: { type: boolean }, status: { type: string, enum: [ok, error] }, error: { type: [string, "null"] }, durationMs: { type: integer }, testedAt: { type: string, format: date-time } } } } } } }
+  /connect/agents/{id}/run:
+    post:
+      tags: [connect-public]
+      summary: Run a deployed agent
+      description: Synchronous by default (up to 60 s, then 202). With async true, answers 202 at once. The same idempotencyKey within 24 hours returns the same run.
+      security: [{ agentKey: [] }, { bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/id" }, { name: Idempotency-Key, in: header, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                input: { description: Any JSON value }
+                async: { type: boolean }
+                idempotencyKey: { type: string }
+      responses:
+        "200": { description: Finished (or waiting for an approval), content: { application/json: { schema: { $ref: "#/components/schemas/ConnectRunResult" } } } }
+        "202": { description: Accepted, content: { application/json: { schema: { type: object, properties: { runId: { type: string }, status: { type: string }, statusUrl: { type: string, format: uri } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "402": { description: Spend limit reached or payment required, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: agent_not_deployed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { description: Rate limited, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /connect/agents/{id}/runs/{runId}:
+    get:
+      tags: [connect-public]
+      summary: A run of the agent (steps with ?steps=1)
+      security: [{ agentKey: [] }, { bearerAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/id" }, { name: runId, in: path, required: true, schema: { type: string } }, { name: steps, in: query, schema: { type: string, enum: ["1"] } }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConnectRun" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /connect/hooks/{hookId}/{token}:
+    post:
+      tags: [connect-public]
+      summary: Inbound webhook. Starts a run with the request body as input
+      description: "When signing is on, send X-Prgd-Signature: t=<unix seconds>,v1=<hex HMAC SHA-256 of '<t>.<raw body>'> (5 minute window)."
+      security: []
+      parameters: [{ name: hookId, in: path, required: true, schema: { type: string } }, { name: token, in: path, required: true, schema: { type: string } }, { name: X-Prgd-Signature, in: header, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses:
+        "202": { description: Accepted, content: { application/json: { schema: { type: object, properties: { runId: { type: string }, status: { type: string } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Webhook disabled or agent not deployed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "429": { description: Rate limited, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer }
+    agentKey: { type: http, scheme: bearer, description: "A Connect agent key (prgd_ca_...) for one agent's run API" }
   parameters:
     id: { name: id, in: path, required: true, schema: { type: string } }
     project: { name: project, in: query, description: Project id or slug (default `default`), schema: { type: string } }
@@ -995,7 +1433,7 @@ components:
           properties:
             code:
               type: string
-              enum: [invalid_request, unauthorized, forbidden, approval_required, not_found, conflict, invalid_state, quota_exceeded, spend_limit_reached, verification_required, account_suspended, idempotency_key_reused, rate_limited, workflow_unavailable, internal_error]
+              enum: [invalid_request, unauthorized, forbidden, approval_required, not_found, conflict, invalid_state, quota_exceeded, spend_limit_reached, payment_required, verification_required, account_suspended, idempotency_key_reused, rate_limited, workflow_unavailable, internal_error, agent_incomplete, agent_not_deployed, too_many_runs, connection_in_use, tool_name_taken, tool_in_use, webhook_disabled, model_refused, invalid_draft, draft_too_large]
             message: { type: string }
             details: { type: object, additionalProperties: true }
     PageMeta:
@@ -1601,3 +2039,314 @@ components:
     EventName:
       type: string
       enum: [server.created, server.active, server.failed, server.deleted, server.resized, snapshot.completed, invoice.issued, invoice.paid, payment.failed, spend.alert, spend.limit_reached, account.suspended]
+    # ───────────── Progrid Connect ─────────────
+    ConnectModel:
+      type: object
+      properties:
+        id: { type: string, example: claude-opus-5-5 }
+        label: { type: string }
+        description: { type: string }
+        default: { type: boolean }
+        provider: { type: string }
+        efforts: { type: array, items: { type: string, enum: [low, medium, high] } }
+        contextWindow: { type: integer }
+        available: { type: boolean }
+    ConnectLimits:
+      type: object
+      properties:
+        maxSteps: { type: integer, minimum: 1, maximum: 200, default: 25 }
+        maxTokensPerRun: { type: integer, minimum: 1000, maximum: 2000000, default: 200000 }
+        timeoutSeconds: { type: integer, minimum: 5, maximum: 900, default: 120 }
+    ConnectVariableDef:
+      type: object
+      required: [key]
+      properties:
+        key: { type: string, pattern: '^[A-Z][A-Z0-9_]{0,63}$' }
+        description: { type: string }
+        required: { type: boolean }
+        secret: { type: boolean }
+    ConnectVariable:
+      allOf:
+        - $ref: "#/components/schemas/ConnectVariableDef"
+        - type: object
+          properties:
+            hasValue: { type: boolean }
+            value: { type: string, description: Only for variables that are not secret }
+    ConnectAgent:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: string }
+        instructions: { type: string }
+        model: { type: string }
+        effort: { type: string, enum: [low, medium, high] }
+        status: { type: string, enum: [draft, deployed, paused] }
+        currentVersion: { type: [integer, "null"] }
+        deployedVersion: { type: [integer, "null"] }
+        toolIds: { type: array, items: { type: string } }
+        workflowId: { type: [string, "null"] }
+        variables: { type: array, items: { $ref: "#/components/schemas/ConnectVariable" } }
+        limits: { $ref: "#/components/schemas/ConnectLimits" }
+        runEndpoint: { type: string, format: uri, example: "https://api.progrid.sa/v1/connect/agents/cmabc/run" }
+        templateSlug: { type: [string, "null"] }
+        projectId: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        lastRunAt: { type: [string, "null"], format: date-time }
+    ConnectAgentDetail:
+      allOf:
+        - $ref: "#/components/schemas/ConnectAgent"
+        - type: object
+          properties:
+            tools: { type: array, items: { $ref: "#/components/schemas/ConnectTool" } }
+            workflow: { oneOf: [{ $ref: "#/components/schemas/ConnectWorkflow" }, { type: "null" }] }
+            webhooks: { type: array, items: { $ref: "#/components/schemas/ConnectWebhook" } }
+            keys: { type: array, items: { $ref: "#/components/schemas/ConnectAgentKey" } }
+            issues: { type: array, items: { type: string }, description: What still blocks a deploy }
+    ConnectAgentVersion:
+      type: object
+      properties:
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        createdBy: { type: string }
+        note: { type: string }
+        snapshot: { type: object, description: "Instructions, model, effort, variables, limits, tools and workflow" }
+    ConnectToolKind:
+      type: string
+      enum: [http_request, database_query, send_email, notify, webhook_out, progrid]
+    ConnectTool:
+      type: object
+      properties:
+        id: { type: string }
+        agentId: { type: string }
+        name: { type: string, pattern: '^[a-z][a-z0-9_]{0,63}$' }
+        description: { type: string }
+        kind: { $ref: "#/components/schemas/ConnectToolKind" }
+        connectionId: { type: [string, "null"] }
+        enabled: { type: boolean }
+        requiresApproval: { type: boolean }
+        config: { type: object, additionalProperties: true }
+        inputSchema: { type: object, additionalProperties: true }
+    ConnectToolInput:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        kind: { $ref: "#/components/schemas/ConnectToolKind" }
+        connectionId: { type: [string, "null"] }
+        enabled: { type: boolean }
+        requiresApproval: { type: boolean }
+        config: { type: object, additionalProperties: true, description: "http_request {method, path, query, headers, bodyTemplate}; database_query {mode, maxRows}; send_email {to, subjectTemplate, bodyTemplate, via}; notify {channel, target}; webhook_out {event}; progrid {action}" }
+        inputSchema: { type: object, additionalProperties: true, description: JSON Schema of the input the model sends }
+    ConnectGraph:
+      type: object
+      required: [nodes, edges]
+      properties:
+        nodes:
+          type: array
+          items:
+            type: object
+            required: [id, type]
+            properties:
+              id: { type: string }
+              type: { type: string, enum: [trigger, agent, tool, condition, action, transform, end] }
+              position: { type: object, properties: { x: { type: number }, y: { type: number } } }
+              data: { type: object, additionalProperties: true }
+        edges:
+          type: array
+          items:
+            type: object
+            required: [id, source, target]
+            properties:
+              id: { type: string }
+              source: { type: string }
+              target: { type: string }
+              sourceHandle: { type: [string, "null"], description: '"true" or "false" after a condition' }
+              label: { type: [string, "null"] }
+    ConnectWorkflow:
+      type: object
+      properties:
+        id: { type: string }
+        agentId: { type: string }
+        graph: { $ref: "#/components/schemas/ConnectGraph" }
+        updatedAt: { type: string, format: date-time }
+    ConnectConnectionKind:
+      type: string
+      enum: [rest_api, postgres, mysql, mongodb, smtp, webhook_out, custom]
+    ConnectAccess:
+      type: object
+      properties:
+        readOnly: { type: boolean, description: Databases default to true }
+        allowedTables: { type: array, items: { type: string } }
+        allowedCollections: { type: array, items: { type: string } }
+        allowedHosts: { type: array, items: { type: string } }
+    ConnectConnection:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { $ref: "#/components/schemas/ConnectConnectionKind" }
+        config: { type: object, additionalProperties: true, description: Non secret settings only }
+        secretFields: { type: array, items: { type: string }, example: [token] }
+        secretHints: { type: object, additionalProperties: { type: string }, example: { token: "••••abcd" } }
+        access: { $ref: "#/components/schemas/ConnectAccess" }
+        status: { type: string, enum: [ok, error, untested] }
+        lastTestedAt: { type: [string, "null"], format: date-time }
+        lastError: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+    ConnectConnectionInput:
+      type: object
+      properties:
+        name: { type: string }
+        kind: { $ref: "#/components/schemas/ConnectConnectionKind" }
+        config: { type: object, additionalProperties: true }
+        secrets: { type: object, additionalProperties: { type: [string, "null"] }, description: "Write only: password, token, username, value, signingSecret or uri depending on the kind" }
+        access: { $ref: "#/components/schemas/ConnectAccess" }
+    ConnectWebhook:
+      type: object
+      properties:
+        id: { type: string }
+        agentId: { type: string }
+        name: { type: string }
+        path: { type: string }
+        url: { type: string, description: "The full URL only on create and rotate; afterwards the token part reads {token}" }
+        secretHint: { type: string }
+        signing: { oneOf: [{ type: object, properties: { header: { type: string, example: X-Prgd-Signature }, algo: { type: string, example: hmac-sha256 } } }, { type: "null" }] }
+        enabled: { type: boolean }
+        lastCalledAt: { type: [string, "null"], format: date-time }
+    ConnectWebhookCreated:
+      allOf:
+        - $ref: "#/components/schemas/ConnectWebhook"
+        - type: object
+          properties:
+            token: { type: string, description: Shown once }
+            signingSecret: { type: string, description: "Shown once, when signing is on" }
+    ConnectAgentKey:
+      type: object
+      properties:
+        id: { type: string }
+        agentId: { type: string }
+        name: { type: string }
+        prefix: { type: string, example: prgd_ca_x7Yh }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: [string, "null"], format: date-time }
+    ConnectRunStatus:
+      type: string
+      enum: [queued, running, succeeded, failed, waiting_approval, cancelled]
+    ConnectRunSource:
+      type: string
+      enum: [api, webhook, test, schedule, manual]
+    ConnectRun:
+      type: object
+      properties:
+        id: { type: string }
+        agentId: { type: string }
+        agentName: { type: string }
+        version: { type: [integer, "null"] }
+        source: { $ref: "#/components/schemas/ConnectRunSource" }
+        status: { $ref: "#/components/schemas/ConnectRunStatus" }
+        input: {}
+        output: { description: "Structured JSON: {text} for a single agent, the end node output for a workflow" }
+        error: { oneOf: [{ type: object, properties: { code: { type: string, example: model_refused }, message: { type: string } } }, { type: "null" }] }
+        startedAt: { type: [string, "null"], format: date-time }
+        finishedAt: { type: [string, "null"], format: date-time }
+        durationMs: { type: [integer, "null"] }
+        usage:
+          type: object
+          properties:
+            model: { type: string }
+            inputTokens: { type: integer }
+            outputTokens: { type: integer }
+            cacheReadTokens: { type: integer }
+            cacheWriteTokens: { type: integer }
+            toolCalls: { type: integer }
+            apiCalls: { type: integer }
+            steps: { type: integer }
+        costEstimateMinor: { type: integer }
+        currency: { type: string }
+        workflow: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    ConnectRunStep:
+      type: object
+      properties:
+        id: { type: string }
+        runId: { type: string }
+        index: { type: integer }
+        type: { type: string, enum: [node, model, tool, condition, approval] }
+        nodeId: { type: [string, "null"] }
+        name: { type: string }
+        status: { type: string }
+        input: {}
+        output: {}
+        error: {}
+        startedAt: { type: string, format: date-time }
+        durationMs: { type: [integer, "null"] }
+        tokens: { type: object, properties: { input: { type: integer }, output: { type: integer }, cacheRead: { type: integer }, cacheWrite: { type: integer } } }
+    ConnectRunWithSteps:
+      allOf:
+        - $ref: "#/components/schemas/ConnectRun"
+        - type: object
+          properties:
+            steps: { type: array, items: { $ref: "#/components/schemas/ConnectRunStep" } }
+            pendingApprovals: { type: array, items: { type: object, properties: { id: { type: string }, summary: { type: string }, expiresAt: { type: string, format: date-time } } } }
+    ConnectRunPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/ConnectRun" } }
+        meta: { $ref: "#/components/schemas/PageMeta" }
+    ConnectRunResult:
+      type: object
+      properties:
+        runId: { type: string }
+        status: { $ref: "#/components/schemas/ConnectRunStatus" }
+        output: {}
+        error: { oneOf: [{ type: object, properties: { code: { type: string }, message: { type: string } } }, { type: "null" }] }
+        usage: { type: object }
+        durationMs: { type: [integer, "null"] }
+    ConnectIssue:
+      type: object
+      properties:
+        path: { type: string }
+        message: { type: string }
+    ConnectDraft:
+      type: object
+      description: An agent before it exists. Workflow nodes name tools by tool name; tools point at connections by ref.
+      properties:
+        agent: { type: object, properties: { name: { type: string }, description: { type: string }, instructions: { type: string }, model: { type: string }, effort: { type: string, enum: [low, medium, high] } } }
+        tools: { type: array, items: { type: object, properties: { name: { type: string }, description: { type: string }, kind: { $ref: "#/components/schemas/ConnectToolKind" }, connectionRef: { type: [string, "null"] }, requiresApproval: { type: boolean }, config: { type: object, additionalProperties: true }, inputSchema: { type: object, additionalProperties: true } } } }
+        workflow: { oneOf: [{ $ref: "#/components/schemas/ConnectGraph" }, { type: "null" }] }
+        variables: { type: array, items: { $ref: "#/components/schemas/ConnectVariableDef" } }
+        connectionsNeeded: { type: array, items: { type: object, properties: { ref: { type: string }, kind: { $ref: "#/components/schemas/ConnectConnectionKind" }, name: { type: string }, reason: { type: string }, usedBy: { type: array, items: { type: string } } } } }
+    ConnectTemplate:
+      allOf:
+        - $ref: "#/components/schemas/ConnectDraft"
+        - type: object
+          properties:
+            slug: { type: string }
+            name: { type: string }
+            description: { type: string }
+            category: { type: string }
+    ConnectUsage:
+      type: object
+      properties:
+        period: { type: string, example: "2026-10" }
+        totals:
+          type: object
+          properties:
+            executions: { type: integer }
+            workflowExecutions: { type: integer }
+            aiInputTokens: { type: integer }
+            aiOutputTokens: { type: integer }
+            aiCacheReadTokens: { type: integer }
+            aiCacheWriteTokens: { type: integer }
+            toolCalls: { type: integer }
+            apiCalls: { type: integer }
+            computeSeconds: { type: integer }
+            storageBytes: { type: integer }
+        byAgent: { type: array, items: { type: object, properties: { agentId: { type: string }, agentName: { type: [string, "null"] }, executions: { type: integer }, aiInputTokens: { type: integer }, aiOutputTokens: { type: integer }, toolCalls: { type: integer }, estimatedCostMinor: { type: integer } } } }
+        byDay: { type: array, items: { type: object, properties: { date: { type: string, format: date }, executions: { type: integer }, aiInputTokens: { type: integer }, aiOutputTokens: { type: integer } } } }
+        estimatedCostMinor: { type: integer }
+        currency: { type: string }
+        pricingConfigured: { type: boolean }
