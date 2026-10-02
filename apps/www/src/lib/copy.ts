@@ -11,11 +11,11 @@ export const LANGS: { code: Lang; label: string; path: string; dir: 'ltr' | 'rtl
 
 export interface Copy {
   meta: { title: string; description: string };
-  nav: { products: string; agents: string; pricing: string; marketplace: string; docs: string; signIn: string; startFree: string; menu: string };
+  nav: { products: string; connect: string; agents: string; pricing: string; marketplace: string; docs: string; signIn: string; startFree: string; menu: string };
   hero: { badge: string; h1a: string; h1b: string; lead: string; ctaPrimary: string; ctaSecondary: string; stats: [string, string][] };
   terminal: { ready: string; orAgent: string; capNote: string };
   trust: [string, string, string][];
-  products: { eyebrow: string; h2: string; lead: string; available: string; roadmap: string; groups: { name: string; desc: string; items: string[]; live: boolean; highlight?: boolean }[] };
+  products: { eyebrow: string; h2: string; lead: string; available: string; roadmap: string; learnMore: string; groups: { name: string; desc: string; items: string[]; live: boolean; highlight?: boolean; href?: string }[] };
   agents: { eyebrow: string; h2: string; lead: string; points: [string, string][]; codeCreate: string; codeCap: string; codeOver: string };
   pricing: { eyebrow: string; h2: string; lead: string; leadCode: string; cols: [string, string, string, string, string, string]; popular: string; unmanagedH3: string; managedH3: string; managedLead: string; noteTry: (rate: string) => string; noteUsd: string; noteTail: (snapshot: string) => string };
   marketplace: { eyebrow: string; h2: string; lead: string };
@@ -26,7 +26,7 @@ export interface Copy {
 
 const en: Copy = {
   meta: { title: 'Progrid: the developer cloud for Saudi Arabia, built for people and AI agents', description: 'Get a server in 60 seconds. Hourly billing in dollars or riyals with ZATCA e-invoices, one click apps, and API tokens your AI agents can use safely.' },
-  nav: { products: 'Products', agents: 'For AI agents', pricing: 'Pricing', marketplace: 'Marketplace', docs: 'Docs', signIn: 'Sign in', startFree: 'Start free', menu: 'Menu' },
+  nav: { products: 'Products', connect: 'Connect', agents: 'For AI agents', pricing: 'Pricing', marketplace: 'Marketplace', docs: 'Docs', signIn: 'Sign in', startFree: 'Start free', menu: 'Menu' },
   hero: {
     badge: 'Launching 2027',
     h1a: 'The developer cloud for Saudi Arabia. Built for people ', h1b: 'and AI agents',
@@ -44,8 +44,9 @@ const en: Copy = {
   products: {
     eyebrow: 'Products', h2: 'Everything a developer cloud needs. Nothing that gets in the way.',
     lead: 'One API behind the console, the CLI, Terraform and your agents. Every product is a workflow you can watch, not a spinner.',
-    available: 'Available', roadmap: 'Roadmap',
+    available: 'Available', roadmap: 'Roadmap', learnMore: 'Learn more',
     groups: [
+      { name: 'Progrid Connect', desc: 'Build and deploy AI agents that connect to your infrastructure, APIs and applications. Test every step, then call them by API or webhook.', items: ['Agents', 'Workflows', 'Connections', 'Webhooks', 'Build with AI', 'Templates'], live: true, highlight: true, href: '/connect' },
       { name: 'Core Cloud', desc: 'Servers, Kubernetes, volumes, load balancers, DNS, object storage, public IPs, snapshots, firewalls and monitoring today. VPC is next.', items: ['Servers', 'Managed servers', 'App Platform', 'Kubernetes', 'Volumes', 'Load balancers', 'DNS', 'Object storage', 'Snapshots', 'Public IPs', 'Firewalls', 'Monitoring'], live: true },
       { name: 'Managed Agents', desc: 'Give Claude, Cursor or n8n a token with a monthly spending cap and approval rules instead of the keys to your account.', items: ['Agent tokens', 'MCP server', 'Approval queue'], live: true, highlight: true },
       { name: 'Marketplace', desc: '15 one click apps at launch, from WordPress to Odoo to an AI starter. Progrid apps as premium listings.', items: ['WordPress', 'n8n', 'Odoo', 'Coolify', 'Ollama + Open WebUI'], live: true },
@@ -91,7 +92,7 @@ const en: Copy = {
   footer: {
     tagline: 'The developer cloud for Saudi Arabia.',
     cols: [
-      ['Products', [['Servers', '/#products'], ['Marketplace', '/#marketplace'], ['AI tools', '/#agents'], ['Pricing', '/#pricing'], ['Security', '/docs/security']]],
+      ['Products', [['Progrid Connect', '/connect'], ['Servers', '/#products'], ['Marketplace', '/#marketplace'], ['AI tools', '/#agents'], ['Pricing', '/#pricing'], ['Security', '/docs/security']]],
       ['Developers', [['API reference', '/docs/api-reference'], ['CLI', '/docs/cli'], ['Terraform', '/docs/api'], ['SDKs', '/docs/api'], ['Status', '#']]],
       ['Company', [['About us', '/about'], ['Contact', '/contact'], ['Careers', '/careers'], ['Vendor program', '/contact']]],
       ['Legal', [['Terms of service', '/legal/terms'], ['Acceptable use', '/legal/acceptable-use'], ['Privacy (PDPL)', '/legal/privacy'], ['Refunds', '/legal/refunds'], ['SLA', '/legal/sla'], ['Cookies', '/legal/cookies']]],
@@ -102,7 +103,7 @@ const en: Copy = {
 
 const tr: Copy = {
   meta: { title: 'Progrid: Suudi Arabistan için geliştirici bulutu, insanlar ve yapay zeka ajanları için', description: '60 saniyede sunucu. Dolar veya riyal ile saatlik faturalama ve ZATCA e-fatura, tek tıkla uygulamalar ve yapay zeka ajanlarının güvenle kullanabileceği API tokenları.' },
-  nav: { products: 'Ürünler', agents: 'Yapay zeka ajanları', pricing: 'Fiyatlar', marketplace: 'Uygulama Mağazası', docs: 'Belgeler', signIn: 'Giriş yap', startFree: 'Ücretsiz başla', menu: 'Menü' },
+  nav: { products: 'Ürünler', connect: 'Connect', agents: 'Yapay zeka ajanları', pricing: 'Fiyatlar', marketplace: 'Uygulama Mağazası', docs: 'Belgeler', signIn: 'Giriş yap', startFree: 'Ücretsiz başla', menu: 'Menü' },
   hero: {
     badge: '2027’de açılıyor',
     h1a: 'Suudi Arabistan için geliştirici bulutu. İnsanlar ', h1b: 've yapay zeka ajanları için',
@@ -120,8 +121,9 @@ const tr: Copy = {
   products: {
     eyebrow: 'Ürünler', h2: 'Bir geliştirici bulutunun ihtiyaç duyduğu her şey. Ayak bağı olan hiçbir şey.',
     lead: 'Konsolun, komut satırının, Terraform’un ve ajanlarınızın arkasında tek bir API. Her ürün izleyebileceğiniz bir iş akışıdır, dönen bir simge değil.',
-    available: 'Kullanılabilir', roadmap: 'Yol haritası',
+    available: 'Kullanılabilir', roadmap: 'Yol haritası', learnMore: 'Daha fazla bilgi',
     groups: [
+      { name: 'Progrid Connect', desc: 'Altyapına, API’lerine ve uygulamalarına bağlanan yapay zekâ ajanları oluştur ve yayınla. Her adımı test et, sonra API veya webhook ile çağır.', items: ['Ajanlar', 'İş akışları', 'Bağlantılar', 'Webhooklar', 'Yapay zekâ ile oluştur', 'Şablonlar'], live: true, highlight: true, href: '/connect' },
       { name: 'Çekirdek Bulut', desc: 'Bugün sunucular, diskler, yük dengeleyiciler, DNS, nesne depolama, genel IP’ler, anlık görüntüler, güvenlik duvarları ve izleme. Sırada VPC var.', items: ['Sunucular', 'Yönetilen sunucular', 'Uygulama Platformu', 'Kubernetes', 'Diskler', 'Yük dengeleyiciler', 'DNS', 'Nesne depolama', 'Anlık görüntüler', 'Genel IP’ler', 'Güvenlik duvarları', 'İzleme'], live: true },
       { name: 'Yönetilen Ajanlar', desc: 'Claude, Cursor veya n8n’e hesabınızın anahtarları yerine aylık harcama limiti ve onay kuralları olan bir token verin.', items: ['Ajan tokenları', 'MCP sunucusu', 'Onay kuyruğu'], live: true, highlight: true },
       { name: 'Uygulama Mağazası', desc: 'Açılışta WordPress’ten Odoo’ya ve bir yapay zeka başlangıç paketine kadar 15 tek tık uygulama. Progrid uygulamaları premium listeler olarak.', items: ['WordPress', 'n8n', 'Odoo', 'Coolify', 'Ollama + Open WebUI'], live: true },
@@ -167,7 +169,7 @@ const tr: Copy = {
   footer: {
     tagline: 'Suudi Arabistan için geliştirici bulutu.',
     cols: [
-      ['Ürünler', [['Sunucular', '/#products'], ['Uygulama Mağazası', '/#marketplace'], ['Yapay zeka araçları', '/#agents'], ['Fiyatlar', '/#pricing'], ['Güvenlik', '/docs/security']]],
+      ['Ürünler', [['Progrid Connect', '/connect'], ['Sunucular', '/#products'], ['Uygulama Mağazası', '/#marketplace'], ['Yapay zeka araçları', '/#agents'], ['Fiyatlar', '/#pricing'], ['Güvenlik', '/docs/security']]],
       ['Geliştiriciler', [['API referansı', '/docs/api-reference'], ['CLI', '/docs/cli'], ['Terraform', '/docs/api'], ['SDK’lar', '/docs/api'], ['Durum', '#']]],
       ['Şirket', [['Hakkımızda', '/about'], ['İletişim', '/contact'], ['Kariyer', '/careers'], ['Satıcı programı', '/contact']]],
       ['Hukuki', [['Hizmet koşulları', '/legal/terms'], ['Kabul edilebilir kullanım', '/legal/acceptable-use'], ['Gizlilik (PDPL)', '/legal/privacy'], ['İadeler', '/legal/refunds'], ['SLA', '/legal/sla'], ['Çerezler', '/legal/cookies']]],
@@ -178,7 +180,7 @@ const tr: Copy = {
 
 const ar: Copy = {
   meta: { title: 'Progrid: الخدمات السحابية للمطورين في السعودية', description: 'سيرفرك جاهز خلال 60 ثانية. ادفع بالساعة بالريال مع فاتورة إلكترونية، تطبيقات بضغطة وحدة، ورموز API تستخدمها أدوات الذكاء الاصطناعي بأمان.' },
-  nav: { products: 'المنتجات', agents: 'الذكاء الاصطناعي', pricing: 'الأسعار', marketplace: 'المتجر', docs: 'الدليل', signIn: 'دخول', startFree: 'ابدأ مجانًا', menu: 'القائمة' },
+  nav: { products: 'المنتجات', connect: 'Connect', agents: 'الذكاء الاصطناعي', pricing: 'الأسعار', marketplace: 'المتجر', docs: 'الدليل', signIn: 'دخول', startFree: 'ابدأ مجانًا', menu: 'القائمة' },
   hero: {
     badge: 'الإطلاق في 2027',
     h1a: 'الخدمات السحابية', h1b: '',
@@ -196,8 +198,9 @@ const ar: Copy = {
   products: {
     eyebrow: 'المنتجات', h2: 'كل اللي تحتاجه للبنية التحتية. وما في شي يوقّفك.',
     lead: 'واجهة API وحدة تشغّل لوحة التحكم وسطر الأوامر وTerraform ووكلائك. كل شي تسويه تقدر تتابعه خطوة بخطوة.',
-    available: 'متوفر', roadmap: 'قريبًا',
+    available: 'متوفر', roadmap: 'قريبًا', learnMore: 'اعرف أكثر',
     groups: [
+      { name: 'Progrid Connect', desc: 'ابنِ وانشر وكلاء ذكاء اصطناعي يتصلون ببنيتك التحتية وواجهات API وتطبيقاتك. اختبر كل خطوة، وبعدين استدعهم عبر API أو Webhook.', items: ['الوكلاء', 'سير العمل', 'الاتصالات', 'Webhooks', 'البناء بالذكاء الاصطناعي', 'القوالب'], live: true, highlight: true, href: '/connect' },
       { name: 'الخدمات الأساسية', desc: 'سيرفرات وأقراص وموزّع أحمال وDNS وتخزين متوافق مع S3 وعناوين IP ونسخ لحظية وجدار حماية ومراقبة، كلها متوفرة الحين. الشبكات الخاصة جاية قريب.', items: ['السيرفرات', 'السيرفرات المُدارة', 'منصة التطبيقات', 'Kubernetes', 'الأقراص', 'موزّع الأحمال', 'DNS', 'التخزين S3', 'النسخ اللحظية', 'عناوين IP', 'جدار الحماية', 'المراقبة'], live: true },
       { name: 'أدوات الذكاء الاصطناعي', desc: 'أعطِ Claude أو Cursor أو n8n رمز بحد إنفاق شهري وقواعد موافقة، بدل ما تعطيهم مفاتيح حسابك كلها.', items: ['رموز الذكاء الاصطناعي', 'خادم MCP', 'قائمة الموافقات'], live: true, highlight: true },
       { name: 'المتجر', desc: '15 تطبيق بضغطة وحدة من يوم الإطلاق، من WordPress إلى Odoo إلى باقة بداية للذكاء الاصطناعي. وتطبيقات Progrid لها مكانها المميز.', items: ['WordPress', 'n8n', 'Odoo', 'Coolify', 'Ollama + Open WebUI'], live: true },
@@ -242,7 +245,7 @@ const ar: Copy = {
   footer: {
     tagline: 'الخدمات السحابية للمطورين في السعودية.',
     cols: [
-      ['المنتجات', [['السيرفرات', '/#products'], ['المتجر', '/#marketplace'], ['أدوات الذكاء الاصطناعي', '/#agents'], ['الأسعار', '/#pricing'], ['الأمان', '/docs/security']]],
+      ['المنتجات', [['Progrid Connect', '/connect'], ['السيرفرات', '/#products'], ['المتجر', '/#marketplace'], ['أدوات الذكاء الاصطناعي', '/#agents'], ['الأسعار', '/#pricing'], ['الأمان', '/docs/security']]],
       ['المطورون', [['مرجع API', '/docs/api-reference'], ['سطر الأوامر', '/docs/cli'], ['Terraform', '/docs/api'], ['حزم SDK', '/docs/api'], ['حالة الخدمة', '#']]],
       ['الشركة', [['من نحن', '/about'], ['تواصل معنا', '/contact'], ['الوظائف', '/careers'], ['برنامج الموردين', '/contact']]],
       ['قانوني', [['شروط الخدمة', '/legal/terms'], ['سياسة الاستخدام', '/legal/acceptable-use'], ['الخصوصية (PDPL)', '/legal/privacy'], ['الاسترجاع والإلغاء', '/legal/refunds'], ['اتفاقية مستوى الخدمة', '/legal/sla'], ['ملفات الارتباط', '/legal/cookies']]],

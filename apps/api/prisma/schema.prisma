@@ -144,6 +144,8 @@ model Team {
   abuseFlags AbuseFlag[]
   webhooks  Webhook[]
   managedContracts ManagedContract[]
+  connectAgents      ConnectAgent[]
+  connectConnections ConnectConnection[]
 
   @@map("prgd_teams")
 }
@@ -784,6 +786,12 @@ enum ResourceType {
   managed_plan
   /// Managed cloud engineer time beyond the plan's included minutes (resourceId = contract id).
   managed_overage
+  /// Progrid Connect, one record per agent per hour (resourceId = agent id). Priced per 1,000 or per 1M units.
+  connect_execution
+  connect_ai_input
+  connect_ai_output
+  connect_ai_cache_read
+  connect_tool_call
 
   @@map("prgd_resource_type")
 }
@@ -3133,4 +3141,311 @@ model ContractorPayout {
   @@unique([engineerId, period])
   @@index([period, status])
   @@map("prgd_contractor_payouts")
+}
+
+// ───────────────────────── Progrid Connect (docs/connect.md) ─────────────────────────
+
+enum ConnectAgentStatus {
+  draft
+  deployed
+  paused
+
+  @@map("prgd_connect_agent_status")
+}
+
+enum ConnectRunStatus {
+  queued
+  running
+  succeeded
+  failed
+  waiting_approval
+  cancelled
+
+  @@map("prgd_connect_run_status")
+}
+
+enum ConnectRunSource {
+  api
+  webhook
+  test
+  schedule
+  manual
+
+  @@map("prgd_connect_run_source")
+}
+
+enum ConnectConnectionKind {
+  rest_api
+  postgres
+  mysql
+  mongodb
+  smtp
+  webhook_out
+  custom
+
+  @@map("prgd_connect_connection_kind")
+}
+
+enum ConnectToolKind {
+  http_request
+  database_query
+  send_email
+  notify
+  webhook_out
+  progrid
+
+  @@map("prgd_connect_tool_kind")
+}
+
+enum ConnectStepType {
+  node
+  model
+  tool
+  condition
+  approval
+
+  @@map("prgd_connect_step_type")
+}
+
+/// An AI agent: instructions, a model, tools and an optional workflow. Soft deleted so runs and usage stay.
+model ConnectAgent {
+  id              String             @id @default(cuid())
+  teamId          String
+  /// Usage is billed against this project (the team's default project when created).
+  projectId       String
+  createdById     String
+  name            String
+  slug            String
+  description     String             @default("")
+  instructions    String             @default("")
+  model           String
+  effort          String             @default("medium")
+  status          ConnectAgentStatus @default(draft)
+  currentVersion  Int?
+  deployedVersion Int?
+  /// [{key, description, required, secret}]; values live in ConnectVariable.
+  variables       Json               @default("[]")
+  /// {maxSteps, maxTokensPerRun, timeoutSeconds}
+  limits          Json               @default("{}")
+  templateSlug    String?
+  lastRunAt       DateTime?
+  deletedAt       DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  team     Team                  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  versions ConnectAgentVersion[]
+  tools    ConnectTool[]
+  workflow ConnectWorkflow?
+  values   ConnectVariable[]
+  webhooks ConnectWebhook[]
+  keys     ConnectAgentKey[]
+  runs     ConnectRun[]
+
+  @@index([teamId, deletedAt])
+  @@map("prgd_connect_agents")
+}
+
+/// Immutable snapshot of an agent (instructions, model, effort, tools, workflow). Deploy pins one.
+model ConnectAgentVersion {
+  id          String   @id @default(cuid())
+  agentId     String
+  version     Int
+  note        String   @default("")
+  snapshot    Json
+  createdById String
+  createdAt   DateTime @default(now())
+
+  agent ConnectAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, version])
+  @@map("prgd_connect_agent_versions")
+}
+
+/// Something the model may call. name is the model facing tool name (snake_case, unique per agent).
+model ConnectTool {
+  id               String          @id @default(cuid())
+  agentId          String
+  name             String
+  description      String          @default("")
+  kind             ConnectToolKind
+  connectionId     String?
+  enabled          Boolean         @default(true)
+  requiresApproval Boolean         @default(false)
+  config           Json            @default("{}")
+  inputSchema      Json            @default("{}")
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  agent      ConnectAgent       @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  connection ConnectConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+
+  @@unique([agentId, name])
+  @@map("prgd_connect_tools")
+}
+
+/// The agent's workflow graph (one per agent, optional).
+model ConnectWorkflow {
+  id        String   @id @default(cuid())
+  agentId   String   @unique
+  graph     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agent ConnectAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@map("prgd_connect_workflows")
+}
+
+/// Credentials for an API, database, mail server or outbound webhook. The secret blob is sealed
+/// (common/crypto/secretbox) and opened only inside tool executors; responses carry hints only.
+model ConnectConnection {
+  id           String                @id @default(cuid())
+  teamId       String
+  name         String
+  kind         ConnectConnectionKind
+  config       Json                  @default("{}")
+  /// seal(JSON.stringify({field: value})), or null when the connection has no secrets.
+  secret       String?
+  secretFields String[]              @default([])
+  secretHints  Json                  @default("{}")
+  /// {readOnly, allowedTables?, allowedCollections?, allowedHosts?}
+  access       Json                  @default("{}")
+  status       String                @default("untested")
+  lastTestedAt DateTime?
+  lastError    String?
+  createdById  String
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  team  Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  tools ConnectTool[]
+
+  @@index([teamId])
+  @@map("prgd_connect_connections")
+}
+
+/// A variable value. Secret values are sealed and only ever substituted into tool requests.
+model ConnectVariable {
+  id        String   @id @default(cuid())
+  agentId   String
+  key       String
+  value     String
+  secret    Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+
+  agent ConnectAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, key])
+  @@map("prgd_connect_variables")
+}
+
+/// Inbound webhook. The URL token is shown once and stored as a sha256 hash.
+model ConnectWebhook {
+  id            String    @id @default(cuid())
+  agentId       String
+  teamId        String
+  name          String
+  path          String
+  tokenHash     String    @unique
+  tokenHint     String
+  /// Sealed HMAC signing secret, when signature verification is on.
+  signingSecret String?
+  enabled       Boolean   @default(true)
+  lastCalledAt  DateTime?
+  createdAt     DateTime  @default(now())
+
+  agent ConnectAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
+  @@map("prgd_connect_webhooks")
+}
+
+/// Key for the public run API of one agent (prgd_ca_...), hashed like API tokens.
+model ConnectAgentKey {
+  id          String    @id @default(cuid())
+  agentId     String
+  teamId      String
+  name        String
+  prefix      String
+  hash        String    @unique
+  createdById String
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  agent ConnectAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
+  @@map("prgd_connect_agent_keys")
+}
+
+/// One execution of an agent. Usage and cost are summed from its steps.
+model ConnectRun {
+  id                   String           @id @default(cuid())
+  teamId               String
+  projectId            String
+  agentId              String
+  version              Int?
+  source               ConnectRunSource
+  status               ConnectRunStatus @default(queued)
+  input                Json?
+  output               Json?
+  errorCode            String?
+  errorMessage         String?
+  model                String
+  inputTokens          Int              @default(0)
+  outputTokens         Int              @default(0)
+  cacheReadTokens      Int              @default(0)
+  cacheWriteTokens     Int              @default(0)
+  toolCalls            Int              @default(0)
+  apiCalls             Int              @default(0)
+  stepCount            Int              @default(0)
+  /// Customer price estimate from the price book (0 until staff price the Connect SKUs).
+  costEstimateMinor    Int              @default(0)
+  currency             Currency         @default(SAR)
+  /// Internal cost basis: model list price x tokens, in micro dollars. Never shown to customers.
+  providerCostMicroUsd Int              @default(0)
+  /// True when the agent ran a workflow graph rather than a single agent step.
+  workflow             Boolean          @default(false)
+  keyId                String?
+  idempotencyKey       String?
+  /// Resume checkpoint (finished nodes, the agent conversation, pending approvals).
+  state                Json?
+  startedAt            DateTime?
+  finishedAt           DateTime?
+  durationMs           Int?
+  createdAt            DateTime         @default(now())
+
+  agent ConnectAgent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  steps ConnectRunStep[]
+
+  @@index([agentId, createdAt])
+  @@index([teamId, createdAt])
+  @@index([teamId, status, createdAt])
+  @@index([status, createdAt])
+  @@index([finishedAt])
+  @@map("prgd_connect_runs")
+}
+
+/// Ordered timeline of a run. Payload fields are capped at 64 KB each (see docs/connect.md, Retention).
+model ConnectRunStep {
+  id         String          @id @default(cuid())
+  runId      String
+  index      Int
+  type       ConnectStepType
+  nodeId     String?
+  name       String
+  status     String
+  input      Json?
+  output     Json?
+  error      Json?
+  tokens     Json?
+  startedAt  DateTime        @default(now())
+  durationMs Int?
+
+  run ConnectRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, index])
+  @@map("prgd_connect_run_steps")
 }
