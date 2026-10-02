@@ -1,6 +1,6 @@
 # First deploy on DigitalOcean
 
-This puts progrid.sa, the console and the API live on one DigitalOcean droplet in Frankfurt.
+This puts the website, the console and the API live on one DigitalOcean droplet in Frankfurt, for both domains: progrid.co (primary) and progrid.sa. The examples below show progrid.sa; repeat every DNS step for progrid.co, and see [domains and entities](domains-and-entities.md) for the full record list and rollout order.
 Customer servers are not possible yet: that needs the dedicated Proxmox machine (see
 `docs/hosting.md`, and `docs/first-proxmox-node.md` to add it). Until then signups work, the console works, and creating resources stops at
 the payment step because no Moyasar keys are set.
@@ -43,11 +43,13 @@ ssh -i ~/.ssh/progrid root@PUBLIC_IP 'cat >> ~/.ssh/authorized_keys' < ~/.ssh/pr
 
 ## 3. DNS
 
-Where progrid.sa is registered, add four A records, TTL 300, all pointing at `PUBLIC_IP`:
-`@`, `www`, `console`, `api`. Check before going on (all four must print the address):
+For each domain, progrid.co and progrid.sa, add A records with TTL 300, all pointing at
+`PUBLIC_IP`: `@`, `www`, `console`, `api`, `ops`, `gateway`. Caddy asks for certificates for
+every one of them, so all must resolve before the first start. Check before going on (every
+line must print the address):
 
 ```bash
-for h in progrid.sa www.progrid.sa console.progrid.sa api.progrid.sa; do dig +short $h; done
+for d in progrid.co progrid.sa; do for h in $d www.$d console.$d api.$d ops.$d gateway.$d; do echo "$h $(dig +short $h)"; done; done
 ```
 
 ## 4. Images on GitHub

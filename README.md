@@ -13,8 +13,8 @@ web console, CLI, Terraform, SDKs and AI agents.
 apps/
   api/          Control plane — NestJS + Prisma modular monolith (TypeScript)
   console/      Web console — Next.js (TR / AR / EN, RTL-ready)
-  www/          Marketing site — Next.js (progrid.sa), pricing pulled live from the API
-  ops/          Next.js DevOps console for on call engineers (ops.progrid.sa, EN / AR)
+  www/          Marketing site — Next.js (progrid.co global, progrid.sa for Saudi Arabia), pricing pulled live from the API
+  ops/          Next.js DevOps console for on call engineers (ops.progrid.co, also ops.progrid.sa, EN / AR)
 cli/            `prgd` CLI — single Go binary (login, servers, ssh, deploy, tokens); `cli/install.sh`
 agents/
   host-agent/   Go service on every Proxmox node: takes jobs from NATS, calls the
@@ -138,3 +138,5 @@ events stay a regular table), so nothing else changes.
 Brand assets (official logo, icons, social image) live in `docs/brand/`, with copies under each app's `public/brand`.
 
 What still has to be built before real hardware and real invoices: `docs/readiness-review.md`.
+
+Two domains and two billing companies (progrid.co with Progrid Technologies LLC, progrid.sa with Progrid Arabia) run on this one platform: see [docs/domains-and-entities.md](docs/domains-and-entities.md).

@@ -2,7 +2,7 @@
 
 The DevOps console is where on call engineers operate managed cloud contracts: external,
 hourly paid contractors (in Jordan or India, for example) and Progrid's own engineers. It is a
-separate app (`apps/ops`, served at `ops.progrid.sa`) with its own API under `/ops/v1`, its own
+separate app (`apps/ops`, served at `ops.progrid.co` and, for the same staff, at `ops.progrid.sa`) with its own API under `/ops/v1`, its own
 session type and its own guards. The back office for it is under `/admin/ops`, and the terminal
 gateway (`services/prgd-gateway`) talks to `/internal/gateway`.
 
@@ -126,7 +126,7 @@ where a browser cannot set headers); state changes always need the Bearer header
 cross site requests out. `POST /ops/v1/auth/logout` ends the session and clears the cookie.
 `POST /ops/v1/auth/password/forgot` `{"email"}` mails engineers a reset link (always answers 200).
 
-The WebAuthn relying party is `PRGD_OPS_RP_ID` (`ops.progrid.sa`) and the expected origin is
+Passkeys are bound to one relying party. The primary ops console is `ops.progrid.co`: staff register and use passkeys there. A passkey registered on `ops.progrid.co` does not work on `ops.progrid.sa` and the other way round (the API picks `PRGD_OPS_URL_SA` and `PRGD_OPS_RP_ID_SA` for a browser on ops.progrid.sa). TOTP works on both. The WebAuthn relying party is `PRGD_OPS_RP_ID` (`ops.progrid.co`) and the expected origin is
 `PRGD_OPS_URL`. A sign in from a user agent and address pair the engineer never used before
 emails the support lead and sends them a low urgency page (`ops.signed_in` has `newDevice: true`).
 
@@ -295,7 +295,7 @@ half.
   "sessionId": "cmsess1",
   "token": "prgd_gws_3q2wD...43 characters of base64url",
   "tokenExpiresAt": "2026-09-28T10:01:00.000Z",
-  "gatewayUrl": "wss://gateway.progrid.sa/v1/terminal?session=cmsess1",
+  "gatewayUrl": "wss://gateway.progrid.co/v1/terminal?session=cmsess1",
   "asset": { "id": "cmasset1", "name": "web-1" },
   "ticket": { "id": "cmticket1", "number": 1042 },
   "grant": { "id": "cmgrant1", "expiresAt": "2026-09-28T12:00:00.000Z" },
@@ -644,7 +644,7 @@ acknowledgement, escalation and settings.
 
 The gateway is `services/prgd-gateway` (package `@prgd/gateway`, image `prgd-gateway`). Its
 WebSocket protocol, configuration and limits are in `services/prgd-gateway/README.md`. In short:
-the ops app opens `wss://gateway.progrid.sa/v1/terminal?session=<id>`, sends
+the ops app opens `wss://gateway.progrid.co/v1/terminal?session=<id>` (`gateway.progrid.sa` from ops.progrid.sa), sends
 `{"type":"auth","token"}` first, then `input`, `resize` and `ping` frames; the gateway answers
 `ready`, `output` (base64), `notice`, `pong` and a final `closed` with the reason.
 

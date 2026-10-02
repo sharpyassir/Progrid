@@ -11,8 +11,10 @@ set. Leaving them empty hides it; nothing else changes.
 
 | Provider  | Redirect URI                                              |
 |-----------|-----------------------------------------------------------|
-| Google    | `https://api.progrid.sa/v1/auth/oauth/google/callback`    |
-| Microsoft | `https://api.progrid.sa/v1/auth/oauth/microsoft/callback` |
+| Google    | `https://api.progrid.co/v1/auth/oauth/google/callback` and `https://api.progrid.sa/v1/auth/oauth/google/callback` |
+| Microsoft | `https://api.progrid.co/v1/auth/oauth/microsoft/callback` and `https://api.progrid.sa/v1/auth/oauth/microsoft/callback` |
+
+Both API hosts take the callback: a sign in that starts on console.progrid.sa returns through api.progrid.sa and lands back on console.progrid.sa, where the browser keeps its session. Register both URIs with each provider ([domains and entities](domains-and-entities.md)).
 
 They are built from `OAUTH_REDIRECT_BASE` (default `PUBLIC_API_URL`). For local development also
 register `http://localhost:4000/v1/auth/oauth/google/callback` and
@@ -27,15 +29,15 @@ production ones.
 2. Go to **APIs & Services, OAuth consent screen** (in the newer layout this is **Google Auth
    Platform**) and choose **Get started**.
    * **App name**: `Progrid`
-   * **User support email**: `support@progrid.sa`
+   * **User support email**: `support@progrid.co`
    * **Audience**: **External**
-   * **Contact information**: an engineering address that reads mail, for example `hostmaster@progrid.sa`
+   * **Contact information**: an engineering address that reads mail, for example `hostmaster@progrid.co`
    * Accept the user data policy and choose **Create**.
 3. Under **Branding**:
-   * **Application home page**: `https://progrid.sa`
-   * **Privacy policy**: `https://progrid.sa/legal/privacy`
-   * **Terms of service**: `https://progrid.sa/legal/terms`
-   * **Authorized domains**: add `progrid.sa`
+   * **Application home page**: `https://progrid.co`
+   * **Privacy policy**: `https://progrid.co/legal/privacy`
+   * **Terms of service**: `https://progrid.co/legal/terms`
+   * **Authorized domains**: add `progrid.co` and `progrid.sa`
    * The logo is optional. Uploading one requires Google's brand verification before it shows.
 4. Under **Data Access**, choose **Add or remove scopes** and select `openid`,
    `.../auth/userinfo.email` and `.../auth/userinfo.profile` (shown as openid, email and profile).
@@ -44,7 +46,7 @@ production ones.
    * **Application type**: **Web application**
    * **Name**: `Progrid API`
    * **Authorized JavaScript origins**: leave empty (the code exchange happens on the server)
-   * **Authorized redirect URIs**: `https://api.progrid.sa/v1/auth/oauth/google/callback`
+   * **Authorized redirect URIs**: `https://api.progrid.co/v1/auth/oauth/google/callback` and `https://api.progrid.sa/v1/auth/oauth/google/callback`
    * Choose **Create**, then copy the **Client ID** and the **Client secret** right away (download
      the JSON as well; the secret is not shown again).
 6. Under **Audience**, choose **Publish app** and confirm, so the status is **In production**.
@@ -64,7 +66,7 @@ open the client, **Add secret**, deploy the new value, then disable and delete t
    * **Name**: `Progrid`
    * **Supported account types**: **Accounts in any organizational directory (Any Microsoft
      Entra ID tenant, Multitenant) and personal Microsoft accounts (e.g. Skype, Xbox)**
-   * **Redirect URI**: platform **Web**, `https://api.progrid.sa/v1/auth/oauth/microsoft/callback`
+   * **Redirect URI**: platform **Web**, `https://api.progrid.co/v1/auth/oauth/microsoft/callback`; then add `https://api.progrid.sa/v1/auth/oauth/microsoft/callback` under **Authentication**
    * Choose **Register**.
 2. On the **Overview** page copy the **Application (client) ID**. That is `MICROSOFT_CLIENT_ID`.
    Keep `MICROSOFT_TENANT=common` so work, school and personal accounts can all sign in
@@ -87,10 +89,10 @@ open the client, **Add secret**, deploy the new value, then disable and delete t
 6. Under **Authentication**, leave the implicit grant boxes (access tokens, ID tokens) unticked
    and **Allow public client flows** off. The API uses the authorization code flow with a secret
    and PKCE.
-7. Optional but recommended, under **Branding & properties**: home page `https://progrid.sa`,
-   terms `https://progrid.sa/legal/terms`, privacy `https://progrid.sa/legal/privacy`, a logo,
-   and **Publisher domain** `progrid.sa` (verified by serving the file Microsoft offers at
-   `https://progrid.sa/.well-known/microsoft-identity-association.json`).
+7. Optional but recommended, under **Branding & properties**: home page `https://progrid.co`,
+   terms `https://progrid.co/legal/terms`, privacy `https://progrid.co/legal/privacy`, a logo,
+   and **Publisher domain** `progrid.co` (verified by serving the file Microsoft offers at
+   `https://progrid.co/.well-known/microsoft-identity-association.json`).
 8. Optional: **publisher verification**. With a Microsoft AI Cloud Partner Program (MPN) id linked
    under **Branding & properties, Publisher verification**, the consent screen shows Progrid as a
    verified publisher. Without it the screen says the app is unverified, and some organizations
@@ -105,7 +107,7 @@ open the client, **Add secret**, deploy the new value, then disable and delete t
 | `MICROSOFT_CLIENT_ID`     | `microsoft_client_id` in vars | Application (client) ID |
 | `MICROSOFT_CLIENT_SECRET` | `vault_microsoft_client_secret` | secret, expires |
 | `MICROSOFT_TENANT`        | `microsoft_tenant` in vars    | default `common` |
-| `OAUTH_REDIRECT_BASE`     | set by the Ansible template   | default `PUBLIC_API_URL`, `https://api.progrid.sa` in production |
+| `OAUTH_REDIRECT_BASE`     | empty in production           | empty: `https://api.<domain>` of the domain the sign in started on, else `PUBLIC_API_URL`. Set it only to force one callback host |
 
 With Ansible, put the ids in `group_vars/all/vars.yml` and the secrets in
 `group_vars/all/vault.yml`, then run the management playbook so `prgd.env` is rewritten and the
@@ -113,7 +115,7 @@ API restarts. Without Ansible, edit `/etc/prgd/prgd.env` (see `infra/prod/prgd.e
 restart the API. Check with:
 
 ```sh
-curl -s https://api.progrid.sa/v1/auth/providers
+curl -s https://api.progrid.co/v1/auth/providers
 # {"providers":[{"id":"google","name":"Google"},{"id":"microsoft","name":"Microsoft"}]}
 ```
 

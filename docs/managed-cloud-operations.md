@@ -102,7 +102,7 @@ route:
 receivers:
   - name: prgd-managed
     webhook_configs:
-      - url: https://api.progrid.sa/internal/alerts/alertmanager
+      - url: https://api.progrid.co/internal/alerts/alertmanager
         send_resolved: true
         http_config:
           authorization:
@@ -134,7 +134,7 @@ Alerts are deduplicated by the Alertmanager fingerprint while open, so repeated 
 External servers run a small agent (or a cron job) that posts a heartbeat every minute:
 
 ```sh
-curl -fsS -X POST https://api.progrid.sa/internal/agents/heartbeat \
+curl -fsS -X POST https://api.progrid.co/internal/agents/heartbeat \
   -H "Authorization: Bearer $PRGD_HEARTBEAT_TOKEN" -H "content-type: application/json" \
   -d "{\"status\":\"ok\",\"hostname\":\"$(hostname)\",\"uptimeSeconds\":$(cut -d. -f1 /proc/uptime)}"
 ```
