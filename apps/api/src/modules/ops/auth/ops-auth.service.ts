@@ -68,7 +68,11 @@ export class OpsAuthService {
   async login(email: string, password: string, meta: ClientMeta) {
     const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() }, select: userSelect });
     // The ops console always needs a password plus a second factor; social sign in is for the customer console only.
-    if (!user || !user.passwordHash || !(await argon2.verify(user.passwordHash, password))) throw ApiError.unauthorized('Wrong email or password');
+    if (!user || !user.passwordHash || !(await argon2.verify(user.passwordHash, password))) {
+      // Recorded for the monthly access review; an unknown email has no user to attach the event to.
+      await this.audit.emit('ops.signin_failed', user ? signInActor(user.id, meta) : null, { email: email.toLowerCase().slice(0, 200), knownUser: !!user, ip: meta.ip }, user ? `user:${user.id}` : undefined).catch(() => undefined);
+      throw ApiError.unauthorized('Wrong email or password');
+    }
     this.assertEngineer(user, meta);
     const challenge = await this.tokens.issueOpsChallenge(user.id);
     const methods = [...(user.totpEnabled ? ['totp'] : []), ...(user.webAuthnCredentials.length ? ['webauthn'] : [])];

@@ -140,6 +140,12 @@ const schema = z.object({
   // ---- DevOps console (docs/devops-console.md) ----
   /** Origin of the ops console app (apps/ops); links in mails and the WebAuthn origin. */
   PRGD_OPS_URL: z.string().url().default('http://localhost:3002'),
+  /** Platform maintenance checks (docs/platform-maintenance.md): extra public host names to watch for TLS expiry, comma separated. The API, console, ops and website hosts are always included. */
+  PRGD_PLATFORM_HOSTNAMES: z.string().default(''),
+  /** Ports that may be open on the public address of the management host; any other open port fails the security audit. */
+  PRGD_PLATFORM_EXPECTED_PORTS: z.string().default('22,80,443'),
+  /** Shared secret the off server backup job sends (X-Prgd-Platform-Secret) when the control plane database backup finished. Empty refuses every report. */
+  PRGD_PLATFORM_HEARTBEAT_SECRET: z.string().optional(),
   /** WebAuthn relying party id: the ops console's registrable domain (ops.progrid.sa or progrid.sa). */
   PRGD_OPS_RP_ID: z.string().default('localhost'),
   PRGD_OPS_RP_NAME: z.string().default('Progrid Ops'),

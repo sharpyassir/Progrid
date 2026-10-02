@@ -3456,3 +3456,51 @@ model ConnectRunStep {
   @@index([runId, index])
   @@map("prgd_connect_run_steps")
 }
+
+// ───────────────────────── Platform maintenance (docs/platform-maintenance.md) ─────────────────────────
+
+enum PlatformTaskStatus {
+  /// Waiting for the automatic check or for an engineer.
+  open
+  /// The automatic check passed; nothing for a person to do.
+  passed
+  /// The automatic check found something; an engineer must look and close it with a note.
+  attention
+  /// Closed by an engineer.
+  done
+  /// The period ended with the task still open.
+  overdue
+
+  @@map("prgd_platform_task_status")
+}
+
+/// One recurring platform task (weekly, monthly, quarterly) for one period. Task definitions are in
+/// code (modules/ops/platform/catalog.ts); a row is created when its period starts.
+model PlatformTaskRun {
+  id                String             @id @default(cuid())
+  /// Catalog key, e.g. weekly.backups.
+  taskKey           String
+  /// 2026-W40, 2026-10 or 2026-Q4.
+  periodKey         String
+  periodStart       DateTime
+  dueAt             DateTime
+  status            PlatformTaskStatus @default(open)
+  /// Latest automatic check: pass, warn or fail, a one line summary, and the details.
+  checkStatus       String?
+  checkSummary      String?
+  checkDetails      Json?
+  checkedAt         DateTime?
+  /// What the engineer did and found, and proof (command output, a link, a restore time).
+  note              String?
+  evidence          String?
+  minutes           Int                @default(0)
+  completedById     String?
+  completedAt       DateTime?
+  overdueNotifiedAt DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@unique([taskKey, periodKey])
+  @@index([status, dueAt])
+  @@map("prgd_platform_task_runs")
+}

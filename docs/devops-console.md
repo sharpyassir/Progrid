@@ -558,6 +558,13 @@ runner hands its output over as it goes and the run's log is written about once 
 Use `fetch` with the Bearer header and read the body as a stream, or an `EventSource` with the
 `prgd_ops_session` cookie (credentials included).
 
+## Platform maintenance
+
+The upkeep of Progrid's own platform (patching, backups, access and capacity reviews, the
+security audit, the recovery drill) is the **Platform** page: `GET /ops/v1/platform`,
+`POST /ops/v1/platform/runs/{id}/check` and `.../complete`. Checks run by themselves every
+morning and automatic tasks close when they pass. See `docs/platform-maintenance.md`.
+
 ## Settings
 
 `GET /admin/ops/settings` answers `{settings, defaults, stored, updatedAt, updatedById}`;
@@ -616,6 +623,8 @@ Secrets go in the Ansible vault: `vault_prgd_gateway_secret`, `vault_prgd_stepca
 
 The daily job at 03:30 UTC deletes expired recordings and expires unused gateway tokens. When
 Temporal is unreachable, grant activation runs inline so an approved grant still works.
+Platform maintenance jobs: five past every hour (open new periods, mark and mail overdue tasks)
+and 06:00 UTC daily (run the checks).
 
 ## Tables
 

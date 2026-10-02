@@ -23,7 +23,9 @@ export class OpsAudit {
   async emit(name: string, who: OpsContext | Actor | null, refs: OpsRefs, resource?: string) {
     const actor = who && 'actor' in who ? who.actor : (who as Actor | null) ?? undefined;
     const teamId = refs.contractId ? (await this.prisma.managedContract.findUnique({ where: { id: refs.contractId }, select: { teamId: true } }))?.teamId : undefined;
-    const payload = { contractId: refs.contractId ?? null, assetId: refs.assetId ?? null, ticketId: refs.ticketId ?? null, ...refs, actorId: actor?.userId ?? 'system', ip: actor?.ip ?? null };
-    await this.events.emit(name, payload, { teamId, actor, resource, ip: actor?.ip });
+    // Without an actor (a failed sign in for an unknown email) the address can come in refs.
+    const ip = actor?.ip ?? (typeof refs.ip === 'string' ? refs.ip : undefined);
+    const payload = { contractId: refs.contractId ?? null, assetId: refs.assetId ?? null, ticketId: refs.ticketId ?? null, ...refs, actorId: actor?.userId ?? 'system', ip: ip ?? null };
+    await this.events.emit(name, payload, { teamId, actor, resource, ip });
   }
 }

@@ -73,12 +73,19 @@ export class IamService {
       include: { memberships: { include: { team: true }, orderBy: { teamId: 'asc' } } , engineerProfile: { select: { kind: true } } },
     });
     if (user && !user.passwordHash) throw await passwordNotSet(this.prisma, user.id);
-    if (!user || !(await argon2.verify(user.passwordHash!, dto.password))) throw ApiError.unauthorized('Wrong email or password');
+    if (!user || !(await argon2.verify(user.passwordHash!, dto.password))) {
+      // Recorded for the monthly access review (docs/platform-maintenance.md).
+      await this.events.emit('auth.login_failed', { email: dto.email.toLowerCase().slice(0, 200), knownUser: !!user }, { ip: meta.ip, resource: user ? `user:${user.id}` : undefined }).catch(() => undefined);
+      throw ApiError.unauthorized('Wrong email or password');
+    }
     // External engineers sign in to the ops console only (POST /ops/v1/auth/login).
     if (user.engineerProfile?.kind === 'EXTERNAL') throw new ApiError(403, 'ops_console_only', 'This account signs in to the ops console only');
     if (user.totpEnabled) {
       if (!dto.totp) throw new ApiError(401, 'totp_required', 'Enter the code from your authenticator app');
-      if (!this.security.checkSecondFactor(user, dto.totp)) throw new ApiError(401, 'totp_invalid', 'That code is not valid');
+      if (!this.security.checkSecondFactor(user, dto.totp)) {
+        await this.events.emit('auth.login_failed', { email: user.email, knownUser: true, secondFactor: true }, { ip: meta.ip, resource: `user:${user.id}` }).catch(() => undefined);
+        throw new ApiError(401, 'totp_invalid', 'That code is not valid');
+      }
     }
     const membership = user.memberships[0];
     if (!membership) throw ApiError.forbidden('User belongs to no team');

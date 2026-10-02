@@ -27,6 +27,7 @@ import { MaintenanceService } from '../modules/managed/maintenance/maintenance.s
 import { ReportsService } from '../modules/managed/reports/reports.service';
 import { SessionsService } from '../modules/ops/sessions/sessions.service';
 import { PayoutsService } from '../modules/ops/payouts/payouts.service';
+import { PlatformService } from '../modules/ops/platform/platform.service';
 
 /**
  * Periodic jobs. Each takes a Redis lock so only one API replica runs it.
@@ -64,6 +65,7 @@ export class JobsService {
     private readonly reports: ReportsService,
     private readonly opsSessions: SessionsService,
     private readonly opsPayouts: PayoutsService,
+    private readonly platform: PlatformService,
   ) {}
 
   @Cron('50 * * * * *') // every minute at :50: database roles, lag, backup results, config retries
@@ -217,6 +219,21 @@ export class JobsService {
   @Cron('0 0 5 3 * *') // 05:00 UTC on the 3rd: contractor payouts for the previous month (opsPayoutRun)
   opsPayoutRun() {
     return this.locked('ops-payouts', 10 * 60_000, () => this.opsPayouts.startMonthly());
+  }
+
+  // ---- Platform maintenance (docs/platform-maintenance.md) ----
+
+  @Cron('0 5 * * * *') // five past every hour: open the new period's tasks, mark and mail overdue ones
+  platformPeriods() {
+    return this.locked('platform-periods', 10 * 60_000, async () => {
+      await this.platform.ensurePeriods();
+      await this.platform.markOverdue();
+    });
+  }
+
+  @Cron('0 0 6 * * *') // 06:00 UTC daily, after the nightly backups: run the automatic checks, close the tasks that pass
+  platformChecks() {
+    return this.locked('platform-checks', 30 * 60_000, () => this.platform.runChecks());
   }
 
   private async locked(name: string, ttlMs: number, fn: () => Promise<unknown>) {

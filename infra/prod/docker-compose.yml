@@ -233,6 +233,8 @@ services:
       BACKUP_S3_URL: ${BACKUP_S3_URL:-}
       AWS_ACCESS_KEY_ID: ${BACKUP_S3_KEY:-}
       AWS_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET:-}
+      PRGD_API_URL: http://api:4000
+      PRGD_PLATFORM_HEARTBEAT_SECRET: ${PRGD_PLATFORM_HEARTBEAT_SECRET:-}
     volumes:
       - ./backup.sh:/backup.sh:ro
       - /var/backups/prgd:/backups

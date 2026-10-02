@@ -27,6 +27,9 @@ import { AdminOpsPostmortemsController, OpsPostmortemsController } from './postm
 import { PayoutsService } from './payouts/payouts.service';
 import { AdminOpsPayoutsController, OpsPayoutsController } from './payouts/payouts.controller';
 import { OpsMaintenanceController } from './maintenance/ops-maintenance.controller';
+import { PlatformChecks } from './platform/checks';
+import { PlatformService } from './platform/platform.service';
+import { OpsPlatformController, PlatformInternalController, PlatformSecretGuard } from './platform/platform.controller';
 
 /**
  * DevOps console backend: /ops/v1 for engineers (apps/ops), /admin/ops for support leads and
@@ -36,8 +39,8 @@ import { OpsMaintenanceController } from './maintenance/ops-maintenance.controll
  */
 @Module({
   imports: [EventsModule, ManagedModule, ObjectsModule],
-  controllers: [OpsAuthController, OpsDeskController, OpsTimersController, OpsAccessController, OpsSessionsController, OpsShiftsController, OpsPostmortemsController, OpsPayoutsController, OpsMaintenanceController, GatewayInternalController, AdminOpsEngineersController, AdminOpsTimesheetsController, AdminOpsAccessController, AdminOpsSessionsController, AdminOpsPostmortemsController, AdminOpsPayoutsController],
-  providers: [OpsAudit, OpsHooks, OpsScopeService, EngineerGuard, AssignmentGuard, ResidencyGuard, OpsAuthService, EngineersService, OffboardingService, DeskService, TimersService, TimesheetsService, GrantsService, SessionsService, GatewaySecretGuard, ShiftsService, PostmortemsService, PayoutsService],
-  exports: [OpsAudit, OpsHooks, TimersService, TimesheetsService, GrantsService, SessionsService, ShiftsService, PostmortemsService, PayoutsService],
+  controllers: [OpsAuthController, OpsDeskController, OpsTimersController, OpsAccessController, OpsSessionsController, OpsShiftsController, OpsPostmortemsController, OpsPayoutsController, OpsMaintenanceController, OpsPlatformController, GatewayInternalController, PlatformInternalController, AdminOpsEngineersController, AdminOpsTimesheetsController, AdminOpsAccessController, AdminOpsSessionsController, AdminOpsPostmortemsController, AdminOpsPayoutsController],
+  providers: [OpsAudit, OpsHooks, OpsScopeService, EngineerGuard, AssignmentGuard, ResidencyGuard, OpsAuthService, EngineersService, OffboardingService, DeskService, TimersService, TimesheetsService, GrantsService, SessionsService, GatewaySecretGuard, ShiftsService, PostmortemsService, PayoutsService, PlatformChecks, PlatformService, PlatformSecretGuard],
+  exports: [OpsAudit, OpsHooks, TimersService, TimesheetsService, GrantsService, SessionsService, ShiftsService, PostmortemsService, PayoutsService, PlatformService],
 })
 export class OpsModule {}

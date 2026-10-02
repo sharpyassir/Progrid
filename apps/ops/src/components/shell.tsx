@@ -21,6 +21,7 @@ const NAV: { href: string; key: Key; externalOnly?: boolean }[] = [
   { href: '/tickets', key: 'navTickets' },
   { href: '/access', key: 'navAccess' },
   { href: '/maintenance', key: 'navMaintenance' },
+  { href: '/platform', key: 'navPlatform' },
   { href: '/timesheet', key: 'navTimesheet' },
   { href: '/runbooks', key: 'navRunbooks' },
   { href: '/postmortems', key: 'navPostmortems' },

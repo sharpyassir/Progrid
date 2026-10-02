@@ -87,6 +87,8 @@ export default defineConfig({
       PRGD_OPS_TIMER_IDLE_PROMPT_SECONDS: '2',
       PRGD_OPS_TIMER_AUTO_STOP_SECONDS: '5',
       PRGD_GATEWAY_SECRET: 'it-gateway-secret',
+      PRGD_PLATFORM_HEARTBEAT_SECRET: 'it-platform-secret',
+      PRGD_PLATFORM_HOSTNAMES: 'status.progrid.test',
       // Resend inbound receiving: a known webhook signing secret and API key (the Resend API is stubbed).
       RESEND_WEBHOOK_SECRET: 'whsec_' + Buffer.from('it-resend-webhook-signing-secret').toString('base64'),
       MAIL_API_KEY: 'it-resend-api-key',
