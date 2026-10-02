@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# prgd CLI installer — curl -fsSL https://get.prgd.example | sh
+# prgd CLI installer — curl -fsSL https://get.progrid.co | sh
 # Downloads the latest release binary for this OS/arch into /usr/local/bin (or ~/.local/bin).
 set -eu
 

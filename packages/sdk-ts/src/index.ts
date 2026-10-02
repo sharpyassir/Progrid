@@ -75,7 +75,7 @@ export class PrgdError extends Error {
 
 export interface PrgdOptions {
   token: string;
-  /** Defaults to https://api.prgd.example/v1 or PRGD_API_URL. */
+  /** Defaults to https://api.progrid.co/v1 or PRGD_API_URL. */
   baseUrl?: string;
   fetch?: typeof fetch;
   /** Project id or slug applied to project scoped calls when set. */
@@ -91,7 +91,7 @@ export class Prgd {
   constructor(private readonly opts: PrgdOptions) {
     if (!opts.token) throw new Error('prgd: token is required');
     const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.PRGD_API_URL;
-    this.base = (opts.baseUrl ?? env ?? 'https://api.prgd.example').replace(/\/+$/, '').replace(/\/v1$/, '');
+    this.base = (opts.baseUrl ?? env ?? 'https://api.progrid.co').replace(/\/+$/, '').replace(/\/v1$/, '');
     this.fetchImpl = opts.fetch ?? fetch;
   }
 

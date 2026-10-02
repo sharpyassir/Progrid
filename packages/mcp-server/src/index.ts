@@ -38,7 +38,7 @@ function loadConfig(): { apiUrl: string; token: string } {
     process.stderr.write('prgd-mcp: set PRGD_TOKEN (an agent token from the console or `prgd tokens create NAME --agent --cap 15`)\n');
     process.exit(1);
   }
-  return { apiUrl: (apiUrl || 'https://api.prgd.example').replace(/\/$/, ''), token };
+  return { apiUrl: (apiUrl || 'https://api.progrid.co').replace(/\/$/, ''), token };
 }
 
 const cfg = loadConfig();

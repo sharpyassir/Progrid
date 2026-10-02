@@ -39,7 +39,7 @@ class Prgd:
         if not token:
             raise ValueError("token is required")
         self.token = token
-        self.base = (base_url or os.environ.get("PRGD_API_URL") or "https://api.prgd.example").rstrip("/").removesuffix("/v1")
+        self.base = (base_url or os.environ.get("PRGD_API_URL") or "https://api.progrid.co").rstrip("/").removesuffix("/v1")
         self.project = project
         self.timeout = timeout
         self._open = opener or urllib.request.urlopen

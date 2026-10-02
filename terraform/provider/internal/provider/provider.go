@@ -35,7 +35,7 @@ func (p *prgdProvider) Schema(_ context.Context, _ provider.SchemaRequest, res *
 		Description: "Manage prgd servers, firewalls and SSH keys. Create an API token under Managed Agents, Agent Access.",
 		Attributes: map[string]schema.Attribute{
 			"token":   schema.StringAttribute{Optional: true, Sensitive: true, Description: "API token (prgd_...). Defaults to PRGD_TOKEN."},
-			"api_url": schema.StringAttribute{Optional: true, Description: "API base URL. Defaults to PRGD_API_URL or https://api.prgd.example."},
+			"api_url": schema.StringAttribute{Optional: true, Description: "API base URL. Defaults to PRGD_API_URL or https://api.progrid.co."},
 		},
 	}
 }
@@ -59,7 +59,7 @@ func (p *prgdProvider) Configure(ctx context.Context, req provider.ConfigureRequ
 		url = os.Getenv("PRGD_API_URL")
 	}
 	if url == "" {
-		url = "https://api.prgd.example"
+		url = "https://api.progrid.co"
 	}
 	c := client.New(url, token)
 	res.ResourceData = c

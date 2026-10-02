@@ -55,7 +55,7 @@ token that never touches our database.
   `PRGD_TOKEN` / `PRGD_API_URL` override for CI.
 - Every mutation sends an `Idempotency-Key`.
 - Releases: tag → GitHub Actions → `prgd_<os>_<arch>.tar.gz` for linux/darwin
-  (amd64/arm64) and a Windows zip; `cli/install.sh` is what `get.prgd.example` serves.
+  (amd64/arm64) and a Windows zip; `cli/install.sh` is what `get.progrid.co` serves.
 
 ## What "developer friendly" still needs (ordered)
 

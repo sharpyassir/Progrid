@@ -1,5 +1,5 @@
 // prgd — the command-line client. One static binary, no dependencies, talks to the
-// same public API as the console. Install: curl -fsSL https://get.prgd.example | sh
+// same public API as the console. Install: curl -fsSL https://get.progrid.co | sh
 //
 //	prgd login                       # email + password, or paste an API token
 //	prgd servers create web-1 --size s-2vcpu-4gb --image ubuntu-24-04 --wait
@@ -173,7 +173,8 @@ func configPath() string {
 }
 
 func loadConfig() {
-	cfg.APIURL = "http://localhost:4000"
+	// The primary API; customers in Saudi Arabia may set PRGD_API_URL=https://api.progrid.sa (same API).
+	cfg.APIURL = "https://api.progrid.co"
 	if b, err := os.ReadFile(configPath()); err == nil {
 		_ = json.Unmarshal(b, &cfg)
 	}

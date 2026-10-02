@@ -3,7 +3,7 @@
 One static Go binary, zero dependencies, same API as the console.
 
 ```sh
-curl -fsSL https://get.prgd.example | sh        # macOS / Linux, amd64 / arm64
+curl -fsSL https://get.progrid.co | sh        # macOS / Linux, amd64 / arm64
 prgd login                                        # email + password, or paste a prgd_ token
 ```
 

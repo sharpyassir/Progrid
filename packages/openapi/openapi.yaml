@@ -3,14 +3,18 @@ info:
   title: Progrid API
   license:
     name: Proprietary
-    url: https://progrid.sa/terms
+    url: https://progrid.co/legal/terms
   version: "1"
   description: |
     The Progrid public API. The same API powers the console, CLI, Terraform provider,
     SDKs and AI agents (via MCP).
 
     **Conventions**
-    - Base URL: `https://api.progrid.sa/v1`
+    - Base URL: `https://api.progrid.co/v1` (primary). `https://api.progrid.sa/v1` is the same API
+      for customers in Saudi Arabia; accounts and tokens work on both.
+    - Billing: a team's billing country decides the contracting company. Saudi Arabia is billed by
+      Progrid Arabia (SAR, 15% VAT, ZATCA e-invoice, Moyasar); every other country by Progrid
+      Technologies LLC (USD, Stripe). See `GET /billing/balance` and `GET /geo`.
     - Auth: `Authorization: Bearer prgd_…` (API token) or a console session JWT
     - Lists are cursor-paginated: `?limit=50&cursor=<id>` → `meta.next_cursor`
     - Mutations accept `Idempotency-Key` (replayed for 24h; same key + different body → 409)
@@ -20,8 +24,10 @@ info:
     - Rate limits: 600 requests per minute per token or session, 120 per minute per IP when anonymous,
       10 sign in attempts per minute per IP. Over the limit: `429 rate_limited` with `Retry-After`
 servers:
+  - url: https://api.progrid.co/v1
+    description: production (primary)
   - url: https://api.progrid.sa/v1
-    description: production
+    description: production, Saudi Arabia (same API)
   - url: http://localhost:4000/v1
     description: local development
 security:
@@ -283,7 +289,7 @@ paths:
     post:
       tags: [billing]
       summary: Start a card payment that becomes prepaid credit
-      description: Returns the hosted Moyasar payment page (mada, Visa, Mastercard, Apple Pay) to send the person to. Agents cannot call this.
+      description: Returns the hosted payment page of the team's billing company to send the person to. Progrid Arabia uses Moyasar (mada, Visa, Mastercard, Apple Pay); Progrid Technologies LLC uses Stripe Checkout. Agents cannot call this.
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [amountMinor], properties: { amountMinor: { type: integer, description: "USD 5 to 5000, SAR 200 to 200000" } } } } } }
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Checkout" } } } }
@@ -291,6 +297,7 @@ paths:
     post:
       tags: [billing]
       summary: Pay an open invoice by card
+      description: The payment goes to the company that issued the invoice, in the invoice's currency.
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Checkout" } } } }
@@ -307,11 +314,43 @@ paths:
     post: { tags: [billing], security: [], summary: "Moyasar webhook (payment events, verified with the shared token and an invoice fetch)", responses: { "200": { description: OK } } }
   /billing/payments/moyasar/callback:
     get: { tags: [billing], security: [], summary: Moyasar callback after the hosted page (result verified by retrieving the invoice), responses: { "302": { description: Redirect to the console } } }
+  /billing/payments/stripe/webhook:
+    post: { tags: [billing], security: [], summary: "Stripe webhook for Progrid Technologies LLC (checkout.session events, verified with the Stripe-Signature header and a session fetch)", responses: { "200": { description: OK }, "401": { description: Bad signature } } }
+  /billing/payments/stripe/callback:
+    get:
+      tags: [billing]
+      security: []
+      summary: Stripe Checkout return URL (result verified by retrieving the session)
+      parameters: [{ name: session_id, in: query, required: true, schema: { type: string } }]
+      responses: { "302": { description: Redirect to the console } }
+  /geo:
+    get:
+      tags: [auth]
+      security: []
+      summary: Suggested billing country for the signup form
+      description: |
+        SA on the progrid.sa domain, otherwise the country of the caller's address from a local
+        DB-IP Lite database, otherwise US. Only a suggestion: the billing country the person picks
+        decides the billing company.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  country: { type: string, example: US }
+                  source: { type: string, enum: [domain, ip, default] }
+                  billingEntity: { $ref: "#/components/schemas/BillingEntityId" }
+                  legalName: { type: string, example: Progrid Technologies LLC }
+                  currency: { type: string, enum: [USD, SAR] }
+                  database: { type: boolean, description: Whether a country database is loaded }
   /pricing:
     get:
       tags: [catalog]
       security: []
-      summary: Public price list (USD base; SAR converted at the current exchange rate)
+      summary: Public price list (SAR book; USD converted at the current exchange rate, 3.75 pegged)
       parameters: [{ name: currency, in: query, schema: { type: string, enum: [USD, SAR], default: USD } }]
       responses:
         "200":
@@ -322,8 +361,9 @@ paths:
                 type: object
                 properties:
                   currency: { type: string }
-                  baseCurrency: { type: string, enum: [USD] }
-                  fxRate: { type: number, description: USD to currency rate used for this response }
+                  baseCurrency: { type: string, enum: [SAR] }
+                  fxRate: { type: number, description: Book (SAR) to currency rate used for this response }
+                  taxRate: { type: number, description: "Tax the billing company of this currency adds: 0.15 for SAR (Progrid Arabia), 0 by default for USD (Progrid Technologies LLC)" }
                   hoursPerMonth: { type: integer }
                   data: { type: array, items: { type: object, properties: { resourceType: { type: string }, sku: { type: string }, unit: { type: string }, monthlyMinor: { type: integer }, hourlyMinor: { type: integer }, size: { $ref: "#/components/schemas/Size" } } } }
 
@@ -949,7 +989,30 @@ paths:
       responses: { "200": { description: OK }, "404": { $ref: "#/components/responses/NotFound" } }
 
   /billing/balance:
-    get: { tags: [billing], summary: "Credit balance, month-to-date spend and account status", responses: { "200": { description: OK } } }
+    get:
+      tags: [billing]
+      summary: "Credit balance, month-to-date spend, account status and the billing company"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  currency: { type: string, enum: [USD, SAR] }
+                  creditMinor: { type: integer }
+                  monthToDateMinor: { type: integer }
+                  status: { type: string }
+                  billingCountry: { type: string, example: US }
+                  billingEntity: { $ref: "#/components/schemas/BillingEntity" }
+                  pendingChange:
+                    type: [object, "null"]
+                    description: A change of billing company approved by Progrid staff, effective at the start of a billing period
+                    properties:
+                      country: { type: string }
+                      billingEntity: { $ref: "#/components/schemas/BillingEntity" }
+                      effectiveAt: { type: string, format: date-time }
   /billing/usage:
     get:
       tags: [billing]
@@ -1474,13 +1537,31 @@ components:
         decidedAt: { type: [string, "null"], format: date-time }
         expiresAt: { type: string, format: date-time }
         createdAt: { type: string, format: date-time }
+    BillingEntityId:
+      type: string
+      enum: [progrid_arabia, progrid_llc]
+      description: "The contracting and invoicing company: progrid_arabia for billing country SA, progrid_llc for every other country."
+    BillingEntity:
+      type: object
+      properties:
+        id: { $ref: "#/components/schemas/BillingEntityId" }
+        legalName: { type: string, example: Progrid Technologies LLC }
+        country: { type: string, example: US }
+        currency: { type: string, enum: [USD, SAR] }
+        taxRate: { type: number, example: 0 }
+        taxLabel: { type: string, example: Tax }
+        supportEmail: { type: string, format: email, example: support@progrid.co }
+        termsUrl: { type: string, format: uri, example: "https://progrid.co/legal/terms" }
+        domain: { type: [string, "null"], example: progrid.co }
+        consoleUrl: { type: string, format: uri, example: "https://console.progrid.co" }
     Checkout:
       type: object
       properties:
         paymentId: { type: string }
-        provider: { type: string, enum: [moyasar, fake] }
+        provider: { type: string, enum: [moyasar, stripe, fake] }
         amountMinor: { type: integer }
         currency: { type: string, enum: [USD, SAR] }
+        billingEntity: { $ref: "#/components/schemas/BillingEntityId" }
         redirectUrl: { type: string, description: Hosted payment page }
     MetricPoint:
       type: object
@@ -1537,7 +1618,13 @@ components:
         password: { type: string, minLength: 10 }
         name: { type: string }
         teamName: { type: string }
-        country: { type: string, default: SA }
+        country:
+          type: string
+          pattern: "^[A-Z]{2}$"
+          description: |
+            Billing country (ISO 3166-1 alpha-2). SA is billed by Progrid Arabia in SAR, every other
+            country by Progrid Technologies LLC in USD. Omitted: SA on the progrid.sa domain, else
+            the country of the caller's address, else US.
         locale: { type: string, enum: [en, tr, ar] }
     Session:
       type: object
@@ -2127,7 +2214,7 @@ components:
         workflowId: { type: [string, "null"] }
         variables: { type: array, items: { $ref: "#/components/schemas/ConnectVariable" } }
         limits: { $ref: "#/components/schemas/ConnectLimits" }
-        runEndpoint: { type: string, format: uri, example: "https://api.progrid.sa/v1/connect/agents/cmabc/run" }
+        runEndpoint: { type: string, format: uri, description: "On the API host the request came through (api.progrid.co or api.progrid.sa)", example: "https://api.progrid.co/v1/connect/agents/cmabc/run" }
         templateSlug: { type: [string, "null"] }
         projectId: { type: string }
         createdAt: { type: string, format: date-time }
