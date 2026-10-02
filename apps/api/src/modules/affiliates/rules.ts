@@ -12,24 +12,11 @@ export function normalizeCode(raw: unknown): string | null {
   return CODE_RE.test(c) ? c : null;
 }
 
-/** Name of the first party cookie set by the website and the console on the parent domain. */
-export const REF_COOKIE = 'prgd_ref';
-
-/** The prgd_ref value from a Cookie header, if any. */
-export function refFromCookieHeader(header: string | undefined): string | undefined {
-  for (const part of String(header ?? '').split(';')) {
-    const i = part.indexOf('=');
-    if (i > 0 && part.slice(0, i).trim() === REF_COOKIE) {
-      try { return decodeURIComponent(part.slice(i + 1).trim()); } catch { return undefined; }
-    }
-  }
-  return undefined;
-}
-
 /**
- * The cookie holds `CODE.<unix seconds of the click>` so the API can apply the configured cookie
- * duration even though the browser keeps the cookie longer. A bare code (no time) is accepted as
- * a fresh click: it comes from a `?ref=` on the signup page itself.
+ * A referral link (`?ref=CODE`) stores `CODE.<unix seconds of the click>` in the first party
+ * cookie prgd_ref, which the signup form uses to prefill the partner code. The API applies the
+ * configured cookie duration to the click time, even though the browser keeps the cookie longer.
+ * A bare code (no time) is a fresh click.
  */
 export function parseRef(raw: unknown, now: Date, cookieDays: number): string | null {
   if (typeof raw !== 'string' || raw.length > 64) return null;
@@ -57,16 +44,15 @@ export function canonicalEmail(email: string): string {
 }
 
 export interface SelfReferralInput {
-  affiliate: { userId: string; email: string; userEmail: string; ips: string[] };
-  customer: { userIds: string[]; emails: string[]; ip?: string | null };
+  affiliate: { userId: string; email: string; userEmail: string };
+  customer: { userIds: string[]; emails: string[] };
 }
 
-/** Why a referral is the affiliate referring themselves, or null. */
-export function selfReferralReason(i: SelfReferralInput): 'same_user' | 'same_email' | 'same_ip' | null {
+/** Why a referral is the affiliate referring themselves, or null. (Payment cards are compared when commission is earned.) */
+export function selfReferralReason(i: SelfReferralInput): 'same_user' | 'same_email' | null {
   if (i.customer.userIds.includes(i.affiliate.userId)) return 'same_user';
   const mine = new Set([canonicalEmail(i.affiliate.email), canonicalEmail(i.affiliate.userEmail)]);
   if (i.customer.emails.some((e) => mine.has(canonicalEmail(e)))) return 'same_email';
-  if (i.customer.ip && i.affiliate.ips.includes(i.customer.ip)) return 'same_ip';
   return null;
 }
 

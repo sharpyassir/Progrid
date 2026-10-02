@@ -37,7 +37,7 @@ export class IamService {
   async createAccount(dto: Omit<SignupDto, 'password'> & { password?: string; emailVerified?: boolean; ip?: string }) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } });
     if (existing) throw ApiError.conflict('email_taken', 'An account with this email already exists');
-    // A mistyped promo code is reported before anything is created; a stale referral cookie is just ignored.
+    // A mistyped promo code is reported before anything is created.
     await this.attribution.assertPromo(dto.promoCode);
 
     const country = dto.country ?? defaultSignupCountry();
@@ -73,7 +73,7 @@ export class IamService {
     });
     const team = user.memberships[0].team;
     await this.events.emit('team.created', { teamId: team.id, userId: user.id }, { teamId: team.id });
-    await this.attribution.attributeSignup({ teamId: team.id, userId: user.id, email: user.email, ip: dto.ip, ref: dto.ref, promoCode: dto.promoCode });
+    await this.attribution.attributeSignup({ teamId: team.id, userId: user.id, email: user.email, ip: dto.ip, promoCode: dto.promoCode });
     this.security.sendVerification(user.id).catch((e) => this.log.warn(`verification mail failed: ${e.message}`));
     return { user, team };
   }

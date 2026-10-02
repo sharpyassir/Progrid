@@ -2,9 +2,6 @@
 CREATE TYPE "prgd_affiliate_status" AS ENUM ('pending', 'approved', 'rejected', 'suspended');
 
 -- CreateEnum
-CREATE TYPE "prgd_referral_source" AS ENUM ('link', 'promo_code');
-
--- CreateEnum
 CREATE TYPE "prgd_referral_status" AS ENUM ('active', 'blocked');
 
 -- CreateEnum
@@ -80,7 +77,6 @@ CREATE TABLE "prgd_referrals" (
     "affiliateId" TEXT NOT NULL,
     "teamId" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "source" "prgd_referral_source" NOT NULL,
     "code" TEXT NOT NULL,
     "status" "prgd_referral_status" NOT NULL DEFAULT 'active',
     "blockedReason" TEXT,

@@ -1,8 +1,9 @@
 /**
- * Partner referrals in the console (docs/affiliates.md). The website stores `?ref=CODE` in the
+ * Partner codes in the console (docs/affiliates.md). The website stores `?ref=CODE` in the
  * `prgd_ref` cookie on the parent domain; a partner link straight to the console
- * (console.<domain>/login?ref=CODE) is stored the same way here. Signup sends the cookie value,
- * and the API decides whether the click is still recent enough to count.
+ * (console.<domain>/login?ref=CODE) is stored the same way here. The signup form uses it to
+ * prefill the partner code when the API says the click is still recent; only signing up with
+ * the code refers the customer.
  */
 export const REF_COOKIE = 'prgd_ref';
 const MAX_AGE = 365 * 86_400;

@@ -14,9 +14,7 @@ export class SignupDto {
    */
   @IsOptional() @IsIn(COUNTRY_CODES as unknown as string[]) country?: string;
   @IsOptional() @IsIn(['en', 'tr', 'ar']) locale?: string;
-  /** The prgd_ref cookie (CODE.<seconds>) or ?ref= code from a partner's referral link. */
-  @IsOptional() @IsString() @Length(0, 64) ref?: string;
-  /** A partner's promo code: links the account to the partner and gives the signup discount. */
+  /** A partner's code: links the account to the partner (who earns commission) and gives the signup discount. */
   @IsOptional() @IsString() @Length(0, 40) promoCode?: string;
 }
 

@@ -6,7 +6,6 @@ import { CurrentActor, Public } from '../../common/auth/decorators';
 import type { Actor } from '../../common/auth/actor';
 import { clientMeta } from '../iam/iam.controller';
 import { BROWSER_COOKIE, OAuthService } from './oauth.service';
-import { refFromCookieHeader } from '../affiliates/rules';
 
 class ExchangeDto { @IsString() @Length(20, 200) code: string; }
 class TotpDto { @IsString() @Length(20, 200) ticket: string; @IsString() @Length(6, 12) code: string; }
@@ -32,10 +31,8 @@ export class OAuthController {
 
   /** The browser navigates here; answers with a redirect to Google or Microsoft. */
   @Public() @Get('oauth/:provider/start')
-  async start(@Param('provider') provider: string, @Query() q: Record<string, string>, @Req() req: Request, @Res() res: Response) {
-    // The partner referral: passed by the console, else the prgd_ref cookie the website set on the parent domain.
-    const ref = q.ref || refFromCookieHeader(req.headers.cookie);
-    const r = await this.oauth.start(provider, { intent: q.intent, return: q.return, invite: q.invite, ticket: q.ticket, locale: q.locale, country: q.country, ref, promo: q.promo });
+  async start(@Param('provider') provider: string, @Query() q: Record<string, string>, @Res() res: Response) {
+    const r = await this.oauth.start(provider, { intent: q.intent, return: q.return, invite: q.invite, ticket: q.ticket, locale: q.locale, country: q.country, promo: q.promo });
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Referrer-Policy', 'no-referrer');
     if (r.error) return res.redirect(302, r.error);

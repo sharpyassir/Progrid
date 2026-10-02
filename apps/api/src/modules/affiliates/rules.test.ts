@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addMonths, canonicalEmail, normalizeCode, parseRef, refFromCookieHeader, selfReferralReason, suggestCode } from './rules';
+import { addMonths, canonicalEmail, normalizeCode, parseRef, selfReferralReason, suggestCode } from './rules';
 import { CATEGORY_OF, COMMISSION_CATEGORIES } from './categories';
 import { defaultAffiliateSettings, merge } from './settings';
 
@@ -37,26 +37,19 @@ describe('referral cookie', () => {
     expect(parseRef('<script>', NOW, 60)).toBeNull();
     expect(parseRef(undefined, NOW, 60)).toBeNull();
   });
-
-  it('reads the value from a Cookie header', () => {
-    expect(refFromCookieHeader('a=1; prgd_ref=SARA10.1760000000; b=2')).toBe('SARA10.1760000000');
-    expect(refFromCookieHeader('prgd_site=global')).toBeUndefined();
-    expect(refFromCookieHeader(undefined)).toBeUndefined();
-  });
 });
 
 describe('self referral', () => {
-  const affiliate = { userId: 'u_aff', email: 'Sara.Ahmed+promo@gmail.com', userEmail: 'sara@studio.example', ips: ['203.0.113.7'] };
+  const affiliate = { userId: 'u_aff', email: 'Sara.Ahmed+promo@gmail.com', userEmail: 'sara@studio.example' };
 
-  it('blocks the same user, the same mailbox and the same address', () => {
+  it('blocks the same user and the same mailbox', () => {
     expect(selfReferralReason({ affiliate, customer: { userIds: ['u_aff'], emails: ['x@example.com'] } })).toBe('same_user');
     expect(selfReferralReason({ affiliate, customer: { userIds: ['u1'], emails: ['saraahmed@googlemail.com'] } })).toBe('same_email');
     expect(selfReferralReason({ affiliate, customer: { userIds: ['u1'], emails: ['SARA+test@studio.example'] } })).toBe('same_email');
-    expect(selfReferralReason({ affiliate, customer: { userIds: ['u1'], emails: ['x@example.com'], ip: '203.0.113.7' } })).toBe('same_ip');
   });
 
-  it('lets a real customer through', () => {
-    expect(selfReferralReason({ affiliate, customer: { userIds: ['u1'], emails: ['sara.ahmed@outlook.com'], ip: '198.51.100.1' } })).toBeNull();
+  it('lets a real customer through, even from the same network', () => {
+    expect(selfReferralReason({ affiliate, customer: { userIds: ['u1'], emails: ['sara.ahmed@outlook.com'] } })).toBeNull();
   });
 
   it('canonicalizes only what mail providers treat as the same mailbox', () => {

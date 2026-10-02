@@ -52,7 +52,7 @@ export class OAuthService {
    * Returns the provider URL to redirect to and the random value for the browser cookie. Any
    * error becomes a redirect back to the console with an error code (the browser navigated here).
    */
-  async start(provider: string, q: { intent?: string; return?: string; invite?: string; ticket?: string; locale?: string; country?: string; ref?: string; promo?: string }) {
+  async start(provider: string, q: { intent?: string; return?: string; invite?: string; ticket?: string; locale?: string; country?: string; promo?: string }) {
     // The API host the browser came to (api.progrid.co or api.progrid.sa) decides the callback and the console to return to.
     const domain = requestDomain();
     const s = this.providers.settings(provider);
@@ -86,7 +86,6 @@ export class OAuthService {
       linkUserId,
       domain,
       country: isCountryCode(q.country?.toUpperCase()) ? q.country!.toUpperCase() : undefined,
-      ref: typeof q.ref === 'string' && q.ref.length <= 64 ? q.ref : undefined,
       promoCode: typeof q.promo === 'string' && q.promo.length <= 40 ? q.promo : undefined,
     };
     let url: string;
@@ -247,7 +246,7 @@ export class OAuthService {
     const country = p.country ?? suggestedCountry(currentRequest()?.ip, p.domain).country;
     // A promo code that stopped being valid between the form and the provider does not stop the signup.
     const promoCode = p.promoCode && (await this.attribution.describe(p.promoCode)).valid ? p.promoCode : undefined;
-    const { user, team } = await this.iam.createAccount({ email: a.email!, name: a.name, teamName, country, locale: p.locale, emailVerified: a.emailVerified, ip: meta.ip, ref: p.ref, promoCode });
+    const { user, team } = await this.iam.createAccount({ email: a.email!, name: a.name, teamName, country, locale: p.locale, emailVerified: a.emailVerified, ip: meta.ip, promoCode });
     await this.linkIdentity(user.id, a, true);
     await this.events.emit('user.oauth_signup', { userId: user.id, provider: a.provider, emailVerified: a.emailVerified }, { teamId: team.id, resource: `user:${user.id}` });
     return { ...base, userId: user.id, returnPath: '/security?welcome=1' };

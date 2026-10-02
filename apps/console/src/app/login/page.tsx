@@ -21,8 +21,9 @@ export default function LoginPage() {
   const { www: WWW_URL, domain } = useUrls();
   // Billing country, prefilled from GET /v1/geo (the .sa domain suggests Saudi Arabia, .co the country of your address).
   const [country, setCountry] = useState('');
-  // Partner referral (docs/affiliates.md): a ?ref= link straight to the console is remembered like
-  // one to the website, and a referral or promo link opens the signup form.
+  // Partner code (docs/affiliates.md): only a customer who signs up with it is referred. A partner's
+  // ?ref= link (to the website or here) prefills it while the click is recent; ?promo= always does.
+  // Either link opens the signup form.
   const [promo, setPromo] = useState('');
   const [promoInfo, setPromoInfo] = useState<PromoInfo | 'checking' | null>(null);
   useEffect(() => {
@@ -30,6 +31,11 @@ export default function LoginPage() {
     const q = new URLSearchParams(window.location.search);
     const fromUrl = promoFromUrl();
     if (fromUrl) { setPromo(fromUrl); checkPromo(fromUrl); }
+    else {
+      const ref = currentRef();
+      // The API checks the click is within the cookie days and the partner is approved.
+      if (ref) api<PromoInfo>(`/v1/affiliates/codes/${encodeURIComponent(ref)}`).then((p) => { if (p.valid && p.code) { setPromo(p.code); setPromoInfo(p); } }).catch(() => undefined);
+    }
     if (q.get('mode') === 'signup' || q.get('ref') || fromUrl) setMode('signup');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domain]);
@@ -54,7 +60,7 @@ export default function LoginPage() {
       const body =
         mode === 'login'
           ? { email: f.get('email'), password: f.get('password'), ...(f.get('totp') ? { totp: f.get('totp') } : {}) }
-          : { email: f.get('email'), password: f.get('password'), name: f.get('name'), teamName: f.get('teamName'), country: f.get('country') || undefined, locale, ref: currentRef(), promoCode: normalizeCode(promo) ?? undefined };
+          : { email: f.get('email'), password: f.get('password'), name: f.get('name'), teamName: f.get('teamName'), country: f.get('country') || undefined, locale, promoCode: normalizeCode(promo) ?? undefined };
       const res = await api<{ session: string }>(`/v1/auth/${mode}`, { method: 'POST', body: JSON.stringify(body) });
       setToken(res.session);
       router.replace(mode === 'signup' ? '/security?welcome=1' : '/servers');

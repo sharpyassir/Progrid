@@ -3460,8 +3460,8 @@ enum AffiliateStatus {
   @@map("prgd_affiliate_status")
 }
 
-/// A content creator in the affiliate program. One per user; the code is both the `?ref=` value
-/// and the promo code customers type at signup.
+/// A content creator in the affiliate program. One per user. Customers enter the code at signup
+/// (a `?ref=CODE` link prefills it); only customers who used it earn the affiliate commission.
 model Affiliate {
   id              String          @id @default(cuid())
   userId          String          @unique
@@ -3520,13 +3520,6 @@ model AffiliateClick {
   @@map("prgd_affiliate_clicks")
 }
 
-enum ReferralSource {
-  link
-  promo_code
-
-  @@map("prgd_referral_source")
-}
-
 enum ReferralStatus {
   active
   /// Attribution refused or withdrawn (self referral, fraud). Earns nothing.
@@ -3535,23 +3528,23 @@ enum ReferralStatus {
   @@map("prgd_referral_status")
 }
 
-/// Permanent link between a referred team and its affiliate, made at signup (or with a promo
-/// code before the team's first paid invoice).
+/// Permanent link between a referred team and its affiliate. Made only when the customer uses the
+/// partner's code: at signup, or on the billing page before the team's first paid invoice.
+/// Referral links do not attribute on their own; they prefill the code on the signup form.
 model Referral {
   id              String         @id @default(cuid())
   affiliateId     String
   teamId          String         @unique
-  /// The person who signed up.
+  /// The person who used the code.
   userId          String
-  source          ReferralSource
   code            String
   status          ReferralStatus @default(active)
   blockedReason   String?
   signupIp        String?
-  /// Customer discount from the promo code, a percentage off invoices before tax.
+  /// Customer discount from the code, a percentage off invoices before tax.
   discountPercent Int            @default(0)
   discountUntil   DateTime?
-  /// Commission is earned on invoices for periods that start before this date.
+  /// Commission is earned on invoices for periods that start before this date (code use + commissionMonths).
   commissionUntil DateTime
   attributedAt    DateTime       @default(now())
 

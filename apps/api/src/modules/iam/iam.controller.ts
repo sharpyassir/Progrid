@@ -9,7 +9,6 @@ import { CurrentActor, Public, RequireScopes } from '../../common/auth/decorator
 import type { Actor } from '../../common/auth/actor';
 import { IamService } from './iam.service';
 import { CreateProjectDto, CreateSshKeyDto, CreateTokenDto, LoginDto, SignupDto } from './iam.dto';
-import { refFromCookieHeader } from '../affiliates/rules';
 
 @ApiTags('auth')
 @Controller('v1/auth')
@@ -18,8 +17,7 @@ export class AuthController {
 
   @Public() @Post('signup')
   signup(@Body() dto: SignupDto, @Req() req: Request) {
-    // The partner referral: sent by the console, else the prgd_ref cookie on the parent domain.
-    return this.iam.signup({ ...dto, ref: dto.ref || refFromCookieHeader(req.headers.cookie) }, clientMeta(req));
+    return this.iam.signup(dto, clientMeta(req));
   }
 
   @Public() @Post('login') @HttpCode(200)

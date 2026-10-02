@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { currentRef } from '@/lib/referral';
 import { runtimeUrls } from '@/lib/urls';
 import type { Locale } from '@/lib/i18n';
 import { ts, type SocialProvider } from '@/lib/i18n-social';
@@ -30,12 +29,8 @@ export async function startSocial(provider: SocialProvider, opts: { intent: Soci
   const q = new URLSearchParams({ intent: opts.intent, locale: opts.locale });
   // The billing country picked on the signup form; it decides the billing company of a new team.
   if (opts.country) q.set('country', opts.country);
-  // A partner referral and promo code travel with a signup (docs/affiliates.md).
-  if (opts.intent === 'signup') {
-    const ref = currentRef();
-    if (ref) q.set('ref', ref);
-    if (opts.promo) q.set('promo', opts.promo);
-  }
+  // The partner code travels with a signup (docs/affiliates.md).
+  if (opts.intent === 'signup' && opts.promo) q.set('promo', opts.promo);
   if (opts.returnPath) q.set('return', opts.returnPath);
   if (opts.invite) q.set('invite', opts.invite);
   if (opts.intent === 'link') {

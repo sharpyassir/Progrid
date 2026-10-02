@@ -24,8 +24,7 @@ export interface PendingLogin {
   domain?: string;
   /** Billing country picked on the signup form, for a new account. */
   country?: string;
-  /** Partner referral (prgd_ref cookie value) and promo code from the signup form, for a new account. */
-  ref?: string;
+  /** Partner code from the signup form, for a new account. */
   promoCode?: string;
 }
 

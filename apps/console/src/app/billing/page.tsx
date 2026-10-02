@@ -149,7 +149,7 @@ function BillingPage() {
   );
 }
 
-interface Referral { code: string; source: string; discountPercent: number; discountUntil: string | null }
+interface Referral { code: string; discountPercent: number; discountUntil: string | null }
 
 /** The partner promo code on this account, or a form to add one before the first paid invoice (docs/affiliates.md). */
 function PromoCard({ locale, canAdd }: { locale: Locale; canAdd: boolean }) {
@@ -170,7 +170,7 @@ function PromoCard({ locale, canAdd }: { locale: Locale; canAdd: boolean }) {
   }
 
   if (referral === undefined) return null;
-  if (referral && (referral.source === 'promo_code' || !canAdd)) {
+  if (referral) {
     const until = referral.discountUntil ? new Date(referral.discountUntil).toLocaleDateString(locale) : '';
     return <section className="card text-sm"><h2 className="font-medium">{t(locale, 'promoTitle')}</h2><p className="mt-1 text-neutral-600 dark:text-neutral-400">{tf(locale, 'promoActive')(referral.code, referral.discountUntil ? referral.discountPercent : 0, until)}</p></section>;
   }
