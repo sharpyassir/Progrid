@@ -18,9 +18,11 @@ All three send an idempotency key on every write and surface API errors with the
 ## Base URL and auth
 
 ```
-https://api.progrid.sa/v1
+https://api.progrid.co/v1
 Authorization: Bearer prgd_...
 ```
+
+`https://api.progrid.sa/v1` is the same API for customers in Saudi Arabia. Tokens and accounts work on both.
 
 Tokens are created under **Managed Agents, Agent Access** or with `prgd tokens create`. Each token has scopes such as `servers:write` or `billing:read`; a call outside its scopes fails with `403 forbidden`.
 

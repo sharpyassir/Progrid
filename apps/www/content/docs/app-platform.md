@@ -30,10 +30,10 @@ The app shows `creating` while a host is chosen, `building` while the image is b
 
 | Size | Memory | CPU | Per instance per month |
 |---|---|---|---|
-| app-xs | 512 MB | 0.5 | 19 SAR |
-| app-s | 1 GB | 1 | 45 SAR |
-| app-m | 2 GB | 2 | 90 SAR |
-| app-l | 4 GB | 4 | 180 SAR |
+| app-xs | 512 MB | 0.5 | $5.07 (19 SAR) |
+| app-s | 1 GB | 1 | $12.00 (45 SAR) |
+| app-m | 2 GB | 2 | $24.00 (90 SAR) |
+| app-l | 4 GB | 4 | $48.00 (180 SAR) |
 
 Run up to five instances of an app; requests are spread across them and a deploy starts the new instances beside the old ones before retiring the old ones. Billing is by the hour per instance while the app is live. **Stop** ends the charge and keeps the app; **Start** brings it back.
 

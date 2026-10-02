@@ -20,7 +20,7 @@ Open **Connect** in the console and choose one of three starts:
 From the API:
 
 ```sh
-curl -X POST https://api.progrid.sa/v1/connect/agents \
+curl -X POST https://api.progrid.co/v1/connect/agents \
   -H "Authorization: Bearer $PRGD_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name": "Support desk", "templateSlug": "customer-support"}'
@@ -46,7 +46,7 @@ Tools are what the agent may do. Each tool has a snake_case name, a description 
 Credentials live in **Connections**, not in tools. Create one per API, database, mail server or webhook endpoint. Secret values (tokens, passwords, signing secrets) are encrypted the moment they arrive and are never shown again; you see only a hint like `••••abcd`. The model never sees them either.
 
 ```sh
-curl -X POST https://api.progrid.sa/v1/connect/connections \
+curl -X POST https://api.progrid.co/v1/connect/connections \
   -H "Authorization: Bearer $PRGD_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -72,7 +72,7 @@ Variables hold values your instructions and tools use, like `{{vars.COMPANY_NAME
 Open the **Test** tab, type a message or paste JSON input, and run. You see every step as it happens: each model call with its tokens, each tool call with its input, output and time, conditions, approvals, the final answer, errors and the total cost estimate. Switch to raw JSON to see everything. Tests run your latest draft.
 
 ```sh
-curl -X POST https://api.progrid.sa/v1/connect/agents/$AGENT_ID/test \
+curl -X POST https://api.progrid.co/v1/connect/agents/$AGENT_ID/test \
   -H "Authorization: Bearer $PRGD_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"message": "Where is order 10045?"}'
@@ -94,7 +94,7 @@ Save a version with a note, then choose **Deploy**. Connect serves that immutabl
 
 A deployed agent gets:
 
-- an API endpoint: `https://api.progrid.sa/v1/connect/agents/{id}/run`
+- an API endpoint: `https://api.progrid.co/v1/connect/agents/{id}/run` (customers in Saudi Arabia may use `https://api.progrid.sa/v1/connect/agents/{id}/run`; both reach the same agent)
 - agent API keys, created on the agent's **Deploy** tab or under **Connect, Keys**. A key starts with `prgd_ca_` and is shown once.
 - webhook URLs that start a run when they are called
 
@@ -103,7 +103,7 @@ A deployed agent gets:
 Every deployed agent has a run endpoint:
 
 ```sh
-curl -X POST https://api.progrid.sa/v1/connect/agents/$AGENT_ID/run \
+curl -X POST https://api.progrid.co/v1/connect/agents/$AGENT_ID/run \
   -H "Authorization: Bearer $PRGD_AGENT_KEY" \
   -H "Content-Type: application/json" \
   -d '{"input": {"message": "Where is order 10045?"}}'
@@ -123,7 +123,7 @@ curl -X POST https://api.progrid.sa/v1/connect/agents/$AGENT_ID/run \
 JavaScript:
 
 ```js
-const res = await fetch(`https://api.progrid.sa/v1/connect/agents/${agentId}/run`, {
+const res = await fetch(`https://api.progrid.co/v1/connect/agents/${agentId}/run`, {
   method: "POST",
   headers: { Authorization: `Bearer ${process.env.PRGD_AGENT_KEY}`, "Content-Type": "application/json" },
   body: JSON.stringify({ input: { message: "Where is order 10045?" } }),
@@ -137,7 +137,7 @@ Python:
 import os, requests
 
 run = requests.post(
-    f"https://api.progrid.sa/v1/connect/agents/{agent_id}/run",
+    f"https://api.progrid.co/v1/connect/agents/{agent_id}/run",
     headers={"Authorization": f"Bearer {os.environ['PRGD_AGENT_KEY']}"},
     json={"input": {"message": "Where is order 10045?"}},
     timeout=90,
@@ -161,7 +161,7 @@ The **API** tab of each agent shows these examples with its own endpoint, plus P
 
 ## Webhooks
 
-Add a webhook to an agent to start runs from other systems (a form, a CRM, a payment provider). You get a URL like `https://api.progrid.sa/v1/connect/hooks/{id}/{token}`, shown once. Whatever JSON is posted to it becomes the run input, available as `{{trigger.body}}`. The call answers `202` with the run id.
+Add a webhook to an agent to start runs from other systems (a form, a CRM, a payment provider). You get a URL like `https://api.progrid.co/v1/connect/hooks/{id}/{token}`, shown once. Whatever JSON is posted to it becomes the run input, available as `{{trigger.body}}`. The call answers `202` with the run id.
 
 Turn on **signing** to require a signature. Compute `HMAC-SHA256(signingSecret, "<unix seconds>.<raw body>")` and send `X-Prgd-Signature: t=<unix seconds>,v1=<hex>`. Signatures older than five minutes are refused. **Rotate** issues a new URL and secret and retires the old ones at once.
 
@@ -175,28 +175,28 @@ Webhook payloads are treated as untrusted data: the agent is told never to follo
 
 ## Pricing
 
-Connect is pay as you go. There is no monthly fee and no monthly minimum. Prices are in Saudi riyals and exclude 15% VAT. Teams billed in US dollars pay the same prices converted at the pegged rate of 3.75 riyals per dollar.
+Connect is pay as you go. There is no monthly fee and no monthly minimum. The price book is in Saudi riyals. Teams billed in US dollars by Progrid Technologies LLC pay the same prices converted at the pegged rate of 3.75 riyals per dollar (USD shown in brackets, rounded). Teams billed by Progrid Arabia also pay 15% VAT.
 
 | What | Price |
 |---|---|
-| Execution (one agent run or one workflow execution) | SAR 0.04 |
-| Tool call (each API, database, email, notification or Progrid action) | SAR 0.02 |
+| Execution (one agent run or one workflow execution) | SAR 0.04 ($0.0107) |
+| Tool call (each API, database, email, notification or Progrid action) | SAR 0.02 ($0.0053) |
 
 AI tokens are priced per model, per 1M tokens:
 
 | Model | Input | Output | Cache read | Cache write |
 |---|---|---|---|---|
-| Claude Opus 5.5 | SAR 18.00 | SAR 90.00 | SAR 0.90 | SAR 22.50 |
-| Claude Sonnet 5.5 | SAR 9.00 | SAR 45.00 | SAR 0.90 | SAR 11.25 |
-| Claude Haiku 4.5 | SAR 4.50 | SAR 22.50 | SAR 0.45 | SAR 5.625 |
+| Claude Opus 5.5 | SAR 18.00 ($4.80) | SAR 90.00 ($24) | SAR 0.90 ($0.24) | SAR 22.50 ($6) |
+| Claude Sonnet 5.5 | SAR 9.00 ($2.40) | SAR 45.00 ($12) | SAR 0.90 ($0.24) | SAR 11.25 ($3) |
+| Claude Haiku 4.5 | SAR 4.50 ($1.20) | SAR 22.50 ($6) | SAR 0.45 ($0.12) | SAR 5.625 ($1.50) |
 
-If Claude Opus 5.5 declines a request for safety reasons, Connect retries it on Claude Opus 5 or Claude Opus 4.8. Both attempts are billed, each at its own model's prices. For those two models the prices per 1M tokens are SAR 22.50 input, SAR 112.50 output, SAR 2.25 cache read and SAR 28.125 cache write. You cannot choose them for an agent.
+If Claude Opus 5.5 declines a request for safety reasons, Connect retries it on Claude Opus 5 or Claude Opus 4.8. Both attempts are billed, each at its own model's prices. For those two models the prices per 1M tokens are SAR 22.50 ($6) input, SAR 112.50 ($30) output, SAR 2.25 ($0.60) cache read and SAR 28.125 ($7.50) cache write. You cannot choose them for an agent.
 
 Connect caches the platform preamble, the agent instructions and the tool list, so calls after the first read them from the cache for a small part of the input price. Writing to the cache costs 1.25 times the input price.
 
 Each run shows its estimated cost in the Test tab, the run view and the logs. `GET /v1/connect/models` returns each model's prices in your currency, and `GET /v1/connect/usage` returns the month's estimate.
 
-**Example.** One Claude Opus 5.5 run with 12,000 input tokens, 1,500 output tokens, 40,000 cache read tokens, 8,000 cache write tokens and 2 tool calls costs SAR 0.04 + 2 × 0.02 + 0.216 + 0.135 + 0.036 + 0.18 = SAR 0.647, plus VAT.
+**Example.** One Claude Opus 5.5 run with 12,000 input tokens, 1,500 output tokens, 40,000 cache read tokens, 8,000 cache write tokens and 2 tool calls costs SAR 0.04 + 2 × 0.02 + 0.216 + 0.135 + 0.036 + 0.18 = SAR 0.647, which is $0.17 for a team billed in dollars. Teams billed by Progrid Arabia add VAT.
 
 ## Permissions
 

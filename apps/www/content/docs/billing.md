@@ -1,6 +1,6 @@
 ---
 title: Billing and pricing
-description: Hourly billing, monthly caps, dollars or riyals, and what happens when credit runs out.
+description: Hourly billing, monthly caps, which Progrid company bills you, and what happens when credit runs out.
 section: Guides
 order: 11
 ---
@@ -11,9 +11,18 @@ Every resource is metered by the hour it exists and capped at its monthly price.
 
 The monthly price divided by 672 gives the hourly rate. There is no minimum term.
 
-## Dollars or riyals
+## Who bills you, and in which currency
 
-Prices are set in Saudi riyals and exclude VAT; every checkout shows the total with 15 percent VAT before you pay. If your team's currency is US dollars, prices and invoices are converted at the pegged rate of 3.75 riyals per dollar.
+Your team's billing country decides which Progrid company you contract with. It is set when you sign up.
+
+| Billing country | Company | Currency | Tax | Cards |
+|---|---|---|---|---|
+| Saudi Arabia | Progrid Arabia | SAR | 15% VAT, with an e-invoice that meets ZATCA rules | mada, Visa, Mastercard, Apple Pay (Moyasar) |
+| Any other country | Progrid Technologies LLC | USD | None added by default | Visa, Mastercard and more (Stripe) |
+
+The price book is kept in riyals. Dollar prices are the riyal prices converted at the pegged rate of 3.75 riyals per dollar and rounded to the cent. Every checkout shows the total, with any tax, before you pay.
+
+Moving to or from Saudi Arabia changes the company that bills you, so it is done by our support team. Write to support from the console. The change takes effect at the start of the next billing period: the current month is invoiced by the old company, and usage from then on by the new one.
 
 ## Your first top up
 
@@ -21,13 +30,13 @@ Before a new team can create anything billable, it adds credit once: open **Bill
 
 ## Credit and invoices
 
-Usage is drawn from credit first. On the first of each month an invoice is issued for the previous month, with an ZATCA e-invoice for Saudi companies, and the team owners and the billing email get an email. Invoices are numbered in one sequence (for example `PRGD-2026-000123`) and are due 14 days after they are issued. The console shows month to date spend, every invoice with a PDF, and every card payment.
+Usage is drawn from credit first. On the first of each month an invoice is issued for the previous month by the company that bills you, and the team owners and the billing email get an email from that company. Each company numbers its invoices in its own series: `PRGD-SA-2026-00042` for Progrid Arabia, with an e-invoice under the ZATCA rules, and `PRGD-US-2026-00042` for Progrid Technologies LLC. Invoices from before October 2026 keep their old numbers (`PRGD-2026-000123`). Invoices are due 14 days after they are issued. The console shows month to date spend, every invoice with a PDF, and every card payment.
 
-The name, VAT number, billing address and country printed on your invoices come from the **Team** page. Saudi businesses should enter their 15 digit VAT number there before the invoice is issued.
+The name, VAT number, billing address and country printed on your invoices come from the **Team** page. Businesses billed by Progrid Arabia should enter their 15 digit VAT number there before the invoice is issued.
 
 ## Paying
 
-**Add credit** under **Billing**: pick an amount, pay by card on the hosted page, and come back with the credit on your balance. Riyal teams pay through Moyasar, dollar teams through Moyasar. Card details never touch our servers.
+**Add credit** under **Billing**: pick an amount, pay by card on the hosted page, and come back with the credit on your balance. Teams billed by Progrid Arabia pay in riyals through Moyasar; teams billed by Progrid Technologies LLC pay in dollars through Stripe. Card details never touch our servers.
 
 **Pay an invoice** the same way with the **Pay** button next to any open invoice, or from the terminal:
 

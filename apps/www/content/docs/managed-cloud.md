@@ -15,7 +15,7 @@ Managed cloud is a contract with a team, not a switch on a server. It covers a s
 
 | | Essential | Business | Enterprise |
 |---|---|---|---|
-| Price per month | 1,100 SAR | 3,000 SAR | Custom |
+| Price per month | $293.33 (1,100 SAR) | $800 (3,000 SAR) | Custom |
 | Assets | up to 3 | up to 10 | agreed per contract |
 | Coverage | Business hours | 24/7 | 24/7 |
 | Engineer time included | 2 hours | 6 hours | agreed per contract |
@@ -28,9 +28,9 @@ Managed cloud is a contract with a team, not a switch on a server. It covers a s
 | P3 resolution | 5 business days | 3 days | 1 day |
 | P4 resolution | 10 business days | 7 days | 5 days |
 
-Prices are in Saudi riyals and exclude 15 percent VAT, which your invoice adds. Engineer time beyond the included hours costs 250 SAR an hour, excluding VAT. Servers themselves are billed as usual; the managed fee covers the work, not the hardware.
+Prices are set in riyals; teams billed in dollars pay them converted at 3.75 riyals per dollar. Teams billed by Progrid Arabia also pay 15 percent VAT, which the invoice adds. Engineer time beyond the included hours costs $66.67 (250 SAR) an hour, before any tax. Servers themselves are billed as usual; the managed fee covers the work, not the hardware.
 
-**Business hours** means Saudi business hours: 09:00 to 17:00 Saudi time, Sunday to Thursday. Saudi public holidays do not count. So a P2 ticket opened on Thursday at 16:00 on the Essential plan is due for a first response on Sunday at 16:00. A business day is 8 working hours. On 24/7 plans every hour counts, and a day is 24 hours.
+**Business hours** means 09:00 to 17:00 on the working days of your contract's support calendar, which the contract shows. The default calendar is Sunday to Thursday in Arabia Standard Time (UTC+3), and its public holidays do not count. So on that calendar a P2 ticket opened on Thursday at 16:00 on the Essential plan is due for a first response on Sunday at 16:00. A business day is 8 working hours. On 24/7 plans every hour counts, and a day is 24 hours.
 
 The response target is the time to the first answer from an engineer. The resolution target is the time to fix or to a workaround that restores service. Both start when the ticket is opened.
 
@@ -53,7 +53,7 @@ The response target is the time to the first answer from an engineer. The resolu
 Add assets at any time from the contract page or with `POST /v1/managed/contracts/{id}/assets`. A new asset stays **PENDING** until an engineer reviews it, usually within one business day.
 
 ```sh
-curl -X POST https://api.progrid.sa/v1/managed/contracts \
+curl -X POST https://api.progrid.co/v1/managed/contracts \
   -H "Authorization: Bearer $PRGD_TOKEN" -H "content-type: application/json" \
   -d '{"plan":"ESSENTIAL","notes":"Two web servers on another cloud and our shop site"}'
 ```
@@ -70,7 +70,7 @@ Open a ticket from **Managed** in the console or with the API. Choose the priori
 | P4 | A question, a small change or low impact |
 
 ```sh
-curl -X POST https://api.progrid.sa/v1/managed/tickets \
+curl -X POST https://api.progrid.co/v1/managed/tickets \
   -H "Authorization: Bearer $PRGD_TOKEN" -H "content-type: application/json" \
   -d '{"subject":"Checkout is slow","body":"Pages take 20 seconds since 10:00","priority":"P2"}'
 ```
@@ -105,7 +105,7 @@ Every contract has a responsibility matrix that says who owns each area: **Progr
 | Backups and restore tests | Progrid |
 | Security hardening and firewall rules | Shared |
 | Capacity planning | Shared |
-| Compliance evidence (PDPL, NCA ECC) | Shared |
+| Compliance evidence (for example PDPL or NCA ECC) | Shared |
 | Application code, releases and deployments | You |
 | Application configuration and data | You |
 | Application user accounts and credentials | You |
@@ -125,7 +125,7 @@ A contract runs for a term, usually 12 months, from the day it becomes active. I
 Team members see the renewal date and any scheduled cancellation, but only owners can change them.
 
 ```sh
-curl -X PATCH https://api.progrid.sa/v1/managed/contracts/$CONTRACT \
+curl -X PATCH https://api.progrid.co/v1/managed/contracts/$CONTRACT \
   -H "Authorization: Bearer $PRGD_TOKEN" -H "content-type: application/json" \
   -d '{"autoRenew": false}'
 ```

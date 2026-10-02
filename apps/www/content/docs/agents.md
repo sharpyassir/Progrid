@@ -44,7 +44,7 @@ Agents poll the decision with `get_approval`, or simply carry on with other work
 Any language works. The token goes in the `Authorization` header:
 
 ```sh
-curl https://api.progrid.sa/v1/servers \
+curl https://api.progrid.co/v1/servers \
   -H "Authorization: Bearer prgd_..." \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: $(uuidgen)" \

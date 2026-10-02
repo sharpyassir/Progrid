@@ -10,7 +10,7 @@ The `prgd` command is a single binary for Linux, macOS and Windows with no depen
 ## Install
 
 ```sh
-curl -fsSL https://get.progrid.sa | sh
+curl -fsSL https://get.progrid.co | sh
 ```
 
 On Windows, download the zip from the releases page and put `prgd.exe` on your `PATH`.
@@ -59,7 +59,7 @@ prgd servers ls --json | jq -r '.data[] | select(.status=="active") | .networks.
 In CI, set `PRGD_TOKEN` to an API token and `PRGD_API_URL` if you use a different endpoint. The CLI reads those before the config file, so no login step is needed.
 
 ```yaml
-- run: curl -fsSL https://get.progrid.sa | sh
+- run: curl -fsSL https://get.progrid.co | sh
 - run: prgd deploy https://github.com/${{ github.repository }} --branch ${{ github.ref_name }}
   env:
     PRGD_TOKEN: ${{ secrets.PRGD_TOKEN }}

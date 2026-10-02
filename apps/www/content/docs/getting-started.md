@@ -5,11 +5,11 @@ section: Start here
 order: 1
 ---
 
-Progrid is a developer cloud built for Saudi Arabia. You get servers by the hour, one click apps, and API tokens that AI agents can use safely. Everything you can do in the console you can also do from the command line, the API, or an AI agent.
+Progrid is a developer cloud for people and AI agents. You get servers by the hour, one click apps, and API tokens that AI agents can use safely. Everything you can do in the console you can also do from the command line, the API, or an AI agent.
 
 ## 1. Create an account
 
-Open the [console](https://console.progrid.sa/login), choose **Create account**, and enter your name, a team name, your email, and a password of ten characters or more. New accounts start with credit so you can try things before adding a card.
+Open the [console](https://console.progrid.co/login), choose **Create account**, and enter your name, a team name, your billing country, your email, and a password of ten characters or more. Your billing country decides which Progrid company bills you: Progrid Arabia in riyals for Saudi Arabia, Progrid Technologies LLC in dollars everywhere else (see [billing](/docs/billing)). Customers in Saudi Arabia can also use [console.progrid.sa](https://console.progrid.sa/login); it is the same account system. New accounts start with credit so you can try things before adding a card.
 
 You can also choose **Continue with Google** or **Continue with Microsoft** and skip the password. See [Account security](/docs/security) for how linking works.
 
@@ -31,7 +31,7 @@ ssh-keygen -t ed25519 -C "you@example.com"
 
 ## 3. Create a server
 
-Go to **Core Cloud, Servers** and choose **Create server**. Pick a size, an image such as Ubuntu 24.04 or a one click app, give it a name, and confirm. The price is shown before you create it, in dollars or riyals.
+Go to **Core Cloud, Servers** and choose **Create server**. Pick a size, an image such as Ubuntu 24.04 or a one click app, give it a name, and confirm. The price is shown before you create it, in your team's currency.
 
 The server appears with status `new`, then `provisioning`, then `active`. It takes about a minute. Click the server name to open its page, where the connect command is ready to copy:
 

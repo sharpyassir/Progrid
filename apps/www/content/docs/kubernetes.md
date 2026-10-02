@@ -29,7 +29,7 @@ kubectl get nodes
 The same from the API:
 
 ```sh
-curl -X POST https://api.progrid.sa/v1/kubernetes/clusters \
+curl -X POST https://api.progrid.co/v1/kubernetes/clusters \
   -H "Authorization: Bearer $PRGD_TOKEN" -H "Content-Type: application/json" \
   -d '{"name":"prod","ha":true,"pools":[{"name":"web","size":"s-2vcpu-4gb","count":3,"labels":{"tier":"web"}}]}'
 ```
@@ -63,7 +63,7 @@ The Service gets a load balancer named after the cluster, namespace and Service,
 
 ## Pricing
 
-Worker nodes cost the same as servers of that size. A single control plane node is included. Three control plane nodes cost a flat 150 SAR a month. Load balancers and volumes made by the cloud controller are billed as usual. Deleting a cluster deletes its nodes, its load balancers and its volumes, and stops every charge.
+Worker nodes cost the same as servers of that size. A single control plane node is included. Three control plane nodes cost a flat $40 a month (150 SAR for teams billed in riyals). Load balancers and volumes made by the cloud controller are billed as usual. Deleting a cluster deletes its nodes, its load balancers and its volumes, and stops every charge.
 
 ## Limits
 
