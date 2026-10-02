@@ -66,6 +66,34 @@ curl -X POST localhost:4000/v1/servers \
   -d '{"name":"web-1","size":"s-2vcpu-4gb","image":"ubuntu-24-04","region":"sa1","project":"default"}'
 ```
 
+## Affiliate program
+
+Content creators earn commission on customers who sign up with their partner code. Full
+description: [`docs/affiliates.md`](docs/affiliates.md).
+
+- Public pages: `/affiliates` and `/affiliates/terms` on the website (English, Arabic, Turkish).
+- Partner portal: `console.<domain>/affiliates/portal` (apply, dashboard, referrals, payouts, assets).
+- Back office: **Affiliates** tab, finance staff (review, settings, payouts, flags, CSV).
+
+**Configuration.** Program settings live in the database and are edited by finance staff under
+Back office, Affiliates, Settings (`PATCH /admin/v1/affiliates/settings`); no environment
+variables or redeploys. Defaults (`apps/api/src/modules/affiliates/settings.ts`):
+
+| Setting | Default |
+|---|---|
+| Commission rates | web hosting 30%, Connect 30%, servers and infrastructure 15%, managed cloud 15%, AI usage 0%, support 0% |
+| Commission period | 12 months after the customer uses the code |
+| Hold before payable | 60 days |
+| Referral link window | 60 days (prefills the code on the signup form) |
+| Minimum payout | 200 SAR (paid by Progrid Arabia), 50 USD (paid by Progrid Technologies LLC) |
+| Customer discount | 10% for 3 months |
+| Fraud flags | 3 signups from one address a day; 30% of commission reversed |
+
+Rates are in percent of the net paid amount (no tax, discount or free credit) and are fixed on
+each commission when it is earned. For Stripe chargebacks to reverse commission, add the
+`charge.dispute.created` event to the Stripe webhook endpoint; Moyasar chargebacks are recorded
+by finance (Back office, Invoices, Payments, Chargeback).
+
 ## Design principles (from the architecture doc)
 
 1. **API-first** — every action exists in the public API before the console.

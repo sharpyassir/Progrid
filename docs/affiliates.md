@@ -72,7 +72,7 @@ signed in person, not the team, and only with a console session: API tokens get 
   see the dashboard. Emails go out in Arabic or English (the user's console language) from the
   company of the affiliate's country: application received, approved (with the code), rejected,
   suspended, reinstated, payout requested and payout sent. Approve, reject, suspend and paid are
-  sent by the back office actions (phase e).
+  sent by the back office actions (see Back office).
 - **Dashboard** with a date range (7, 30, 90 days or custom): code, referral links on both
   domains, a signup link with the code, clicks, signups with the code, paying customers, and
   commission pending, approved, paid out and reversed per currency; balances (pending, ready to
@@ -138,10 +138,41 @@ payments of every team the affiliate belongs to. A match blocks the referral
 (`self_referral:same_card`), ends the discount, reverses commission already earned on that
 customer and flags the affiliate.
 
+## Back office (phase e)
+
+**Back office, Affiliates** (finance staff; full staff too). Every action is in the audit log.
+
+- **Affiliates**: filter by status (pending first) or search by name, email or code; CSV export of
+  affiliates and of referrals. A row opens the affiliate: application (channels, audience,
+  promotion plan, terms version, signup and application addresses), clicks, referrals with their
+  teams, balances, payout details, flags and payouts.
+  - **Approve** (optionally with a different code), **Reject** with a reason, **Suspend** with a
+    reason, **Reinstate**. Each sends the affiliate an email. A rejected applicant can apply again
+    after 30 days; a suspended affiliate's code stops working and pending commission waits.
+- **Payouts**: requested payouts with the bank details to pay and the paying company (SAR:
+  Progrid Arabia, USD: Progrid Technologies LLC), totals waiting per currency. **Mark paid** with
+  the bank transfer reference (the payout and its commissions become paid, the affiliate is
+  emailed) or **Cancel** (the commission becomes payable again). CSV export includes bank details
+  for the transfer batch.
+- **Commissions**: every commission and clawback with invoice, category, base, rate, status and
+  hold date; filter by status and currency; CSV export.
+- **Flags**: open fraud and quality signals (self referral, many signups from one address, high
+  refund rate, chargeback); **Resolve** after review.
+- **Settings**: everything in the table below, with the defaults shown.
+- **Invoices, Payments, Chargeback**: records a chargeback that came in outside a webhook (Moyasar)
+  and reverses the commission on that invoice.
+
+API: `GET /admin/v1/affiliates`, `GET /admin/v1/affiliates/:id`,
+`POST /admin/v1/affiliates/:id/{approve,reject,suspend,reinstate}`,
+`GET|PATCH /admin/v1/affiliates/settings`, `GET /admin/v1/affiliates/{referrals,commissions,payouts,flags}`,
+`POST /admin/v1/affiliates/payouts/:id/{paid,cancel}`, `POST /admin/v1/affiliates/flags/:id/resolve`,
+`GET /admin/v1/affiliates/export/{affiliates,referrals,commissions,payouts}` (CSV),
+`POST /admin/v1/payments/:id/dispute`.
+
 ## Configuration
 
 Settings live in one row (`prgd_affiliate_settings`); anything not stored uses the defaults in
-`apps/api/src/modules/affiliates/settings.ts`. Finance staff edit them in the back office (phase e).
+`apps/api/src/modules/affiliates/settings.ts`. Finance staff edit them under Back office, Affiliates, Settings; there are no environment variables for the program.
 
 | Setting | Default | Meaning |
 |---|---|---|

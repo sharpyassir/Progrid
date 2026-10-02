@@ -10,6 +10,7 @@ import { BOOK_CURRENCY } from '../billing/pricing';
 import { RatingService } from '../billing/rating.service';
 import { InvoicesService } from '../billing/invoices.service';
 import { BillingAdminService } from '../billing/billing-admin.service';
+import { PaymentsService } from '../billing/payments/payments.service';
 import { DunningService } from '../billing/dunning.service';
 import { BackupsService } from '../storage/backups.service';
 import { FxService } from '../billing/fx.service';
@@ -108,6 +109,7 @@ export class AdminController {
     private readonly dunningService: DunningService,
     private readonly fx: FxService,
     private readonly backups: BackupsService,
+    private readonly payments: PaymentsService,
   ) {}
 
   /** Runs the daily backup pass now (idempotent within the day). */
@@ -226,6 +228,13 @@ export class AdminController {
   @Post('payments/:id/refund') @HttpCode(200)
   refund(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: RefundDto) {
     return this.billingAdmin.refund(actor, id, dto.amountMinor, dto.reason);
+  }
+
+  /** A chargeback reported outside a webhook (Moyasar has none): recorded on the payment; affiliate commission on its invoice is reversed. */
+  @StaffAreas('finance')
+  @Post('payments/:id/dispute') @HttpCode(200)
+  async dispute(@Param('id') id: string, @Body() dto: ReasonDto) {
+    return { recorded: await this.payments.recordDispute(id, dto.reason) };
   }
 
   @StaffAreas('finance')

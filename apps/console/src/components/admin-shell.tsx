@@ -15,7 +15,7 @@ const TABS: Tab[] = [
   { href: '/admin', label: 'Overview', areas: ['any'] }, { href: '/admin/teams', label: 'Teams', areas: ['support'] }, { href: '/admin/servers', label: 'Servers', areas: ['ops'] },
   { href: '/admin/hosts', label: 'Hosts', areas: ['ops'] }, { href: '/admin/ip-blocks', label: 'IP blocks', areas: ['ops'] }, { href: '/admin/images', label: 'Images', areas: ['ops'] },
   { href: '/admin/abuse', label: 'Abuse', areas: ['support'] }, { href: '/admin/support', label: 'Support', areas: ['support'] },
-  { href: '/admin/invoices', label: 'Invoices', areas: ['finance'] }, { href: '/admin/finance', label: 'Finance', areas: ['finance'] }, { href: '/admin/audit', label: 'Audit', areas: ['support'] },
+  { href: '/admin/invoices', label: 'Invoices', areas: ['finance'] }, { href: '/admin/finance', label: 'Finance', areas: ['finance'] }, { href: '/admin/affiliates', label: 'Affiliates', areas: ['finance'] }, { href: '/admin/audit', label: 'Audit', areas: ['support'] },
   { href: '/admin/managed/contracts', label: 'Managed', key: 'admMcTabContracts', areas: MANAGED },
   { href: '/admin/managed/tickets', label: 'Tickets queue', key: 'admMcTabTickets', areas: MANAGED },
   { href: '/admin/managed/alerts', label: 'Alerts', key: 'admMcTabAlerts', areas: MANAGED },

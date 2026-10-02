@@ -139,7 +139,11 @@ export default function AdminInvoices() {
               <td className="px-4 py-2"><Link href={`/admin/teams/${p.team.id}`} className="hover:underline">{p.team.name}</Link></td>
               <td className="px-4 py-2 text-xs text-neutral-500">{p.provider} · {p.invoice?.number ?? t(locale, 'topUp')}</td>
               <td className="px-4 py-2 text-end">{fmtMoney(p.amountMinor, p.currency)}{p.refundedMinor > 0 && <span className="ms-1 text-xs text-neutral-500">({fmtMoney(p.refundedMinor, p.currency)} {t(locale, 'refunded')})</span>}</td>
-              <td className="px-4 py-2 text-end">{CARD.includes(p.provider) && p.amountMinor > p.refundedMinor && <button className="btn-ghost px-2 py-0.5 text-xs" onClick={() => refund(p, p.invoice?.number ?? t(locale, 'topUp'))}>{t(locale, 'refund')}</button>}</td>
+              <td className="px-4 py-2 text-end">
+                {CARD.includes(p.provider) && p.amountMinor > p.refundedMinor && <button className="btn-ghost px-2 py-0.5 text-xs" onClick={() => refund(p, p.invoice?.number ?? t(locale, 'topUp'))}>{t(locale, 'refund')}</button>}
+                {/* Moyasar sends no dispute events: finance records a chargeback here (Stripe ones arrive by webhook). Reverses affiliate commission. */}
+                {p.invoice && <button className="btn-ghost ms-1 px-2 py-0.5 text-xs" onClick={() => { const reason = prompt(`Record a chargeback on ${p.invoice!.number}? Reason (optional):`, ''); if (reason !== null) run(`Record a chargeback on ${p.invoice!.number}? Affiliate commission on this invoice is reversed.`, () => post(`/admin/v1/payments/${p.id}/dispute`, { reason: reason || undefined })); }}>Chargeback</button>}
+              </td>
             </tr>
           ))}
         </tbody></table>
