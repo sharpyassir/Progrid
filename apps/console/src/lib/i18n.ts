@@ -310,6 +310,20 @@ const en = {
   admMcUnit: 'Unit', admMcUnitHours: 'hours', admMcUnitDays: 'days', admMcUnitBusinessHours: 'business hours', admMcUnitBusinessDays: 'business days',
   admMcUnitBusinessDay: 'One business day is 8 working hours.', admMcUnitCalendarDay: 'One day is 24 hours.',
   admMcTargetIs: (text: string, minutes: number) => `${text} (${minutes} min)`, admMcPlanActive: 'Active: customers can request this plan',
+  // main navigation (Cloud, Build, Connect, Account)
+  navCloud: 'Cloud', navBuild: 'Build', navConnect: 'Connect', navAccount: 'Account', navSoon: 'Soon', navExternal: 'opens in a new tab',
+  navCloudDesc: 'Servers, databases, storage and networking.', navBuildDesc: 'Ship apps, deploy from Git and use the API.',
+  navConnectDesc: 'AI agents connected to your APIs, data and apps.', navAccountDesc: 'Billing, usage, keys, team and support.',
+  navSecCompute: 'Compute', navSecDatabases: 'Databases', navSecStorage: 'Storage', navSecNetworking: 'Networking', navSecOperations: 'Operations',
+  navSecApps: 'Apps', navSecDeployments: 'Deployments', navSecApis: 'APIs', navSecSoon: 'Coming soon', navSecAgents: 'Agents and automation',
+  navSecBilling: 'Billing and usage', navSecAccess: 'Access', navSecHelp: 'Help',
+  niServers: 'Servers (VPS)', niSnapshots: 'Snapshots', niKubernetes: 'Kubernetes', niGpu: 'GPU servers', niDatabases: 'Managed databases', niCaching: 'Caching',
+  niVolumes: 'Volumes', niObjectStorage: 'Object storage', niFirewalls: 'Firewalls', niLoadBalancers: 'Load balancers', niDns: 'DNS', niPublicIps: 'Public IPs', niPrivateNetworks: 'Private networks',
+  niMonitoring: 'Monitoring', niSshKeys: 'SSH keys', niAppPlatform: 'App Platform', niOneClick: 'One-click apps', niAiStarter: 'AI starter', niGitDeploy: 'Git deploy',
+  niApiDocs: 'API reference', niMcp: 'MCP server', niApprovals: 'Approvals', niEventWebhooks: 'Event webhooks', niInference: 'Inference gateway', niDedicatedInference: 'Dedicated inference',
+  niAgentWorkspaces: 'Agent workspaces', niVendor: 'Vendor portal', niConnectHome: 'Overview', niAgents: 'Agents', niWorkflows: 'Workflows', niConnections: 'Connections',
+  niWebhooks: 'Webhooks', niLogs: 'Logs', niTemplates: 'Templates', niKnowledgeBase: 'Knowledge base', niBilling: 'Billing', niUsage: 'Usage', niApiKeys: 'API keys',
+  niTeam: 'Team', niProjects: 'Projects', niSecurity: 'Security', niAudit: 'Audit log', niSupport: 'Support', niManaged: 'Managed cloud',
 };
 
 type Dict = { [K in keyof typeof en]: (typeof en)[K] };
@@ -603,6 +617,19 @@ const tr: Dict = {
   admMcUnit: 'Birim', admMcUnitHours: 'saat', admMcUnitDays: 'gün', admMcUnitBusinessHours: 'iş saati', admMcUnitBusinessDays: 'iş günü',
   admMcUnitBusinessDay: 'Bir iş günü 8 çalışma saatidir.', admMcUnitCalendarDay: 'Bir gün 24 saattir.',
   admMcTargetIs: (text, minutes) => `${text} (${minutes} dk)`, admMcPlanActive: 'Etkin: müşteriler bu planı talep edebilir',
+  navCloud: 'Bulut', navBuild: 'Geliştir', navConnect: 'Connect', navAccount: 'Hesap', navSoon: 'Yakında', navExternal: 'yeni sekmede açılır',
+  navCloudDesc: 'Sunucular, veritabanları, depolama ve ağ.', navBuildDesc: 'Uygulama yayınla, Git ile dağıt ve API kullan.',
+  navConnectDesc: 'API, veri ve uygulamalarına bağlı yapay zekâ ajanları.', navAccountDesc: 'Faturalama, kullanım, anahtarlar, ekip ve destek.',
+  navSecCompute: 'İşlem', navSecDatabases: 'Veritabanları', navSecStorage: 'Depolama', navSecNetworking: 'Ağ', navSecOperations: 'Operasyon',
+  navSecApps: 'Uygulamalar', navSecDeployments: 'Dağıtımlar', navSecApis: 'API', navSecSoon: 'Yakında', navSecAgents: 'Ajanlar ve otomasyon',
+  navSecBilling: 'Faturalama ve kullanım', navSecAccess: 'Erişim', navSecHelp: 'Yardım',
+  niServers: 'Sunucular (VPS)', niSnapshots: 'Anlık görüntüler', niKubernetes: 'Kubernetes', niGpu: 'GPU sunucuları', niDatabases: 'Yönetilen veritabanları', niCaching: 'Önbellek',
+  niVolumes: 'Diskler', niObjectStorage: 'Nesne depolama', niFirewalls: 'Güvenlik duvarları', niLoadBalancers: 'Yük dengeleyiciler', niDns: 'DNS', niPublicIps: 'Genel IP adresleri', niPrivateNetworks: 'Özel ağlar',
+  niMonitoring: 'İzleme', niSshKeys: 'SSH anahtarları', niAppPlatform: 'App Platform', niOneClick: 'Tek tık uygulamalar', niAiStarter: 'Yapay zekâ başlangıç', niGitDeploy: 'Git ile dağıtım',
+  niApiDocs: 'API başvurusu', niMcp: 'MCP sunucusu', niApprovals: 'Onaylar', niEventWebhooks: 'Olay webhookları', niInference: 'Çıkarım geçidi', niDedicatedInference: 'Ayrılmış çıkarım',
+  niAgentWorkspaces: 'Ajan çalışma alanları', niVendor: 'Satıcı portalı', niConnectHome: 'Genel bakış', niAgents: 'Ajanlar', niWorkflows: 'İş akışları', niConnections: 'Bağlantılar',
+  niWebhooks: 'Webhooklar', niLogs: 'Kayıtlar', niTemplates: 'Şablonlar', niKnowledgeBase: 'Bilgi tabanı', niBilling: 'Faturalama', niUsage: 'Kullanım', niApiKeys: 'API anahtarları',
+  niTeam: 'Ekip', niProjects: 'Projeler', niSecurity: 'Güvenlik', niAudit: 'Denetim kaydı', niSupport: 'Destek', niManaged: 'Yönetilen bulut',
 };
 
 const ar: Dict = {
@@ -900,12 +927,25 @@ const ar: Dict = {
   admMcUnit: 'الوحدة', admMcUnitHours: 'ساعات', admMcUnitDays: 'أيام', admMcUnitBusinessHours: 'ساعات عمل', admMcUnitBusinessDays: 'أيام عمل',
   admMcUnitBusinessDay: 'يوم العمل الواحد = 8 ساعات دوام.', admMcUnitCalendarDay: 'اليوم الواحد = 24 ساعة.',
   admMcTargetIs: (text, minutes) => `${text} (${minutes} دقيقة)`, admMcPlanActive: 'فعّالة: العملاء يقدرون يطلبون هالباقة',
+  navCloud: 'السحابة', navBuild: 'التطوير', navConnect: 'Connect', navAccount: 'الحساب', navSoon: 'قريبًا', navExternal: 'يفتح في تبويب جديد',
+  navCloudDesc: 'الخوادم وقواعد البيانات والتخزين والشبكات.', navBuildDesc: 'انشر تطبيقاتك، انشر من Git واستخدم الـ API.',
+  navConnectDesc: 'وكلاء ذكاء اصطناعي متصلين بواجهاتك وبياناتك وتطبيقاتك.', navAccountDesc: 'الفوترة والاستخدام والمفاتيح والفريق والدعم.',
+  navSecCompute: 'الحوسبة', navSecDatabases: 'قواعد البيانات', navSecStorage: 'التخزين', navSecNetworking: 'الشبكات', navSecOperations: 'التشغيل',
+  navSecApps: 'التطبيقات', navSecDeployments: 'النشر', navSecApis: 'واجهات API', navSecSoon: 'قريبًا', navSecAgents: 'الوكلاء والأتمتة',
+  navSecBilling: 'الفوترة والاستخدام', navSecAccess: 'الوصول', navSecHelp: 'المساعدة',
+  niServers: 'الخوادم (VPS)', niSnapshots: 'اللقطات', niKubernetes: 'Kubernetes', niGpu: 'خوادم GPU', niDatabases: 'قواعد بيانات مُدارة', niCaching: 'التخزين المؤقت',
+  niVolumes: 'وحدات التخزين', niObjectStorage: 'تخزين الكائنات', niFirewalls: 'جدران الحماية', niLoadBalancers: 'موازنات الأحمال', niDns: 'DNS', niPublicIps: 'عناوين IP العامة', niPrivateNetworks: 'الشبكات الخاصة',
+  niMonitoring: 'المراقبة', niSshKeys: 'مفاتيح SSH', niAppPlatform: 'منصة التطبيقات', niOneClick: 'تطبيقات بضغطة وحدة', niAiStarter: 'بداية الذكاء الاصطناعي', niGitDeploy: 'النشر من Git',
+  niApiDocs: 'مرجع الـ API', niMcp: 'خادم MCP', niApprovals: 'الموافقات', niEventWebhooks: 'Webhooks الأحداث', niInference: 'بوابة الاستدلال', niDedicatedInference: 'استدلال مخصص',
+  niAgentWorkspaces: 'مساحات عمل الوكلاء', niVendor: 'بوابة البائعين', niConnectHome: 'نظرة عامة', niAgents: 'الوكلاء', niWorkflows: 'سير العمل', niConnections: 'الاتصالات',
+  niWebhooks: 'Webhooks', niLogs: 'السجلات', niTemplates: 'القوالب', niKnowledgeBase: 'قاعدة المعرفة', niBilling: 'الفوترة', niUsage: 'الاستخدام', niApiKeys: 'مفاتيح API',
+  niTeam: 'الفريق', niProjects: 'المشاريع', niSecurity: 'الأمان', niAudit: 'سجل التدقيق', niSupport: 'الدعم', niManaged: 'السحابة المُدارة',
 };
 
 const dict: Record<Locale, Dict> = { en, tr, ar };
 
 export type Key = keyof Dict;
-type StringKey = { [K in Key]: Dict[K] extends string ? K : never }[Key];
+export type StringKey = { [K in Key]: Dict[K] extends string ? K : never }[Key];
 
 /** Plain string lookup. Falls back to English when a translation is missing. */
 export function t(locale: Locale, key: StringKey): string {

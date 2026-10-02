@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { api, getToken, setToken } from '@/lib/api';
 import { getLocale, Locale, RTL, t } from '@/lib/i18n';
-import { AccountMenu, LanguageSelect, MobileNav, ProductsMenu, TopLinks, type Me } from './main-nav';
+import { AccountMenu, GroupMenus, LanguageSelect, MobileNav, TopLinks, type Me } from './main-nav';
 
 interface Ctx {
   locale: Locale;
@@ -73,7 +73,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <Link href="/servers" className="me-2 flex shrink-0 items-center gap-2 font-semibold tracking-tight"><img src="/brand/progrid-mark.svg" width="19" height="24" alt="" aria-hidden className="dark:hidden" /><img src="/brand/progrid-mark-white.svg" width="19" height="24" alt="" aria-hidden className="hidden dark:block" /> Progrid</Link>
           {authed && (
             <nav className="hidden min-w-0 items-center gap-0.5 lg:flex" aria-label={t(locale, 'mainNavigation')}>
-              <ProductsMenu />
+              <GroupMenus />
               <span aria-hidden className="mx-1 h-5 border-s border-neutral-200 dark:border-neutral-700" />
               <TopLinks isStaff={isStaff} />
             </nav>

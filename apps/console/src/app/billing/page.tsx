@@ -75,7 +75,7 @@ function BillingPage() {
         </form>
       </section>
 
-      <section className="card p-0">
+      <section id="usage" className="card scroll-mt-4 p-0">
         <h2 className="border-b border-neutral-100 px-4 py-2 font-medium dark:border-neutral-800">This month</h2>
         <table className="w-full text-sm">
           <thead className="text-xs uppercase text-neutral-500"><tr><th className="px-4 py-2 text-start">Resource</th><th className="px-4 py-2 text-start">Usage</th><th className="px-4 py-2 text-end">Amount</th></tr></thead>

@@ -23,7 +23,7 @@ export function Header() {
   const c = useCopy(); const lang = useLang();
   const home = LANGS.find((l) => l.code === lang)?.path ?? '/';
   const links = [
-    [`${home}#products`, c.nav.products], [`${home}#agents`, c.nav.agents], [`${home}#pricing`, c.nav.pricing], [`${home}#marketplace`, c.nav.marketplace], ['/docs', c.nav.docs],
+    [`${home}#products`, c.nav.products], [`${home === '/' ? '' : home}/connect`, c.nav.connect], [`${home}#agents`, c.nav.agents], [`${home}#pricing`, c.nav.pricing], [`${home}#marketplace`, c.nav.marketplace], ['/docs', c.nav.docs],
   ];
   const langs = <span className="flex gap-1 text-xs">{LANGS.map((l) => <a key={l.code} href={l.path} className={`rounded px-1.5 py-0.5 ${l.code === lang ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white'}`}>{l.label}</a>)}</span>;
   return (
@@ -128,7 +128,8 @@ export function TrustStrip() {
 
 
 export function Products() {
-  const c = useCopy();
+  const c = useCopy(); const lang = useLang();
+  const prefix = lang === 'en' ? '' : `/${lang}`;
   const GROUPS = c.products.groups;
   return (
     <section id="products" className="py-20">
@@ -145,6 +146,7 @@ export function Products() {
               </div>
               <p className="mt-2 text-sm text-slate-600">{g.desc}</p>
               <ul className="mt-4 flex flex-wrap gap-1.5">{g.items.map((i) => <li key={i} className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-700">{i}</li>)}</ul>
+              {g.href && <a href={`${prefix}${g.href}`} className="mt-4 inline-block text-sm font-semibold text-blue-600 hover:underline">{c.products.learnMore} <span aria-hidden className="inline-block rtl:rotate-180">→</span></a>}
             </div>
           ))}
         </div>

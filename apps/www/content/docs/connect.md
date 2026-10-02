@@ -69,7 +69,7 @@ Variables hold values your instructions and tools use, like `{{vars.COMPANY_NAME
 
 ## 3. Test
 
-Choose **Test**, type a message or paste JSON input, and run. You see every step as it happens: each model call with its tokens, each tool call with its input, output and time, conditions, approvals, the final answer, errors and the total cost estimate. Tests run your latest draft.
+Open the **Test** tab, type a message or paste JSON input, and run. You see every step as it happens: each model call with its tokens, each tool call with its input, output and time, conditions, approvals, the final answer, errors and the total cost estimate. Switch to raw JSON to see everything. Tests run your latest draft.
 
 ```sh
 curl -X POST https://api.progrid.sa/v1/connect/agents/$AGENT_ID/test \
@@ -80,7 +80,7 @@ curl -X POST https://api.progrid.sa/v1/connect/agents/$AGENT_ID/test \
 
 ### Workflows
 
-A workflow chains steps: **Trigger, AI Agent, Tool, Condition, Action**, plus Transform and End. A condition such as `{{steps.qualify.output.score}} >= 80` sends the run down its true or false branch. An agent step can return structured JSON by giving it an output schema, so later steps can use its fields. Without a workflow, an agent simply answers each call.
+A workflow chains steps: **Trigger, AI Agent, Tool, Condition, Action**, plus Transform and End. Steps refer to earlier data with `{{trigger.body}}`, `{{steps.<id>.output}}` and `{{vars.KEY}}`. A condition such as `{{steps.qualify.output.score}} >= 80` sends the run down its true or false branch. An agent step can return structured JSON by giving it an output schema, so later steps can use its fields. Without a workflow, an agent simply answers each call.
 
 Triggers: the run API, an inbound webhook, a schedule (cron) or a manual run.
 
@@ -90,9 +90,13 @@ Anything that changes your infrastructure, like powering a server off, waits for
 
 ## 4. Deploy
 
-Choose **Deploy**. Connect saves an immutable version and serves it. Later edits stay in the draft until you deploy again, and you can roll back by deploying an earlier version. **Pause** stops the agent from answering.
+Save a version with a note, then choose **Deploy**. Connect serves that immutable version. Later edits stay in the draft until you deploy again, and you can roll back by deploying an earlier version. **Pause** stops the agent from answering.
 
-Create a key under **Keys**. The key starts with `prgd_ca_` and is shown once.
+A deployed agent gets:
+
+- an API endpoint: `https://api.progrid.sa/v1/connect/agents/{id}/run`
+- agent API keys, created on the agent's **API** tab or under **Connect, Keys**. A key starts with `prgd_ca_` and is shown once.
+- webhook URLs that start a run when they are called
 
 ## Call your agent
 
@@ -147,7 +151,13 @@ The **Docs** tab of each agent shows these examples with its own endpoint, plus 
 - Send an `idempotencyKey` to retry safely: the same key within 24 hours returns the same run.
 - Output is JSON: `{"text": ...}` for a plain agent, or what the workflow's End step returns.
 
-Errors: `401` bad key, `404` unknown agent, `409` agent not deployed, `402` spend limit reached or payment required, `429` too many requests.
+| Status | Meaning |
+| --- | --- |
+| 401 | Bad or missing key |
+| 402 | Spend limit reached or payment required |
+| 404 | Unknown agent |
+| 409 | Agent is not deployed |
+| 429 | Too many requests |
 
 ## Webhooks
 
