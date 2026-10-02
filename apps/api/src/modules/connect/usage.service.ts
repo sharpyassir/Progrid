@@ -143,7 +143,7 @@ export class ConnectUsageService {
       totals.apiCalls += r._sum.apiCalls ?? 0;
       totals.computeSeconds += Math.round((r._sum.durationMs ?? 0) / 1000);
       const a = nameOf.get(r.agentId);
-      return { agentId: r.agentId, name: a?.name ?? null, deleted: !!a?.deletedAt, executions: u.executions, failed: failedOf.get(r.agentId) ?? 0, aiInputTokens: u.inputTokens, aiOutputTokens: u.outputTokens, aiCacheReadTokens: u.cacheReadTokens, toolCalls: u.toolCalls, apiCalls: r._sum.apiCalls ?? 0, estimatedCostMinor: money(u) };
+      return { agentId: r.agentId, agentName: a?.name ?? null, deleted: !!a?.deletedAt, executions: u.executions, failed: failedOf.get(r.agentId) ?? 0, aiInputTokens: u.inputTokens, aiOutputTokens: u.outputTokens, aiCacheReadTokens: u.cacheReadTokens, toolCalls: u.toolCalls, apiCalls: r._sum.apiCalls ?? 0, estimatedCostMinor: money(u) };
     }).sort((a, b) => b.executions - a.executions);
     const all: UsageTotals = { executions: totals.executions, inputTokens: totals.aiInputTokens, outputTokens: totals.aiOutputTokens, cacheReadTokens: totals.aiCacheReadTokens, cacheWriteTokens: totals.aiCacheWriteTokens, toolCalls: totals.toolCalls };
     return {

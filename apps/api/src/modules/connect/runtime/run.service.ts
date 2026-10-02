@@ -161,9 +161,9 @@ export class RunService implements OnModuleInit {
     const running = await this.prisma.connectRun.count({ where: { teamId: spec.teamId, status: { in: ['queued', 'running'] } } });
     if (running >= cfg.CONNECT_MAX_CONCURRENT_RUNS) throw new ApiError(429, 'too_many_runs', `Your team already has ${running} runs in progress (limit ${cfg.CONNECT_MAX_CONCURRENT_RUNS}). Try again when one finishes.`);
     const actor = await this.runActor(spec);
-    // Existing spend controls: project hard limit and the prepaid before postpaid rule.
-    await this.spend.assertCanSpend(actor, spec.projectId, 0);
+    // Existing spend controls: the prepaid before postpaid rule, then the project hard limit.
     await this.trust.assertPrepaidBeforePostpaid(spec.teamId, 0);
+    await this.spend.assertCanSpend(actor, spec.projectId, 0);
     const values = await this.prisma.connectVariable.findMany({ where: { agentId: spec.agentId }, select: { key: true } });
     const missing = spec.variables.filter((v) => v.required && !values.some((x) => x.key === v.key)).map((v) => v.key);
     if (missing.length) throw ApiError.invalid(`Set these variables before running the agent: ${missing.join(', ')}`, { missingVariables: missing });

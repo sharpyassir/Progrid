@@ -14,6 +14,7 @@ import { AGENT_KEY_PREFIX, sha256 } from './parts.service';
 import { RunService, presentStep, CONNECT_APPROVAL_KIND } from './runtime/run.service';
 import { ConnectUsageService, currentPeriod } from './usage.service';
 import { presentRun, publicBase } from './present';
+import { TEMPLATES } from './templates';
 import type { ListRunsQuery, LogsQuery, PublicRunDto, TestRunDto } from './dto';
 
 const TEST_TIMEOUT_MS = 120_000;
@@ -39,12 +40,13 @@ export class RunsService {
     private readonly usage: ConnectUsageService,
   ) {}
 
-  private async withSteps(run: ConnectRun) {
+  private async withSteps(run: ConnectRun, agentName?: string) {
     const [steps, approvals] = await Promise.all([
       this.prisma.connectRunStep.findMany({ where: { runId: run.id }, orderBy: { index: 'asc' } }),
       run.status === 'waiting_approval' ? this.prisma.approval.findMany({ where: { kind: CONNECT_APPROVAL_KIND, resourceId: run.id, status: 'pending' }, select: { id: true, summary: true, expiresAt: true } }) : [],
     ]);
-    return presentRun(run, { steps: steps.map(presentStep), ...(approvals.length ? { pendingApprovals: approvals } : {}) });
+    const name = agentName ?? (await this.prisma.connectAgent.findUnique({ where: { id: run.agentId }, select: { name: true } }))?.name ?? null;
+    return presentRun(run, { agentName: name, steps: steps.map(presentStep), ...(approvals.length ? { pendingApprovals: approvals } : {}) });
   }
 
   /** POST /agents/:id/test: runs the draft (or the deployed version) and waits up to 120 s. */
@@ -52,8 +54,12 @@ export class RunsService {
     const agent = await this.agents.own(actor, agentId);
     const spec = await this.agents.spec(agent, dto.useDraft !== false);
     const run = await this.runs.create({ spec, source: 'test', input: dto.input, message: dto.message });
+    if (dto.async) {
+      await this.runs.dispatch(run.id);
+      return this.withSteps(await this.prisma.connectRun.findUniqueOrThrow({ where: { id: run.id } }), agent.name);
+    }
     const done = await this.runs.executeAndWait(run.id, TEST_TIMEOUT_MS);
-    return this.withSteps(done);
+    return this.withSteps(done, agent.name);
   }
 
   async testTool(actor: Actor, agentId: string, toolId: string, input: unknown) {
@@ -65,14 +71,17 @@ export class RunsService {
   }
 
   async list(actor: Actor, agentId: string, q: ListRunsQuery) {
-    await this.agents.own(actor, agentId);
+    const agent = await this.agents.own(actor, agentId);
+    const createdAt: Prisma.DateTimeFilter = {};
+    if (q.from) createdAt.gte = parseDate(q.from, 'from');
+    if (q.to) createdAt.lt = parseDate(q.to, 'to');
     const rows = await this.prisma.connectRun.findMany({
-      where: { agentId, teamId: actor.teamId, ...(q.status ? { status: q.status } : {}), ...(q.source ? { source: q.source } : {}) },
+      where: { agentId, teamId: actor.teamId, ...(q.status ? { status: q.status } : {}), ...(q.source ? { source: q.source } : {}), ...(q.from || q.to ? { createdAt } : {}) },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       ...cursorArgs(q),
     });
     const page = toPage(rows, q.limit);
-    return { data: page.data.map((r) => presentRun(r)), meta: page.meta };
+    return { data: page.data.map((r) => presentRun(r, { agentName: agent.name })), meta: page.meta };
   }
 
   async get(actor: Actor, runId: string) {
@@ -85,7 +94,7 @@ export class RunsService {
     const run = await this.prisma.connectRun.findFirst({ where: { id: runId, teamId: actor.teamId } });
     if (!run) throw ApiError.notFound('run', runId);
     if (!(await this.runs.cancel(actor.teamId, runId))) throw ApiError.invalidState(`The run is already ${run.status}`);
-    return presentRun(await this.prisma.connectRun.findUniqueOrThrow({ where: { id: runId } }));
+    return this.withSteps(await this.prisma.connectRun.findUniqueOrThrow({ where: { id: runId } }));
   }
 
   /** GET /logs: runs across agents, newest first. */
@@ -105,12 +114,16 @@ export class RunsService {
 
   async overview(actor: Actor) {
     const since = new Date(Date.now() - 24 * 3600_000);
-    const [agents, deployed, runs24h, failed24h, recent, usage] = await Promise.all([
-      this.prisma.connectAgent.count({ where: { teamId: actor.teamId, deletedAt: null } }),
-      this.prisma.connectAgent.count({ where: { teamId: actor.teamId, deletedAt: null, status: 'deployed' } }),
-      this.prisma.connectRun.count({ where: { teamId: actor.teamId, createdAt: { gte: since } } }),
-      this.prisma.connectRun.count({ where: { teamId: actor.teamId, createdAt: { gte: since }, status: 'failed' } }),
-      this.prisma.connectRun.findMany({ where: { teamId: actor.teamId }, include: { agent: { select: { name: true } } }, orderBy: { createdAt: 'desc' }, take: 10 }),
+    const team = { teamId: actor.teamId };
+    const [agents, deployed, runs24h, failed24h, connections, webhooks, keys, recent, usage] = await Promise.all([
+      this.prisma.connectAgent.count({ where: { ...team, deletedAt: null } }),
+      this.prisma.connectAgent.count({ where: { ...team, deletedAt: null, status: 'deployed' } }),
+      this.prisma.connectRun.count({ where: { ...team, createdAt: { gte: since } } }),
+      this.prisma.connectRun.count({ where: { ...team, createdAt: { gte: since }, status: 'failed' } }),
+      this.prisma.connectConnection.count({ where: team }),
+      this.prisma.connectWebhook.count({ where: { ...team, agent: { deletedAt: null } } }),
+      this.prisma.connectAgentKey.count({ where: { ...team, revokedAt: null, agent: { deletedAt: null } } }),
+      this.prisma.connectRun.findMany({ where: team, include: { agent: { select: { name: true } } }, orderBy: { createdAt: 'desc' }, take: 10 }),
       this.usage.usage(actor, currentPeriod()),
     ]);
     return {
@@ -118,7 +131,15 @@ export class RunsService {
       deployed,
       runs24h,
       failed24h,
-      usageThisPeriod: { period: usage.period, ...usage.totals, estimatedCostMinor: usage.estimatedCostMinor, currency: usage.currency, pricingConfigured: usage.pricingConfigured },
+      counts: { connections, webhooks, keys, templates: TEMPLATES.length },
+      usageThisPeriod: {
+        executions: usage.totals.executions,
+        aiInputTokens: usage.totals.aiInputTokens,
+        aiOutputTokens: usage.totals.aiOutputTokens,
+        estimatedCostMinor: usage.estimatedCostMinor,
+        currency: usage.currency,
+        pricingConfigured: usage.pricingConfigured,
+      },
       recentRuns: recent.map(({ agent, ...r }) => presentRun(r, { agentName: agent.name })),
     };
   }

@@ -34,7 +34,7 @@ export const DRAFT_SCHEMA = strict({
     edges: { type: 'array', items: strict({ id: str, source: str, target: str, sourceHandle: { ...str, description: '"true" or "false" after a condition, else empty' }, label: str }) },
   }),
   variables: { type: 'array', items: strict({ key: str, description: str, required: { type: 'boolean' }, secret: { type: 'boolean' } }) },
-  connectionsNeeded: { type: 'array', items: strict({ ref: str, kind: { type: 'string', enum: [...CONNECTION_KINDS] }, name: str, description: str }) },
+  connectionsNeeded: { type: 'array', items: strict({ ref: str, kind: { type: 'string', enum: [...CONNECTION_KINDS] }, name: str, reason: { ...str, description: 'Why the agent needs this connection' } }) },
 });
 
 /** Stable system prompt for the builder (cached). */

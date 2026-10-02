@@ -45,11 +45,15 @@ export class TestRunDto {
   @IsOptional() @IsString() @MaxLength(20_000) message?: string;
   /** Run the current draft (default) instead of the deployed version. */
   @IsOptional() @IsBoolean() useDraft?: boolean;
+  /** Return the run at once (queued) and stream its steps from /runs/:runId/events. */
+  @IsOptional() @IsBoolean() async?: boolean;
 }
 
 export class ListRunsQuery extends PaginationQuery {
   @IsOptional() @IsIn(RUN_STATUSES) status?: (typeof RUN_STATUSES)[number];
   @IsOptional() @IsIn(RUN_SOURCES) source?: (typeof RUN_SOURCES)[number];
+  @IsOptional() @IsString() from?: string;
+  @IsOptional() @IsString() to?: string;
 }
 
 export class LogsQuery extends PaginationQuery {

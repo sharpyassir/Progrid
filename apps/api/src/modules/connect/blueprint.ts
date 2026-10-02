@@ -23,10 +23,14 @@ export interface BlueprintTool {
 }
 
 export interface ConnectionNeeded {
+  /** Placeholder the tools point at (connectionRef). from-draft maps it, or the name, to a connection id. */
   ref: string;
   kind: (typeof CONNECTION_KINDS)[number];
   name: string;
-  description: string;
+  /** Why the agent needs it. */
+  reason: string;
+  /** Names of the tools that use it. */
+  usedBy: string[];
 }
 
 export interface Blueprint {
@@ -72,7 +76,7 @@ export function validateBlueprint(raw: unknown, checkConfig: (kind: string, conf
     if (refs.has(ref)) return issues.push({ path: `connectionsNeeded[${i}].ref`, message: `duplicate ref ${ref}` });
     if (!CONNECTION_KINDS.includes(c.kind as never)) return issues.push({ path: `connectionsNeeded[${i}].kind`, message: `kind must be one of ${CONNECTION_KINDS.join(', ')}` });
     refs.add(ref);
-    connectionsNeeded.push({ ref, kind: c.kind as ConnectionNeeded['kind'], name: String(c.name ?? ref).slice(0, 80), description: String(c.description ?? '').slice(0, 500) });
+    connectionsNeeded.push({ ref, kind: c.kind as ConnectionNeeded['kind'], name: String(c.name ?? ref).slice(0, 80), reason: String(c.reason ?? c.description ?? '').slice(0, 500), usedBy: [] });
   });
 
   const tools: BlueprintTool[] = [];
@@ -98,6 +102,8 @@ export function validateBlueprint(raw: unknown, checkConfig: (kind: string, conf
     if (connectionRef && !refs.has(connectionRef)) issues.push({ path: `${path}.connectionRef`, message: `${name} uses connection ${connectionRef}, which is not in connectionsNeeded` });
     tools.push({ name, description: String(t.description ?? '').slice(0, 2000), kind: t.kind as BlueprintTool['kind'], connectionRef, requiresApproval: !!t.requiresApproval, enabled: t.enabled !== false, config, ...(inputSchema ? { inputSchema } : {}) });
   });
+
+  for (const c of connectionsNeeded) c.usedBy = tools.filter((t) => t.connectionRef === c.ref).map((t) => t.name);
 
   let workflow: Graph | null = null;
   if (r.workflow !== undefined && r.workflow !== null) {

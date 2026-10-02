@@ -134,7 +134,8 @@ export async function checkedAddresses(host: string, policy: NetPolicy): Promise
  * which are then connected to by that IP, so there is no second lookup to race.
  */
 export async function resolveSafeHost(host: string, policy: NetPolicy): Promise<Address> {
-  return (await checkedAddresses(host, policy))[0];
+  const addrs = await checkedAddresses(host, policy);
+  return addrs.find((a) => a.family === 4) ?? addrs[0];
 }
 
 /** Checks scheme, credentials and the allowed hosts list of a URL (not its addresses). */

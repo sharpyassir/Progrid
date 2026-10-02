@@ -167,12 +167,13 @@ export class AgentsService {
     await this.assertCap(actor.teamId);
     const project = await this.iam.resolveProject(actor, opts.project);
     const connIds: Record<string, string> = {};
-    for (const [ref, id] of Object.entries(connections ?? {})) {
-      const need = bp.connectionsNeeded.find((c) => c.ref === ref);
-      if (!need) throw ApiError.invalid(`The draft has no connection ref ${ref}`);
+    for (const [refOrName, id] of Object.entries(connections ?? {})) {
+      const need = bp.connectionsNeeded.find((c) => c.ref === refOrName) ?? bp.connectionsNeeded.find((c) => c.name === refOrName);
+      if (!need) throw ApiError.invalid(`The draft needs no connection called ${refOrName}`);
       const c = await this.prisma.connectConnection.findFirst({ where: { id, teamId: actor.teamId } });
       if (!c) throw ApiError.notFound('connection', id);
-      connIds[ref] = c.id;
+      if (c.kind !== need.kind && !(need.kind === 'postgres' && c.kind === 'mysql')) throw ApiError.invalid(`${need.name} needs a ${need.kind} connection, not ${c.kind}`);
+      connIds[need.ref] = c.id;
     }
     const agent = await this.prisma.$transaction(async (tx) => {
       const a = await tx.connectAgent.create({

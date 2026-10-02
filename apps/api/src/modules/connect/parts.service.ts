@@ -112,6 +112,12 @@ export class AgentPartsService {
 
   // ───────────── webhooks ─────────────
 
+  /** GET /webhooks: every agent's webhooks, with the agent named. */
+  async listAllWebhooks(actor: Actor) {
+    const rows = await this.prisma.connectWebhook.findMany({ where: { teamId: actor.teamId, agent: { deletedAt: null } }, include: { agent: { select: { name: true } } }, orderBy: { createdAt: 'desc' } });
+    return { data: rows.map(({ agent, ...h }) => ({ ...presentWebhook(h), agentName: agent.name })) };
+  }
+
   async listWebhooks(actor: Actor, agentId: string) {
     await this.agents.own(actor, agentId);
     const rows = await this.prisma.connectWebhook.findMany({ where: { agentId }, orderBy: { createdAt: 'asc' } });
@@ -168,6 +174,12 @@ export class AgentPartsService {
   }
 
   // ───────────── keys ─────────────
+
+  /** GET /keys: every agent's active keys, with the agent named. */
+  async listAllKeys(actor: Actor) {
+    const rows = await this.prisma.connectAgentKey.findMany({ where: { teamId: actor.teamId, revokedAt: null, agent: { deletedAt: null } }, include: { agent: { select: { name: true } } }, orderBy: { createdAt: 'desc' } });
+    return { data: rows.map(({ agent, ...k }) => ({ ...presentKey(k), agentName: agent.name })) };
+  }
 
   async listKeys(actor: Actor, agentId: string) {
     await this.agents.own(actor, agentId);

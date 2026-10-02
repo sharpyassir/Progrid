@@ -55,7 +55,7 @@ export const TEMPLATES: Template[] = [
       ],
     },
     variables: [{ key: 'COMPANY_NAME', description: 'Your company name, used in replies', required: true, secret: false }],
-    connectionsNeeded: [{ ref: 'store_api', kind: 'rest_api', name: 'Store API', description: 'Your shop or order system API (base URL and token)' }],
+    connectionsNeeded: [{ ref: 'store_api', kind: 'rest_api', name: 'Store API', reason: 'Your shop or order system API (base URL and token)', usedBy: [] }],
   },
   {
     slug: 'sales',
@@ -99,7 +99,7 @@ export const TEMPLATES: Template[] = [
       { key: 'IDEAL_CUSTOMER', description: 'Who your ideal customer is, in one sentence', required: true, secret: false },
       { key: 'SALES_EMAIL', description: 'Where qualified leads are announced', required: true, secret: false },
     ],
-    connectionsNeeded: [{ ref: 'crm_api', kind: 'rest_api', name: 'CRM API', description: 'Your CRM (HubSpot, Pipedrive, or any REST API) base URL and token' }],
+    connectionsNeeded: [{ ref: 'crm_api', kind: 'rest_api', name: 'CRM API', reason: 'Your CRM (HubSpot, Pipedrive, or any REST API) base URL and token', usedBy: [] }],
   },
   {
     slug: 'data-analyst',
@@ -122,7 +122,7 @@ export const TEMPLATES: Template[] = [
     ],
     workflow: null,
     variables: [],
-    connectionsNeeded: [{ ref: 'warehouse', kind: 'postgres', name: 'Analytics database', description: 'A PostgreSQL or MySQL database, ideally a read replica with a read only user' }],
+    connectionsNeeded: [{ ref: 'warehouse', kind: 'postgres', name: 'Analytics database', reason: 'A PostgreSQL or MySQL database, ideally a read replica with a read only user', usedBy: [] }],
   },
   {
     slug: 'monitoring',
@@ -184,7 +184,7 @@ export const TEMPLATES: Template[] = [
     ],
     workflow: null,
     variables: [],
-    connectionsNeeded: [{ ref: 'search_api', kind: 'rest_api', name: 'Search API', description: 'A web search API (for example Brave Search) with an API key header' }],
+    connectionsNeeded: [{ ref: 'search_api', kind: 'rest_api', name: 'Search API', reason: 'A web search API (for example Brave Search) with an API key header', usedBy: [] }],
   },
   {
     slug: 'developer',
@@ -209,7 +209,7 @@ export const TEMPLATES: Template[] = [
     ],
     workflow: null,
     variables: [{ key: 'GITHUB_REPO', description: 'owner/name of the repository', required: true, secret: false }],
-    connectionsNeeded: [{ ref: 'github', kind: 'rest_api', name: 'GitHub API', description: 'https://api.github.com with a fine grained token (read issues)' }],
+    connectionsNeeded: [{ ref: 'github', kind: 'rest_api', name: 'GitHub API', reason: 'https://api.github.com with a fine grained token (read issues)', usedBy: [] }],
   },
   {
     slug: 'invoice',
@@ -251,9 +251,12 @@ export const TEMPLATES: Template[] = [
       { key: 'FINANCE_EMAIL', description: 'Who reviews invoices', required: true, secret: false },
       { key: 'APPROVAL_LIMIT', description: 'Invoices above this total always go to review', required: true, secret: false },
     ],
-    connectionsNeeded: [{ ref: 'accounting_api', kind: 'rest_api', name: 'Accounting API', description: 'Your accounting system API (base URL and token)' }],
+    connectionsNeeded: [{ ref: 'accounting_api', kind: 'rest_api', name: 'Accounting API', reason: 'Your accounting system API (base URL and token)', usedBy: [] }],
   },
 ];
+
+/** usedBy: the tools that need each connection, filled in from the tools. */
+for (const t of TEMPLATES) for (const c of t.connectionsNeeded) c.usedBy = t.tools.filter((x) => x.connectionRef === c.ref).map((x) => x.name);
 
 export function findTemplate(slug: string) {
   return TEMPLATES.find((t) => t.slug === slug);

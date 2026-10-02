@@ -71,12 +71,13 @@ describe('Build with AI drafts', () => {
         edges: [{ id: 'e1', source: 'trigger', target: 'push', sourceHandle: '', label: '' }],
       },
       variables: [{ key: 'CRM_PIPELINE', description: 'p', required: true, secret: false }],
-      connectionsNeeded: [{ ref: 'crm', kind: 'rest_api', name: 'CRM', description: 'c' }],
+      connectionsNeeded: [{ ref: 'crm', kind: 'rest_api', name: 'CRM', reason: 'c' }],
     };
     expect(schemaErrors(DRAFT_SCHEMA, raw)).toBeNull();
     const { blueprint, issues } = validateBlueprint(draftFromModel(raw), check);
     expect(issues).toEqual([]);
     expect(blueprint.tools[0].config).toEqual({ method: 'POST', path: '/leads' });
+    expect(blueprint.connectionsNeeded).toEqual([{ ref: 'crm', kind: 'rest_api', name: 'CRM', reason: 'c', usedBy: ['push_lead'] }]);
     const bound = bindToolIds(blueprint.workflow!, new Map([['push_lead', 'tool_123']]));
     expect(bound.nodes[1].data?.toolId).toBe('tool_123');
   });

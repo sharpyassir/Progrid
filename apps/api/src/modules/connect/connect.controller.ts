@@ -218,6 +218,18 @@ export class ConnectController {
     await this.parts.revokeKey(actor, id, keyId);
   }
 
+  // ───────────── cross-agent lists ─────────────
+
+  @Get('webhooks') @RequireScopes('connect:read')
+  allWebhooks(@CurrentActor() actor: Actor) {
+    return this.parts.listAllWebhooks(actor);
+  }
+
+  @Get('keys') @RequireScopes('connect:read')
+  allKeys(@CurrentActor() actor: Actor) {
+    return this.parts.listAllKeys(actor);
+  }
+
   // ───────────── runs and logs ─────────────
 
   @Get('runs/:runId') @RequireScopes('connect:read')
@@ -231,19 +243,21 @@ export class ConnectController {
   }
 
   /**
-   * Server Sent Events of a run's steps. Browsers cannot set headers on EventSource, so the
-   * credential may also come as ?token= or the prgd_session cookie.
+   * Server Sent Events of a run: `event: step` (RunStep), `event: run` (Run, on every status
+   * change) and a final `event: end`, with a heartbeat comment every 15 s. Authenticated with
+   * the normal Authorization header (the console reads the stream with fetch); the console
+   * session cookie also works for same site EventSource use.
    */
   @Public()
   @Get('runs/:runId/events')
   async runEvents(@Param('runId') runId: string, @Req() req: Request, @Res() res: Response) {
     const header = req.headers.authorization ?? '';
     const [scheme, bearer] = header.split(' ');
-    const credential = (scheme?.toLowerCase() === 'bearer' ? bearer : undefined) ?? (typeof req.query.token === 'string' ? req.query.token : undefined) ?? readCookie(req.headers.cookie, 'prgd_session');
+    const credential = (scheme?.toLowerCase() === 'bearer' ? bearer : undefined) ?? readCookie(req.headers.cookie, 'prgd_session');
     const actor = credential ? await this.tokens.resolveBearer(credential) : null;
     if (!actor) throw ApiError.unauthorized();
     if (!actor.scopes.has('connect:read')) throw ApiError.forbidden('Token is missing required scope(s): connect:read');
-    const run = await this.prisma.connectRun.findFirst({ where: { id: runId, teamId: actor.teamId } });
+    const run = await this.prisma.connectRun.findFirst({ where: { id: runId, teamId: actor.teamId }, include: { agent: { select: { name: true } } } });
     if (!run) throw ApiError.notFound('run', runId);
 
     res.status(200);
@@ -254,9 +268,15 @@ export class ConnectController {
     res.flushHeaders();
     const send = (event: string, data: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     const terminal = (s: string) => ['succeeded', 'failed', 'cancelled'].includes(s);
+    const agentName = run.agent.name;
+    const fullRun = async () => {
+      const r = await this.prisma.connectRun.findUnique({ where: { id: runId } });
+      return r ? presentRun(r, { agentName }) : null;
+    };
 
     let closed = false;
     let unsubscribe: (() => Promise<void>) | undefined;
+    const ping = setInterval(() => res.write(': heartbeat\n\n'), 15_000);
     const close = async () => {
       if (closed) return;
       closed = true;
@@ -264,11 +284,16 @@ export class ConnectController {
       await unsubscribe?.();
       res.end();
     };
-    const ping = setInterval(() => res.write(': ping\n\n'), 15_000);
+    const finish = async () => {
+      if (closed) return;
+      send('end', { runId });
+      await close();
+    };
     req.on('close', () => void close());
 
     // Subscribe first, then replay what already happened, so nothing falls in between.
     const seen = new Set<string>();
+    let lastStatus = '';
     unsubscribe = await this.events.subscribe(runId, (e) => {
       if (closed) return;
       if (e.type === 'step') {
@@ -277,22 +302,27 @@ export class ConnectController {
         seen.add(step.id);
         send('step', step);
       } else if (e.type === 'run') {
-        const r = e.run as { status: string };
-        send('run', r);
-        if (terminal(r.status)) void close();
+        void fullRun().then(async (r) => {
+          if (!r || closed || r.status === lastStatus) return;
+          lastStatus = r.status;
+          send('run', r);
+          if (terminal(r.status)) await finish();
+        });
       }
     });
-    send('run', presentRun(run));
+    lastStatus = run.status;
+    send('run', presentRun(run, { agentName }));
     for (const s of await this.prisma.connectRunStep.findMany({ where: { runId }, orderBy: { index: 'asc' } })) {
       if (seen.has(s.id)) continue;
       seen.add(s.id);
       send('step', presentStep(s));
     }
-    const now = await this.prisma.connectRun.findUnique({ where: { id: runId }, select: { status: true } });
-    if (now && terminal(now.status)) {
-      send('run', { id: runId, status: now.status });
-      await close();
+    const now = await fullRun();
+    if (now && now.status !== lastStatus) {
+      lastStatus = now.status;
+      send('run', now);
     }
+    if (now && terminal(now.status)) await finish();
   }
 
   @Get('logs') @RequireScopes('connect:read')
