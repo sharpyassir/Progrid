@@ -7,6 +7,8 @@ import { MailService } from '../../common/mail/mail.service';
 import { entityInvoiceNumber, entityProfile } from '../../common/entities/entities';
 import { linkManagedWorkLogs } from '../managed/billing-hooks/link-worklogs';
 import { billingAt, type TeamBilling } from './entity-change';
+import { CommissionService } from '../affiliates/commission.service';
+import { discountFor } from '../affiliates/commission-rules';
 
 /**
  * Monthly invoicing, by the company that contracts with the team (common/entities/entities.ts):
@@ -18,7 +20,7 @@ import { billingAt, type TeamBilling } from './entity-change';
 export class InvoicesService {
   private readonly log = new Logger(InvoicesService.name);
 
-  constructor(private readonly prisma: PrismaService, private readonly events: EventsService, private readonly mail: MailService) {}
+  constructor(private readonly prisma: PrismaService, private readonly events: EventsService, private readonly mail: MailService, private readonly commissions: CommissionService) {}
 
   /**
    * Generates invoices for the month that just ended. Idempotent per team and period: the
@@ -40,6 +42,8 @@ export class InvoicesService {
         issued++;
         await this.events.emit('invoice.issued', { invoiceId: invoice.id, number: invoice.number, totalMinor: invoice.totalMinor, currency: invoice.currency, billingEntity: invoice.billingEntity }, { teamId: team.id });
         this.notify(team.id, invoice.number, invoice.totalMinor, invoice.currency, invoice.status === 'paid', invoice.billingEntity).catch((e) => this.log.warn(`invoice mail failed: ${e.message}`));
+        // Settled in full from prepaid credit at issue: affiliate commission is earned now.
+        if (invoice.status === 'paid') await this.commissions.onInvoicePaid(invoice.id);
       } catch (err) {
         failed++;
         this.log.error(`invoice for team ${team.id} (${periodStart.toISOString().slice(0, 7)}) failed: ${(err as Error).message}`);
@@ -86,8 +90,11 @@ export class InvoicesService {
         // without the period boundary rule; a person must look before anything is issued.
         const foreign = records.find((r) => r.currency !== billing.currency);
         if (foreign) throw new Error(`usage in ${foreign.currency} for a ${billing.currency} invoice; fix the team's billing currency first`);
-        const subtotal = records.reduce((s, r) => s + r.amountMinor, 0);
-        if (subtotal <= 0) return null;
+        const usage = records.reduce((s, r) => s + r.amountMinor, 0);
+        if (usage <= 0) return null;
+        // A partner promo code takes a percentage off the usage before tax, for its first months (docs/affiliates.md).
+        const discount = discountFor(usage, await tx.referral.findUnique({ where: { teamId: team.id }, select: { status: true, discountPercent: true, discountUntil: true } }), periodStart);
+        const subtotal = usage - discount;
 
         const tax = Math.round(subtotal * entity.taxRate);
         const uses = await this.consumeCredits(tx, team.id, billing.currency, subtotal + tax, now);
@@ -105,6 +112,7 @@ export class InvoicesService {
             periodStart,
             periodEnd,
             subtotalMinor: subtotal,
+            discountMinor: discount,
             taxMinor: tax,
             creditMinor: credit,
             totalMinor: total,

@@ -21,7 +21,9 @@ export interface RefundResult { refundRef: string }
 
 export interface PaymentEvent {
   providerRef: string;
-  status: 'succeeded' | 'failed';
+  /** disputed: a chargeback was opened; `paymentId` names our payment. */
+  status: 'succeeded' | 'failed' | 'disputed';
+  paymentId?: string;
   amountMinor?: number;
   currency?: Currency;
   reason?: string;

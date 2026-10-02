@@ -35,7 +35,7 @@ default). It never moves to another partner, and a team can use one code only.
   `+tags` and Gmail dots ignored). Card fingerprints are stored on payments
   (`prgd_payments.cardFingerprint`: Stripe's card fingerprint; for Moyasar a keyed hash of the
   masked number, brand and holder) to also catch the partner's own card when commission is earned
-  (phase d). Customers on the same network as the partner are not blocked.
+  (see Commission engine). Customers on the same network as the partner are not blocked.
 - **Many signups from one address**: `flagSignupsPerIpPerDay` (3) referred signups from one address
   within a day flag the partner for staff review; the signups still count.
 - **Free credit earns nothing**: every invoice records which credit settled how much
@@ -91,6 +91,52 @@ signed in person, not the team, and only with a console session: API tokens get 
 API (console session): `GET /v1/affiliates/me`, `POST /v1/affiliates/apply`,
 `GET /v1/affiliates/me/dashboard?from=YYYY-MM-DD&to=YYYY-MM-DD`, `GET /v1/affiliates/me/referrals`,
 `GET|PUT /v1/affiliates/me/payout-details`, `GET|POST /v1/affiliates/me/payouts`.
+
+## Commission engine (phase d)
+
+**Customer discount.** When an invoice is issued for a referred team whose discount is still
+running (`discountUntil` after the start of the period), `promoDiscountPercent` of the usage comes
+off before tax: `prgd_invoices.discountMinor`, with `subtotalMinor` the taxable amount after it.
+The PDF shows Usage, the promo code discount, then the subtotal.
+
+**Earning.** When an invoice of a referred team is paid (card, bank transfer, manual, or settled
+from prepaid credit at issue), `CommissionService.earn` writes one `prgd_affiliate_commissions`
+row per product category, in the invoice currency, status `pending`, `holdUntil` = paid time plus
+`holdDays`. A job every 15 minutes catches paid invoices the payment hook missed
+(`prgd_invoices.affiliateCheckedAt` marks an invoice as done, with or without commission).
+
+For each category: base = the category's usage, minus its share of the discount, times the share
+of the invoice paid with money; commission = base × rate (basis points, fixed when earned).
+Money is card, bank transfer and prepaid credit. Promo, goodwill and refund credit, credit notes
+against what was due, refunds, and tax are never part of the base. Rows below 1 minor unit and
+categories at 0% are not written.
+
+Nothing is earned when the team is not referred or the referral is blocked, for invoices whose
+period starts on or after `commissionUntil`, or while the affiliate is not approved (suspended
+affiliates forfeit invoices paid during the suspension).
+
+**Approval.** A daily job (03:20 UTC) turns `pending` rows whose hold is over into `approved` for
+approved affiliates, if the invoice is still paid. Approved rows are what payouts draw from.
+
+**Reversals.**
+
+- Card refund (back office): the refunded share of the invoice (refund ÷ subtotal plus tax) is
+  taken off each commission on it.
+- Credit note: the same, by the note's amount.
+- Chargeback: Stripe's `charge.dispute.created` webhook (add it to the Stripe webhook endpoint),
+  or finance marking a payment as disputed (Moyasar sends no dispute events; back office, phase
+  e), sets `prgd_payments.disputedAt`, reverses all commission on the invoice and flags the
+  affiliate.
+- Commission not yet paid out is reduced in place and becomes `reversed` when nothing is left.
+  Commission already paid out, or in a payout request, gets a negative `approved` clawback row
+  (`<category>:clawback:<n>`) that the next payout deducts.
+- After a reversal, an affiliate whose reversed share of earned commission reaches
+  `flagRefundRatePercent` (with at least 3 commissions) is flagged `high_refund_rate`.
+
+**Self referral by card.** Before earning, the customer's card fingerprints are compared with
+payments of every team the affiliate belongs to. A match blocks the referral
+(`self_referral:same_card`), ends the discount, reverses commission already earned on that
+customer and flags the affiliate.
 
 ## Configuration
 

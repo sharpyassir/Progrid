@@ -10,6 +10,7 @@ import { MoyasarProvider } from './moyasar.provider';
 import { FakeProvider } from './fake.provider';
 import { StripeProvider } from './stripe.provider';
 import { TrustService } from '../../trust/trust.service';
+import { CommissionService } from '../../affiliates/commission.service';
 
 /** A pending checkout younger than this is handed out again instead of starting a second one. */
 const PENDING_REUSE_MS = 30 * 60_000;
@@ -26,7 +27,7 @@ export class PaymentsService {
   private readonly log = new Logger(PaymentsService.name);
   private readonly providers: Record<CardProvider, PaymentProvider> = { moyasar: new MoyasarProvider(), stripe: new StripeProvider(), fake: new FakeProvider() };
 
-  constructor(private readonly prisma: PrismaService, private readonly events: EventsService, private readonly trust: TrustService) {}
+  constructor(private readonly prisma: PrismaService, private readonly events: EventsService, private readonly trust: TrustService, private readonly commissions: CommissionService) {}
 
   /** The adapter that took a stored payment (for refunds). */
   providerByName(name: ProviderName): PaymentProvider | undefined {
@@ -82,6 +83,11 @@ export class PaymentsService {
     const events = await this.providers[provider].parseEvent(rawBody, headers, query);
     const out: { paymentId: string; status: string; successUrl?: string; cancelUrl?: string }[] = [];
     for (const ev of events) {
+      if (ev.status === 'disputed') {
+        // A chargeback or dispute opened at the provider (Stripe charge.dispute.created).
+        if (ev.paymentId) await this.recordDispute(ev.paymentId, ev.reason);
+        continue;
+      }
       const p = await this.prisma.payment.findFirst({ where: { provider, providerRef: ev.providerRef }, include: { invoice: true } });
       if (!p) { this.log.warn(`${provider} event for unknown payment ${ev.providerRef}`); continue; }
       const meta = (p.metadata ?? {}) as { successUrl?: string; cancelUrl?: string };
@@ -117,6 +123,7 @@ export class PaymentsService {
         // A paid invoice or fresh credit lifts a team that was suspended for non payment.
         await this.liftBillingSuspension(p.teamId);
         await this.events.emit(p.invoiceId ? 'invoice.paid' : 'payment.succeeded', { paymentId: p.id, invoiceId: p.invoiceId, amountMinor: p.amountMinor, currency: p.currency }, { teamId: p.teamId, resource: `payment:${p.id}` });
+        await this.commissions.onInvoicePaid(p.invoiceId);
       } else {
         await this.prisma.payment.updateMany({ where: { id: p.id, status: 'pending' }, data: { status: 'failed', failureReason: ev.reason } });
         await this.events.emit('payment.failed', { paymentId: p.id, invoiceId: p.invoiceId, reason: ev.reason }, { teamId: p.teamId, resource: `payment:${p.id}` });
@@ -124,6 +131,19 @@ export class PaymentsService {
       out.push({ paymentId: p.id, status: ev.status, ...meta });
     }
     return out;
+  }
+
+  /**
+   * A chargeback or dispute on a payment, from the provider or marked by finance staff (Moyasar
+   * has no dispute webhook). Recorded once; affiliate commission on its invoice is reversed.
+   */
+  async recordDispute(paymentId: string, reason?: string) {
+    const r = await this.prisma.payment.updateMany({ where: { id: paymentId, disputedAt: null }, data: { disputedAt: new Date() } });
+    if (!r.count) return false;
+    const p = await this.prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
+    await this.events.emit('payment.disputed', { paymentId, invoiceId: p.invoiceId, amountMinor: p.amountMinor, currency: p.currency, reason }, { teamId: p.teamId, resource: `payment:${p.id}` });
+    await this.commissions.onChargeback(paymentId);
+    return true;
   }
 
   /** Called after money arrives or a debt is settled another way: lifts a suspension for non payment and powers servers back on. */

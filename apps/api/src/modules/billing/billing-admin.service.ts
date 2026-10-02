@@ -6,6 +6,7 @@ import type { Actor } from '../../common/auth/actor';
 import { EventsService } from '../events/events.service';
 import { PaymentsService } from './payments/payments.service';
 import { entityCreditNoteNumber, entityProfile } from '../../common/entities/entities';
+import { CommissionService } from '../affiliates/commission.service';
 
 /**
  * Back office money operations: card refunds, credit notes, void, payments received outside
@@ -15,7 +16,7 @@ import { entityCreditNoteNumber, entityProfile } from '../../common/entities/ent
 export class BillingAdminService {
   private readonly log = new Logger(BillingAdminService.name);
 
-  constructor(private readonly prisma: PrismaService, private readonly events: EventsService, private readonly payments: PaymentsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly events: EventsService, private readonly payments: PaymentsService, private readonly commissions: CommissionService) {}
 
   listInvoices(status?: string, billingEntity?: string) {
     return this.prisma.invoice.findMany({
@@ -64,6 +65,7 @@ export class BillingAdminService {
       throw err;
     }
     await this.events.emit('payment.refunded', { paymentId: p.id, invoiceId: p.invoiceId, amountMinor: amount, currency: p.currency, refundRef: r.refundRef, reason }, { actor, teamId: p.teamId, resource: `payment:${p.id}` });
+    await this.commissions.onRefund(p.invoiceId, amount, `refund: ${reason ?? 'card refund'}`);
     return this.prisma.payment.findUniqueOrThrow({ where: { id: p.id } });
   }
 
@@ -98,6 +100,7 @@ export class BillingAdminService {
       return { note, inv, fully };
     });
     await this.events.emit('invoice.credited', { invoiceId, creditNoteId: out.note.id, number: out.note.number, amountMinor, currency: out.note.currency, fully: out.fully }, { actor, teamId: out.inv.teamId, resource: `invoice:${invoiceId}` });
+    await this.commissions.onCreditNote(invoiceId, amountMinor, `credit note ${out.note.number}: ${reason}`);
     if (out.fully) await this.payments.liftBillingSuspension(out.inv.teamId);
     return out.note;
   }
@@ -139,6 +142,7 @@ export class BillingAdminService {
       return { payment, inv };
     });
     await this.events.emit('invoice.paid', { paymentId: out.payment.id, invoiceId, amountMinor: out.payment.amountMinor, currency: out.payment.currency, provider: input.provider }, { actor, teamId: out.inv.teamId, resource: `payment:${out.payment.id}` });
+    await this.commissions.onInvoicePaid(invoiceId);
     await this.payments.liftBillingSuspension(out.inv.teamId);
     return out.payment;
   }

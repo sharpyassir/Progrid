@@ -113,27 +113,31 @@ export class PortalService {
     const from = q.from ? startOfDay(q.from) : new Date(to.getTime() - 30 * 86_400_000);
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to) throw ApiError.invalid('Invalid date range');
     const range = { gte: from, lte: to };
-    const [clicks, signups, paying, inRange, all, s] = await Promise.all([
+    const [clicks, signups, paying, inRange, all, s, payouts] = await Promise.all([
       this.prisma.affiliateClick.count({ where: { affiliateId: a.id, at: range } }),
       this.prisma.referral.count({ where: { affiliateId: a.id, status: 'active', attributedAt: range } }),
       this.prisma.referral.count({ where: { affiliateId: a.id, status: 'active', team: { invoices: { some: { status: 'paid', totalMinor: { gt: 0 }, paidAt: range } } } } }),
       this.prisma.affiliateCommission.findMany({ where: { affiliateId: a.id, createdAt: range }, select: { currency: true, status: true, amountMinor: true, reversedMinor: true } }),
-      this.prisma.affiliateCommission.findMany({ where: { affiliateId: a.id }, select: { currency: true, status: true, amountMinor: true, reversedMinor: true, payoutId: true, payout: { select: { status: true } } } }),
+      this.prisma.affiliateCommission.findMany({ where: { affiliateId: a.id, OR: [{ status: 'pending' }, { status: 'approved', payoutId: null }] }, select: { currency: true, status: true, amountMinor: true, reversedMinor: true } }),
       this.settings.get(),
+      this.prisma.affiliatePayout.groupBy({ by: ['currency', 'status'], where: { affiliateId: a.id }, _sum: { amountMinor: true } }),
     ]);
+    // Clawbacks (negative rows) are counted through reversedMinor on the commission they reverse.
     const commissions = Object.fromEntries(CURRENCIES.map((c) => {
-      const rows = inRange.filter((r) => r.currency === c);
+      const rows = inRange.filter((r) => r.currency === c && r.amountMinor > 0);
       const sum = (st: string) => rows.filter((r) => r.status === st).reduce((t, r) => t + r.amountMinor - r.reversedMinor, 0);
-      return [c, { pending: sum('pending'), approved: sum('approved'), paid: sum('paid'), reversed: rows.reduce((t, r) => t + r.reversedMinor, 0) }];
+      return [c, { pending: sum('pending'), approved: sum('approved'), paid: rows.filter((r) => r.status === 'paid').reduce((t, r) => t + r.amountMinor, 0), reversed: rows.reduce((t, r) => t + r.reversedMinor, 0) }];
     }));
     const balances = Object.fromEntries(CURRENCIES.map((c) => {
       const rows = all.filter((r) => r.currency === c);
       const net = (r: (typeof rows)[number]) => r.amountMinor - r.reversedMinor;
+      const payout = (st: string) => payouts.find((p) => p.currency === c && p.status === st)?._sum.amountMinor ?? 0;
       return [c, {
         pending: rows.filter((r) => r.status === 'pending').reduce((t, r) => t + net(r), 0),
-        available: rows.filter((r) => r.status === 'approved' && !r.payoutId).reduce((t, r) => t + net(r), 0),
-        requested: rows.filter((r) => r.status === 'approved' && r.payout?.status === 'requested').reduce((t, r) => t + net(r), 0),
-        paidOut: rows.filter((r) => r.status === 'paid').reduce((t, r) => t + net(r), 0),
+        // Ready to pay out, after any clawback of commission reversed after it was paid.
+        available: rows.filter((r) => r.status === 'approved').reduce((t, r) => t + net(r), 0),
+        requested: payout('requested'),
+        paidOut: payout('paid'),
         minPayoutMinor: s.minPayoutMinor[c as 'USD' | 'SAR'],
       }];
     }));

@@ -897,30 +897,35 @@ enum InvoiceStatus {
 }
 
 model Invoice {
-  id             String        @id @default(cuid())
-  teamId         String
-  number         String        @unique // "PRGD-SA-2026-00001" or "PRGD-US-2026-00001"; older invoices "PRGD-2026-000123"
+  id                 String        @id @default(cuid())
+  teamId             String
+  number             String        @unique // "PRGD-SA-2026-00001" or "PRGD-US-2026-00001"; older invoices "PRGD-2026-000123"
   /// The company that issued it. Fixed at issue time; later entity changes never touch it.
-  billingEntity  BillingEntity @default(progrid_arabia)
-  currency       Currency
-  periodStart    DateTime
-  periodEnd      DateTime
-  subtotalMinor  Int
-  taxMinor       Int           @default(0) // VAT 15% for SA
-  creditMinor    Int           @default(0)
-  totalMinor     Int
+  billingEntity      BillingEntity @default(progrid_arabia)
+  currency           Currency
+  periodStart        DateTime
+  periodEnd          DateTime
+  /// Taxable amount: usage minus discountMinor.
+  subtotalMinor      Int
+  /// Partner promo code discount taken off the usage before tax (docs/affiliates.md). Usage = subtotal + discount.
+  discountMinor      Int           @default(0)
+  taxMinor           Int           @default(0) // VAT 15% for SA
+  creditMinor        Int           @default(0)
+  totalMinor         Int
   /// Credit notes applied against what is still due (open invoices only). Due = totalMinor - creditedMinor.
-  creditedMinor  Int           @default(0)
-  status         InvoiceStatus @default(draft)
-  eInvoiceId     String? // ZATCA e-invoicing provider reference
-  eInvoiceType   String? // "zatca" for Saudi teams (Fatoora), null otherwise
-  dueAt          DateTime?
-  paidAt         DateTime?
-  voidedAt       DateTime?
+  creditedMinor      Int           @default(0)
+  status             InvoiceStatus @default(draft)
+  eInvoiceId         String? // ZATCA e-invoicing provider reference
+  eInvoiceType       String? // "zatca" for Saudi teams (Fatoora), null otherwise
+  dueAt              DateTime?
+  paidAt             DateTime?
+  voidedAt           DateTime?
   /// Last overdue reminder sent: 0 none, then 3, 7 or 14 days past dueAt. At 14 the team is suspended.
-  reminderStage  Int           @default(0)
-  lastReminderAt DateTime?
-  createdAt      DateTime      @default(now())
+  reminderStage      Int           @default(0)
+  lastReminderAt     DateTime?
+  /// When affiliate commission for this paid invoice was worked out (none, or rows in prgd_affiliate_commissions).
+  affiliateCheckedAt DateTime?
+  createdAt          DateTime      @default(now())
 
   team                 Team                  @relation(fields: [teamId], references: [id])
   records              UsageRecord[]
@@ -3575,7 +3580,8 @@ model AffiliateCommission {
   affiliateId    String
   referralId     String
   invoiceId      String
-  /// web_hosting | connect | servers | managed_cloud | ai_usage | support (affiliates/categories.ts)
+  /// web_hosting | connect | servers | managed_cloud | ai_usage | support (affiliates/categories.ts).
+  /// A clawback of commission reversed after it was paid out is `<category>:clawback:<n>` with a negative amount.
   category       String
   currency       Currency
   /// Net of tax, discounts and non cash credit.

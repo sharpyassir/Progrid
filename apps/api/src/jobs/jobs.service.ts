@@ -27,6 +27,7 @@ import { MaintenanceService } from '../modules/managed/maintenance/maintenance.s
 import { ReportsService } from '../modules/managed/reports/reports.service';
 import { SessionsService } from '../modules/ops/sessions/sessions.service';
 import { PayoutsService } from '../modules/ops/payouts/payouts.service';
+import { CommissionService } from '../modules/affiliates/commission.service';
 
 /**
  * Periodic jobs. Each takes a Redis lock so only one API replica runs it.
@@ -64,6 +65,7 @@ export class JobsService {
     private readonly reports: ReportsService,
     private readonly opsSessions: SessionsService,
     private readonly opsPayouts: PayoutsService,
+    private readonly commissions: CommissionService,
   ) {}
 
   @Cron('50 * * * * *') // every minute at :50: database roles, lag, backup results, config retries
@@ -109,6 +111,16 @@ export class JobsService {
   @Cron(CronExpression.EVERY_MINUTE)
   fallbackMeter() {
     return this.locked('fallback-meter', 50_000, () => this.metering.tickFallback());
+  }
+
+  @Cron('0 */15 * * * *') // every fifteen minutes: affiliate commission on paid invoices the payment hook missed
+  affiliateEarn() {
+    return this.locked('affiliate-earn', 14 * 60_000, () => this.commissions.earnPending());
+  }
+
+  @Cron('0 20 3 * * *') // 03:20 UTC daily: affiliate commission past its hold period becomes payable
+  affiliateApprove() {
+    return this.locked('affiliate-approve', 30 * 60_000, () => this.commissions.approveDue());
   }
 
   @Cron('5 * * * *') // five past every hour

@@ -6,7 +6,7 @@ import type { CheckoutInput, CheckoutResult, PaymentEvent, PaymentProvider, Refu
 interface StripeSession { id: string; url?: string | null; status?: string; payment_status?: string; amount_total?: number | null; currency?: string | null; payment_intent?: string | null }
 /** The session with `expand[]=payment_intent.payment_method`. */
 interface StripeSessionExpanded extends Omit<StripeSession, 'payment_intent'> { payment_intent?: { id: string; payment_method?: { card?: { fingerprint?: string } } | string | null } | string | null }
-interface StripeEvent { type?: string; data?: { object?: { id?: string; object?: string } } }
+interface StripeEvent { type?: string; data?: { object?: { id?: string; object?: string; payment_intent?: string | null; reason?: string } } }
 
 /** Seconds a signed webhook stays valid, as in Stripe's own libraries. */
 const SIGNATURE_TOLERANCE_S = 300;
@@ -48,6 +48,14 @@ export class StripeProvider implements PaymentProvider {
     if (signature !== undefined) {
       verifySignature(rawBody, signature, loadConfig().STRIPE_WEBHOOK_SECRET ?? '');
       const ev = JSON.parse(rawBody.toString('utf8')) as StripeEvent;
+      // A chargeback: the payment intent carries our payment id in its metadata.
+      if (ev.type === 'charge.dispute.created' && ev.data?.object?.object === 'dispute') {
+        const pi = ev.data.object.payment_intent;
+        if (!pi || !/^pi_[A-Za-z0-9_]+$/.test(pi)) return [];
+        const intent = await this.call<{ id: string; metadata?: Record<string, string> }>('GET', `/v1/payment_intents/${pi}`);
+        const paymentId = intent.metadata?.paymentId;
+        return paymentId ? [{ providerRef: pi, status: 'disputed', paymentId, reason: ev.data.object.reason }] : [];
+      }
       if (!ev.type?.startsWith('checkout.session.') || ev.data?.object?.object !== 'checkout.session') return [];
       sessionId = ev.data.object.id;
     } else if (query?.session_id) {

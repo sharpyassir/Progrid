@@ -104,6 +104,11 @@ export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageReco
     doc.moveTo(300, y).lineTo(545, y).strokeColor('#cbd5e1').stroke();
     y += 8;
     const total = (label: string, v: string, strong = false) => { doc.font(strong ? bold : regular).text(label, 300, y, { width: 150 }).text(v, 450, y, { width: 95, align: 'right' }); y += 16; };
+    if (inv.discountMinor) {
+      // Partner promo code: a percentage off the usage before tax.
+      total('Usage', money(inv.subtotalMinor + inv.discountMinor));
+      total(`Promo code discount (${Math.round((inv.discountMinor / (inv.subtotalMinor + inv.discountMinor)) * 100)}%)`, `-${money(inv.discountMinor)}`);
+    }
     total('Subtotal', money(inv.subtotalMinor));
     // The rate in force when it was issued: tax divided by the subtotal, to the nearest tenth of a percent.
     if (inv.taxMinor) total(`${e.taxLabel} (${Math.round((inv.taxMinor / Math.max(inv.subtotalMinor, 1)) * 1000) / 10}%)`, money(inv.taxMinor));
