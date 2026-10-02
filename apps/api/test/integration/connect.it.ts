@@ -1,7 +1,9 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createHmac } from 'node:crypto';
 import { Client, readyTeam, signup, sut, totp, waitFor, waitStatus, type Sut, type Team } from './harness';
+import { Client as TemporalClient, Connection } from '@temporalio/client';
 import { ConnectUsageService } from '../../src/modules/connect/usage.service';
+import { RunsService } from '../../src/modules/connect/runs.service';
 import { startOfHour } from '../../src/modules/billing/pricing';
 
 /**
@@ -355,6 +357,33 @@ describe('Connect deploy and public API', () => {
     const rotated = await c.ok('POST', `/v1/connect/agents/${agent.id}/webhooks/${hook.id}/rotate`, {}, 200);
     expect(rotated.token).not.toBe(hook.token);
     expect((await post(path, body, { 'x-prgd-signature': `t=${t},v1=${sig}` })).status).toBe(404);
+  });
+});
+
+describe('Connect schedules', () => {
+  it('runs a schedule trigger as a Temporal cron workflow while deployed', async () => {
+    const c = owner.client;
+    const agent = await c.ok('POST', '/v1/connect/agents', { name: 'Watcher', templateSlug: 'monitoring' }, 201);
+    await c.ok('POST', `/v1/connect/agents/${agent.id}/deploy`, {}, 200);
+    const connection = await Connection.connect({ address: process.env.TEMPORAL_ADDRESS ?? 'localhost:7233' });
+    try {
+      const temporal = new TemporalClient({ connection, namespace: 'default' });
+      const handle = temporal.workflow.getHandle(`connect-schedule-${agent.id}`);
+      const running = await handle.describe();
+      expect(running.status.name).toBe('RUNNING');
+
+      // One firing: the agent checks, the condition sees "ok" and the run ends without an alert.
+      const runId = await s.get(RunsService).scheduled(agent.id);
+      const run = await c.ok('GET', `/v1/connect/runs/${runId}`);
+      expect(run).toMatchObject({ source: 'schedule', status: 'succeeded', version: 1, workflow: true });
+      expect(run.steps.find((x: { type: string }) => x.type === 'condition').output).toEqual({ result: false });
+
+      await c.ok('POST', `/v1/connect/agents/${agent.id}/pause`, {}, 200);
+      await waitFor(async () => (await handle.describe()).status.name === 'TERMINATED', { what: 'schedule to stop', timeoutMs: 10_000 });
+      expect(await s.get(RunsService).scheduled(agent.id)).toMatch(/^skipped/);
+    } finally {
+      await connection.close();
+    }
   });
 });
 
