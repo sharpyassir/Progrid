@@ -171,7 +171,30 @@ Webhook payloads are treated as untrusted data: the agent is told never to follo
 
 **Logs** lists every run of every agent with status, source, duration, tokens and errors, and opens the full step timeline.
 
-**Usage** shows the month: executions, workflow executions, AI tokens in and out, cached tokens, tool calls, API calls, compute time and stored log data, per agent and per day, with an estimated cost when Connect pricing applies to your account. Usage is billed with the rest of your Progrid usage, and your project spend limits apply: a run that would pass the limit is refused with `402`.
+**Usage** shows the month: executions, workflow executions, AI tokens in and out, cache reads and writes, tool calls, API calls, compute time and stored log data. It breaks this down per agent, per model and per day, with the estimated cost. Usage is billed with the rest of your Progrid usage, and your project spend limits apply. A run that would pass the limit is refused with `402`.
+
+## Pricing
+
+Connect is pay as you go. There is no monthly fee and no monthly minimum. Prices are in Saudi riyals and exclude 15% VAT. Teams billed in US dollars pay the same prices converted at the pegged rate of 3.75 riyals per dollar.
+
+| What | Price |
+|---|---|
+| Execution (one agent run or one workflow execution) | SAR 0.04 |
+| Tool call (each API, database, email, notification or Progrid action) | SAR 0.02 |
+
+AI tokens are priced per model, per 1M tokens:
+
+| Model | Input | Output | Cache read | Cache write |
+|---|---|---|---|---|
+| Claude Opus 5.5 | SAR 18.00 | SAR 90.00 | SAR 0.90 | SAR 22.50 |
+| Claude Sonnet 5.5 | SAR 9.00 | SAR 45.00 | SAR 0.90 | SAR 11.25 |
+| Claude Haiku 4.5 | SAR 4.50 | SAR 22.50 | SAR 0.45 | SAR 5.625 |
+
+Connect caches the platform preamble, the agent instructions and the tool list, so calls after the first read them from the cache for a small part of the input price. Writing to the cache costs 1.25 times the input price.
+
+Each run shows its estimated cost in the Test tab, the run view and the logs. `GET /v1/connect/models` returns each model's prices in your currency, and `GET /v1/connect/usage` returns the month's estimate.
+
+**Example.** One Claude Opus 5.5 run with 12,000 input tokens, 1,500 output tokens, 40,000 cache read tokens, 8,000 cache write tokens and 2 tool calls costs SAR 0.04 + 2 × 0.02 + 0.216 + 0.135 + 0.036 + 0.18 = SAR 0.647, plus VAT.
 
 ## Permissions
 

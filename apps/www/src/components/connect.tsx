@@ -10,8 +10,25 @@ interface ConnectCopy {
   howEyebrow: string; howH2: string; steps: [string, string][];
   capEyebrow: string; capH2: string; capLead: string; caps: [string, string, string][];
   devEyebrow: string; devH2: string; devLead: string; devPoints: [string, string][];
+  priceEyebrow: string; priceH2: string; priceLead: string;
+  perExecution: string; executionNote: string; perToolCall: string; toolCallNote: string;
+  tokensH3: string; tokenCols: [string, string, string, string, string]; vatNote: string; cacheNote: string;
   ctaH2: string; ctaLead: string;
 }
+
+/**
+ * Launch prices in halalas, excluding VAT. They mirror the price book the API seeds
+ * (apps/api/src/modules/connect/pricing.ts). Tokens: Anthropic list price plus 20%, per 1M.
+ */
+const PRICES = {
+  executionMinor: 4,
+  toolCallMinor: 2,
+  models: [
+    { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', input: 1800, output: 9000, cacheRead: 90, cacheWrite: 2250 },
+    { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', input: 900, output: 4500, cacheRead: 90, cacheWrite: 1125 },
+    { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', input: 450, output: 2250, cacheRead: 45, cacheWrite: 562.5 },
+  ],
+};
 
 const COPY: Record<Lang, ConnectCopy> = {
   en: {
@@ -51,6 +68,13 @@ const COPY: Record<Lang, ConnectCopy> = {
       ['Safe by default', 'Secrets are write-only, database access is read only, and risky actions need approval.'],
       ['Sync or async', 'Wait for the answer, or get a run ID at once and poll for the result.'],
     ],
+    priceEyebrow: 'Pricing', priceH2: 'Pay only for what your agents use.',
+    priceLead: 'Pay as you go. No monthly minimum. Every test and every run shows its estimated cost.',
+    perExecution: 'per execution', executionNote: 'One agent run or one workflow execution.',
+    perToolCall: 'per tool call', toolCallNote: 'Each API, database, email, notification or Progrid action an agent runs.',
+    tokensH3: 'AI tokens, per 1M tokens', tokenCols: ['Model', 'Input', 'Output', 'Cache read', 'Cache write'],
+    vatNote: 'Prices are in Saudi riyals and exclude 15% VAT.',
+    cacheNote: 'Cache reads and writes come from prompt caching. It makes instructions that repeat on every call much cheaper.',
     ctaH2: 'Build your first agent today.', ctaLead: 'Progrid Connect is part of your Progrid account. Usage is metered per run, and your project spend limit applies.',
   },
   tr: {
@@ -90,6 +114,13 @@ const COPY: Record<Lang, ConnectCopy> = {
       ['Varsayılan olarak güvenli', 'Gizli değerler yalnızca yazılabilir, veritabanı erişimi salt okunur, riskli işlemler onay ister.'],
       ['Senkron ya da asenkron', 'Yanıtı bekle ya da hemen bir çalışma kimliği al ve sonucu sorgula.'],
     ],
+    priceEyebrow: 'Fiyatlandırma', priceH2: 'Yalnızca ajanlarının kullandığı kadar öde.',
+    priceLead: 'Kullandıkça öde. Aylık minimum yok. Her test ve her çalışma tahmini maliyetini gösterir.',
+    perExecution: 'çalışma başına', executionNote: 'Bir ajan çalışması veya bir iş akışı çalışması.',
+    perToolCall: 'araç çağrısı başına', toolCallNote: 'Ajanın çalıştırdığı her API, veritabanı, e-posta, bildirim veya Progrid işlemi.',
+    tokensH3: 'Yapay zekâ tokenları, 1 milyon token başına', tokenCols: ['Model', 'Giriş', 'Çıkış', 'Önbellekten okuma', 'Önbelleğe yazma'],
+    vatNote: 'Fiyatlar Suudi riyali cinsindendir ve %15 KDV hariçtir.',
+    cacheNote: 'Önbellekten okuma ve önbelleğe yazma, istem önbelleklemesinden gelir. Her çağrıda tekrar eden talimatları çok daha ucuz hale getirir.',
     ctaH2: 'İlk ajanını bugün oluştur.', ctaLead: 'Progrid Connect, Progrid hesabının bir parçasıdır. Kullanım çalışma başına ölçülür ve proje harcama sınırın geçerlidir.',
   },
   ar: {
@@ -129,6 +160,13 @@ const COPY: Record<Lang, ConnectCopy> = {
       ['آمن افتراضيًا', 'القيم السرية للكتابة فقط، والوصول لقواعد البيانات للقراءة فقط، والإجراءات الحساسة تحتاج موافقة.'],
       ['متزامن أو غير متزامن', 'انتظر الرد، أو خذ معرّف التشغيل فورًا وتابع النتيجة.'],
     ],
+    priceEyebrow: 'الأسعار', priceH2: 'ادفع فقط مقابل ما يستخدمه وكلاؤك.',
+    priceLead: 'الدفع حسب الاستخدام. بدون حد أدنى شهري. كل اختبار وكل تشغيل يعرض تكلفته التقديرية.',
+    perExecution: 'لكل تشغيل', executionNote: 'تشغيل وكيل واحد أو تنفيذ سير عمل واحد.',
+    perToolCall: 'لكل استدعاء أداة', toolCallNote: 'كل عملية API أو قاعدة بيانات أو بريد أو إشعار أو Progrid ينفذها الوكيل.',
+    tokensH3: 'رموز الذكاء الاصطناعي، لكل مليون رمز', tokenCols: ['النموذج', 'الإدخال', 'الإخراج', 'القراءة من الذاكرة المؤقتة', 'الكتابة في الذاكرة المؤقتة'],
+    vatNote: 'الأسعار بالريال السعودي ولا تشمل ضريبة القيمة المضافة 15%.',
+    cacheNote: 'القراءة والكتابة في الذاكرة المؤقتة تأتي من التخزين المؤقت للتعليمات. يجعل التعليمات التي تتكرر في كل استدعاء أرخص بكثير.',
     ctaH2: 'ابنِ أول وكيل لك اليوم.', ctaLead: 'Progrid Connect جزء من حسابك في Progrid. الاستخدام يُحتسب لكل تشغيل، وحد الصرف لمشروعك يسري عليه.',
   },
 };
@@ -153,6 +191,7 @@ const RESPONSE = `{
 
 export function ConnectPage({ lang }: { lang: Lang }) {
   const c = COPY[lang];
+  const sar = (minor: number) => new Intl.NumberFormat(lang === 'ar' ? 'ar-SA' : 'en-US', { style: 'currency', currency: 'SAR', minimumFractionDigits: 2, maximumFractionDigits: 3 }).format(minor / 100);
   return (
     <LangProvider lang={lang}>
       <Header />
@@ -220,6 +259,41 @@ export function ConnectPage({ lang }: { lang: Lang }) {
               <pre className="code overflow-x-auto text-start"><code>{SAMPLE}</code></pre>
               <pre className="code overflow-x-auto text-start"><code>{RESPONSE}</code></pre>
             </div>
+          </div>
+        </section>
+
+        <section id="pricing" className="bg-slate-50 py-20">
+          <div className="container-x">
+            <span className="eyebrow">{c.priceEyebrow}</span>
+            <h2 className="h2">{c.priceH2}</h2>
+            <p className="lead">{c.priceLead}</p>
+            <div className="mt-10 grid gap-4 sm:grid-cols-2">
+              {([[PRICES.executionMinor, c.perExecution, c.executionNote], [PRICES.toolCallMinor, c.perToolCall, c.toolCallNote]] as const).map(([minor, unit, note]) => (
+                <div key={unit} className="card">
+                  <div className="text-3xl font-bold tabular-nums">{sar(minor)}</div>
+                  <div className="mt-1 text-sm font-medium text-slate-700">{unit}</div>
+                  <p className="mt-2 text-sm text-slate-600">{note}</p>
+                </div>
+              ))}
+            </div>
+            <h3 className="mt-10 text-lg font-semibold">{c.tokensH3}</h3>
+            <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+              <table className="w-full min-w-[36rem] text-sm">
+                <thead className="bg-slate-50 text-slate-600">
+                  <tr>{c.tokenCols.map((h, i) => <th key={h} scope="col" className={`px-4 py-3 font-medium ${i ? 'text-end' : 'text-start'}`}>{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {PRICES.models.map((m) => (
+                    <tr key={m.id} className="border-t border-slate-100">
+                      <th scope="row" className="px-4 py-3 text-start font-medium" dir="ltr">{m.label}</th>
+                      {[m.input, m.output, m.cacheRead, m.cacheWrite].map((v, i) => <td key={i} className="px-4 py-3 text-end tabular-nums">{sar(v)}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-4 text-sm text-slate-600">{c.vatNote}</p>
+            <p className="mt-1 text-sm text-slate-500">{c.cacheNote}</p>
           </div>
         </section>
 
