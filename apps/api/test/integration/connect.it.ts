@@ -535,7 +535,8 @@ describe('Connect usage, billing and back office', () => {
     const finance = await staff(['finance']);
     const prices = await finance.client.ok('GET', '/admin/v1/prices');
     const connect = Object.fromEntries(prices.data.filter((p: { sku: string }) => p.sku.startsWith('connect-')).map((p: { sku: string; monthlyMinor: number; unit: string }) => [p.sku, [p.monthlyMinor, p.unit]]));
-    expect(Object.keys(connect)).toHaveLength(17);
+    expect(Object.keys(connect)).toHaveLength(27);
+    expect(connect['connect-ai-output-tokens:claude-opus-5']).toEqual([112500, 'per_10m']);
     expect(connect['connect-executions']).toEqual([4000, 'per_1k']);
     expect(connect['connect-tool-calls']).toEqual([2000, 'per_1k']);
     expect(connect['connect-ai-input-tokens:claude-opus-5-5']).toEqual([18000, 'per_10m']);
@@ -586,9 +587,22 @@ describe('Connect usage, billing and back office', () => {
     // Two model calls and one tool call on Haiku 4.5: 4 + 2 + 2 x (5.4 + 3.375 + 1.8 + 4.5) = 36.15 halalas.
     expect(two.costEstimateMinor).toBe(36);
 
+    // A refusal fallback: the declined Opus 5.5 attempt and the Claude Opus 5 answer are each billed at their own model's prices.
+    const fb = await c.ok('POST', `/v1/connect/agents/${opus.id}/test`, { message: `Hello fake:fallback ${known}` }, 200);
+    expect(fb.status).toBe('succeeded');
+    const each = { input: 12000, output: 1500, cacheRead: 40000, cacheWrite: 8000, cacheWrite1h: 0 };
+    expect(fb.usage.byModel).toEqual({ 'claude-opus-5-5': each, 'claude-opus-5': each });
+    expect(fb.usage).toMatchObject({ inputTokens: 24000, outputTokens: 3000, cacheReadTokens: 80000, cacheWriteTokens: 16000 });
+    // 4 + 56.7 (Opus 5.5) + 12k x 22.50 + 1.5k x 112.50 + 40k x 2.25 + 8k x 28.125 per 1M (75.375, Opus 5) = 136.075 halalas.
+    expect(fb.costEstimateMinor).toBe(136);
+    const fbRun = await s.prisma.connectRun.findUniqueOrThrow({ where: { id: fb.id } });
+    // Cost basis in micro dollars: Opus 5.5 at $4/$20/$0.20/$5, Opus 5 at $5/$25/$0.50/$6.25.
+    expect(fbRun.providerCostMicroUsd).toBe(12000 * 4 + 1500 * 20 + 40000 * 0.2 + 8000 * 5 + (12000 * 5 + 1500 * 25 + 40000 * 0.5 + 8000 * 6.25));
+
     const usage = await c.ok('GET', '/v1/connect/usage');
-    expect(usage.estimatedCostMinor).toBe(97); // 60.7 + 36.15 = 96.85
-    expect(usage.byModel.map((m: { model: string; estimatedCostMinor: number }) => [m.model, m.estimatedCostMinor])).toEqual([['claude-opus-5-5', 57], ['claude-haiku-4-5', 30]]);
+    expect(usage.estimatedCostMinor).toBe(233); // 60.7 + 36.15 + 136.075 = 232.925
+
+    expect(usage.byModel.map((m: { model: string; estimatedCostMinor: number }) => [m.model, m.estimatedCostMinor])).toEqual([['claude-opus-5-5', 113], ['claude-opus-5', 75], ['claude-haiku-4-5', 30]]);
     expect(usage.byModel.find((m: { model: string }) => m.model === 'claude-haiku-4-5')).toMatchObject({ aiInputTokens: 24000, aiOutputTokens: 3000, aiCacheReadTokens: 80000, aiCacheWriteTokens: 16000 });
 
     // Metering: one rated record per SKU, tokens per agent and model.
@@ -596,11 +610,15 @@ describe('Connect usage, billing and back office', () => {
     const records = await s.prisma.usageRecord.findMany({ where: { projectId: team.projectId } });
     const rec = Object.fromEntries(records.map((r) => [`${r.resourceType} ${r.resourceId.replace(opus.id, 'opus').replace(haiku.id, 'haiku')}`, [r.quantity, r.amountMinor, r.currency]]));
     expect(rec).toEqual({
-      'connect_execution opus': [1, 4, 'SAR'],
-      'connect_ai_input opus:claude-opus-5-5': [12000, 22, 'SAR'],
-      'connect_ai_output opus:claude-opus-5-5': [1500, 14, 'SAR'],
-      'connect_ai_cache_read opus:claude-opus-5-5': [40000, 4, 'SAR'],
-      'connect_ai_cache_write opus:claude-opus-5-5': [8000, 18, 'SAR'],
+      'connect_execution opus': [2, 8, 'SAR'],
+      'connect_ai_input opus:claude-opus-5-5': [24000, 43, 'SAR'],
+      'connect_ai_output opus:claude-opus-5-5': [3000, 27, 'SAR'],
+      'connect_ai_cache_read opus:claude-opus-5-5': [80000, 7, 'SAR'],
+      'connect_ai_cache_write opus:claude-opus-5-5': [16000, 36, 'SAR'],
+      'connect_ai_input opus:claude-opus-5': [12000, 27, 'SAR'],
+      'connect_ai_output opus:claude-opus-5': [1500, 17, 'SAR'],
+      'connect_ai_cache_read opus:claude-opus-5': [40000, 9, 'SAR'],
+      'connect_ai_cache_write opus:claude-opus-5': [8000, 23, 'SAR'],
       'connect_execution haiku': [1, 4, 'SAR'],
       'connect_tool_call haiku': [1, 2, 'SAR'],
       'connect_ai_input haiku:claude-haiku-4-5': [24000, 11, 'SAR'],

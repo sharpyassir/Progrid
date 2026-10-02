@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FakeProvider, sample } from './fake.provider';
-import { AnthropicProvider, FALLBACK_BETA, assertPricedParams } from './anthropic.provider';
+import { AnthropicProvider, FALLBACK_BETA, assertPricedParams, attemptsOf } from './anthropic.provider';
 import { MODELS, billingModel, providerCostMicroUsd } from './catalog';
 import { echoable, type ModelProvider, type ModelRequest, type ModelResponse, type ModelTool, type ToolUse } from './provider';
 import { initialState, runAgentLoop, type ToolOutcome } from '../runtime/agent-loop';
@@ -202,6 +202,35 @@ describe('Anthropic request shape', () => {
     expect(() => assertPricedParams({ ...ok, tools: [{ type: 'custom', name: 'x', input_schema: { type: 'object' } }] })).not.toThrow();
   });
 
+  it('bills every attempt of a refusal fallback to the model that ran it', async () => {
+    // Opus 5.5 declines after some output; Opus 5 answers. Top level usage covers only the answer.
+    const usage = {
+      input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 0, cache_creation_input_tokens: 500, cache_creation: { ephemeral_5m_input_tokens: 500, ephemeral_1h_input_tokens: 0 },
+      iterations: [
+        { type: 'message', model: null, input_tokens: 1000, output_tokens: 50, cache_read_input_tokens: 3000, cache_creation_input_tokens: 0, cache_creation: null },
+        { type: 'fallback_message', model: 'claude-opus-5', input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 0, cache_creation_input_tokens: 500, cache_creation: { ephemeral_5m_input_tokens: 500, ephemeral_1h_input_tokens: 0 } },
+      ],
+    };
+    const fake = new AnthropicProvider('sk-test', { fallbacks: true, maxRetries: 0 });
+    (fake as unknown as { client: unknown }).client = { beta: { messages: { create: async () => ({ content: [{ type: 'fallback', from: { model: 'claude-opus-5-5' }, to: { model: 'claude-opus-5' } }, { type: 'text', text: 'ok' }], stop_reason: 'end_turn', usage, model: 'claude-opus-5' }) } } };
+    const r = await fake.complete(base);
+    expect(r.servedBy).toBe('claude-opus-5');
+    expect(r.attempts).toEqual([
+      { model: 'claude-opus-5-5', usage: { inputTokens: 1000, outputTokens: 50, cacheReadTokens: 3000, cacheWriteTokens: 0, cacheWrite1hTokens: 0 } },
+      { model: 'claude-opus-5', usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, cacheWriteTokens: 500, cacheWrite1hTokens: 0 } },
+    ]);
+    // The run totals include the declined attempt.
+    expect(r.usage).toEqual({ inputTokens: 2000, outputTokens: 250, cacheReadTokens: 3000, cacheWriteTokens: 500, cacheWrite1hTokens: 0 });
+    const cost = r.attempts!.reduce((n, a) => n + providerCostMicroUsd(billingModel(a.model, 'claude-opus-5-5'), a.usage), 0);
+    expect(cost).toBe(1000 * 4 + 50 * 20 + 3000 * 0.2 + (1000 * 5 + 200 * 25 + 500 * 6.25));
+  });
+
+  it('uses the top level usage when there are no iterations', () => {
+    expect(attemptsOf(null, 'claude-opus-5-5', 'claude-opus-5-5')).toBeUndefined();
+    expect(attemptsOf([], 'claude-opus-5-5', 'claude-opus-5-5')).toBeUndefined();
+    expect(attemptsOf([{ type: 'message', model: 'claude-opus-5-5', input_tokens: 5, output_tokens: 1 }], 'claude-opus-5-5', 'claude-opus-5-5')).toEqual([{ model: 'claude-opus-5-5', usage: { inputTokens: 5, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, cacheWrite1hTokens: 0 } }]);
+  });
+
   it('reports one hour cache writes apart from five minute ones', async () => {
     const usage = { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100, cache_creation_input_tokens: 300, cache_creation: { ephemeral_5m_input_tokens: 200, ephemeral_1h_input_tokens: 100 } };
     const fake = new AnthropicProvider('sk-test', { fallbacks: false, maxRetries: 0 });
@@ -224,9 +253,22 @@ describe('cost', () => {
   it('bills a response as the catalog model that answered, else as the agent model', () => {
     expect(billingModel('claude-sonnet-5-5', 'claude-opus-5-5')).toBe('claude-sonnet-5-5');
     expect(billingModel('claude-haiku-4-5-20251001', 'claude-opus-5-5')).toBe('claude-haiku-4-5');
-    // A refusal fallback to a model outside the catalog is billed as the agent's model.
-    expect(billingModel('claude-opus-5', 'claude-opus-5-5')).toBe('claude-opus-5-5');
+    // Refusal fallback models are billing only catalog models, billed as themselves.
+    expect(billingModel('claude-opus-5', 'claude-opus-5-5')).toBe('claude-opus-5');
+    expect(billingModel('claude-opus-4-8', 'claude-opus-5-5')).toBe('claude-opus-4-8');
+    // A model with no price at all is billed as the agent's model.
+    expect(billingModel('claude-unknown-9', 'claude-opus-5-5')).toBe('claude-opus-5-5');
     expect(billingModel('', 'claude-sonnet-5-5')).toBe('claude-sonnet-5-5');
+    // Fallback models are not selectable.
+    expect(MODELS.map((m) => m.id)).not.toContain('claude-opus-5');
+  });
+
+  it('computes the cost basis for fallback and dated model ids, and one hour writes at 2x input', () => {
+    const u = { inputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 1_000_000, cacheWriteTokens: 1_000_000 };
+    expect(providerCostMicroUsd('claude-opus-5', u)).toBe(5_000_000 + 25_000_000 + 500_000 + 6_250_000);
+    expect(providerCostMicroUsd('claude-opus-4-8', u)).toBe(36_750_000);
+    expect(providerCostMicroUsd('claude-haiku-4-5-20251001', u)).toBe(1_000_000 + 5_000_000 + 100_000 + 1_250_000);
+    expect(providerCostMicroUsd('claude-opus-5-5', { ...u, cacheWrite1hTokens: 400_000 })).toBe(4_000_000 + 20_000_000 + 200_000 + 600_000 * 5 + 400_000 * 8);
   });
 });
 

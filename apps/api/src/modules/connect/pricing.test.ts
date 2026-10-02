@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MODELS } from './models/catalog';
+import { BILLING_ONLY_MODELS, MODELS, PRICED_MODELS } from './models/catalog';
 import { ConnectUsageService } from './usage.service';
 import { LAUNCH_TOKEN_SAR_PER_M, LIST_MARKUP, TOKENS_PER_PRICE, addTokens, launchPrices, parseTokenResourceId, parseTokensByModel, perMillion, priceUsage, usageLines, type ConnectUsage } from './pricing';
 
@@ -24,11 +24,16 @@ describe('Connect launch prices', () => {
     expect(perM('connect-ai-cache-read-tokens:claude-haiku-4-5')).toBe(0.45);
     expect(book['connect-ai-cache-write-tokens:claude-haiku-4-5']).toBe(5_625); // SAR 5.625 per 1M, a whole number of halalas per 10M
     expect(launchPrices().every((p) => Number.isInteger(p.monthlyMinor) && p.monthlyMinor > 0)).toBe(true);
-    expect(launchPrices()).toHaveLength(2 + 5 * MODELS.length);
+    // Billing only fallback models (Claude Opus 5 and Opus 4.8): list $5 / $25 / $0.50 plus 20%.
+    for (const id of ['claude-opus-5', 'claude-opus-4-8']) {
+      expect([perM(`connect-ai-input-tokens:${id}`), perM(`connect-ai-output-tokens:${id}`), perM(`connect-ai-cache-read-tokens:${id}`), perM(`connect-ai-cache-write-tokens:${id}`), perM(`connect-ai-cache-write-1h-tokens:${id}`)]).toEqual([22.5, 112.5, 2.25, 28.125, 45]);
+    }
+    expect(launchPrices()).toHaveLength(2 + 5 * PRICED_MODELS.length);
+    expect(PRICED_MODELS).toHaveLength(5);
   });
 
   it('are the catalog list price plus 20% at 3.75 SAR per USD, with cache writes at 1.25x and 2x input', () => {
-    for (const m of MODELS) {
+    for (const m of PRICED_MODELS) {
       const sar = LAUNCH_TOKEN_SAR_PER_M[m.id];
       const close = (a: number, b: number) => expect(Math.abs(a - b)).toBeLessThan(1e-9);
       close(sar.input, m.price.inputPerMTokUsd * LIST_MARKUP * 3.75);
@@ -43,6 +48,10 @@ describe('Connect launch prices', () => {
       ['claude-opus-5-5', 4, 20, 0.2],
       ['claude-sonnet-5-5', 2, 10, 0.2],
       ['claude-haiku-4-5', 1, 5, 0.1],
+    ]);
+    expect(BILLING_ONLY_MODELS.map((m) => [m.id, m.price.inputPerMTokUsd, m.price.outputPerMTokUsd, m.price.cacheReadPerMTokUsd, m.price.cacheWritePerMTokUsd])).toEqual([
+      ['claude-opus-5', 5, 25, 0.5, 6.25],
+      ['claude-opus-4-8', 5, 25, 0.5, 6.25],
     ]);
   });
 });

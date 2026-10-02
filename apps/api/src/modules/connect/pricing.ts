@@ -1,5 +1,5 @@
 import type { ResourceType } from '@prisma/client';
-import { MODELS } from './models/catalog';
+import { PRICED_MODELS } from './models/catalog';
 
 /**
  * Progrid Connect price book shape and rating math. Pure (no I/O) so it can be unit tested and
@@ -156,6 +156,9 @@ export const LAUNCH_TOKEN_SAR_PER_M: Record<string, ModelTokens> = {
   'claude-opus-5-5': { input: 18, output: 90, cacheRead: 0.9, cacheWrite: 22.5, cacheWrite1h: 36 },
   'claude-sonnet-5-5': { input: 9, output: 45, cacheRead: 0.9, cacheWrite: 11.25, cacheWrite1h: 18 },
   'claude-haiku-4-5': { input: 4.5, output: 22.5, cacheRead: 0.45, cacheWrite: 5.625, cacheWrite1h: 9 },
+  // Billing only: Anthropic's refusal fallbacks for Claude Opus 5.5 (list $5 / $25 / $0.50, plus 20%).
+  'claude-opus-5': { input: 22.5, output: 112.5, cacheRead: 2.25, cacheWrite: 28.125, cacheWrite1h: 45 },
+  'claude-opus-4-8': { input: 22.5, output: 112.5, cacheRead: 2.25, cacheWrite: 28.125, cacheWrite1h: 45 },
 };
 
 export interface LaunchPrice {
@@ -173,7 +176,7 @@ export function launchPrices(): LaunchPrice[] {
     { sku: 'connect-executions', resourceType: 'connect_execution', unit: 'per_1k', monthlyMinor: halalas(LAUNCH_EXECUTION_SAR * 1_000) },
     { sku: 'connect-tool-calls', resourceType: 'connect_tool_call', unit: 'per_1k', monthlyMinor: halalas(LAUNCH_TOOL_CALL_SAR * 1_000) },
   ];
-  for (const m of MODELS) {
+  for (const m of PRICED_MODELS) {
     const p = LAUNCH_TOKEN_SAR_PER_M[m.id];
     if (!p) continue;
     for (const s of TOKEN_SKUS) rows.push({ sku: tokenSku(s.base, m.id), resourceType: s.resourceType, unit: TOKEN_PRICE_UNIT, monthlyMinor: halalas(p[s.kind] * (TOKENS_PER_PRICE / 1_000_000)) });

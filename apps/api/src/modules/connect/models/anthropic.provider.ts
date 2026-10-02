@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { BetaMessageParam, MessageCreateParamsNonStreaming, BetaToolUnion, BetaOutputConfig } from '@anthropic-ai/sdk/resources/beta/messages/messages';
 import { findModel } from './catalog';
-import { ModelError, type Block, type ModelProvider, type ModelRequest, type ModelResponse } from './provider';
+import { ModelError, type Block, type ModelProvider, type ModelRequest, type ModelResponse, type ModelUsage } from './provider';
 
 export const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
 
@@ -65,17 +65,14 @@ export class AnthropicProvider implements ModelProvider {
     try {
       const res = await this.client.beta.messages.create(params, { signal: req.signal });
       const content = res.content as unknown as Block[];
+      const top = usageOf(res.usage);
+      const attempts = attemptsOf(res.usage?.iterations, req.model, res.model);
       return {
         content,
         stopReason: res.stop_reason ?? 'end_turn',
         stopDetails: res.stop_details ?? undefined,
-        usage: {
-          inputTokens: res.usage.input_tokens ?? 0,
-          outputTokens: res.usage.output_tokens ?? 0,
-          cacheReadTokens: res.usage.cache_read_input_tokens ?? 0,
-          cacheWriteTokens: res.usage.cache_creation_input_tokens ?? 0,
-          cacheWrite1hTokens: res.usage.cache_creation?.ephemeral_1h_input_tokens ?? 0,
-        },
+        usage: attempts ? sumUsage(attempts.map((a) => a.usage)) : top,
+        ...(attempts ? { attempts } : {}),
         servedBy: res.model,
         fallbacks: content.filter((b) => b.type === 'fallback').map((b) => ({ from: (b.from as { model?: string })?.model, to: (b.to as { model?: string })?.model })),
         requestId: (res as { _request_id?: string | null })._request_id ?? undefined,
@@ -84,6 +81,49 @@ export class AnthropicProvider implements ModelProvider {
       throw mapError(err);
     }
   }
+}
+
+type RawUsage = { input_tokens?: number | null; output_tokens?: number | null; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null; cache_creation?: { ephemeral_1h_input_tokens?: number | null } | null };
+
+function usageOf(u: RawUsage | null | undefined): ModelUsage {
+  return {
+    inputTokens: u?.input_tokens ?? 0,
+    outputTokens: u?.output_tokens ?? 0,
+    cacheReadTokens: u?.cache_read_input_tokens ?? 0,
+    cacheWriteTokens: u?.cache_creation_input_tokens ?? 0,
+    cacheWrite1hTokens: u?.cache_creation?.ephemeral_1h_input_tokens ?? 0,
+  };
+}
+
+export function sumUsage(list: ModelUsage[]): ModelUsage {
+  const out: ModelUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cacheWrite1hTokens: 0 };
+  for (const u of list) {
+    out.inputTokens += u.inputTokens;
+    out.outputTokens += u.outputTokens;
+    out.cacheReadTokens += u.cacheReadTokens;
+    out.cacheWriteTokens += u.cacheWriteTokens;
+    out.cacheWrite1hTokens! += u.cacheWrite1hTokens ?? 0;
+  }
+  return out;
+}
+
+/**
+ * Billed attempts from usage.iterations. The top level usage covers only the attempt that
+ * produced the message; iterations list every attempt, and Anthropic bills each one at the
+ * rates of the model that ran it (a declined attempt included). `message` entries without a
+ * model ran on the requested model; `fallback_message` and `advisor_message` name theirs; a
+ * `compaction` entry (not used by Connect) is counted on the model that answered. Returns
+ * undefined when there are no iterations, so the top level usage applies.
+ */
+export function attemptsOf(iterations: unknown, requested: string, servedBy: string): { model: string; usage: ModelUsage }[] | undefined {
+  if (!Array.isArray(iterations) || !iterations.length) return undefined;
+  const out: { model: string; usage: ModelUsage }[] = [];
+  for (const it of iterations as (RawUsage & { type?: string; model?: string | null })[]) {
+    if (!it || typeof it !== 'object') continue;
+    const model = it.model || (it.type === 'compaction' ? servedBy : requested);
+    out.push({ model, usage: usageOf(it) });
+  }
+  return out.length ? out : undefined;
 }
 
 /**

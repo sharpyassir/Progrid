@@ -52,6 +52,12 @@ export interface ModelResponse {
   stopReason: string;
   stopDetails?: unknown;
   usage: ModelUsage;
+  /**
+   * Usage per attempt with the model that ran it, from usage.iterations: a declined attempt on
+   * the requested model and the fallback that answered are billed separately, each at its own
+   * model's price. When present, `usage` is their sum. Absent: all of `usage` ran on servedBy.
+   */
+  attempts?: { model: string; usage: ModelUsage }[];
   /** The model that produced the answer (differs from the request after a server side fallback). */
   servedBy: string;
   fallbacks?: { from?: string; to?: string }[];

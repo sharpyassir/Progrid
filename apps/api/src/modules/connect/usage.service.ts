@@ -4,7 +4,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { FxService } from '../billing/fx.service';
 import { BOOK_CURRENCY, startOfHour } from '../billing/pricing';
 import type { Actor } from '../../common/auth/actor';
-import { MODELS, findModel } from './models/catalog';
+import { MODELS, PRICED_MODELS, pricedModel } from './models/catalog';
 import { CONNECT_SKU_PREFIX, FLAT_SKUS, TOKEN_SKUS, addTokens, linePrice, perMillion, priceUsage, tokenResourceId, tokenSku, usageLines, type ConnectUsage, type ModelTokens, type TokensByModel } from './pricing';
 
 /**
@@ -167,7 +167,7 @@ export class ConnectUsageService {
     const all: ConnectUsage = { executions: totals.executions, toolCalls: totals.toolCalls, models: teamModels };
     const byModel = Object.entries(teamModels).map(([model, t]) => ({
       model,
-      label: findModel(model)?.label ?? model,
+      label: pricedModel(model)?.label ?? model,
       aiInputTokens: t.input,
       aiOutputTokens: t.output,
       aiCacheReadTokens: t.cacheRead,
@@ -175,7 +175,7 @@ export class ConnectUsageService {
       estimatedCostMinor: money({ executions: 0, toolCalls: 0, models: { [model]: t } }),
     })).sort((a, b) => b.estimatedCostMinor - a.estimatedCostMinor || a.model.localeCompare(b.model));
     const flat = FLAT_SKUS.map((s) => ({ sku: s.sku, per: s.per, amountMinor: Math.round((priceMap[s.sku] ?? 0) * rate * 10_000) / 10_000, currency: team.currency }));
-    const tokens = MODELS.flatMap((m) => TOKEN_SKUS.map((s) => {
+    const tokens = PRICED_MODELS.flatMap((m) => TOKEN_SKUS.map((s) => {
       const sku = tokenSku(s.base, m.id);
       return { sku, model: m.id, kind: s.kind, per: 1_000_000, amountMinor: Math.round(perMillion(priceMap[sku] ?? 0) * rate * 10_000) / 10_000, currency: team.currency };
     }));

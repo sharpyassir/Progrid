@@ -190,6 +190,8 @@ AI tokens are priced per model, per 1M tokens:
 | Claude Sonnet 5.5 | SAR 9.00 | SAR 45.00 | SAR 0.90 | SAR 11.25 |
 | Claude Haiku 4.5 | SAR 4.50 | SAR 22.50 | SAR 0.45 | SAR 5.625 |
 
+If Claude Opus 5.5 declines a request for safety reasons, Connect retries it on Claude Opus 5 or Claude Opus 4.8. Both attempts are billed, each at its own model's prices. For those two models the prices per 1M tokens are SAR 22.50 input, SAR 112.50 output, SAR 2.25 cache read and SAR 28.125 cache write. You cannot choose them for an agent.
+
 Connect caches the platform preamble, the agent instructions and the tool list, so calls after the first read them from the cache for a small part of the input price. Writing to the cache costs 1.25 times the input price.
 
 Each run shows its estimated cost in the Test tab, the run view and the logs. `GET /v1/connect/models` returns each model's prices in your currency, and `GET /v1/connect/usage` returns the month's estimate.

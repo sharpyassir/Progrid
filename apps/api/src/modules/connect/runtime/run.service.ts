@@ -506,10 +506,14 @@ export class RunService implements OnModuleInit {
     u.outputTokens += r.usage.outputTokens;
     u.cacheReadTokens += r.usage.cacheReadTokens;
     u.cacheWriteTokens += r.usage.cacheWriteTokens;
-    u.providerCost += providerCostMicroUsd(r.servedBy || ctx.spec.model, r.usage);
-    // Customer billing is per model: tokens go to the model that answered (or the agent's model, see billingModel).
-    const write1h = Math.min(r.usage.cacheWrite1hTokens ?? 0, r.usage.cacheWriteTokens);
-    addTokens(u.models, billingModel(r.servedBy, ctx.spec.model), { input: r.usage.inputTokens, output: r.usage.outputTokens, cacheRead: r.usage.cacheReadTokens, cacheWrite: r.usage.cacheWriteTokens - write1h, cacheWrite1h: write1h });
+    // Every attempt is billed at its own model's prices, for the customer and for the cost basis:
+    // a declined attempt on the agent's model and a refusal fallback (Claude Opus 5, Opus 4.8) alike.
+    for (const a of r.attempts ?? [{ model: r.servedBy || ctx.spec.model, usage: r.usage }]) {
+      const model = billingModel(a.model, ctx.spec.model);
+      u.providerCost += providerCostMicroUsd(model, a.usage);
+      const write1h = Math.min(a.usage.cacheWrite1hTokens ?? 0, a.usage.cacheWriteTokens);
+      addTokens(u.models, model, { input: a.usage.inputTokens, output: a.usage.outputTokens, cacheRead: a.usage.cacheReadTokens, cacheWrite: a.usage.cacheWriteTokens - write1h, cacheWrite1h: write1h });
+    }
     const toolCalls = r.content.filter((b) => b.type === 'tool_use').map((b) => String(b.name));
     const text = r.content.filter((b) => b.type === 'text').map((b) => String(b.text)).join('');
     await this.addStep(ctx, {
@@ -517,7 +521,7 @@ export class RunService implements OnModuleInit {
       nodeId,
       name: r.servedBy || ctx.spec.model,
       status: r.stopReason === 'refusal' || r.stopReason === 'max_tokens' ? 'failed' : 'succeeded',
-      output: { stopReason: r.stopReason, text: clip(text, 8000), toolCalls, servedBy: r.servedBy, ...(r.fallbacks?.length ? { fallbacks: r.fallbacks } : {}), ...(r.stopDetails ? { stopDetails: r.stopDetails } : {}) },
+      output: { stopReason: r.stopReason, text: clip(text, 8000), toolCalls, servedBy: r.servedBy, ...(r.fallbacks?.length ? { fallbacks: r.fallbacks } : {}), ...(r.attempts && r.attempts.length > 1 ? { attempts: r.attempts.map((x) => ({ model: x.model, input: x.usage.inputTokens, output: x.usage.outputTokens })) } : {}), ...(r.stopDetails ? { stopDetails: r.stopDetails } : {}) },
       tokens: { input: r.usage.inputTokens, output: r.usage.outputTokens, cacheRead: r.usage.cacheReadTokens, cacheWrite: r.usage.cacheWriteTokens },
       startedAt: new Date(Date.now() - ms),
       durationMs: ms,
