@@ -23,7 +23,7 @@ export function SiteSwitch({ className = '' }: { className?: string }) {
   const home = LANGS.find((l) => l.code === lang)?.path ?? '/';
   const sw = SITE_SWITCH[site.site];
   const href = `${site.other.www}${home === '/' ? '/' : home}${site.other.site === 'global' ? '?site=global' : ''}`;
-  return <a href={href} hrefLang={site.other.site === 'sa' ? 'en-SA' : 'en'} title={sw.title} className={className}>{sw.label}</a>;
+  return <a href={href} hrefLang={site.other.site === 'sa' ? 'en-SA' : 'en'} title={sw.title} className={className}><bdi>{sw.en}</bdi> · <bdi lang="ar" dir="rtl">{sw.ar}</bdi></a>;
 }
 
 /* ───────────────────────── Header ───────────────────────── */
@@ -44,7 +44,7 @@ export function Header() {
           {links.map(([h, l]) => <a key={h} href={h} className="hover:text-white">{l}</a>)}
         </nav>
         <div className="ms-auto hidden items-center gap-3 md:flex">
-          <SiteSwitch className="hidden text-xs text-slate-400 hover:text-white lg:inline" />
+          <SiteSwitch className="hidden whitespace-nowrap text-xs text-slate-400 hover:text-white 2xl:inline" />
           {langs}
           <a href={`${consoleUrl}/login`} className="text-sm text-slate-300 hover:text-white">{c.nav.signIn}</a>
           <a href={`${consoleUrl}/login`} className="btn-primary py-2">{c.nav.startFree}</a>

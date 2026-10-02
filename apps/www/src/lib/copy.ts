@@ -36,9 +36,9 @@ export interface Copy {
 }
 
 /** The storefront switch, always in English and Arabic so a visitor finds it in either language. */
-export const SITE_SWITCH: Record<Site, { label: string; title: string }> = {
-  global: { label: 'Saudi Arabia site · الموقع السعودي', title: 'Prices in riyals, local invoices from Progrid Arabia' },
-  sa: { label: 'Global site · الموقع العالمي', title: 'Prices in US dollars, services by Progrid Technologies LLC' },
+export const SITE_SWITCH: Record<Site, { en: string; ar: string; title: string }> = {
+  global: { en: 'Saudi Arabia site', ar: 'الموقع السعودي', title: 'Prices in riyals, local invoices from Progrid Arabia' },
+  sa: { en: 'Global site', ar: 'الموقع العالمي', title: 'Prices in US dollars, services by Progrid Technologies LLC' },
 };
 
 const en: Copy = {

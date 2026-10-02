@@ -132,9 +132,10 @@ export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageReco
       : inv.taxMinor
         ? `Prices are in ${inv.currency} and exclude tax; tax is shown as a separate line.`
         : `Prices are in ${inv.currency}. No tax is added to this invoice.`;
-    doc.text(note, 50, 745, { width: 495, align: 'center' });
-    doc.text(`Services provided by ${e.legalName} under its terms of service: ${e.termsUrl}`, 50, 762, { width: 495, align: 'center' });
-    doc.text(`${c.COMPANY_NAME} · ${e.domain ?? e.wwwUrl.replace(/^https?:\/\//, '')} · ${e.supportEmail}`, 50, 775, { width: 495, align: 'center' });
+    // The footer flows: the ZATCA note takes two lines, the others one.
+    doc.text(note, 50, 728, { width: 495, align: 'center' });
+    doc.text(`Services provided by ${e.legalName} under its terms of service: ${e.termsUrl}`, 50, doc.y + 4, { width: 495, align: 'center' });
+    doc.text(`${c.COMPANY_NAME} · ${e.domain ?? e.wwwUrl.replace(/^https?:\/\//, '')} · ${e.supportEmail}`, 50, doc.y + 4, { width: 495, align: 'center' });
     doc.end();
   });
 }
