@@ -346,7 +346,9 @@ describe('ops console timers and timesheets', () => {
     const stop = await eng.client.ok('POST', '/ops/v1/timers/stop', { note: 'Cleared the disk' }, 200);
     expect(stop.workLog).toMatchObject({ status: 'DRAFT', minutes: 1 });
 
-    const startedAt = new Date(Date.now() - 3 * 3600_000);
+    // Three hours ago, but never before the start of this month: the timer entry above is dated
+    // now, and both entries must land in the same timesheet month.
+    const startedAt = new Date(Math.max(Date.now() - 3 * 3600_000, periodBounds(periodKey(new Date())).start.getTime()));
     expect((await eng.client.post('/ops/v1/timesheet/entries', { ticketId: t.id, minutes: 30, startedAt })).status).toBe(400);
     const manual = await eng.client.ok('POST', '/ops/v1/timesheet/entries', { ticketId: t.id, minutes: 45, startedAt, reason: 'Worked from the phone during an outage', note: 'Restarted nginx' }, 201);
     expect(manual).toMatchObject({ status: 'DRAFT', source: 'MANUAL', flagged: true });
@@ -382,7 +384,10 @@ describe('ops console timers and timesheets', () => {
     const c = await contractWithAsset('ESSENTIAL');
     const eng = await externalEngineer({ contractIds: [c.contractId] });
     const t = await customerTicket(c.owner, c.assetId);
-    const base = Date.now() - 13 * 3600_000;
+    // On the 3rd of last month: every entry is in the past and in one billing period, whatever
+    // the time of day the suite runs (13 hours back from now crosses the month on the 1st).
+    const now = new Date();
+    const base = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 3, 8);
     const entry = (minutes: number, hoursAgo: number) => eng.client.ok('POST', '/ops/v1/timesheet/entries', { ticketId: t.id, minutes, startedAt: new Date(base + hoursAgo * 60_000), reason: 'Long outage handled from the phone' }, 201);
     const approved = [await entry(300, 0), await entry(60, 310)];
     const pending = await entry(200, 380);

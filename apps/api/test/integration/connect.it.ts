@@ -1,5 +1,5 @@
-import { beforeAll, describe, expect, it } from 'vitest';
-import { createHmac } from 'node:crypto';
+import { beforeAll, describe, expect, it, onTestFinished } from 'vitest';
+import { createHmac, randomBytes } from 'node:crypto';
 import { Client, readyTeam, signup, sut, totp, waitFor, waitStatus, type Sut, type Team } from './harness';
 import { Client as TemporalClient, Connection } from '@temporalio/client';
 import { ConnectUsageService } from '../../src/modules/connect/usage.service';
@@ -133,14 +133,25 @@ describe('Connect agents and connections', () => {
   it('blocks private addresses and enforces read only SQL on a real PostgreSQL', async () => {
     const c = owner.client;
     const db = new URL(process.env.DATABASE_URL!);
-    const base = { name: 'Analytics', kind: 'postgres', secrets: { password: db.password || 'unused' } };
+    // The connection signs in as a reader of its own, as a customer would set one up, not with the
+    // suite's credentials. Tool output is redacted of every secret, so a short password such as
+    // CI's "prgd" would also blank out the table names this test asserts on (prgd_users).
+    const reader = `connect_reader_${randomBytes(6).toString('hex')}`;
+    const password = randomBytes(24).toString('base64url');
+    await s.prisma.$executeRawUnsafe(`CREATE ROLE ${reader} LOGIN PASSWORD '${password}'`);
+    onTestFinished(async () => {
+      await s.prisma.$executeRawUnsafe(`DROP OWNED BY ${reader}`);
+      await s.prisma.$executeRawUnsafe(`DROP ROLE ${reader}`);
+    });
+    await s.prisma.$executeRawUnsafe(`GRANT SELECT ON prgd_regions, prgd_sizes TO ${reader}`);
+    const base = { name: 'Analytics', kind: 'postgres', secrets: { password } };
     // 127.0.0.1 is loopback: blocked. "localhost" is opened by the admin allowlist in this suite.
-    const blocked = await c.ok('POST', '/v1/connect/connections', { ...base, config: { host: '127.0.0.1', port: Number(db.port || 5432), database: db.pathname.slice(1), user: db.username } }, 201);
+    const blocked = await c.ok('POST', '/v1/connect/connections', { ...base, config: { host: '127.0.0.1', port: Number(db.port || 5432), database: db.pathname.slice(1), user: reader } }, 201);
     const t1 = await c.ok('POST', `/v1/connect/connections/${blocked.id}/test`, {}, 200);
     expect(t1.ok).toBe(false);
     expect(t1.error).toMatch(/private or reserved/);
 
-    const conn = await c.ok('POST', '/v1/connect/connections', { ...base, config: { host: 'localhost', port: Number(db.port || 5432), database: db.pathname.slice(1), user: db.username }, access: { allowedTables: ['prgd_regions', 'prgd_sizes'] } }, 201);
+    const conn = await c.ok('POST', '/v1/connect/connections', { ...base, config: { host: 'localhost', port: Number(db.port || 5432), database: db.pathname.slice(1), user: reader }, access: { allowedTables: ['prgd_regions', 'prgd_sizes'] } }, 201);
     expect(conn.access).toEqual({ readOnly: true, allowedTables: ['prgd_regions', 'prgd_sizes'] });
     expect(await c.ok('POST', `/v1/connect/connections/${conn.id}/test`, {}, 200)).toMatchObject({ ok: true, status: 'ok' });
 
