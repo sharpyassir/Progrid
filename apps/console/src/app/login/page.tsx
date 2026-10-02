@@ -2,8 +2,10 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FormEvent, useState } from 'react';
-import { api, ApiError, WWW_URL, setToken } from '@/lib/api';
+import { FormEvent, useEffect, useState } from 'react';
+import { api, ApiError, setToken } from '@/lib/api';
+import { useUrls } from '@/lib/urls';
+import { countryOptions, ENTITY_NAME, entityForCountry } from '@/lib/countries';
 import { t } from '@/lib/i18n';
 import { useShell } from '@/components/shell';
 import { SocialButtons } from '@/components/social-buttons';
@@ -15,6 +17,13 @@ export default function LoginPage() {
   const [needCode, setNeedCode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { www: WWW_URL, domain } = useUrls();
+  // Billing country, prefilled from GET /v1/geo (the .sa domain suggests Saudi Arabia, .co the country of your address).
+  const [country, setCountry] = useState('');
+  useEffect(() => {
+    if (mode !== 'signup' || country) return;
+    api<{ country: string }>('/v1/geo').then((g) => setCountry((c) => c || g.country)).catch(() => setCountry((c) => c || (domain?.endsWith('.sa') ? 'SA' : 'US')));
+  }, [mode, country, domain]);
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -25,7 +34,7 @@ export default function LoginPage() {
       const body =
         mode === 'login'
           ? { email: f.get('email'), password: f.get('password'), ...(f.get('totp') ? { totp: f.get('totp') } : {}) }
-          : { email: f.get('email'), password: f.get('password'), name: f.get('name'), teamName: f.get('teamName'), locale };
+          : { email: f.get('email'), password: f.get('password'), name: f.get('name'), teamName: f.get('teamName'), country: f.get('country') || undefined, locale };
       const res = await api<{ session: string }>(`/v1/auth/${mode}`, { method: 'POST', body: JSON.stringify(body) });
       setToken(res.session);
       router.replace(mode === 'signup' ? '/security?welcome=1' : '/servers');
@@ -41,11 +50,19 @@ export default function LoginPage() {
     <div className="mx-auto mt-16 max-w-sm">
       <h1 className="mb-6 text-2xl font-semibold">{t(locale, mode === 'login' ? 'login' : 'signup')}</h1>
       <form onSubmit={submit} className="card space-y-3">
-        <SocialButtons locale={locale} intent={mode} />
+        <SocialButtons locale={locale} intent={mode} country={mode === 'signup' ? country || undefined : undefined} />
         {mode === 'signup' && (
           <>
             <input className="input" name="name" placeholder={t(locale, 'name')} required />
             <input className="input" name="teamName" placeholder={t(locale, 'teamName')} required />
+            <label className="block space-y-1 text-sm">
+              <span>{t(locale, 'billingCountry')}</span>
+              <select className="input" name="country" value={country} onChange={(e) => setCountry(e.target.value)} required>
+                <option value="" disabled>…</option>
+                {countryOptions(locale).map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
+              </select>
+              <span className="block text-xs text-neutral-500">{t(locale, 'billingCountryHint')}{country && <> <strong>{t(locale, 'billedBy')}: {ENTITY_NAME[entityForCountry(country)]}</strong></>}</span>
+            </label>
           </>
         )}
         <input className="input" name="email" type="email" placeholder={t(locale, 'email')} required autoComplete="email" />

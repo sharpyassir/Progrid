@@ -49,7 +49,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     natsToken: env.NATS_TOKEN ?? '',
     knownHostsFile: env.PRGD_GATEWAY_KNOWN_HOSTS ?? '',
     maxSessions: int(env.PRGD_GATEWAY_MAX_SESSIONS, 50, 1),
-    allowedOrigins: (env.PRGD_GATEWAY_ALLOWED_ORIGINS || 'https://ops.progrid.sa')
+    // Both ops consoles: the primary one and the one on the Saudi domain.
+    allowedOrigins: (env.PRGD_GATEWAY_ALLOWED_ORIGINS || 'https://ops.progrid.co,https://ops.progrid.sa')
       .split(',')
       .map((o) => o.trim().replace(/\/+$/, ''))
       .filter(Boolean),

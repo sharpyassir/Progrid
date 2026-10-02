@@ -1,6 +1,6 @@
 # prgd-gateway
 
-The terminal gateway of the DevOps console. The ops app (`ops.progrid.sa`) opens a WebSocket to
+The terminal gateway of the DevOps console. The ops app (`ops.progrid.co`, also served at `ops.progrid.sa`) opens a WebSocket to
 it; the gateway checks the one time token with the API, gets a short lived OpenSSH certificate for
 a key it generated in memory, logs in to the asset over SSH, and pipes the terminal both ways. It
 records every session as asciicast v2, types stored sudo passwords without showing them, and ends
@@ -156,7 +156,7 @@ forever; while it is down the heartbeat answer still ends a killed session withi
 | `NATS_URL`, `NATS_TOKEN` | empty | Kill subscription; without `NATS_URL` only event answers kill |
 | `PRGD_GATEWAY_KNOWN_HOSTS` | empty | known_hosts file to enforce; empty means trust on first use |
 | `PRGD_GATEWAY_MAX_SESSIONS` | 50 | Open connections at once (including ones still authenticating) |
-| `PRGD_GATEWAY_ALLOWED_ORIGINS` | `https://ops.progrid.sa` | Comma separated exact origins allowed to connect |
+| `PRGD_GATEWAY_ALLOWED_ORIGINS` | `https://ops.progrid.co,https://ops.progrid.sa` | Comma separated exact origins allowed to connect |
 | `PRGD_GATEWAY_SPOOL_DIR` | system temp directory | Where recordings are written while sessions run |
 | `PRGD_GATEWAY_TRUST_PROXY` | `true` | Take the client address from `X-Forwarded-For` |
 | `PRGD_GATEWAY_AUTH_TIMEOUT_SECONDS` | 5 | Time allowed for the auth frame |

@@ -7,18 +7,22 @@ import { AdminShell, fmtDate, fmtMoney } from '@/components/admin-shell';
 
 interface Invoice { id: string; number: string; status: string; totalMinor: number; creditedMinor?: number; currency: string; periodStart: string; dueAt: string | null; eInvoiceType: string | null; team: { id: string; name: string; slug: string; country: string } }
 interface Fx { rate: number; history: { rate: string; source: string; at: string }[] }
+interface EntityRevenue { billingEntity: string; legalName: string; currency: string; teams: number; invoiced: { currency: string; count: number; subtotalMinor: number; taxMinor: number; totalMinor: number }[]; open: { currency: string; count: number; dueMinor: number }[]; collected: { currency: string; amountMinor: number }[] }
 interface Price { id: string; resourceType: string; sku: string; monthlyMinor: number; unit: string; validFrom: string }
 
 export default function AdminFinance() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [fx, setFx] = useState<Fx | null>(null);
   const [prices, setPrices] = useState<Price[]>([]);
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [byEntity, setByEntity] = useState<EntityRevenue[]>([]);
   const [msg, setMsg] = useState<string | null>(null);
   const load = useCallback(() => Promise.all([
     api<{ data: Invoice[] }>('/admin/v1/invoices').then((r) => setInvoices(r.data)),
     api<Fx>('/admin/v1/fx').then(setFx),
     api<{ data: Price[] }>('/admin/v1/prices').then((r) => setPrices(r.data)),
-  ]), []);
+    api<{ data: EntityRevenue[] }>(`/admin/v1/finance/entities?month=${month}`).then((r) => setByEntity(r.data)),
+  ]), [month]);
   useEffect(() => { load(); }, [load]);
   async function run(fn: () => Promise<unknown>, ok: string) {
     setMsg(null);
@@ -31,6 +35,25 @@ export default function AdminFinance() {
       <button className="btn-ghost" onClick={() => confirm('Issue invoices for the previous month for every team?') && run(() => api('/admin/v1/billing/issue-invoices', { method: 'POST' }), 'Issued.')}>Issue monthly invoices</button>
     </>}>
       {msg && <p className="rounded border border-neutral-200 bg-neutral-50 p-2 text-sm dark:border-neutral-800 dark:bg-neutral-900">{msg}</p>}
+      <section className="card space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-medium">Revenue per company</h2>
+          <input className="input w-auto py-1" type="month" value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Month" />
+        </div>
+        <p className="text-xs text-neutral-500">Invoices issued in the month (subtotal, tax, total), money received in the month, and what is open now, for each contracting company. Progrid Arabia bills teams in Saudi Arabia in SAR with VAT; Progrid Technologies LLC bills everyone else in USD.</p>
+        <div className="grid gap-3 md:grid-cols-2">
+          {byEntity.map((e) => (
+            <div key={e.billingEntity} className="rounded border border-neutral-200 p-3 text-sm dark:border-neutral-800">
+              <div className="flex items-baseline justify-between"><span className="font-medium">{e.legalName}</span><span className="text-xs text-neutral-500">{e.teams} teams · {e.currency}</span></div>
+              <dl className="mt-2 grid grid-cols-2 gap-1">
+                <dt className="text-neutral-500">Invoiced</dt><dd className="text-end">{e.invoiced.length ? e.invoiced.map((r) => <span key={r.currency} className="block">{fmtMoney(r.totalMinor, r.currency)} <span className="text-xs text-neutral-500">({r.count}, tax {fmtMoney(r.taxMinor, r.currency)})</span></span>) : '—'}</dd>
+                <dt className="text-neutral-500">Collected</dt><dd className="text-end">{e.collected.length ? e.collected.map((r) => <span key={r.currency} className="block">{fmtMoney(r.amountMinor, r.currency)}</span>) : '—'}</dd>
+                <dt className="text-neutral-500">Open now</dt><dd className="text-end">{e.open.length ? e.open.map((r) => <span key={r.currency} className="block">{fmtMoney(r.dueMinor, r.currency)} <span className="text-xs text-neutral-500">({r.count})</span></span>) : '—'}</dd>
+              </dl>
+            </div>
+          ))}
+        </div>
+      </section>
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="card space-y-3">
           <h2 className="font-medium">Exchange rate</h2>

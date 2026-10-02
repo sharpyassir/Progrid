@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Locale, t } from '@/lib/i18n';
 import { activeGroup, itemActive, NAV, NavGroup, NavItem } from '@/lib/nav';
+import { useUrls } from '@/lib/urls';
 import { useShell } from '@/components/shell';
 
 const itemCls = 'flex items-center justify-between gap-3 rounded px-2 text-sm hover:bg-neutral-100 focus-visible:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:hover:bg-neutral-800 dark:focus-visible:bg-neutral-800';
@@ -12,13 +13,14 @@ const itemCls = 'flex items-center justify-between gap-3 rounded px-2 text-sm ho
 /** One menu entry: internal link, external link (new tab) or roadmap item with a "Soon" badge. */
 function NavLink({ item, onNavigate, compact }: { item: NavItem; onNavigate?: () => void; compact?: boolean }) {
   const { locale } = useShell();
+  const { www } = useUrls();
   const pathname = usePathname();
   const active = itemActive(item, pathname);
   const cls = `${itemCls} ${compact ? 'py-1' : 'py-2'} ${active ? 'bg-neutral-100 font-medium text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100' : ''} ${item.soon ? 'text-neutral-500' : ''}`;
   const label = <span>{t(locale, item.label)}</span>;
   if (item.external) {
     return (
-      <a href={item.href} target="_blank" rel="noreferrer" onClick={onNavigate} className={cls}>
+      <a href={item.href.startsWith('@www') ? `${www}${item.href.slice(4)}` : item.href} target="_blank" rel="noreferrer" onClick={onNavigate} className={cls}>
         {label}<span aria-hidden className="text-neutral-400">↗</span><span className="sr-only">({t(locale, 'navExternal')})</span>
       </a>
     );

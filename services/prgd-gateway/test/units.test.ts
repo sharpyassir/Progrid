@@ -122,7 +122,7 @@ describe('session keys', () => {
 describe('config', () => {
   it('has the documented defaults', () => {
     const c = loadConfig({});
-    expect(c).toMatchObject({ apiUrl: 'http://api:4000', port: 4100, allowedOrigins: ['https://ops.progrid.sa'], maxSessions: 50, authTimeoutSeconds: 5, keepaliveSeconds: 25, heartbeatSeconds: 30, expiryNoticeSeconds: [300, 60], knownHostsFile: '' });
+    expect(c).toMatchObject({ apiUrl: 'http://api:4000', port: 4100, allowedOrigins: ['https://ops.progrid.co', 'https://ops.progrid.sa'], maxSessions: 50, authTimeoutSeconds: 5, keepaliveSeconds: 25, heartbeatSeconds: 30, expiryNoticeSeconds: [300, 60], knownHostsFile: '' });
     expect(c.gatewayId.length).toBeGreaterThan(0);
     expect(loadConfig({ PRGD_API_URL: 'http://x:1/', PRGD_GATEWAY_ALLOWED_ORIGINS: 'https://a/, https://b' })).toMatchObject({ apiUrl: 'http://x:1', allowedOrigins: ['https://a', 'https://b'] });
   });

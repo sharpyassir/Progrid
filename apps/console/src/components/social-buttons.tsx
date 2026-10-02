@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, API_URL } from '@/lib/api';
+import { api } from '@/lib/api';
+import { runtimeUrls } from '@/lib/urls';
 import type { Locale } from '@/lib/i18n';
 import { ts, type SocialProvider } from '@/lib/i18n-social';
 
@@ -24,15 +25,17 @@ export function configuredProviders(): Promise<SocialProvider[]> {
  * Sends the browser to the API, which redirects to Google or Microsoft. Linking needs the
  * console session, which a redirect cannot carry, so it first trades it for a one time ticket.
  */
-export async function startSocial(provider: SocialProvider, opts: { intent: SocialIntent; locale: Locale; returnPath?: string; invite?: string }) {
+export async function startSocial(provider: SocialProvider, opts: { intent: SocialIntent; locale: Locale; returnPath?: string; invite?: string; country?: string }) {
   const q = new URLSearchParams({ intent: opts.intent, locale: opts.locale });
+  // The billing country picked on the signup form; it decides the billing company of a new team.
+  if (opts.country) q.set('country', opts.country);
   if (opts.returnPath) q.set('return', opts.returnPath);
   if (opts.invite) q.set('invite', opts.invite);
   if (opts.intent === 'link') {
     const { ticket } = await api<{ ticket: string }>('/v1/auth/oauth/link-ticket', { method: 'POST' });
     q.set('ticket', ticket);
   }
-  window.location.assign(`${API_URL}/v1/auth/oauth/${provider}/start?${q.toString()}`);
+  window.location.assign(`${runtimeUrls().api}/v1/auth/oauth/${provider}/start?${q.toString()}`);
 }
 
 /** Google "G" mark, full color, as Google's branding guidelines require. */
@@ -80,7 +83,7 @@ export function SocialButton({ provider, locale, onClick, disabled }: { provider
 }
 
 /** The buttons for every configured provider, then an "or" divider above the email form. */
-export function SocialButtons({ locale, intent, invite, returnPath, divider = true }: { locale: Locale; intent: SocialIntent; invite?: string; returnPath?: string; divider?: boolean }) {
+export function SocialButtons({ locale, intent, invite, returnPath, country, divider = true }: { locale: Locale; intent: SocialIntent; invite?: string; returnPath?: string; country?: string; divider?: boolean }) {
   const [providers, setProviders] = useState<SocialProvider[]>([]);
   const [busy, setBusy] = useState(false);
   useEffect(() => { configuredProviders().then(setProviders); }, []);
@@ -88,7 +91,7 @@ export function SocialButtons({ locale, intent, invite, returnPath, divider = tr
   return (
     <div className="space-y-3">
       {providers.map((p) => (
-        <SocialButton key={p} provider={p} locale={locale} disabled={busy} onClick={() => { setBusy(true); startSocial(p, { intent, locale, invite, returnPath }).catch(() => setBusy(false)); }} />
+        <SocialButton key={p} provider={p} locale={locale} disabled={busy} onClick={() => { setBusy(true); startSocial(p, { intent, locale, invite, returnPath, country }).catch(() => setBusy(false)); }} />
       ))}
       {divider && (
         <div className="flex items-center gap-3 text-xs uppercase text-neutral-500" role="separator">

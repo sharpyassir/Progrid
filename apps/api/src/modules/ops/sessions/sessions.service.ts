@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { requestDomain } from '../../../common/entities/entities';
 import { createHash, randomBytes } from 'node:crypto';
 import type { AccessGrant, Prisma, TerminalSession, TerminalSessionStatus } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -115,7 +116,8 @@ export class SessionsService implements OnModuleInit {
       sessionId: session.id,
       token,
       tokenExpiresAt,
-      gatewayUrl: `${c.PRGD_GATEWAY_PUBLIC_URL.replace(/\/$/, '')}/v1/terminal?session=${session.id}`,
+      // The gateway of the domain the ops console runs on (gateway.progrid.co or gateway.progrid.sa), else the configured one.
+      gatewayUrl: `${gatewayBase(c.PRGD_GATEWAY_PUBLIC_URL)}/v1/terminal?session=${session.id}`,
       asset: grant.asset,
       ticket: grant.ticket,
       grant: { id: grant.id, expiresAt: grant.expiresAt },
@@ -347,4 +349,10 @@ export class SessionsService implements OnModuleInit {
     const uploadUrl = await this.storage.presign(PLATFORM_PROJECT, bucket, key, 'PUT', seconds, 'application/x-asciicast');
     return { format: 'asciicast-v2', key, uploadUrl, uploadMethod: 'PUT', contentType: 'application/x-asciicast', uploadUrlExpiresAt: new Date(Date.now() + seconds * 1000) };
   }
+}
+
+/** wss://gateway.<domain> for a request through one of our domains, else the configured public URL. */
+function gatewayBase(configured: string) {
+  const d = requestDomain();
+  return d ? `wss://gateway.${d}` : configured.replace(/\/$/, '');
 }

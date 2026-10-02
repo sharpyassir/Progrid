@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { money, WWW_URL } from '@/lib/api';
+import { money } from '@/lib/api';
+import { useUrls } from '@/lib/urls';
 import { Agent, capi, fmtNum, Overview } from '@/lib/connect';
 import { AgentStatusDot, ErrorBox, FourSteps, useC, useLoad } from '@/components/connect/ui';
 import { RunDrawer, RunsTable } from '@/components/connect/runs';
 
 export default function ConnectOverviewPage() {
+  const { www: WWW_URL } = useUrls();
   const { c, cf, locale } = useC();
   const [runId, setRunId] = useState<string | null>(null);
   const overview = useLoad(() => capi<Overview>('/overview'), []);

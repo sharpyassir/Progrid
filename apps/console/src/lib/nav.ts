@@ -3,7 +3,6 @@
  * short sections. Every live console page is reachable from here; roadmap items open their
  * "coming soon" page under /products/<slug>. Labels are i18n keys so the menu reads in every language.
  */
-import { WWW_URL } from './api';
 import type { StringKey as Key } from './i18n';
 
 export type NavGroupId = 'cloud' | 'build' | 'connect' | 'account';
@@ -13,7 +12,7 @@ export interface NavItem {
   href: string;
   /** Roadmap item: shown with a "Soon" badge. */
   soon?: boolean;
-  /** Leaves the console (opens in a new tab). */
+  /** Leaves the console (opens in a new tab). An href starting with @www is on the website of this domain. */
   external?: boolean;
 }
 export interface NavSection { label: Key; items: NavItem[] }
@@ -42,7 +41,7 @@ export const NAV: NavGroup[] = [
       { label: 'navSecApps', items: [{ label: 'niAppPlatform', href: '/app-platform' }, { label: 'niOneClick', href: '/apps' }, { label: 'niAiStarter', href: '/servers/new?app=ai-starter' }] },
       { label: 'navSecDeployments', items: [{ label: 'niGitDeploy', href: '/deploys' }] },
       { label: 'navSecApis', items: [
-        { label: 'niApiDocs', href: `${WWW_URL}/docs`, external: true }, { label: 'niMcp', href: '/agents#mcp' },
+        { label: 'niApiDocs', href: '@www/docs', external: true }, { label: 'niMcp', href: '/agents#mcp' },
         { label: 'niApprovals', href: '/approvals' }, { label: 'niEventWebhooks', href: '/webhooks' },
       ] },
       { label: 'navSecSoon', items: [

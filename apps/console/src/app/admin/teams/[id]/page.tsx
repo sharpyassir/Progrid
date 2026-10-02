@@ -3,16 +3,18 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
+import { countryOptions, ENTITY_NAME, entityForCountry, type BillingEntityId } from '@/lib/countries';
 import { AdminShell, Stat, fmtDate, fmtMoney } from '@/components/admin-shell';
 import { StatusBadge } from '@/components/status-badge';
 
 interface Team {
   id: string; name: string; slug: string; country: string; currency: string; status: string; kycLevel: number; taxId: string | null; createdAt: string;
+  billingEntity: BillingEntityId; pendingCountry: string | null; pendingBillingEntity: BillingEntityId | null; billingChangeAt: string | null;
   members: { role: string; user: { id: string; email: string; name: string } }[];
   projects: { id: string; name: string; slug: string; spendLimitMinor: number | null; _count: { servers: number } }[];
   abuseFlags: { id: string; kind: string; score: number; source: string; createdAt: string }[];
   credits: { id: string; kind: string; amountMinor: number; remainingMinor: number; reason: string | null; expiresAt: string | null; createdAt: string }[];
-  invoices: { id: string; number: string; status: string; totalMinor: number; currency: string; periodStart: string }[];
+  invoices: { id: string; number: string; status: string; totalMinor: number; currency: string; periodStart: string; billingEntity: BillingEntityId }[];
 }
 
 export default function AdminTeam() {
@@ -31,6 +33,17 @@ export default function AdminTeam() {
     await run(() => api(`/admin/v1/teams/${id}/credits`, { method: 'POST', body: JSON.stringify({ kind: f.get('kind'), amountMinor: Math.round(Number(f.get('amount')) * 100), reason: f.get('reason') || undefined }) }), 'Credit added.');
     e.currentTarget.reset();
   }
+  async function billingCountry(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const country = String(f.get('country') ?? '');
+    const moving = entityForCountry(country) !== t!.billingEntity;
+    const question = moving
+      ? `Move ${t!.name} to ${ENTITY_NAME[entityForCountry(country)]} from the next billing period? Tax, currency, invoice series and card gateway change with it. Credit left in ${t!.currency} is not converted.`
+      : `Change the billing country of ${t!.name} to ${country}? The billing company stays ${ENTITY_NAME[t!.billingEntity]}.`;
+    if (!confirm(question)) return;
+    await run(() => api(`/admin/v1/teams/${id}/billing-country`, { method: 'POST', body: JSON.stringify({ country, reason: f.get('reason') }) }), moving ? 'Change scheduled for the next billing period.' : 'Billing country changed.');
+  }
   if (!t) return <AdminShell title="Team"><p className="text-sm text-neutral-500">Loading…</p></AdminShell>;
   const credit_ = t.credits.reduce((s, c) => s + (!c.expiresAt || new Date(c.expiresAt) > new Date() ? c.remainingMinor : 0), 0);
   return (
@@ -43,10 +56,20 @@ export default function AdminTeam() {
       {msg && <p className="rounded border border-neutral-200 bg-neutral-50 p-2 text-sm dark:border-neutral-800 dark:bg-neutral-900">{msg}</p>}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Status" value={t.status} sub={`KYC level ${t.kycLevel} · ${t.country} · ${t.currency}${t.taxId ? ` · tax id ${t.taxId}` : ''}`} tone={t.status === 'suspended' ? 'bad' : undefined} />
-        <Stat label="Credit balance" value={fmtMoney(credit_, t.currency)} />
+        <Stat label="Credit balance" value={fmtMoney(credit_, t.currency)} sub={`Billed by ${ENTITY_NAME[t.billingEntity]}${t.pendingBillingEntity && t.billingChangeAt ? ` · moves to ${ENTITY_NAME[t.pendingBillingEntity]} (${t.pendingCountry}) on ${fmtDate(t.billingChangeAt)}` : ''}`} />
         <Stat label="Servers" value={t.projects.reduce((s, p) => s + p._count.servers, 0)} sub={`${t.projects.length} projects`} />
         <Stat label="Open flags" value={t.abuseFlags.length} tone={t.abuseFlags.length ? 'bad' : undefined} />
       </div>
+      <section className="card space-y-2">
+        <h2 className="font-medium">Billing country and company</h2>
+        <p className="text-xs text-neutral-500">Saudi Arabia is billed by Progrid Arabia (SAR, VAT, ZATCA, Moyasar); every other country by Progrid Technologies LLC (USD, Stripe). A change of company starts at the next billing period and is recorded in the audit log. Finance staff only.</p>
+        <form className="flex flex-wrap items-center gap-2" onSubmit={billingCountry}>
+          <select className="input w-auto" name="country" defaultValue={t.pendingCountry ?? t.country}>{countryOptions('en').map((c) => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}</select>
+          <input className="input w-72" name="reason" placeholder="Reason (kept in the audit log)" required minLength={3} />
+          <button className="btn-ghost">Change</button>
+          {t.pendingBillingEntity && <button type="button" className="btn-ghost" onClick={() => { const reason = prompt('Reason for cancelling the change:'); if (reason) run(() => api(`/admin/v1/teams/${id}/billing-country/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }), 'Scheduled change cancelled.'); }}>Cancel scheduled change</button>}
+        </form>
+      </section>
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="card p-0">
           <h2 className="border-b border-neutral-100 px-4 py-2 font-medium dark:border-neutral-800">Members</h2>

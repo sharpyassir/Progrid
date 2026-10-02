@@ -1,12 +1,13 @@
 'use client';
 
 import { FormEvent, useState } from 'react';
-import { WWW_URL } from '@/lib/api';
+import { useUrls } from '@/lib/urls';
 import { AgentKey, AgentVersion, del, fmtDate, patch, post, Webhook, WebhookSecrets } from '@/lib/connect';
 import { CopyField, ErrorBox, Field, IssuesNotice, Notice, SecretOnce, Status, useAction, useC } from '../ui';
 import type { AgentTabProps } from './types';
 
 export function DeployTab({ agent, reload, setTab }: AgentTabProps) {
+  const { www: WWW_URL } = useUrls();
   const { c, cf } = useC();
   const [note, setNote] = useState('');
   const [notice, setNotice] = useState<string | null>(null);

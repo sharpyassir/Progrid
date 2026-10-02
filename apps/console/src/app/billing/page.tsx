@@ -65,9 +65,21 @@ function BillingPage() {
         <Stat label={t(locale, 'status')} value={balance.status} />
       </div>
 
+      {balance.billingEntity && (
+        <section className="card space-y-1 text-sm">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="font-medium">{t(locale, 'billedBy')}: {balance.billingEntity.legalName}</h2>
+            <span className="text-xs text-neutral-500">{t(locale, 'billingCountry')}: {balance.billingCountry} · {balance.billingEntity.currency}</span>
+          </div>
+          <p className="text-neutral-600 dark:text-neutral-400">{t(locale, balance.billingEntity.id === 'progrid_arabia' ? 'entityNote_progrid_arabia' : 'entityNote_progrid_llc')}</p>
+          {balance.pendingChange && <p className="text-amber-700 dark:text-amber-400">{t(locale, 'entityPending').replace('{date}', new Date(balance.pendingChange.effectiveAt).toLocaleDateString(locale)).replace('{company}', balance.pendingChange.billingEntity.legalName)}</p>}
+          <p className="text-xs text-neutral-500">{t(locale, 'entityChangeHint')} <a className="underline" href={balance.billingEntity.termsUrl} target="_blank" rel="noreferrer">{t(locale, 'termsLink')}</a> · {balance.billingEntity.supportEmail}</p>
+        </section>
+      )}
+
       <section className="card space-y-3">
         <h2 className="font-medium">Add credit</h2>
-        <p className="text-sm text-neutral-500">Prepaid credit is used before anything is charged to an invoice. Pay by card in riyals or dollars through Moyasar; mada, Visa, Mastercard and Apple Pay are accepted.</p>
+        <p className="text-sm text-neutral-500">{t(locale, 'addCreditLead')}</p>
         <form onSubmit={topup} className="flex flex-wrap items-center gap-2">
           {PRESETS[cur].map((m) => <button type="button" key={m} onClick={() => setAmount(m / 100)} className={`btn-ghost ${amount === m / 100 ? 'ring-2 ring-blue-500' : ''}`}>{money(m, cur, locale)}</button>)}
           <input className="input max-w-[10rem]" type="number" min={cur === 'SAR' ? 20 : 5} step="1" placeholder={`Other (${cur})`} value={amount} onChange={(e) => setAmount(e.target.value === '' ? '' : Number(e.target.value))} />

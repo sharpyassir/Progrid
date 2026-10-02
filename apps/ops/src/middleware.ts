@@ -7,7 +7,8 @@ import { contentSecurityPolicy } from './lib/security-headers';
  */
 export function middleware(req: NextRequest) {
   const nonce = btoa(crypto.randomUUID());
-  const csp = contentSecurityPolicy(nonce);
+  // The host decides the API and gateway origins allowed in connect-src (ops.progrid.co or ops.progrid.sa).
+  const csp = contentSecurityPolicy(nonce, undefined, req.headers.get('x-forwarded-host') ?? req.headers.get('host'));
   const headers = new Headers(req.headers);
   headers.set('x-nonce', nonce);
   headers.set('content-security-policy', csp);

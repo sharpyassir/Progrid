@@ -6,6 +6,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { api, getToken, setToken } from '@/lib/api';
 import { getLocale, Locale, RTL, t } from '@/lib/i18n';
 import { AccountMenu, GroupMenus, LanguageSelect, MobileNav, TopLinks, type Me } from './main-nav';
+import { ENTITY_NAME, type BillingEntityId } from '@/lib/countries';
 
 interface Ctx {
   locale: Locale;
@@ -26,6 +27,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [isStaff, setIsStaff] = useState(false);
   const [me, setMe] = useState<Me | null>(null);
+  // The company that bills the signed in team, named in the footer.
+  const [entity, setEntity] = useState<BillingEntityId | null>(null);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -34,8 +37,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
     setAuthed(!!getToken());
     setReady(true);
     if (getToken()) {
-      api<{ isStaff: boolean; user?: { name: string; email: string }; team?: { name: string } }>('/v1/account')
-        .then((m) => { setIsStaff(!!m.isStaff); setMe(m.user ? { name: m.user.name, email: m.user.email, teamName: m.team?.name ?? '' } : null); })
+      api<{ isStaff: boolean; user?: { name: string; email: string }; team?: { name: string; billingEntity?: BillingEntityId } }>('/v1/account')
+        .then((m) => { setIsStaff(!!m.isStaff); setMe(m.user ? { name: m.user.name, email: m.user.email, teamName: m.team?.name ?? '' } : null); setEntity(m.team?.billingEntity ?? null); })
         .catch(() => setIsStaff(false));
     }
   }, [pathname]);
@@ -89,6 +92,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-4 py-6">{ready ? children : null}</main>
+      {ready && entity && (
+        <footer className="mx-auto max-w-7xl px-4 pb-6 text-xs text-neutral-500">
+          © {new Date().getFullYear()} Progrid · {t(locale, 'entityFooter').replace('{company}', ENTITY_NAME[entity])}
+        </footer>
+      )}
     </ShellCtx.Provider>
   );
 }

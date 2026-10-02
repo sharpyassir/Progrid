@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
+import { ENTITY_NAME, type BillingEntityId } from '@/lib/countries';
 import { AdminShell, fmtDate, fmtMoney } from '@/components/admin-shell';
 import { StatusBadge } from '@/components/status-badge';
 import { useShell } from '@/components/shell';
@@ -12,6 +13,7 @@ interface InvoicePayment { id: string; provider: string; providerRef: string | n
 interface CreditNote { id: string; number: string; amountMinor: number; reason: string; createdAt: string }
 interface Invoice {
   id: string; number: string; status: string; subtotalMinor: number; taxMinor: number; totalMinor: number; creditedMinor: number; currency: string; periodStart: string; dueAt: string | null; eInvoiceType: string | null;
+  billingEntity: BillingEntityId;
   team: { id: string; name: string; slug: string; country: string }; payments: InvoicePayment[]; creditNotes: CreditNote[];
 }
 interface Payment extends InvoicePayment { team: { id: string; name: string }; invoice: { number: string } | null }
@@ -19,20 +21,21 @@ interface Payment extends InvoicePayment { team: { id: string; name: string }; i
 type Panel = { invoiceId: string; kind: 'credit' | 'record' } | null;
 
 const STATUSES = ['open', 'paid', 'credited', 'void', 'uncollectible'];
-const CARD = ['moyasar', 'fake'];
+const CARD = ['moyasar', 'stripe', 'fake'];
 
 /** Back office invoices: refunds, credit notes, void, bank transfers and write offs, each behind a confirm dialog. */
 export default function AdminInvoices() {
   const { locale } = useShell();
   const [status, setStatus] = useState('');
+  const [entity, setEntity] = useState('');
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [panel, setPanel] = useState<Panel>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const load = useCallback(() => Promise.all([
-    api<{ data: Invoice[] }>(`/admin/v1/invoices${status ? `?status=${status}` : ''}`).then((r) => setInvoices(r.data)),
+    api<{ data: Invoice[] }>(`/admin/v1/invoices?${new URLSearchParams({ ...(status ? { status } : {}), ...(entity ? { entity } : {}) })}`).then((r) => setInvoices(r.data)),
     api<{ data: Payment[] }>('/admin/v1/payments?status=succeeded').then((r) => setPayments(r.data)),
-  ]), [status]);
+  ]), [status, entity]);
   useEffect(() => { load(); }, [load]);
 
   async function run(question: string, fn: () => Promise<unknown>) {
@@ -65,12 +68,13 @@ export default function AdminInvoices() {
   }
 
   return (
-    <AdminShell title={t(locale, 'invoices')} actions={
+    <AdminShell title={t(locale, 'invoices')} actions={<div className="flex gap-2">
+      <select className="input w-auto py-1" value={entity} onChange={(e) => setEntity(e.target.value)} aria-label="Billing company"><option value="">All companies</option><option value="progrid_llc">Progrid Technologies LLC</option><option value="progrid_arabia">Progrid Arabia</option></select>
       <select className="input w-auto py-1" value={status} onChange={(e) => setStatus(e.target.value)} aria-label={t(locale, 'status')}>
         <option value="">{t(locale, 'allStatuses')}</option>
         {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
       </select>
-    }>
+    </div>}>
       <p className="text-sm text-neutral-500">{t(locale, 'adminInvoicesLead')}</p>
       {msg && <p className="rounded border border-neutral-200 bg-neutral-50 p-2 text-sm dark:border-neutral-800 dark:bg-neutral-900">{msg}</p>}
       <section className="card p-0">
@@ -89,7 +93,7 @@ export default function AdminInvoices() {
                   <td className="px-4 py-2 font-mono">{i.number}
                     {i.creditNotes.map((n) => <div key={n.id} className="text-xs text-neutral-500">{n.number}: {fmtMoney(n.amountMinor, i.currency)} · {n.reason}</div>)}
                   </td>
-                  <td className="px-4 py-2"><Link href={`/admin/teams/${i.team.id}`} className="hover:underline">{i.team.name}</Link> <span className="text-xs text-neutral-500">{i.team.country}</span></td>
+                  <td className="px-4 py-2"><Link href={`/admin/teams/${i.team.id}`} className="hover:underline">{i.team.name}</Link> <span className="text-xs text-neutral-500">{i.team.country} · {ENTITY_NAME[i.billingEntity] ?? i.billingEntity}</span></td>
                   <td className="px-4 py-2 text-neutral-500">{i.periodStart.slice(0, 7)}</td>
                   <td className="px-4 py-2"><StatusBadge status={i.status === 'paid' ? 'active' : i.status === 'open' ? 'pending' : i.status} />{unpaid && i.dueAt && new Date(i.dueAt) < new Date() && <span className="ms-1 text-xs text-red-600">{t(locale, 'overdue')}</span>}</td>
                   <td className="px-4 py-2 text-end font-medium">{fmtMoney(i.totalMinor, i.currency)}</td>

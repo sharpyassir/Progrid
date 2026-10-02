@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { WWW_URL } from '@/lib/api';
+import { useUrls } from '@/lib/urls';
 import { capi, Docs } from '@/lib/connect';
 import { CodeBlock, CopyField, Json, Segmented, useC, useLoad } from '../ui';
 import type { AgentTabProps } from './types';
@@ -21,6 +21,7 @@ function fallbackExamples(ep: string): Docs['examples'] {
 }
 
 export function ApiTab({ agent }: AgentTabProps) {
+  const { www: WWW_URL } = useUrls();
   const { c } = useC();
   const [lang, setLang] = useState<Lang>('curl');
   const { data } = useLoad(() => capi<Docs>(`/agents/${agent.id}/docs`), [agent.id]);

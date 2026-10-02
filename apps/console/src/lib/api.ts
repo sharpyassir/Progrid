@@ -4,9 +4,12 @@
  */
 import { getLocale, t } from './i18n';
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
-/** The marketing site, for legal and help links. */
-export const WWW_URL = process.env.NEXT_PUBLIC_WWW_URL ?? 'https://progrid.sa';
+import { runtimeUrls } from './urls';
+
+/** The API of this domain (api.progrid.co from console.progrid.co, api.progrid.sa from console.progrid.sa). Used at call time in the browser. */
+export const API_URL = runtimeUrls().api;
+/** The website of this domain, for legal and help links. Components that render links use useUrls() instead. */
+export const WWW_URL = runtimeUrls().www;
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public details?: Record<string, unknown>) {
@@ -68,7 +71,13 @@ export interface Firewall { id: string; name: string; rules: { id: string; direc
 export interface App { id: string; slug: string; name: string; category: string; summary: string; version: string; minSizeId: string; variables: AppVariable[]; priceMonthlyMinor: number }
 export interface AppVariable { name: string; label: string; type: string; required?: boolean; default?: string; generate?: string }
 export interface Price { resourceType: string; sku: string; monthlyMinor: number; hourlyMinor: number }
-export interface Balance { currency: 'USD' | 'SAR'; creditMinor: number; monthToDateMinor: number; status: string }
+export interface BillingEntityInfo { id: 'progrid_arabia' | 'progrid_llc'; legalName: string; country: string; currency: 'USD' | 'SAR'; taxRate: number; taxLabel: string; supportEmail: string; termsUrl: string; domain: string | null; consoleUrl: string }
+export interface Balance {
+  currency: 'USD' | 'SAR'; creditMinor: number; monthToDateMinor: number; status: string;
+  /** The company that bills the team (Progrid Arabia or Progrid Technologies LLC). */
+  billingCountry?: string; billingEntity?: BillingEntityInfo;
+  pendingChange?: { country: string; billingEntity: BillingEntityInfo; effectiveAt: string } | null;
+}
 
 export function money(minor: number, currency: string, locale = 'en') {
   return new Intl.NumberFormat(locale === 'tr' ? 'tr-TR' : locale === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency }).format(minor / 100);

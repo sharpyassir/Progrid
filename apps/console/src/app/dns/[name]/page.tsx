@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useState } from 'react';
-import { api, ApiError } from '@/lib/api';
+import { api, API_URL, ApiError } from '@/lib/api';
 import { useShell } from '@/components/shell';
 import type { Zone } from '../page';
 
@@ -50,7 +50,7 @@ export default function ZonePage() {
           <h1 className="text-xl font-semibold">{zone.name}</h1>
           <span className={`badge ${zone.synced ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'}`}>{zone.synced ? 'published' : zone.status === 'error' ? 'nameserver error' : 'publishing'}</span>
           <span className="text-sm text-neutral-500">serial {zone.serial} · nameservers {zone.nameservers.join(', ')}</span>
-          <button className="btn-ghost ms-auto" onClick={() => zoneFile === null ? fetch(`${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'}/v1/domains/${name}/zone-file`, { headers: { Authorization: `Bearer ${localStorage.getItem('prgd.session')}` } }).then((r) => r.text()).then(setZoneFile) : setZoneFile(null)}>{zoneFile === null ? 'Zone file' : 'Hide zone file'}</button>
+          <button className="btn-ghost ms-auto" onClick={() => zoneFile === null ? fetch(`${API_URL}/v1/domains/${name}/zone-file`, { headers: { Authorization: `Bearer ${localStorage.getItem('prgd.session')}` } }).then((r) => r.text()).then(setZoneFile) : setZoneFile(null)}>{zoneFile === null ? 'Zone file' : 'Hide zone file'}</button>
           <button className="btn-danger" disabled={busy} onClick={() => confirm(`Delete ${zone.name} and all its records?`) && run(() => api(`/v1/domains/${name}`, { method: 'DELETE' }).then(() => router.replace('/dns')))}>Delete domain</button>
         </div>
         {zone.statusMessage && <p className="mt-1 text-sm text-red-600">{zone.statusMessage}</p>}

@@ -7,11 +7,32 @@
  * API and the terminal gateway.
  */
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
-/** This console's own address (ops.progrid.sa in production). */
-export const OPS_URL = process.env.NEXT_PUBLIC_OPS_URL ?? 'http://localhost:3002';
+/** Build time addresses: the fallback for hosts that are not ops.<domain> (local runs, previews). */
+const FALLBACK = {
+  api: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000',
+  ops: process.env.NEXT_PUBLIC_OPS_URL ?? 'http://localhost:3002',
+  gateway: process.env.NEXT_PUBLIC_GATEWAY_URL ?? 'ws://localhost:4100',
+};
+
+/**
+ * Addresses for the host this console is served on, so one build serves ops.progrid.co (the
+ * primary one, where staff register passkeys) and ops.progrid.sa:
+ *   ops.<domain>  ->  api.<domain>, wss://gateway.<domain>
+ */
+export function urlsForHost(hostname: string | null | undefined) {
+  const h = (hostname ?? '').toLowerCase().replace(/:\d+$/, '');
+  if (!h.startsWith('ops.') || h.split('.').length < 3) return FALLBACK;
+  const domain = h.slice('ops.'.length);
+  return { api: `https://api.${domain}`, ops: `https://${h}`, gateway: `wss://gateway.${domain}` };
+}
+
+const current = typeof window === 'undefined' ? FALLBACK : urlsForHost(window.location.hostname);
+/** The API of this domain; computed in the browser from the page's host. */
+export const API_URL = current.api;
+/** This console's own address (ops.progrid.co in production). */
+export const OPS_URL = current.ops;
 /** The terminal gateway (prgd-gateway). The API hands out session URLs on this origin. */
-export const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL ?? 'ws://localhost:4100';
+export const GATEWAY_URL = current.gateway;
 
 function origin(url: string) {
   try {
@@ -21,9 +42,11 @@ function origin(url: string) {
   }
 }
 
-export function contentSecurityPolicy(nonce: string, dev = process.env.NODE_ENV !== 'production') {
-  const api = origin(API_URL);
-  const gateway = origin(GATEWAY_URL);
+export function contentSecurityPolicy(nonce: string, dev = process.env.NODE_ENV !== 'production', host?: string | null) {
+  const urls = urlsForHost(host);
+  const api = origin(urls.api);
+  // The gateway of this domain, and the configured one (the API may hand out either).
+  const gateway = [...new Set([origin(urls.gateway), origin(FALLBACK.gateway)])].join(' ');
   const directives: Record<string, string[]> = {
     'default-src': ["'self'"],
     // strict-dynamic lets the nonce'd Next.js bootstrap load its own chunks; dev needs eval for fast refresh.
@@ -43,7 +66,7 @@ export function contentSecurityPolicy(nonce: string, dev = process.env.NODE_ENV 
     'frame-ancestors': ["'none'"],
   };
   const parts = Object.entries(directives).map(([k, v]) => `${k} ${v.join(' ')}`);
-  if (!dev && API_URL.startsWith('https://')) parts.push('upgrade-insecure-requests');
+  if (!dev && urls.api.startsWith('https://')) parts.push('upgrade-insecure-requests');
   return parts.join('; ');
 }
 
