@@ -44,6 +44,19 @@ default). It never moves to another partner, and a team can use one code only.
 - Rate limits per address: clicks 30 a minute, code checks 30 a minute, billing promo codes 10 per
   10 minutes, signup 5 per 10 minutes.
 
+## Public pages (phase b)
+
+- `/affiliates` (and `/ar/affiliates`, `/tr/affiliates`) on both domains: hero with **Apply now**,
+  how it works, the commission table, who it is for, questions, and a link to the terms. Rates,
+  windows, the discount and the minimum payout come from `GET /v1/affiliates/program` (the
+  settings below, cached for five minutes); the page falls back to the defaults if the API is
+  unreachable. The minimum payout is shown in the storefront currency (USD on progrid.co, SAR on
+  progrid.sa). When `applicationsOpen` is off the buttons say applications are paused.
+- `/affiliates/terms`: a draft summary of the rules (`apps/www/content/pages/shared/{en,ar}/affiliate-terms.md`),
+  to be replaced by the final agreement. Turkish falls back to English with a notice.
+- `/affiliates/portal` redirects to `console.<domain>/affiliates/portal` (phase c).
+- Footer: **Affiliate Program / برنامج الشركاء** under Company, on every marketing and legal page.
+
 ## Configuration
 
 Settings live in one row (`prgd_affiliate_settings`); anything not stored uses the defaults in

@@ -6,6 +6,7 @@ import { CurrentActor, Public, RequireScopes } from '../../common/auth/decorator
 import type { Actor } from '../../common/auth/actor';
 import { clientIpOf } from '../../common/net/client-ip';
 import { AttributionService } from './attribution.service';
+import { AffiliateSettingsService } from './settings';
 
 class ClickDto {
   @IsString() @Length(1, 40) code: string;
@@ -21,7 +22,24 @@ class PromoDto {
 @ApiTags('affiliates')
 @Controller('v1')
 export class TrackingController {
-  constructor(private readonly attribution: AttributionService) {}
+  constructor(private readonly attribution: AttributionService, private readonly settings: AffiliateSettingsService) {}
+
+  /** Public program terms for the /affiliates page: rates per category, windows, minimum payout. */
+  @Public() @Get('affiliates/program')
+  async program() {
+    const s = await this.settings.get();
+    return {
+      applicationsOpen: s.applicationsOpen,
+      rates: s.rates,
+      cookieDays: s.cookieDays,
+      holdDays: s.holdDays,
+      commissionMonths: s.commissionMonths,
+      minPayoutMinor: s.minPayoutMinor,
+      promoDiscountPercent: s.promoDiscountPercent,
+      promoDiscountMonths: s.promoDiscountMonths,
+      termsVersion: s.termsVersion,
+    };
+  }
 
   /** Sent by the website when a page opens with ?ref=CODE. Always 204, valid code or not. */
   @Public() @Post('affiliates/clicks') @HttpCode(204)

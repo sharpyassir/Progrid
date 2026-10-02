@@ -50,6 +50,12 @@ describe('affiliate tracking', () => {
     expect(clicks.find((x) => x.landingPath === '/pricing')?.referrer).toBe('https://youtube.com');
   });
 
+  it('publishes the program terms for the affiliates page', async () => {
+    const p = await new Client(s.baseUrl).ok('GET', '/v1/affiliates/program');
+    expect(p).toMatchObject({ applicationsOpen: true, cookieDays: 60, holdDays: 60, commissionMonths: 12, minPayoutMinor: { SAR: 20_000, USD: 5_000 }, promoDiscountPercent: 10, promoDiscountMonths: 3 });
+    expect(p.rates).toEqual({ web_hosting: 30, connect: 30, servers: 15, managed_cloud: 15, ai_usage: 0, support: 0 });
+  });
+
   it('describes a code, and a referral cookie only while the click is recent', async () => {
     const c = new Client(s.baseUrl);
     expect(await c.ok('GET', `/v1/affiliates/codes/${code}`)).toEqual({ code, valid: true, discountPercent: 10, discountMonths: 3 });
