@@ -17,9 +17,13 @@ export function DeployTab({ agent, reload, setTab }: AgentTabProps) {
     const v = await run(() => post<AgentVersion>(`/agents/${agent.id}/versions`, { note }));
     if (v) { setNote(''); await reload(); setNotice(cf('versionSaved')(v.version)); }
   }
+  // The latest saved version is already live: deploying again would change nothing, so offer
+  // "Deploy latest", which saves the draft as a new version and deploys it.
+  const live = agent.status === 'deployed' && !!agent.deployedVersion && agent.deployedVersion === agent.currentVersion;
+  const resume = agent.status === 'paused' && !!agent.deployedVersion && agent.deployedVersion === agent.currentVersion;
   async function deploy() {
     setNotice(null);
-    const r = await run(() => post(`/agents/${agent.id}/deploy`, agent.currentVersion ? { version: agent.currentVersion } : {}));
+    const r = await run(() => post(`/agents/${agent.id}/deploy`, agent.currentVersion && !live ? { version: agent.currentVersion } : {}));
     if (r !== undefined) { await reload(); setNotice(c('deployedOk')); }
   }
   async function pause() {
@@ -41,9 +45,11 @@ export function DeployTab({ agent, reload, setTab }: AgentTabProps) {
           <button className="btn-ghost" disabled={busy}>{c('saveVersion')}</button>
         </form>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn-primary" disabled={busy} onClick={deploy}>
-            {agent.currentVersion ? cf('deployVersion')(agent.currentVersion) : c('deploy')}
+          {live && <span className="badge self-center bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">{cf('versionN')(agent.deployedVersion!)} · {c('liveBadge')}</span>}
+          <button type="button" className={live ? 'btn-ghost' : 'btn-primary'} disabled={busy} onClick={deploy} title={live ? c('deployLatestHint') : undefined}>
+            {live ? c('deployLatest') : resume ? c('resume') : agent.currentVersion ? cf('deployVersion')(agent.currentVersion) : c('deploy')}
           </button>
+          {live && <span className="self-center text-xs text-neutral-500">{c('deployLatestHint')}</span>}
           {agent.status === 'deployed' && <button type="button" className="btn-ghost" disabled={busy} onClick={pause}>{c('pause')}</button>}
         </div>
         <IssuesNotice issues={agent.issues ?? []} />

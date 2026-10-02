@@ -14,7 +14,8 @@ export function WorkflowTab({ agent, reload }: AgentTabProps) {
   const [problems, setProblems] = useState<string[] | null>(null);
   const [saved, setSaved] = useState(false);
   const { busy, error, run } = useAction();
-  const dirty = JSON.stringify(graph) !== JSON.stringify(savedGraph);
+  // Postgres jsonb reorders keys and the editor drops empty labels, so compare a canonical form.
+  const dirty = canonical(graph) !== canonical(savedGraph);
 
   function check() {
     const p = graph ? validateWorkflow(graph, locale) : [];
@@ -60,4 +61,15 @@ export function WorkflowTab({ agent, reload }: AgentTabProps) {
       <WorkflowEditor initial={graph} tools={agent.tools} layoutKey={layoutKey} onChange={(g) => { setGraph(g); setProblems(null); }} />
     </div>
   );
+}
+
+/** Stable JSON: sorted keys, null and undefined fields dropped, edges in id order. */
+function canonical(g: Graph | null): string {
+  if (!g) return 'null';
+  const norm = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(norm);
+    if (v && typeof v === 'object') return Object.fromEntries(Object.keys(v).sort().filter((k) => (v as Record<string, unknown>)[k] != null).map((k) => [k, norm((v as Record<string, unknown>)[k])]));
+    return v;
+  };
+  return JSON.stringify(norm({ nodes: [...g.nodes].sort((a, b) => a.id.localeCompare(b.id)), edges: [...g.edges].sort((a, b) => a.id.localeCompare(b.id)) }));
 }

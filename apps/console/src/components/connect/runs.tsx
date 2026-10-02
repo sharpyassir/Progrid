@@ -3,14 +3,28 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { money } from '@/lib/api';
-import { capi, FINISHED, fmtDate, fmtMs, fmtNum, Run, RunStep, streamRun, upsertStep } from '@/lib/connect';
+import { capi, FINISHED, fmtDate, fmtMs, fmtNum, Run, RunStep, streamRun, upsertStep, UsageReport } from '@/lib/connect';
 import { Drawer, ErrorBox, Json, Notice, Segmented, Status, TableCard, Td, Th, useC } from './ui';
 
 const STEP_ICON: Record<RunStep['type'], string> = { node: '◆', model: '✦', tool: '⚙', condition: '⑂', approval: '✋' };
 
+/** Whether Connect prices are set (GET /usage), fetched once a minute at most and shared by every run view. */
+let pricing: { at: number; value: Promise<boolean | null> } | null = null;
+function usePricingConfigured() {
+  const [value, setValue] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!pricing || Date.now() - pricing.at > 60_000) pricing = { at: Date.now(), value: capi<UsageReport>('/usage').then((u) => u.pricingConfigured).catch(() => null) };
+    let live = true;
+    pricing.value.then((v) => { if (live) setValue(v); });
+    return () => { live = false; };
+  }, []);
+  return value;
+}
+
 /** Totals for one run: execution time, tokens, tool and API calls, cost estimate. */
 export function RunSummary({ run, steps }: { run: Run; steps: RunStep[] }) {
   const { c, cf, locale } = useC();
+  const priced = usePricingConfigured();
   const u = run.usage;
   const tools = [...new Set(steps.filter((s) => s.type === 'tool').map((s) => s.name))];
   const items: [string, React.ReactNode][] = [
@@ -19,7 +33,8 @@ export function RunSummary({ run, steps }: { run: Run; steps: RunStep[] }) {
     [c('tokens'), u ? cf('tokensInOut')(fmtNum(u.inputTokens, locale), fmtNum(u.outputTokens, locale)) : '—'],
     [c('toolsUsed'), tools.length ? <span dir="ltr" className="font-mono text-xs">{tools.join(', ')}</span> : '—'],
     [c('apiCalls'), u ? fmtNum(u.apiCalls, locale) : '—'],
-    [c('costEstimate'), run.costEstimateMinor != null ? money(run.costEstimateMinor, run.currency || 'USD', locale) : '—'],
+    // Same rule as the Usage page: no prices yet means no cost, not a zero cost.
+    [c('costEstimate'), priced === false ? c('pricingNotSet') : priced && run.costEstimateMinor != null ? money(run.costEstimateMinor, run.currency || 'USD', locale) : '—'],
   ];
   return (
     <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">

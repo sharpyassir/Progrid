@@ -73,7 +73,7 @@ const fromRF = (nodes: Node<StepData>[], edges: Edge[]): Graph => ({
     const { _label, _summary, ...data } = n.data; // eslint-disable-line @typescript-eslint/no-unused-vars
     return { id: n.id, type: n.type as NodeType, position: { x: Math.round(n.position.x), y: Math.round(n.position.y) }, data };
   }),
-  edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target, ...(e.sourceHandle ? { sourceHandle: e.sourceHandle, label: e.sourceHandle } : {}) })),
+  edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target, ...(e.sourceHandle ? { sourceHandle: e.sourceHandle, label: typeof e.label === 'string' && e.label ? e.label : e.sourceHandle } : {}) })),
 });
 
 /** Layered layout from the trigger down: longest path decides the row, true branches go left of false. */
@@ -242,7 +242,7 @@ function Editor({ initial, tools, onChange, height = 'h-[560px]', layoutKey }: P
         <div dir="ltr" className={`${height} overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-800`} aria-label={c('canvas')} role="region">
           <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect}
             onSelectionChange={({ nodes: s }) => setSelected(s[0]?.id ?? null)} deleteKeyCode={['Backspace', 'Delete']} fitView fitViewOptions={{ padding: 0.2 }}
-            colorMode="system" proOptions={{ hideAttribution: true }} minZoom={0.3}>
+            colorMode="system" minZoom={0.3}>
             <Background gap={16} />
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable className="!hidden sm:!block" />
