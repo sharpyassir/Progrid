@@ -36,6 +36,7 @@ import { ManagedModule } from './modules/managed/managed.module';
 import { OpsSettingsModule } from './modules/ops/settings/ops-settings.service';
 import { OpsModule } from './modules/ops/ops.module';
 import { OAuthModule } from './modules/oauth/oauth.module';
+import { ConnectModule } from './modules/connect/connect.module';
 import { JobsModule } from './jobs/jobs.module';
 import { HealthController } from './health.controller';
 
@@ -48,7 +49,7 @@ import { HealthController } from './health.controller';
     IamModule,
     ApprovalsModule, EventsModule, ComputeModule, SchedulerModule, NetworkModule, StorageModule, MarketplaceModule, BillingModule, TrustModule, AdminModule, DeployModule, GithubModule, MonitoringModule, LbModule, DnsModule, ObjectsModule, DatabasesModule,
     SupportModule, KubernetesModule, AppPlatformModule, TeamModule, OpsSettingsModule, ManagedModule, OpsModule,
-    OAuthModule,
+    OAuthModule, ConnectModule,
     // background
     JobsModule,
   ],

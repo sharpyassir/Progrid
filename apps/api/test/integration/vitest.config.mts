@@ -91,6 +91,9 @@ export default defineConfig({
       RESEND_WEBHOOK_SECRET: 'whsec_' + Buffer.from('it-resend-webhook-signing-secret').toString('base64'),
       MAIL_API_KEY: 'it-resend-api-key',
       SUPPORT_INBOX: 'support@progrid.sa',
+      // Connect: the fake model, and "localhost" opened in the outbound guard so a tool can reach the test database.
+      CONNECT_MODEL_PROVIDER: 'fake',
+      CONNECT_NETWORK_ALLOWLIST: 'localhost',
     },
   },
 });

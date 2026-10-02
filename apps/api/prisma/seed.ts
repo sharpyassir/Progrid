@@ -85,6 +85,21 @@ async function main() {
     await prisma.price.create({ data: { resourceType, sku, sizeId, currency: BOOK, monthlyMinor, unit, validFrom: cur ? new Date() : PRICE_VALID_FROM } });
   }
 
+  // Progrid Connect SKUs exist with no price (0) until staff set one in the back office
+  // (POST /admin/v1/prices). Created only when missing, so a re-seed never resets a set price.
+  // monthlyMinor holds the price per unit: per 1,000 executions or tool calls, per 1M tokens.
+  for (const [sku, type, unit] of [
+    ['connect-executions', 'connect_execution', 'per_1k'],
+    ['connect-ai-input-tokens', 'connect_ai_input', 'per_1m'],
+    ['connect-ai-output-tokens', 'connect_ai_output', 'per_1m'],
+    ['connect-ai-cache-read-tokens', 'connect_ai_cache_read', 'per_1m'],
+    ['connect-tool-calls', 'connect_tool_call', 'per_1k'],
+  ] as const) {
+    if (!(await prisma.price.findFirst({ where: { resourceType: type, sku, currency: BOOK, validTo: null } }))) {
+      await prisma.price.create({ data: { resourceType: type, sku, currency: BOOK, monthlyMinor: 0, unit, validFrom: PRICE_VALID_FROM } });
+    }
+  }
+
   // Starting exchange rate; the hourly job replaces it with the provider's rate.
   if (!(await prisma.fxRate.findFirst({ where: { quote: 'SAR' } }))) {
     await prisma.fxRate.create({ data: { base: 'USD', quote: 'SAR', rate: 3.75, source: 'seed' } });

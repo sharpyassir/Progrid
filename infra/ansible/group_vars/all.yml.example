@@ -67,6 +67,11 @@ prgd_infisical_project: ""
 google_client_id: ""                # xxxx.apps.googleusercontent.com
 microsoft_client_id: ""             # Application (client) ID from the Entra app registration
 microsoft_tenant: common            # common accepts work, school and personal accounts
+# Progrid Connect (docs/connect.md); the Anthropic key lives in vault.yml as vault_anthropic_api_key
+connect_default_model: claude-opus-5-5   # also claude-sonnet-5-5, claude-haiku-4-5
+connect_model_fallbacks: "true"          # server side refusal fallbacks on Opus requests
+connect_max_concurrent_runs: 10          # per team
+connect_network_allowlist: ""            # admin only: private CIDRs or hosts agent tools may reach
 
 # --- vault.yml keys (values with ansible-vault) ---
 # vault_postgres_password: ...
@@ -88,6 +93,7 @@ microsoft_tenant: common            # common accepts work, school and personal a
 # vault_prgd_infisical_token: ""          # Infisical machine identity token, when prgd_secret_store is infisical
 # vault_google_client_secret: ""          # social sign in with Google
 # vault_microsoft_client_secret: ""       # social sign in with Microsoft; rotate before it expires
+# vault_anthropic_api_key: ""             # Claude API key for Progrid Connect agents; empty runs the fake model
 # vault_pdns_api_key: ...
 # vault_rgw_admin_access_key: ...
 # vault_rgw_admin_secret_key: ...

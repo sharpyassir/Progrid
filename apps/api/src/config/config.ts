@@ -193,6 +193,36 @@ const schema = z.object({
   MICROSOFT_TENANT: z.preprocess((v) => (v === '' ? undefined : v), z.string().regex(/^[A-Za-z0-9.-]+$/).default('common')),
   /** Base of the provider redirect URIs (<base>/v1/auth/oauth/<provider>/callback). Empty uses PUBLIC_API_URL. */
   OAUTH_REDIRECT_BASE: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
+
+  // ---- Progrid Connect (docs/connect.md) ----
+  /** Claude API key for Connect agents. Empty runs every agent on the deterministic fake model. */
+  ANTHROPIC_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().optional()),
+  /** anthropic or fake. Defaults to anthropic when ANTHROPIC_API_KEY is set, fake otherwise. */
+  CONNECT_MODEL_PROVIDER: z.preprocess((v) => (v === '' ? undefined : v), z.enum(['anthropic', 'fake']).optional()),
+  /** Model new agents get. Must be one of the catalog ids (src/modules/connect/models/catalog.ts). */
+  CONNECT_DEFAULT_MODEL: z.string().default('claude-opus-5-5'),
+  /** Server side refusal fallbacks on Opus requests (fallbacks: "default"). */
+  CONNECT_MODEL_FALLBACKS: z.enum(['true', 'false', '1', '0']).default('true').transform((v) => v === 'true' || v === '1'),
+  /** Output token cap of one model call. Thinking counts toward it. */
+  CONNECT_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(1024).max(64_000).default(16_000),
+  /** Public base the run endpoint, webhook URLs and docs print, e.g. https://api.progrid.sa. Empty uses PUBLIC_API_URL. */
+  CONNECT_PUBLIC_BASE_URL: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
+  /** Per team caps. */
+  CONNECT_MAX_AGENTS_PER_TEAM: z.coerce.number().int().min(1).default(50),
+  CONNECT_MAX_CONNECTIONS_PER_TEAM: z.coerce.number().int().min(1).default(50),
+  CONNECT_MAX_CONCURRENT_RUNS: z.coerce.number().int().min(1).default(10),
+  /** Public run API and inbound webhook limits, requests per minute. */
+  CONNECT_RUNS_PER_MINUTE_PER_AGENT: z.coerce.number().int().min(1).default(60),
+  CONNECT_RUNS_PER_MINUTE_PER_TEAM: z.coerce.number().int().min(1).default(300),
+  /** Emails a team's agents may send through the platform mailer per hour. */
+  CONNECT_PLATFORM_EMAILS_PER_HOUR: z.coerce.number().int().min(0).default(50),
+  /**
+   * Admin only: CIDRs or host names that outbound tools may reach even though they are private
+   * (e.g. "127.0.0.1/32,db.internal.example"). Empty in production unless you know why.
+   */
+  CONNECT_NETWORK_ALLOWLIST: z.string().default(''),
+  /** Seconds a synchronous public run waits before answering 202 with the run id. */
+  CONNECT_SYNC_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(300).default(60),
 });
 
 export type AppConfig = z.infer<typeof schema>;

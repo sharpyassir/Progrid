@@ -10,6 +10,8 @@ import type { Activities } from './activities';
 export * from './managed';
 // DevOps console workflows (timers, access grants, shifts, payouts) live in ./ops.
 export * from './ops';
+// Progrid Connect runs and schedules live in ./connect.
+export * from './connect';
 
 const act = proxyActivities<Activities>({
   startToCloseTimeout: '5 minutes',
