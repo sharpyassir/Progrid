@@ -1,6 +1,6 @@
 import { PROGRID_ACTIONS } from './tools/progrid.executor';
 import { TEMPLATES } from './templates';
-import { CONNECTION_KINDS, TOOL_KINDS } from './dto';
+import { CONNECTION_KINDS, TOOL_KINDS } from './kinds';
 import type { Blueprint } from './blueprint';
 
 /**

@@ -2,7 +2,7 @@ import { validateGraph, type Graph, type GraphIssue } from './runtime/graph';
 import { normalizeVariables, type VariableDef } from './runtime/spec';
 import { EFFORTS, isKnownModel, type Effort } from './models/catalog';
 import { isValidSchema } from './tools/schema';
-import { CONNECTION_KINDS, TOOL_KINDS } from './dto';
+import { CONNECTION_KINDS, TOOL_KINDS } from './kinds';
 
 /**
  * A blueprint is everything an agent is made of, before it exists: templates are blueprints,

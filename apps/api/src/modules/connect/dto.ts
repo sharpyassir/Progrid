@@ -2,11 +2,9 @@ import { Allow, IsArray, IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString,
 import { Type } from 'class-transformer';
 import { PaginationQuery } from '../../common/pagination';
 
-export const EFFORT_VALUES = ['low', 'medium', 'high'] as const;
-export const TOOL_KINDS = ['http_request', 'database_query', 'send_email', 'notify', 'webhook_out', 'progrid'] as const;
-export const CONNECTION_KINDS = ['rest_api', 'postgres', 'mysql', 'mongodb', 'smtp', 'webhook_out', 'custom'] as const;
-export const RUN_STATUSES = ['queued', 'running', 'succeeded', 'failed', 'waiting_approval', 'cancelled'] as const;
-export const RUN_SOURCES = ['api', 'webhook', 'test', 'schedule', 'manual'] as const;
+import { CONNECTION_KINDS, EFFORT_VALUES, RUN_SOURCES, RUN_STATUSES, TOOL_KINDS } from './kinds';
+
+export { CONNECTION_KINDS, EFFORT_VALUES, RUN_SOURCES, RUN_STATUSES, TOOL_KINDS };
 const TOOL_NAME = /^[a-z][a-z0-9_]{0,63}$/;
 
 export class CreateAgentDto {
