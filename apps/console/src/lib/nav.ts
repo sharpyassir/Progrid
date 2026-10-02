@@ -67,7 +67,7 @@ export const NAV: NavGroup[] = [
       { label: 'navSecAccess', items: [
         { label: 'niApiKeys', href: '/agents' }, { label: 'niTeam', href: '/team' }, { label: 'niSecurity', href: '/security' }, { label: 'niAudit', href: '/audit' },
       ] },
-      { label: 'navSecHelp', items: [{ label: 'niSupport', href: '/support' }, { label: 'niManaged', href: '/managed' }] },
+      { label: 'navSecHelp', items: [{ label: 'niSupport', href: '/support' }, { label: 'niManaged', href: '/managed' }, { label: 'niAffiliates', href: '/affiliates/portal' }] },
     ],
   },
 ];

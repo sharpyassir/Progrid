@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="728" height="90" viewBox="0 0 728 90" role="img" aria-label="Progrid">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b1730"/><stop offset="1" stop-color="#0b47c9"/></linearGradient></defs>
+<rect width="728" height="90" fill="url(#g)"/>
+<g transform="translate(22 17) scale(0.4516)">
+  <rect x="0" y="0" width="20" height="20" rx="4.5" fill="#ffffff"/>
+  <rect x="26" y="0" width="20" height="20" rx="4.5" fill="#ffffff"/>
+  <rect x="52" y="0" width="20" height="20" rx="4.5" fill="#ffffff"/>
+  <rect x="78" y="0" width="20" height="20" rx="4.5" fill="rgba(255,255,255,0.28)"/>
+  <rect x="0" y="26" width="20" height="20" rx="4.5" fill="#ffffff"/>
+  <rect x="26" y="26" width="20" height="20" rx="4.5" fill="rgba(255,255,255,0.28)"/>
+  <rect x="52" y="26" width="20" height="20" rx="4.5" fill="rgba(255,255,255,0.28)"/>
+  <circle cx="88.0" cy="36.0" r="10.0" fill="#1bb9e0"/>
+  <rect x="0" y="52" width="20" height="20" rx="4.5" fill="#ffffff"/>
+  <rect x="26" y="52" width="20" height="20" rx="4.5" fill="#ffffff"/>
+  <rect x="52" y="52" width="20" height="20" rx="4.5" fill="#ffffff"/>
+  <rect x="78" y="52" width="20" height="20" rx="4.5" fill="rgba(255,255,255,0.28)"/>
+  <rect x="0" y="78" width="20" height="20" rx="4.5" fill="#ffffff"/>
+  <rect x="26" y="78" width="20" height="20" rx="4.5" fill="rgba(255,255,255,0.28)"/>
+  <rect x="52" y="78" width="20" height="20" rx="4.5" fill="rgba(255,255,255,0.28)"/>
+  <rect x="78" y="78" width="20" height="20" rx="4.5" fill="rgba(255,255,255,0.28)"/>
+  <rect x="0" y="104" width="20" height="20" rx="4.5" fill="#ffffff"/>
+  <rect x="26" y="104" width="20" height="20" rx="4.5" fill="rgba(255,255,255,0.28)"/>
+  <rect x="52" y="104" width="20" height="20" rx="4.5" fill="rgba(255,255,255,0.28)"/>
+  <rect x="78" y="104" width="20" height="20" rx="4.5" fill="rgba(255,255,255,0.28)"/>
+</g>
+<text x="80" y="42" font-family="'Segoe UI',Roboto,Arial,sans-serif" font-size="24" font-weight="700" fill="#fff" text-anchor="start">Progrid</text>
+<text x="80" y="66" font-family="'Segoe UI',Roboto,Arial,sans-serif" font-size="14" font-weight="400" fill="#bfe3ff" text-anchor="start">The developer cloud for people and AI agents</text>
+<rect x="548" y="25" width="156" height="40" rx="10" fill="#1bb9e0"/>
+<text x="626.0" y="50.76" font-family="'Segoe UI',Roboto,Arial,sans-serif" font-size="16" font-weight="700" fill="#06213f" text-anchor="middle">Start free</text>
+</svg>

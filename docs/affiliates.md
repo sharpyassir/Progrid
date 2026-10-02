@@ -57,6 +57,41 @@ default). It never moves to another partner, and a team can use one code only.
 - `/affiliates/portal` redirects to `console.<domain>/affiliates/portal` (phase c).
 - Footer: **Affiliate Program / برنامج الشركاء** under Company, on every marketing and legal page.
 
+## Portal (phase c)
+
+`console.<domain>/affiliates/portal` (also under **Account** in the console menu). It works on the
+signed in person, not the team, and only with a console session: API tokens get 403.
+
+- **Apply.** Signed out visitors create their Progrid account and apply in one form; customers
+  apply with their account. Fields: name, country, channel links, audience size, content language,
+  how they will promote Progrid, an optional preferred code, and acceptance of the terms (version
+  stored). Bot protection without a third party: a hidden field bots fill, at least 3 seconds on
+  the form, and 5 applications per address per hour. A rejected applicant can apply again after 30
+  days.
+- **Status.** Pending, approved, rejected (with the reason) or suspended. Only approved affiliates
+  see the dashboard. Emails go out in Arabic or English (the user's console language) from the
+  company of the affiliate's country: application received, approved (with the code), rejected,
+  suspended, reinstated, payout requested and payout sent. Approve, reject, suspend and paid are
+  sent by the back office actions (phase e).
+- **Dashboard** with a date range (7, 30, 90 days or custom): code, referral links on both
+  domains, a signup link with the code, clicks, signups with the code, paying customers, and
+  commission pending, approved, paid out and reversed per currency; balances (pending, ready to
+  pay out, payout requested, paid out) against the minimum payout.
+- **Referrals**: each referred customer as `Customer 3F2A9C` (no names, emails or team details),
+  signup date, status (signed up, paying, not eligible), services with commission, the date
+  commission ends, and commission so far.
+- **Payouts**: bank details (holder, bank, country, IBAN or account number, SWIFT, note), sealed in
+  the database and shown back with the last four digits only; a payout request per currency once
+  the ready balance reaches the minimum (one open request per currency; it takes all ready
+  commission); payout history.
+- **Assets**: logos, banners (728×90, 300×250, 1200×630 in English and Arabic, in
+  `apps/console/public/affiliates/`), copy snippets with the affiliate's code filled in, and the
+  disclosure reminder.
+
+API (console session): `GET /v1/affiliates/me`, `POST /v1/affiliates/apply`,
+`GET /v1/affiliates/me/dashboard?from=YYYY-MM-DD&to=YYYY-MM-DD`, `GET /v1/affiliates/me/referrals`,
+`GET|PUT /v1/affiliates/me/payout-details`, `GET|POST /v1/affiliates/me/payouts`.
+
 ## Configuration
 
 Settings live in one row (`prgd_affiliate_settings`); anything not stored uses the defaults in

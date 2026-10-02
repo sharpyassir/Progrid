@@ -21,6 +21,7 @@ const RULES: { test: RegExp; limit: number; windowSec: number }[] = [
   { test: /^\/v1\/affiliates\/clicks$/, limit: 30, windowSec: 60 },
   { test: /^\/v1\/affiliates\/codes\/[^/]+$/, limit: 30, windowSec: 60 },
   { test: /^\/v1\/billing\/promo-code$/, limit: 10, windowSec: 600 },
+  { test: /^\/v1\/affiliates\/apply$/, limit: 5, windowSec: 3600 },
   { test: /^\/ops\/v1\/auth\/login$/, limit: 10, windowSec: 60 },
   { test: /^\/ops\/v1\/auth\/(totp|totp\/enable|webauthn\/authenticate\/verify|password\/forgot|password\/reset)$/, limit: 20, windowSec: 600 },
 ];

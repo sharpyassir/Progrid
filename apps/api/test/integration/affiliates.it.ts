@@ -131,3 +131,91 @@ describe('affiliate tracking', () => {
     expect((await late.client.post('/v1/billing/promo-code', { code })).body.error.code).toBe('promo_too_late');
   });
 });
+
+describe('affiliate portal', () => {
+  const application = (over: Record<string, unknown> = {}) => ({
+    name: 'Lina Builds', country: 'SA', channels: ['https://youtube.com/@linabuilds'], audienceSize: '10k_50k', contentLanguage: 'ar_en',
+    promotionPlan: 'Weekly deploy tutorials in Arabic and English, with a pinned code in each video.', acceptTerms: true, formStartedAt: Date.now() - 20_000, ...over,
+  });
+
+  it('refuses bots and applications without the terms', async () => {
+    const t = await signup(s);
+    expect((await t.client.post('/v1/affiliates/apply', application({ website: 'http://spam.example' }))).body.error.code).toBe('bot_check_failed');
+    expect((await t.client.post('/v1/affiliates/apply', application({ formStartedAt: Date.now() }))).body.error.code).toBe('bot_check_failed');
+    // Test accounts sign up in Saudi Arabia, so their console language and mail are Arabic.
+    expect((await t.client.post('/v1/affiliates/apply', application({ acceptTerms: false }))).status).toBe(422);
+    expect((await t.client.post('/v1/affiliates/apply', application({ channels: ['not a url'] }))).status).toBe(400);
+  });
+
+  it('takes an application, keeps the dashboard closed until approval, and mails the applicant', async () => {
+    const t = await signup(s);
+    const wanted = `LINA${randomBytes(3).toString('hex').toUpperCase()}`;
+    const r = await t.client.ok('POST', '/v1/affiliates/apply', application({ preferredCode: wanted.toLowerCase() }), 201);
+    expect(r.affiliate).toMatchObject({ status: 'pending', code: null, email: t.email, country: 'SA' });
+    expect((await t.client.post('/v1/affiliates/apply', application())).body.error.code).toBe('already_applied');
+    expect(s.outbox.some((m) => m.to === t.email && /طلب انضمامك/.test(m.subject))).toBe(true);
+    expect((await t.client.get('/v1/affiliates/me/dashboard')).body.error.code).toBe('not_an_affiliate');
+    const row = await s.prisma.affiliate.findUniqueOrThrow({ where: { userId: t.userId } });
+    expect(row.code).toBe(wanted);
+    const me = await t.client.ok('GET', '/v1/affiliates/me');
+    expect(me.affiliate.status).toBe('pending');
+    expect(me.program.minPayoutMinor).toEqual({ SAR: 20_000, USD: 5_000 });
+  });
+
+  it('shows the dashboard, anonymized referrals, payout details and payouts to an approved affiliate', async () => {
+    const t = await signup(s);
+    await t.client.ok('POST', '/v1/affiliates/apply', application(), 201);
+    const a = await s.prisma.affiliate.update({ where: { userId: t.userId }, data: { status: 'approved', reviewedAt: new Date() } });
+
+    // Two referred customers: one paying, one not yet.
+    const c1 = await rawSignup({ promoCode: a.code });
+    await rawSignup({ promoCode: a.code });
+    await new Client(s.baseUrl).post('/v1/affiliates/clicks', { code: a.code }, { token: null });
+    const ref1 = await s.prisma.referral.findUniqueOrThrow({ where: { teamId: c1.body.team.id } });
+    const inv = await s.prisma.invoice.create({ data: { teamId: c1.body.team.id, number: `IT-${randomBytes(4).toString('hex')}`, currency: 'SAR', periodStart: new Date('2026-08-01'), periodEnd: new Date('2026-09-01'), subtotalMinor: 100_000, totalMinor: 115_000, status: 'paid', paidAt: new Date() } });
+    await s.prisma.affiliateCommission.createMany({ data: [
+      { affiliateId: a.id, referralId: ref1.id, invoiceId: inv.id, category: 'servers', currency: 'SAR', baseMinor: 80_000, rateBp: 1500, amountMinor: 12_000, status: 'approved', holdUntil: new Date(), approvedAt: new Date() },
+      { affiliateId: a.id, referralId: ref1.id, invoiceId: inv.id, category: 'web_hosting', currency: 'SAR', baseMinor: 20_000, rateBp: 3000, amountMinor: 6_000, status: 'pending', holdUntil: new Date(Date.now() + 60 * DAY) },
+    ] });
+
+    const d = await t.client.ok('GET', '/v1/affiliates/me/dashboard');
+    expect(d).toMatchObject({ code: a.code, clicks: 1, signups: 2, payingCustomers: 1 });
+    expect(d.links[0]).toMatch(new RegExp(`\\?ref=${a.code}$`));
+    expect(d.balances.SAR).toMatchObject({ pending: 6_000, available: 12_000, paidOut: 0, minPayoutMinor: 20_000 });
+    expect(d.commissions.SAR).toMatchObject({ pending: 6_000, approved: 12_000 });
+    const past = await t.client.ok('GET', '/v1/affiliates/me/dashboard?from=2025-01-01&to=2025-01-31');
+    expect(past).toMatchObject({ clicks: 0, signups: 0 });
+
+    const refs = await t.client.ok('GET', '/v1/affiliates/me/referrals');
+    expect(refs.data).toHaveLength(2);
+    const paying = refs.data.find((x: any) => x.status === 'paying');
+    expect(paying.customer).toMatch(/^Customer [0-9A-F]{6}$/);
+    expect(paying.services.sort()).toEqual(['servers', 'web_hosting']);
+    expect(paying.commission).toEqual([{ currency: 'SAR', amountMinor: 18_000 }]);
+    expect(JSON.stringify(refs)).not.toContain(c1.email);
+
+    // Below the minimum, and without payout details.
+    expect((await t.client.post('/v1/affiliates/me/payouts', { currency: 'SAR' })).body.error.code).toBe('payout_details_missing');
+    const det = await t.client.ok('PUT', '/v1/affiliates/me/payout-details', { method: 'bank_transfer', holderName: 'Lina A', bankName: 'Example Bank', bankCountry: 'SA', iban: 'SA03 8000 0000 6080 1016 7519', swift: 'EXMPSARI' });
+    expect(det.details).toMatchObject({ ibanLast4: '7519', holderName: 'Lina A' });
+    expect(JSON.stringify(det)).not.toContain('6080');
+    expect((await s.prisma.affiliate.findUniqueOrThrow({ where: { id: a.id } })).payoutDetails).toMatch(/^enc:v1:/);
+    expect((await t.client.post('/v1/affiliates/me/payouts', { currency: 'SAR' })).body.error.code).toBe('below_minimum');
+
+    // Enough approved commission: one payout takes all of it.
+    await s.prisma.affiliateCommission.create({ data: { affiliateId: a.id, referralId: ref1.id, invoiceId: inv.id, category: 'connect', currency: 'SAR', baseMinor: 30_000, rateBp: 3000, amountMinor: 9_000, status: 'approved', holdUntil: new Date(), approvedAt: new Date() } });
+    const p = await t.client.ok('POST', '/v1/affiliates/me/payouts', { currency: 'SAR' }, 201);
+    expect(p).toMatchObject({ currency: 'SAR', amountMinor: 21_000, status: 'requested' });
+    expect((await t.client.post('/v1/affiliates/me/payouts', { currency: 'SAR' })).body.error.code).toBe('payout_pending');
+    expect((await t.client.ok('GET', '/v1/affiliates/me/dashboard')).balances.SAR).toMatchObject({ available: 0, requested: 21_000 });
+    expect((await t.client.ok('GET', '/v1/affiliates/me/payouts')).data).toHaveLength(1);
+    expect(s.outbox.some((m) => m.to === t.email && /طلب الصرف/.test(m.subject))).toBe(true);
+  });
+
+  it('is not available to API tokens', async () => {
+    const t = await signup(s);
+    const tok = await t.client.ok('POST', '/v1/tokens', { name: 'ci', scopes: ['servers:read'] }, 201);
+    const r = await new Client(s.baseUrl, tok.token ?? tok.secret).get('/v1/affiliates/me');
+    expect(r.status).toBe(403);
+  });
+});

@@ -335,7 +335,7 @@ const en = {
   niApiDocs: 'API reference', niMcp: 'MCP server', niApprovals: 'Approvals', niEventWebhooks: 'Event webhooks', niInference: 'Inference gateway', niDedicatedInference: 'Dedicated inference',
   niAgentWorkspaces: 'Agent workspaces', niVendor: 'Vendor portal', niConnectHome: 'Overview', niAgents: 'Agents', niWorkflows: 'Workflows', niConnections: 'Connections',
   niWebhooks: 'Webhooks', niLogs: 'Logs', niTemplates: 'Templates', niKnowledgeBase: 'Knowledge base', niBilling: 'Billing', niUsage: 'Usage', niApiKeys: 'API keys',
-  niTeam: 'Team', niProjects: 'Projects', niSecurity: 'Security', niAudit: 'Audit log', niSupport: 'Support', niManaged: 'Managed cloud',
+  niTeam: 'Team', niProjects: 'Projects', niSecurity: 'Security', niAudit: 'Audit log', niSupport: 'Support', niManaged: 'Managed cloud', niAffiliates: 'Affiliate program',
 };
 
 type Dict = { [K in keyof typeof en]: (typeof en)[K] };
@@ -653,7 +653,7 @@ const tr: Dict = {
   niApiDocs: 'API başvurusu', niMcp: 'MCP sunucusu', niApprovals: 'Onaylar', niEventWebhooks: 'Olay webhookları', niInference: 'Çıkarım geçidi', niDedicatedInference: 'Ayrılmış çıkarım',
   niAgentWorkspaces: 'Ajan çalışma alanları', niVendor: 'Satıcı portalı', niConnectHome: 'Genel bakış', niAgents: 'Ajanlar', niWorkflows: 'İş akışları', niConnections: 'Bağlantılar',
   niWebhooks: 'Webhooklar', niLogs: 'Kayıtlar', niTemplates: 'Şablonlar', niKnowledgeBase: 'Bilgi tabanı', niBilling: 'Faturalama', niUsage: 'Kullanım', niApiKeys: 'API anahtarları',
-  niTeam: 'Ekip', niProjects: 'Projeler', niSecurity: 'Güvenlik', niAudit: 'Denetim kaydı', niSupport: 'Destek', niManaged: 'Yönetilen bulut',
+  niTeam: 'Ekip', niProjects: 'Projeler', niSecurity: 'Güvenlik', niAudit: 'Denetim kaydı', niSupport: 'Destek', niManaged: 'Yönetilen bulut', niAffiliates: 'Ortaklık programı',
 };
 
 const ar: Dict = {
@@ -975,7 +975,7 @@ const ar: Dict = {
   niApiDocs: 'مرجع الـ API', niMcp: 'خادم MCP', niApprovals: 'الموافقات', niEventWebhooks: 'Webhooks الأحداث', niInference: 'بوابة الاستدلال', niDedicatedInference: 'استدلال مخصص',
   niAgentWorkspaces: 'مساحات عمل الوكلاء', niVendor: 'بوابة البائعين', niConnectHome: 'نظرة عامة', niAgents: 'الوكلاء', niWorkflows: 'سير العمل', niConnections: 'الاتصالات',
   niWebhooks: 'Webhooks', niLogs: 'السجلات', niTemplates: 'القوالب', niKnowledgeBase: 'قاعدة المعرفة', niBilling: 'الفوترة', niUsage: 'الاستخدام', niApiKeys: 'مفاتيح API',
-  niTeam: 'الفريق', niProjects: 'المشاريع', niSecurity: 'الأمان', niAudit: 'سجل التدقيق', niSupport: 'الدعم', niManaged: 'السحابة المُدارة',
+  niTeam: 'الفريق', niProjects: 'المشاريع', niSecurity: 'الأمان', niAudit: 'سجل التدقيق', niSupport: 'الدعم', niManaged: 'السحابة المُدارة', niAffiliates: 'برنامج الشركاء',
 };
 
 const dict: Record<Locale, Dict> = { en, tr, ar };
