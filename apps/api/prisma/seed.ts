@@ -4,6 +4,7 @@ import * as argon2 from 'argon2';
 import { createHash, randomBytes } from 'node:crypto';
 import { MARKETPLACE_APPS } from './seed-apps';
 import { HOLIDAYS, MANAGED_HOURLY_RATE_MINOR, MANAGED_PLANS } from './seed-managed';
+import { launchPrices } from '../src/modules/connect/pricing';
 
 const prisma = new PrismaClient();
 
@@ -85,20 +86,22 @@ async function main() {
     await prisma.price.create({ data: { resourceType, sku, sizeId, currency: BOOK, monthlyMinor, unit, validFrom: cur ? new Date() : PRICE_VALID_FROM } });
   }
 
-  // Progrid Connect SKUs exist with no price (0) until staff set one in the back office
-  // (POST /admin/v1/prices). Created only when missing, so a re-seed never resets a set price.
-  // monthlyMinor holds the price per unit: per 1,000 executions or tool calls, per 1M tokens.
-  for (const [sku, type, unit] of [
-    ['connect-executions', 'connect_execution', 'per_1k'],
-    ['connect-ai-input-tokens', 'connect_ai_input', 'per_1m'],
-    ['connect-ai-output-tokens', 'connect_ai_output', 'per_1m'],
-    ['connect-ai-cache-read-tokens', 'connect_ai_cache_read', 'per_1m'],
-    ['connect-tool-calls', 'connect_tool_call', 'per_1k'],
-  ] as const) {
-    if (!(await prisma.price.findFirst({ where: { resourceType: type, sku, currency: BOOK, validTo: null } }))) {
-      await prisma.price.create({ data: { resourceType: type, sku, currency: BOOK, monthlyMinor: 0, unit, validFrom: PRICE_VALID_FROM } });
-    }
+  // Progrid Connect launch prices (owner approved, pay as you go, see src/modules/connect/pricing.ts):
+  // executions and tool calls per 1,000, AI tokens per model per 10M tokens, in halalas.
+  // A price is created only when its SKU has none, so a re-seed never overwrites a price staff
+  // set in the back office (POST /admin/v1/prices). The one exception is the unpriced 0 row an
+  // earlier seed created as a placeholder (valid from the launch date): it is closed and the
+  // launch price opens from now, so hours already metered keep their rate.
+  const now = new Date();
+  for (const p of launchPrices()) {
+    const cur = await prisma.price.findFirst({ where: { resourceType: p.resourceType, sku: p.sku, currency: BOOK, validTo: null } });
+    const placeholder = cur && cur.monthlyMinor === 0 && cur.validFrom.getTime() === PRICE_VALID_FROM.getTime();
+    if (cur && !placeholder) continue;
+    if (cur) await prisma.price.update({ where: { id: cur.id }, data: { validTo: now } });
+    await prisma.price.create({ data: { resourceType: p.resourceType, sku: p.sku, currency: BOOK, monthlyMinor: p.monthlyMinor, unit: p.unit, validFrom: cur ? now : PRICE_VALID_FROM } });
   }
+  // The model agnostic token SKUs are replaced by the per model ones above.
+  await prisma.price.updateMany({ where: { sku: { in: ['connect-ai-input-tokens', 'connect-ai-output-tokens', 'connect-ai-cache-read-tokens'] }, currency: BOOK, validTo: null }, data: { validTo: now } });
 
   // Starting exchange rate; the hourly job replaces it with the provider's rate.
   if (!(await prisma.fxRate.findFirst({ where: { quote: 'SAR' } }))) {

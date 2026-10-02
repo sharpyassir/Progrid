@@ -46,9 +46,17 @@ export class ConnectController {
     return this.runs.overview(actor);
   }
 
+  /** Models with their prices in the team currency (per 1M tokens, minor units, excluding VAT). */
   @Get('models') @RequireScopes('connect:read')
-  listModels() {
-    return this.models.list();
+  async listModels(@CurrentActor() actor: Actor) {
+    const team = await this.prisma.team.findUniqueOrThrow({ where: { id: actor.teamId }, select: { currency: true } });
+    const list = this.models.list();
+    const prices = await this.usage.priceList(team.currency);
+    return {
+      ...list,
+      pricing: { currency: prices.currency, configured: prices.configured, executionMinor: prices.executionMinor, toolCallMinor: prices.toolCallMinor },
+      data: list.data.map((m) => ({ ...m, prices: { currency: prices.currency, ...prices.models[m.id] } })),
+    };
   }
 
   @Get('templates') @RequireScopes('connect:read')

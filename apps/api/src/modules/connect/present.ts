@@ -1,6 +1,7 @@
 import type { ConnectAgent, ConnectAgentKey, ConnectRun, ConnectTool, ConnectWebhook, ConnectWorkflow } from '@prisma/client';
 import { loadConfig } from '../../config/config';
 import { normalizeLimits, normalizeVariables } from './runtime/spec';
+import { parseTokensByModel } from './pricing';
 
 /** Response shapes (see the Connect contract). Nothing here ever includes a secret value. */
 
@@ -109,6 +110,8 @@ export function presentRun(r: ConnectRun, extra: Record<string, unknown> = {}) {
       toolCalls: r.toolCalls,
       apiCalls: r.apiCalls,
       steps: r.stepCount,
+      /** Tokens per model that was billed: {model: {input, output, cacheRead, cacheWrite, cacheWrite1h}}. */
+      byModel: parseTokensByModel(r.modelUsage),
     },
     costEstimateMinor: r.costEstimateMinor,
     currency: r.currency,

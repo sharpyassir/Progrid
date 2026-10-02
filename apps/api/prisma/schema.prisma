@@ -792,6 +792,10 @@ enum ResourceType {
   connect_ai_output
   connect_ai_cache_read
   connect_tool_call
+  /// Connect AI token SKUs are per model: resourceId = "<agent id>:<model id>", sku = "<base sku>:<model id>".
+  connect_ai_cache_write
+  /// One hour prompt cache writes (2x input). Connect sends five minute cache writes today.
+  connect_ai_cache_write_1h
 
   @@map("prgd_resource_type")
 }
@@ -3398,6 +3402,9 @@ model ConnectRun {
   outputTokens         Int              @default(0)
   cacheReadTokens      Int              @default(0)
   cacheWriteTokens     Int              @default(0)
+  /// Tokens per model that answered: {"<model id>": {input, output, cacheRead, cacheWrite, cacheWrite1h}}.
+  /// Billing reads this (per model SKUs); the columns above are the run totals.
+  modelUsage           Json             @default("{}")
   toolCalls            Int              @default(0)
   apiCalls             Int              @default(0)
   stepCount            Int              @default(0)

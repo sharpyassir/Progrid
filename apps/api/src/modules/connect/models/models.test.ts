@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { FakeProvider, sample } from './fake.provider';
-import { AnthropicProvider, FALLBACK_BETA } from './anthropic.provider';
-import { MODELS, providerCostMicroUsd } from './catalog';
+import { AnthropicProvider, FALLBACK_BETA, assertPricedParams, attemptsOf } from './anthropic.provider';
+import { MODELS, billingModel, providerCostMicroUsd } from './catalog';
 import { echoable, type ModelProvider, type ModelRequest, type ModelResponse, type ModelTool, type ToolUse } from './provider';
 import { initialState, runAgentLoop, type ToolOutcome } from '../runtime/agent-loop';
-import { priceUsage, quantities } from '../usage.service';
 
 const tool = (name: string, extra: Record<string, unknown> = {}): ModelTool => ({ name, description: `${name} tool`, input_schema: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'], additionalProperties: false, ...extra } });
 
@@ -178,6 +177,68 @@ describe('Anthropic request shape', () => {
   it('refuses unknown models', () => {
     expect(() => p.buildParams({ ...base, model: 'gpt-4' })).toThrow(/Unknown model/);
   });
+
+  it('never sends fast mode or server tools, which cost more than Connect prices', () => {
+    for (const m of MODELS) {
+      const params = p.buildParams({ ...base, model: m.id, effort: 'low' }) as unknown as Record<string, unknown>;
+      expect(params.speed).toBeUndefined();
+      expect(JSON.stringify(params)).not.toMatch(/"speed"|web_search|web_fetch|fast-mode/);
+      for (const t of params.tools as Record<string, unknown>[]) {
+        expect(t.type).toBeUndefined();
+        expect(t.input_schema).toBeDefined();
+      }
+    }
+  });
+
+  it('the guard refuses fast mode and server tools', () => {
+    const ok = p.buildParams(base);
+    expect(() => assertPricedParams(ok)).not.toThrow();
+    expect(() => assertPricedParams({ ...ok, speed: 'standard' })).not.toThrow();
+    expect(() => assertPricedParams({ ...ok, speed: 'fast' })).toThrow(/Fast mode/);
+    expect(() => assertPricedParams({ ...ok, betas: ['fast-mode-2026-02-01'] })).toThrow(/Fast mode/);
+    expect(() => assertPricedParams({ ...ok, fallbacks: [{ model: 'claude-opus-5', speed: 'fast' }] })).toThrow(/Fast mode/);
+    expect(() => assertPricedParams({ ...ok, tools: [...(ok.tools ?? []), { type: 'web_search_20260318', name: 'web_search', max_uses: 5 }] })).toThrow(/web search/);
+    expect(() => assertPricedParams({ ...ok, tools: [{ type: 'web_fetch_20260318', name: 'web_fetch' }] })).toThrow(/Server tools/);
+    expect(() => assertPricedParams({ ...ok, tools: [{ type: 'custom', name: 'x', input_schema: { type: 'object' } }] })).not.toThrow();
+  });
+
+  it('bills every attempt of a refusal fallback to the model that ran it', async () => {
+    // Opus 5.5 declines after some output; Opus 5 answers. Top level usage covers only the answer.
+    const usage = {
+      input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 0, cache_creation_input_tokens: 500, cache_creation: { ephemeral_5m_input_tokens: 500, ephemeral_1h_input_tokens: 0 },
+      iterations: [
+        { type: 'message', model: null, input_tokens: 1000, output_tokens: 50, cache_read_input_tokens: 3000, cache_creation_input_tokens: 0, cache_creation: null },
+        { type: 'fallback_message', model: 'claude-opus-5', input_tokens: 1000, output_tokens: 200, cache_read_input_tokens: 0, cache_creation_input_tokens: 500, cache_creation: { ephemeral_5m_input_tokens: 500, ephemeral_1h_input_tokens: 0 } },
+      ],
+    };
+    const fake = new AnthropicProvider('sk-test', { fallbacks: true, maxRetries: 0 });
+    (fake as unknown as { client: unknown }).client = { beta: { messages: { create: async () => ({ content: [{ type: 'fallback', from: { model: 'claude-opus-5-5' }, to: { model: 'claude-opus-5' } }, { type: 'text', text: 'ok' }], stop_reason: 'end_turn', usage, model: 'claude-opus-5' }) } } };
+    const r = await fake.complete(base);
+    expect(r.servedBy).toBe('claude-opus-5');
+    expect(r.attempts).toEqual([
+      { model: 'claude-opus-5-5', usage: { inputTokens: 1000, outputTokens: 50, cacheReadTokens: 3000, cacheWriteTokens: 0, cacheWrite1hTokens: 0 } },
+      { model: 'claude-opus-5', usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 0, cacheWriteTokens: 500, cacheWrite1hTokens: 0 } },
+    ]);
+    // The run totals include the declined attempt.
+    expect(r.usage).toEqual({ inputTokens: 2000, outputTokens: 250, cacheReadTokens: 3000, cacheWriteTokens: 500, cacheWrite1hTokens: 0 });
+    const cost = r.attempts!.reduce((n, a) => n + providerCostMicroUsd(billingModel(a.model, 'claude-opus-5-5'), a.usage), 0);
+    expect(cost).toBe(1000 * 4 + 50 * 20 + 3000 * 0.2 + (1000 * 5 + 200 * 25 + 500 * 6.25));
+  });
+
+  it('uses the top level usage when there are no iterations', () => {
+    expect(attemptsOf(null, 'claude-opus-5-5', 'claude-opus-5-5')).toBeUndefined();
+    expect(attemptsOf([], 'claude-opus-5-5', 'claude-opus-5-5')).toBeUndefined();
+    expect(attemptsOf([{ type: 'message', model: 'claude-opus-5-5', input_tokens: 5, output_tokens: 1 }], 'claude-opus-5-5', 'claude-opus-5-5')).toEqual([{ model: 'claude-opus-5-5', usage: { inputTokens: 5, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, cacheWrite1hTokens: 0 } }]);
+  });
+
+  it('reports one hour cache writes apart from five minute ones', async () => {
+    const usage = { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100, cache_creation_input_tokens: 300, cache_creation: { ephemeral_5m_input_tokens: 200, ephemeral_1h_input_tokens: 100 } };
+    const fake = new AnthropicProvider('sk-test', { fallbacks: false, maxRetries: 0 });
+    (fake as unknown as { client: unknown }).client = { beta: { messages: { create: async () => ({ content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn', usage, model: 'claude-haiku-4-5-20251001' }) } } };
+    const r = await fake.complete({ ...base, model: 'claude-haiku-4-5' });
+    expect(r.usage).toEqual({ inputTokens: 10, outputTokens: 5, cacheReadTokens: 100, cacheWriteTokens: 300, cacheWrite1hTokens: 100 });
+    expect(billingModel(r.servedBy, 'claude-haiku-4-5')).toBe('claude-haiku-4-5');
+  });
 });
 
 describe('cost', () => {
@@ -189,10 +250,43 @@ describe('cost', () => {
     expect(MODELS.map((m) => m.id)).toEqual(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-4-5']);
   });
 
-  it('prices usage from per unit book prices and is 0 without prices', () => {
-    const u = { executions: 2000, inputTokens: 3_000_000, outputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 1_000_000, toolCalls: 500 };
-    expect(quantities(u)['connect-ai-input-tokens']).toBe(4_000_000);
-    expect(priceUsage(u, {})).toBe(0);
-    expect(priceUsage(u, { 'connect-executions': 100, 'connect-ai-input-tokens': 1500, 'connect-ai-output-tokens': 7500, 'connect-tool-calls': 20 })).toBe(2 * 100 + 4 * 1500 + 7500 + 0.5 * 20);
+  it('bills a response as the catalog model that answered, else as the agent model', () => {
+    expect(billingModel('claude-sonnet-5-5', 'claude-opus-5-5')).toBe('claude-sonnet-5-5');
+    expect(billingModel('claude-haiku-4-5-20251001', 'claude-opus-5-5')).toBe('claude-haiku-4-5');
+    // Refusal fallback models are billing only catalog models, billed as themselves.
+    expect(billingModel('claude-opus-5', 'claude-opus-5-5')).toBe('claude-opus-5');
+    expect(billingModel('claude-opus-4-8', 'claude-opus-5-5')).toBe('claude-opus-4-8');
+    // A model with no price at all is billed as the agent's model.
+    expect(billingModel('claude-unknown-9', 'claude-opus-5-5')).toBe('claude-opus-5-5');
+    expect(billingModel('', 'claude-sonnet-5-5')).toBe('claude-sonnet-5-5');
+    // Fallback models are not selectable.
+    expect(MODELS.map((m) => m.id)).not.toContain('claude-opus-5');
+  });
+
+  it('computes the cost basis for fallback and dated model ids, and one hour writes at 2x input', () => {
+    const u = { inputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 1_000_000, cacheWriteTokens: 1_000_000 };
+    expect(providerCostMicroUsd('claude-opus-5', u)).toBe(5_000_000 + 25_000_000 + 500_000 + 6_250_000);
+    expect(providerCostMicroUsd('claude-opus-4-8', u)).toBe(36_750_000);
+    expect(providerCostMicroUsd('claude-haiku-4-5-20251001', u)).toBe(1_000_000 + 5_000_000 + 100_000 + 1_250_000);
+    expect(providerCostMicroUsd('claude-opus-5-5', { ...u, cacheWrite1hTokens: 400_000 })).toBe(4_000_000 + 20_000_000 + 200_000 + 600_000 * 5 + 400_000 * 8);
+  });
+});
+
+describe('fake provider usage', () => {
+  const req: ModelRequest = { model: 'claude-sonnet-5-5', effort: 'low', system: { preamble: 'platform preamble', instructions: 'agent instructions' }, tools: [], messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello there' }] }], maxTokens: 1000 };
+
+  it('reports a cache write on the first call and a cache read after it', async () => {
+    const f = new FakeProvider();
+    const first = await f.complete(req);
+    expect(first.usage.cacheWriteTokens).toBeGreaterThan(0);
+    expect(first.usage.cacheReadTokens).toBe(0);
+    const second = await f.complete({ ...req, messages: [...req.messages, { role: 'assistant', content: first.content }, { role: 'user', content: [{ type: 'text', text: 'more' }] }] });
+    expect(second.usage.cacheReadTokens).toBe(first.usage.cacheWriteTokens);
+    expect(second.usage.cacheWriteTokens).toBe(0);
+  });
+
+  it('reports fixed token counts when asked to', async () => {
+    const r = await new FakeProvider().complete({ ...req, messages: [{ role: 'user', content: [{ type: 'text', text: 'Hi fake:usage=12000,1500,40000,8000' }] }] });
+    expect(r.usage).toEqual({ inputTokens: 12000, outputTokens: 1500, cacheReadTokens: 40000, cacheWriteTokens: 8000 });
   });
 });

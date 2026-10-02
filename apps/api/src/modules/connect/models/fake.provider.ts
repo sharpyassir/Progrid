@@ -12,7 +12,12 @@ import type { Block, ChatMessage, ModelProvider, ModelRequest, ModelResponse, Mo
  *  - with an output schema, the answer is JSON built from the schema
  *  - "fake:refuse" in the message returns stop_reason refusal; "fake:max_tokens" returns
  *    max_tokens, so the failure paths can be tested
- *  - token usage is derived from character counts (about 4 characters per token)
+ *  - token usage is derived from character counts (about 4 characters per token): the system
+ *    prompt is a cache write on the first call and a cache read after it
+ *  - "fake:usage=IN,OUT,CACHE_READ,CACHE_WRITE" in the message makes every call report exactly
+ *    those token counts, so billing can be tested with known numbers
+ *  - "fake:fallback" makes every call a refusal fallback: a declined attempt on the requested
+ *    model and the answer from claude-opus-5, each with the usage above (two attempts)
  */
 export class FakeProvider implements ModelProvider {
   readonly name = 'fake';
@@ -25,13 +30,24 @@ export class FakeProvider implements ModelProvider {
     const systemChars = req.system.preamble.length + req.system.instructions.length + JSON.stringify(req.tools).length;
     const convoChars = JSON.stringify(req.messages).length;
     const first = req.messages.length === 1;
-    const usageFor = (outText: string) => ({
-      inputTokens: Math.ceil(convoChars / 4) + (first ? 0 : 0),
-      outputTokens: Math.ceil(outText.length / 4) + 8,
-      cacheReadTokens: first ? 0 : Math.ceil(systemChars / 4),
-      cacheWriteTokens: first ? Math.ceil(systemChars / 4) : 0,
-    });
+    const fixed = /fake:usage=(\d+),(\d+),(\d+),(\d+)/i.exec(prompt);
+    const usageFor = (outText: string) =>
+      fixed
+        ? { inputTokens: Number(fixed[1]), outputTokens: Number(fixed[2]), cacheReadTokens: Number(fixed[3]), cacheWriteTokens: Number(fixed[4]) }
+        : {
+            inputTokens: Math.ceil(convoChars / 4),
+            outputTokens: Math.ceil(outText.length / 4) + 8,
+            cacheReadTokens: first ? 0 : Math.ceil(systemChars / 4),
+            cacheWriteTokens: first ? Math.ceil(systemChars / 4) : 0,
+          };
 
+    if (/fake:fallback/i.test(prompt)) {
+      const inner = await this.complete({ ...req, messages: req.messages.map((m, i) => (i === 0 ? { ...m, content: m.content.map((b) => (b.type === 'text' ? { ...b, text: String(b.text).replace(/fake:fallback/gi, '') } : b)) } : m)) });
+      this.calls--;
+      const each = inner.usage;
+      const usage = { inputTokens: each.inputTokens * 2, outputTokens: each.outputTokens * 2, cacheReadTokens: each.cacheReadTokens * 2, cacheWriteTokens: each.cacheWriteTokens * 2 };
+      return { ...inner, content: [{ type: 'fallback', from: { model: req.model }, to: { model: 'claude-opus-5' } }, ...inner.content], usage, servedBy: 'claude-opus-5', fallbacks: [{ from: req.model, to: 'claude-opus-5' }], attempts: [{ model: req.model, usage: each }, { model: 'claude-opus-5', usage: each }] };
+    }
     if (/fake:refuse/i.test(prompt)) {
       return { content: [], stopReason: 'refusal', stopDetails: { type: 'refusal', category: 'test', explanation: 'The fake model refuses when asked to (fake:refuse).' }, usage: usageFor(''), servedBy: req.model };
     }

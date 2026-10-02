@@ -66,6 +66,27 @@ export const MODELS: ModelInfo[] = [
   },
 ];
 
+/**
+ * Models Connect never sends but can be billed for: Anthropic's server side refusal fallbacks
+ * from Claude Opus 5.5 answer on Claude Opus 5 or Claude Opus 4.8. Not selectable for agents.
+ * List prices: $5 input, $25 output, $0.50 cache read (0.1x input), $6.25 five minute cache
+ * write (1.25x input).
+ */
+export interface PricedModel {
+  id: string;
+  label: string;
+  price: ModelPrice;
+}
+
+export const BILLING_ONLY_MODELS: PricedModel[] = [
+  { id: 'claude-opus-5', label: 'Claude Opus 5', price: { inputPerMTokUsd: 5, outputPerMTokUsd: 25, cacheReadPerMTokUsd: 0.5, cacheWritePerMTokUsd: 6.25 } },
+  { id: 'claude-opus-4-8', label: 'Claude Opus 4.8', price: { inputPerMTokUsd: 5, outputPerMTokUsd: 25, cacheReadPerMTokUsd: 0.5, cacheWritePerMTokUsd: 6.25 } },
+];
+
+/** Every model with a price: the selectable ones, then the billing only ones. */
+export const PRICED_MODELS: PricedModel[] = [...MODELS, ...BILLING_ONLY_MODELS];
+
+/** A selectable model. */
 export function findModel(id: string): ModelInfo | undefined {
   return MODELS.find((m) => m.id === id);
 }
@@ -74,20 +95,40 @@ export function isKnownModel(id: string): boolean {
   return !!findModel(id);
 }
 
+/** The priced catalog model for an id the API returned: exact, or a dated snapshot (claude-haiku-4-5-20251001). */
+export function pricedModel(id: string | null | undefined): PricedModel | undefined {
+  if (!id) return undefined;
+  return PRICED_MODELS.find((m) => m.id === id) ?? PRICED_MODELS.find((m) => id.startsWith(`${m.id}-`) && /^\d{8}$/.test(id.slice(m.id.length + 1)));
+}
+
+/**
+ * The catalog model tokens are billed as: the priced model that ran them (fallback models
+ * included, dated ids mapped to their catalog id). A model with no price at all is billed as
+ * the model the agent asked for, so every token has a price.
+ */
+export function billingModel(servedBy: string | null | undefined, requested: string): string {
+  return pricedModel(servedBy)?.id ?? requested;
+}
+
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
+  /** All cache writes, five minute and one hour. */
   cacheWriteTokens: number;
+  /** The one hour part of cacheWriteTokens (2x input). */
+  cacheWrite1hTokens?: number;
 }
 
 /**
  * Provider cost of some usage in micro dollars. $X per million tokens is X micro dollars per
- * token, so this is a plain dot product. Unknown models cost 0 (the fake provider).
+ * token, so this is a plain dot product. Dated ids map to their catalog model; models with no
+ * price cost 0 (the fake provider).
  */
-export function providerCostMicroUsd(modelId: string, u: TokenUsage): number {
-  const m = findModel(modelId);
+export function providerCostMicroUsd(modelId: string | null | undefined, u: TokenUsage): number {
+  const m = pricedModel(modelId);
   if (!m) return 0;
   const p = m.price;
-  return Math.round(u.inputTokens * p.inputPerMTokUsd + u.outputTokens * p.outputPerMTokUsd + u.cacheReadTokens * p.cacheReadPerMTokUsd + u.cacheWriteTokens * p.cacheWritePerMTokUsd);
+  const write1h = Math.min(u.cacheWrite1hTokens ?? 0, u.cacheWriteTokens);
+  return Math.round(u.inputTokens * p.inputPerMTokUsd + u.outputTokens * p.outputPerMTokUsd + u.cacheReadTokens * p.cacheReadPerMTokUsd + (u.cacheWriteTokens - write1h) * p.cacheWritePerMTokUsd + write1h * 2 * p.inputPerMTokUsd);
 }

@@ -11,7 +11,8 @@ import { ApprovalsService } from '../../approvals/approvals.service';
 import { SpendService } from '../../billing/spend.service';
 import { TrustService } from '../../trust/trust.service';
 import { ModelService } from '../models/model.service';
-import { providerCostMicroUsd } from '../models/catalog';
+import { billingModel, providerCostMicroUsd } from '../models/catalog';
+import { addTokens, parseTokensByModel, type TokensByModel } from '../pricing';
 import type { ModelResponse, ToolUse } from '../models/provider';
 import { ToolRegistry } from '../tools/registry.service';
 import { schemaErrors } from '../tools/schema';
@@ -92,6 +93,8 @@ interface Usage {
   apiCalls: number;
   steps: number;
   providerCost: number;
+  /** Tokens per billed model (see pricing.ts). */
+  models: TokensByModel;
 }
 
 interface Ctx {
@@ -302,7 +305,7 @@ export class RunService implements OnModuleInit {
       vars,
       secrets,
       connections: new Map(),
-      usage: { inputTokens: run.inputTokens, outputTokens: run.outputTokens, cacheReadTokens: run.cacheReadTokens, cacheWriteTokens: run.cacheWriteTokens, toolCalls: run.toolCalls, apiCalls: run.apiCalls, steps: run.stepCount, providerCost: run.providerCostMicroUsd },
+      usage: { inputTokens: run.inputTokens, outputTokens: run.outputTokens, cacheReadTokens: run.cacheReadTokens, cacheWriteTokens: run.cacheWriteTokens, toolCalls: run.toolCalls, apiCalls: run.apiCalls, steps: run.stepCount, providerCost: run.providerCostMicroUsd, models: parseTokensByModel(run.modelUsage) },
       deadline: now + spec.limits.timeoutSeconds * 1000,
       abort: new AbortController(),
       timedOut: false,
@@ -394,7 +397,7 @@ export class RunService implements OnModuleInit {
 
   private usageColumns(ctx: Ctx) {
     const u = ctx.usage;
-    return { inputTokens: u.inputTokens, outputTokens: u.outputTokens, cacheReadTokens: u.cacheReadTokens, cacheWriteTokens: u.cacheWriteTokens, toolCalls: u.toolCalls, apiCalls: u.apiCalls, stepCount: u.steps, providerCostMicroUsd: u.providerCost };
+    return { inputTokens: u.inputTokens, outputTokens: u.outputTokens, cacheReadTokens: u.cacheReadTokens, cacheWriteTokens: u.cacheWriteTokens, modelUsage: u.models as unknown as Prisma.InputJsonValue, toolCalls: u.toolCalls, apiCalls: u.apiCalls, stepCount: u.steps, providerCostMicroUsd: u.providerCost };
   }
 
   /** Saves the state of a run that waits for approvals. */
@@ -410,7 +413,7 @@ export class RunService implements OnModuleInit {
     const execMs = ctx ? ctx.state.execMs + (Date.now() - ctx.segmentStart) : 0;
     const usage = ctx?.usage;
     const costEstimateMinor = usage
-      ? await this.usageService.estimate({ executions: 1, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, cacheReadTokens: usage.cacheReadTokens, cacheWriteTokens: usage.cacheWriteTokens, toolCalls: usage.toolCalls }, run.currency).catch(() => 0)
+      ? await this.usageService.estimate({ executions: 1, toolCalls: usage.toolCalls, models: usage.models }, run.currency).catch(() => 0)
       : 0;
     if (r.status === 'failed' && r.details !== undefined && ctx) {
       await this.addStep(ctx, { type: 'node', name: 'Run failed', status: 'failed', error: { code: r.code, message: r.message, details: r.details } }).catch(() => undefined);
@@ -503,7 +506,14 @@ export class RunService implements OnModuleInit {
     u.outputTokens += r.usage.outputTokens;
     u.cacheReadTokens += r.usage.cacheReadTokens;
     u.cacheWriteTokens += r.usage.cacheWriteTokens;
-    u.providerCost += providerCostMicroUsd(r.servedBy || ctx.spec.model, r.usage);
+    // Every attempt is billed at its own model's prices, for the customer and for the cost basis:
+    // a declined attempt on the agent's model and a refusal fallback (Claude Opus 5, Opus 4.8) alike.
+    for (const a of r.attempts ?? [{ model: r.servedBy || ctx.spec.model, usage: r.usage }]) {
+      const model = billingModel(a.model, ctx.spec.model);
+      u.providerCost += providerCostMicroUsd(model, a.usage);
+      const write1h = Math.min(a.usage.cacheWrite1hTokens ?? 0, a.usage.cacheWriteTokens);
+      addTokens(u.models, model, { input: a.usage.inputTokens, output: a.usage.outputTokens, cacheRead: a.usage.cacheReadTokens, cacheWrite: a.usage.cacheWriteTokens - write1h, cacheWrite1h: write1h });
+    }
     const toolCalls = r.content.filter((b) => b.type === 'tool_use').map((b) => String(b.name));
     const text = r.content.filter((b) => b.type === 'text').map((b) => String(b.text)).join('');
     await this.addStep(ctx, {
@@ -511,7 +521,7 @@ export class RunService implements OnModuleInit {
       nodeId,
       name: r.servedBy || ctx.spec.model,
       status: r.stopReason === 'refusal' || r.stopReason === 'max_tokens' ? 'failed' : 'succeeded',
-      output: { stopReason: r.stopReason, text: clip(text, 8000), toolCalls, servedBy: r.servedBy, ...(r.fallbacks?.length ? { fallbacks: r.fallbacks } : {}), ...(r.stopDetails ? { stopDetails: r.stopDetails } : {}) },
+      output: { stopReason: r.stopReason, text: clip(text, 8000), toolCalls, servedBy: r.servedBy, ...(r.fallbacks?.length ? { fallbacks: r.fallbacks } : {}), ...(r.attempts && r.attempts.length > 1 ? { attempts: r.attempts.map((x) => ({ model: x.model, input: x.usage.inputTokens, output: x.usage.outputTokens })) } : {}), ...(r.stopDetails ? { stopDetails: r.stopDetails } : {}) },
       tokens: { input: r.usage.inputTokens, output: r.usage.outputTokens, cacheRead: r.usage.cacheReadTokens, cacheWrite: r.usage.cacheWriteTokens },
       startedAt: new Date(Date.now() - ms),
       durationMs: ms,
@@ -662,7 +672,7 @@ export class RunService implements OnModuleInit {
     if (problems) return { ok: false, output: null, durationMs: 0, error: `Invalid input: ${problems}` };
     if (!executor) return { ok: false, output: null, durationMs: 0, error: `unknown tool kind ${tool.kind}` };
     if (tool.requiresApproval || executor.needsApproval?.(tool.config, input)) return { ok: false, output: null, durationMs: 0, error: 'This call needs a person to approve it, so it only runs inside a run. Start a test run instead.' };
-    const fake = { id: 'tool-test', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, toolCalls: 0, apiCalls: 0, stepCount: 0, providerCostMicroUsd: 0 } as ConnectRun;
+    const fake = { id: 'tool-test', inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, toolCalls: 0, apiCalls: 0, stepCount: 0, providerCostMicroUsd: 0, modelUsage: {} } as ConnectRun;
     const ctx = await this.context(fake, { spec, trigger: { source: 'test', body: null, prompt: '' }, done: {}, agent: {}, approvals: {}, execMs: 0, segments: 0 });
     try {
       const conn = tool.connectionId ? await this.connection(ctx, tool.connectionId) : null;

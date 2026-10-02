@@ -37,7 +37,7 @@ export default function UsagePage() {
   const max = Math.max(1, ...days.map((d) => d.executions));
   const cards: [string, string][] = t ? [
     [c('executions'), n(t.executions)], [c('workflowExecutions'), n(t.workflowExecutions)], [c('aiInput'), n(t.aiInputTokens)], [c('aiOutput'), n(t.aiOutputTokens)],
-    [c('aiCache'), n(t.aiCacheReadTokens)], [c('toolCalls'), n(t.toolCalls)], [c('apiCalls'), n(t.apiCalls)], [c('compute'), cf('seconds')(n(t.computeSeconds))], [c('storage'), fmtBytes(t.storageBytes)],
+    [c('aiCache'), n(t.aiCacheReadTokens)], [c('aiCacheWrite'), n(t.aiCacheWriteTokens)], [c('toolCalls'), n(t.toolCalls)], [c('apiCalls'), n(t.apiCalls)], [c('compute'), cf('seconds')(n(t.computeSeconds))], [c('storage'), fmtBytes(t.storageBytes)],
   ] : [];
   return (
     <div>
@@ -69,6 +69,24 @@ export default function UsagePage() {
               ))}
             </div>
             <div className="mt-1 flex justify-between text-xs text-neutral-500" dir="ltr"><span>{days[0].date}</span><span>{days[days.length - 1].date}</span></div>
+          </section>
+        )}
+        {data && (data.byModel?.length ?? 0) > 0 && (
+          <section>
+            <h2 className="font-semibold">{c('byModel')}</h2>
+            <p className="mb-2 text-sm text-neutral-500">{c('byModelNote')}</p>
+            <TableCard>
+              <thead><tr><Th>{c('model')}</Th><Th end>{c('aiInput')}</Th><Th end>{c('aiOutput')}</Th><Th end>{c('aiCache')}</Th><Th end>{c('aiCacheWrite')}</Th><Th end>{c('estimatedCost')}</Th></tr></thead>
+              <tbody>
+                {data.byModel!.map((r) => (
+                  <tr key={r.model} className="border-t border-neutral-100 dark:border-neutral-800">
+                    <Td className="whitespace-nowrap">{r.label}</Td>
+                    <Td className="text-end tabular-nums">{n(r.aiInputTokens)}</Td><Td className="text-end tabular-nums">{n(r.aiOutputTokens)}</Td><Td className="text-end tabular-nums">{n(r.aiCacheReadTokens)}</Td><Td className="text-end tabular-nums">{n(r.aiCacheWriteTokens)}</Td>
+                    <Td className="whitespace-nowrap text-end">{data.pricingConfigured ? money(r.estimatedCostMinor, data.currency, locale) : '—'}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </TableCard>
           </section>
         )}
         {data && data.byAgent.length > 0 && (

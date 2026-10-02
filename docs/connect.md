@@ -78,7 +78,9 @@ Tool inputs are parsed with JSON semantics and validated against the tool's inpu
 - The SDK retries 429 and 5xx with backoff (`maxRetries: 3`). Typed errors map to run codes: `model_rate_limited`, `model_auth_failed`, `model_bad_request`, `model_timeout`, `model_unavailable`, `model_error`.
 - `max_tokens` is `CONNECT_MAX_OUTPUT_TOKENS` (16,000 by default), sized for thinking plus the answer.
 
-Usage per model step (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`) is recorded on the step and summed on the run.
+Usage per model step (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, and `cache_creation.ephemeral_1h_input_tokens` for one hour writes) is recorded on the step and summed on the run, in total and per model (`modelUsage`).
+
+Fast mode and server tools are never sent: they cost more than Connect's prices (see Billing and pricing).
 
 ## Security model
 
@@ -123,18 +125,41 @@ Results are cut at `maxRows` (default 200, max 1,000) and shrunk further to fit 
 - Errors: 401 bad key, 404 unknown agent, 409 not deployed, 402 spend limit or payment required, 429 rate limits (per agent and per team per minute, and concurrent runs per team).
 - Inbound webhooks: `POST /v1/connect/hooks/:hookId/:token`. The token is compared by hash in constant time. With signing on, `X-Prgd-Signature: t=<unix>,v1=<hex hmac>` over `<t>.<raw body>` is required within 5 minutes. Answers 202 with the run id.
 
-## Billing hooks
+## Billing and pricing
 
-- New resource types: `connect_execution`, `connect_ai_input`, `connect_ai_output`, `connect_ai_cache_read`, `connect_tool_call`.
-- The seed creates the SKUs `connect-executions`, `connect-ai-input-tokens`, `connect-ai-output-tokens`, `connect-ai-cache-read-tokens` and `connect-tool-calls` with price 0, only when missing, so a re-seed never resets a price. Staff set prices with `POST /admin/v1/prices`. `monthlyMinor` holds the price per 1,000 executions or tool calls, or per 1M tokens, in the book currency. `pricingConfigured` is false until any of them is above 0.
-- `ConnectUsageService.meterHour` runs at seven past every hour. It sums the runs that finished in the previous hour per agent and upserts one `UsageRecord` per resource type (resourceId = agent id) on the agent's project. Invoices pick them up like any usage. Records already on an invoice are never changed. Cache writes are metered as input tokens.
+Connect is pay as you go. The owner approved launch prices, in riyals excluding 15% VAT:
+
+| SKU | Price |
+|---|---|
+| `connect-executions` | SAR 0.04 per execution (agent run or workflow execution) |
+| `connect-tool-calls` | SAR 0.02 per tool call |
+| `connect-ai-*-tokens:<model>` | Anthropic list price plus 20%, at 3.75 SAR per USD, per model (table below) |
+
+| Model, per 1M tokens | Input | Output | Cache read | Cache write (5 min) | Cache write (1 hour) |
+|---|---|---|---|---|---|
+| `claude-opus-5-5` | 18.00 | 90.00 | 0.90 | 22.50 | 36.00 |
+| `claude-sonnet-5-5` | 9.00 | 45.00 | 0.90 | 11.25 | 18.00 |
+| `claude-haiku-4-5` | 4.50 | 22.50 | 0.45 | 5.625 | 9.00 |
+| `claude-opus-5` (billing only) | 22.50 | 112.50 | 2.25 | 28.125 | 45.00 |
+| `claude-opus-4-8` (billing only) | 22.50 | 112.50 | 2.25 | 28.125 | 45.00 |
+
+Claude Opus 5 and Claude Opus 4.8 are Anthropic's refusal fallbacks for Claude Opus 5.5 (list $5 / $25, cache read $0.50, cache write 1.25x input). They are in `BILLING_ONLY_MODELS` in `models/catalog.ts`: priced and seeded like the others, never selectable for an agent.
+
+- **SKUs.** `connect-executions` and `connect-tool-calls`, priced per 1,000 (`unit` `per_1k`). AI tokens have five SKUs per model, `<base>:<model id>`: `connect-ai-input-tokens`, `connect-ai-output-tokens`, `connect-ai-cache-read-tokens`, `connect-ai-cache-write-tokens` (five minute writes, 1.25x input) and `connect-ai-cache-write-1h-tokens` (one hour writes, 2x input; Connect only sends five minute breakpoints today). Token prices are stored per 10M tokens (`unit` `per_10m`) so every price is a whole number of halalas (Haiku 4.5 cache writes are 5,625 halalas per 10M). The shapes, the math and the launch list live in `src/modules/connect/pricing.ts`; a unit test checks the launch list against the catalog's list prices.
+- **Resource types**: `connect_execution`, `connect_tool_call`, `connect_ai_input`, `connect_ai_output`, `connect_ai_cache_read`, `connect_ai_cache_write`, `connect_ai_cache_write_1h`.
+- **Seed.** `prisma/seed.ts` creates each launch price when its SKU has no current price, so a re-seed never overwrites a price staff set with `POST /admin/v1/prices` (the back office Finance page). An unpriced 0 row from the earlier seed (valid from the launch date) is closed and the launch price opens from that moment. The old model agnostic token SKUs are closed. `pricingConfigured` is true when any Connect price is above 0.
+- **Per model usage.** Each run keeps `modelUsage`, tokens per billed model: `{"<model id>": {input, output, cacheRead, cacheWrite, cacheWrite1h}}`. Every attempt is billed to the model that ran it. The top level `usage` of a response covers only the attempt that produced the message, so `AnthropicProvider` reads `usage.iterations`: `message` entries without a model ran on the requested model (a declined attempt), `fallback_message` entries name the fallback model. Anthropic bills each attempt, so the customer price, the run's token totals and `providerCostMicroUsd` all include them. `billingModel` maps a dated snapshot id to its catalog id; a model with no price at all is billed as the agent's model.
+- **Metering.** `ConnectUsageService.meterHour` runs at seven past every hour. It sums the runs that finished in the previous hour and upserts one `UsageRecord` per SKU on the agent's project: executions and tool calls per agent (resourceId = agent id), tokens per agent and model (resourceId = `<agent id>:<model id>`, which keeps the unique `(resourceType, resourceId, hourStart)`). Invoices pick them up like any usage, with one line per token kind and model. Records already on an invoice are never changed.
+- **Estimates.** The same math gives each run's `costEstimateMinor` (Test tab, run view, logs) and `estimatedCostMinor` on `GET /v1/connect/usage`, which also returns `byModel`. `GET /v1/connect/models` returns each model's `prices` per 1M tokens and the execution and tool call prices, in the team currency's minor units.
+- **Not sold.** Opus fast mode (`speed: "fast"`) and Anthropic server tools (web search, web fetch, code execution) cost more than these prices. `AnthropicProvider` never sends them, and `assertPricedParams` refuses any request that carries them.
+- **Plans later.** Monthly plans with included allowances can sit on top of this: they would subtract the allowance from the metered quantities before pricing, with the same SKUs.
 - Before a run starts: the prepaid before postpaid check (`TrustService.assertPrepaidBeforePostpaid`, 402 `payment_required`) and the project spend limit (`SpendService.assertCanSpend`, 402 `spend_limit_reached`).
-- Each run stores `costEstimateMinor` (price book estimate in the team currency) and `providerCostMicroUsd` (tokens times the model's list price, per model step, using the model that actually answered). The second is the internal cost basis and is shown only in `GET /admin/v1/connect/overview` next to what was metered.
+- Each run stores `costEstimateMinor` (price book estimate in the team currency, per model prices) and `providerCostMicroUsd` (tokens times the model's list price, per model step, using the model that actually answered). The second is the internal cost basis and is shown only in `GET /admin/v1/connect/overview` next to what was metered.
 - Build with AI calls are rate limited (30 per team per hour) and logged with their token usage, but not metered.
 
 ## Extending
 
-**Add a model.** Add an entry to `MODELS` in `models/catalog.ts` with its id, effort support, fallback support and list prices. For a new vendor, write a class implementing `ModelProvider` (translate to and from the Messages API block shapes) and choose it in `ModelService`.
+**Add a model.** Add an entry to `MODELS` in `models/catalog.ts` with its id, effort support, fallback support and list prices. Give it a price in `LAUNCH_TOKEN_SAR_PER_M` in `pricing.ts` (list price plus 20%) and run the seed, which creates its five token SKUs. Until then its tokens have no price. For a new vendor, write a class implementing `ModelProvider` (translate to and from the Messages API block shapes) and choose it in `ModelService`.
 
 **Add a tool kind.** Write a `ToolExecutor` (config schema, connection kinds, default input schema, optional `needsApproval` and `summarize`, `execute`), register it in `ToolRegistry`, and add the kind to the `ConnectToolKind` enum (migration) and `TOOL_KINDS` in `kinds.ts`. Executors receive validated input and an opened connection; anything that reaches the network goes through `net/guard.ts`.
 
@@ -175,13 +200,13 @@ Differences from the shared contract (`connect-contract.md`), all additive unles
 2. **Agent extras.** Agents also carry `templateSlug` and `projectId`. `GET /agents/:id` adds `issues: string[]` (what blocks a deploy).
 3. **Variables.** Non secret variables return `value`; secret ones only `hasValue`. A variable must be defined (PATCH `variables`) before `PUT .../variables/:key`. An empty value clears it.
 4. **Runs.** Runs also carry `workflow`, `createdAt` and `agentName`. A waiting run carries `pendingApprovals[]`. Runs that fail with details get a final `Run failed` step.
-5. **Models.** `GET /models` items carry `label`, `description`, `default`, `provider`, `efforts`, `contextWindow`, `available`; the list has `provider` (`anthropic` or `fake`). No customer prices are returned.
+5. **Models.** `GET /models` items carry `label`, `description`, `default`, `provider`, `efforts`, `contextWindow`, `available` and `prices` (per 1M tokens, minor units of the team currency); the list has `provider` (`anthropic` or `fake`) and `pricing {currency, configured, executionMinor, toolCallMinor}`.
 6. **Build with AI.** `POST /agents/generate` returns `{draft, issues, model, usage}`. Draft tools name connections by `connectionRef`, and workflow nodes name tools by tool name. `POST /agents/from-draft` accepts an optional `connections` map from a `connectionsNeeded` ref (or name) to a connection id. `connectionsNeeded` items are `{ref, kind, name, reason, usedBy}`.
 7. **Tools.** `POST .../tools/:toolId/test` answers `{ok, output, durationMs, error}`; calls that need approval are refused there and run only inside a run.
 8. **Workflow.** `PUT .../workflow` with an empty graph (`nodes: []`) removes the workflow. `GET` answers `null` when there is none.
 9. **Cross agent lists** (console request): `GET /v1/connect/webhooks` and `GET /v1/connect/keys` with `agentId` and `agentName`.
 10. **Overview** (console request): adds `counts {connections, webhooks, keys, templates}`; `usageThisPeriod` is `{executions, aiInputTokens, aiOutputTokens, estimatedCostMinor, currency, pricingConfigured}`.
-11. **Usage**: `byAgent` items are `{agentId, agentName, executions, aiInputTokens, aiOutputTokens, toolCalls, estimatedCostMinor}` plus `failed`, `aiCacheReadTokens`, `apiCalls`, `deleted`; `byDay` items are `{date, executions, aiInputTokens, aiOutputTokens}` plus `failed`, `aiCacheReadTokens`, `toolCalls`. Totals add `aiCacheWriteTokens`; the response adds `prices[]`.
+11. **Usage**: `byAgent` items are `{agentId, agentName, executions, aiInputTokens, aiOutputTokens, toolCalls, estimatedCostMinor}` plus `failed`, `aiCacheReadTokens`, `apiCalls`, `deleted`; `byDay` items are `{date, executions, aiInputTokens, aiOutputTokens}` plus `failed`, `aiCacheReadTokens`, `aiCacheWriteTokens`, `toolCalls`. Totals add `aiCacheWriteTokens`; the response adds `byModel[]` and `prices[]`.
 12. **SSE** (console request): `GET /runs/:runId/events` authenticates with the `Authorization` header (or the console session cookie); there is no query string token. Events: `step` (RunStep), `run` (full Run on each status change), final `end`; a heartbeat comment every 15 seconds.
 13. **Async test runs** (console request): `POST /agents/:id/test` with `async: true` returns the queued run at once.
 14. **Filters**: `GET /logs` takes `source`; `GET /agents/:id/runs` takes `from` and `to`.

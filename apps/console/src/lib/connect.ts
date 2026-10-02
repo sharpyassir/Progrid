@@ -53,7 +53,8 @@ export interface GraphEdge { id: string; source: string; target: string; sourceH
 export interface Graph { nodes: GraphNode[]; edges: GraphEdge[] }
 export interface Workflow { id: string; agentId: string; graph: Graph; updatedAt: string }
 
-export interface Usage { model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; toolCalls: number; apiCalls: number; steps: number }
+export interface ModelTokens { input: number; output: number; cacheRead: number; cacheWrite: number; cacheWrite1h?: number }
+export interface Usage { model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; toolCalls: number; apiCalls: number; steps: number; byModel?: Record<string, ModelTokens> }
 export interface Run {
   id: string; agentId: string; version: number | null; source: RunSource; status: RunStatus; input: unknown; output: unknown;
   error: { code: string; message: string } | null; startedAt: string; finishedAt: string | null; durationMs: number | null;
@@ -74,7 +75,16 @@ export interface Webhook { id: string; agentId: string; name: string; path: stri
 export interface WebhookSecrets extends Webhook { token: string; signingSecret?: string }
 export interface AgentKey { id: string; agentId: string; name: string; prefix: string; createdAt: string; lastUsedAt: string | null; agentName?: string }
 
-export interface Model { id: string; label: string; description?: string; default?: boolean; efforts?: Effort[]; available?: boolean }
+/** Price per 1M tokens in minor units of `currency`, excluding VAT. Can have a fraction of a minor unit. */
+export interface ModelPrices { currency: string; inputPerMTokMinor: number; outputPerMTokMinor: number; cacheReadPerMTokMinor: number; cacheWritePerMTokMinor: number; cacheWrite1hPerMTokMinor?: number }
+export interface Model { id: string; label: string; description?: string; default?: boolean; efforts?: Effort[]; available?: boolean; prices?: ModelPrices }
+export interface ModelPricing { currency: string; configured: boolean; executionMinor: number; toolCallMinor: number }
+export interface ModelList { provider: string; data: Model[]; pricing?: ModelPricing }
+
+/** A unit price: two to three decimals, so SAR 5.625 is not rounded. */
+export function unitPrice(minor: number, currency: string, locale = 'en') {
+  return new Intl.NumberFormat(locale === 'tr' ? 'tr-TR' : locale === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 3 }).format(minor / 100);
+}
 
 export interface Draft {
   agent: { name: string; description?: string; instructions: string; model?: string; effort?: Effort };
@@ -96,8 +106,9 @@ export interface Overview {
 export interface UsageReport {
   period: string;
   totals: { executions: number; workflowExecutions: number; aiInputTokens: number; aiOutputTokens: number; aiCacheReadTokens: number; aiCacheWriteTokens?: number; toolCalls: number; apiCalls: number; computeSeconds: number; storageBytes: number };
-  byAgent: { agentId: string; agentName: string | null; deleted?: boolean; executions: number; failed?: number; aiInputTokens: number; aiOutputTokens: number; aiCacheReadTokens?: number; toolCalls: number; apiCalls?: number; estimatedCostMinor: number }[];
+  byAgent: { agentId: string; agentName: string | null; deleted?: boolean; executions: number; failed?: number; aiInputTokens: number; aiOutputTokens: number; aiCacheReadTokens?: number; aiCacheWriteTokens?: number; toolCalls: number; apiCalls?: number; estimatedCostMinor: number }[];
   byDay: { date: string; executions: number; failed?: number; aiInputTokens: number; aiOutputTokens: number; aiCacheReadTokens?: number; toolCalls?: number }[];
+  byModel?: { model: string; label: string; aiInputTokens: number; aiOutputTokens: number; aiCacheReadTokens: number; aiCacheWriteTokens: number; estimatedCostMinor: number }[];
   estimatedCostMinor: number; currency: string; pricingConfigured: boolean;
 }
 

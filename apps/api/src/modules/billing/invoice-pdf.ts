@@ -3,13 +3,27 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Invoice, Team, UsageRecord } from '@prisma/client';
 import { loadConfig } from '../../config/config';
+import { parseTokenResourceId } from '../connect/pricing';
 
 /** Official logo lockup, shipped with the api package (assets/progrid-logo.png). */
 const LOGO = [join(__dirname, '../../../assets/progrid-logo.png'), join(process.cwd(), 'assets/progrid-logo.png'), join(process.cwd(), 'apps/api/assets/progrid-logo.png')].find((f) => existsSync(f));
 const FONT = ['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/dejavu/DejaVuSans.ttf'].find(existsSync);
 const FONT_BOLD = ['/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf'].find(existsSync);
 
-const LABEL: Record<string, string> = { server: 'Servers', public_ip: 'Public IP addresses', snapshot: 'Snapshots', backup: 'Backups', managed_server: 'Managed servers', support: 'Support plan', kubernetes: 'Kubernetes control plane', app_instance: 'App Platform', volume: 'Volumes', bandwidth: 'Bandwidth', app: 'Marketplace apps', managed_plan: 'Managed cloud plan', managed_overage: 'Managed cloud engineer time beyond included hours' };
+const LABEL: Record<string, string> = { server: 'Servers', public_ip: 'Public IP addresses', snapshot: 'Snapshots', backup: 'Backups', managed_server: 'Managed servers', support: 'Support plan', kubernetes: 'Kubernetes control plane', app_instance: 'App Platform', volume: 'Volumes', bandwidth: 'Bandwidth', app: 'Marketplace apps', managed_plan: 'Managed cloud plan', managed_overage: 'Managed cloud engineer time beyond included hours', connect_execution: 'Connect executions', connect_tool_call: 'Connect tool calls', connect_ai_input: 'AI input tokens', connect_ai_output: 'AI output tokens', connect_ai_cache_read: 'AI cache read tokens', connect_ai_cache_write: 'AI cache write tokens', connect_ai_cache_write_1h: 'AI cache write tokens (1 hour)' };
+
+/** Connect token rows are per model (resourceId "<agent id>:<model id>"), so their invoice lines are too. */
+function lineKey(r: UsageRecord) {
+  const model = r.resourceType.startsWith('connect_ai_') ? parseTokenResourceId(r.resourceId).model : null;
+  return model ? `${r.resourceType}:${model}` : r.resourceType;
+}
+
+function lineLabel(key: string) {
+  const i = key.indexOf(':');
+  if (i < 0) return LABEL[key] ?? key;
+  const type = key.slice(0, i);
+  return `${LABEL[type] ?? type}, ${key.slice(i + 1)}`;
+}
 
 /** Renders an invoice as a one page PDF. DejaVu Sans covers Latin letters with accents; Helvetica is the fallback. */
 export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageRecord[] }): Promise<Buffer> {
@@ -56,8 +70,9 @@ export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageReco
     // Lines
     const groups = new Map<string, { qty: number; amount: number; unit: string }>();
     for (const r of inv.records) {
-      const g = groups.get(r.resourceType) ?? { qty: 0, amount: 0, unit: r.unit };
-      g.qty += r.quantity; g.amount += r.amountMinor; groups.set(r.resourceType, g);
+      const key = lineKey(r);
+      const g = groups.get(key) ?? { qty: 0, amount: 0, unit: r.unit };
+      g.qty += r.quantity; g.amount += r.amountMinor; groups.set(key, g);
     }
     let y = Math.max(220, billToEnd + 24);
     const col = { desc: 50, qty: 330, amount: 545 };
@@ -68,7 +83,7 @@ export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageReco
     for (const [type, g] of groups) {
       // Metering counts minutes; people read hours.
       const usage = g.unit === 'minute' ? `${(g.qty / 60).toFixed(1)} hours` : g.unit === 'gb_minute' ? `${(g.qty / 60).toFixed(1)} GB hours` : g.unit === 'byte' ? `${(g.qty / 1e9).toFixed(2)} GB` : g.unit === 'month' ? `${Math.round(g.qty * 100) / 100} ${g.qty === 1 ? 'month' : 'months'}` : g.unit === 'hour' ? `${g.qty.toFixed(2)} hours` : `${Math.round(g.qty * 100) / 100} ${g.unit}`;
-      doc.text(LABEL[type] ?? type, col.desc + 6, y).text(usage, col.qty, y, { width: 120, align: 'right' }).text(money(g.amount), 400, y, { width: 145, align: 'right' });
+      doc.text(lineLabel(type), col.desc + 6, y).text(usage, col.qty, y, { width: 120, align: 'right' }).text(money(g.amount), 400, y, { width: 145, align: 'right' });
       y += 18;
     }
     if (groups.size === 0) { doc.fillColor('#555').text('No usage in this period', col.desc + 6, y).fillColor('#000'); y += 18; }

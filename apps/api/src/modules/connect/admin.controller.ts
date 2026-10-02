@@ -32,7 +32,7 @@ export class ConnectAdminController {
       this.prisma.connectRun.groupBy({ by: ['teamId'], where: { createdAt: range, status: 'failed' }, _count: { _all: true } }),
       this.prisma.connectRun.groupBy({ by: ['agentId'], where: { createdAt: range }, _count: { _all: true }, _sum: { providerCostMicroUsd: true, inputTokens: true, outputTokens: true }, orderBy: { _count: { agentId: 'desc' } }, take: 20 }),
       this.prisma.connectRun.groupBy({ by: ['agentId'], where: { createdAt: range, status: 'failed' }, _count: { _all: true } }),
-      this.prisma.usageRecord.groupBy({ by: ['projectId', 'currency'], where: { hourStart: range, resourceType: { in: ['connect_execution', 'connect_ai_input', 'connect_ai_output', 'connect_ai_cache_read', 'connect_tool_call'] } }, _sum: { amountMinor: true } }),
+      this.prisma.usageRecord.groupBy({ by: ['projectId', 'currency'], where: { hourStart: range, resourceType: { in: ['connect_execution', 'connect_ai_input', 'connect_ai_output', 'connect_ai_cache_read', 'connect_ai_cache_write', 'connect_ai_cache_write_1h', 'connect_tool_call'] } }, _sum: { amountMinor: true } }),
     ]);
     const teams = await this.prisma.team.findMany({ where: { id: { in: byTeam.map((t) => t.teamId) } }, select: { id: true, name: true, slug: true, currency: true, projects: { select: { id: true } } } });
     const agents = await this.prisma.connectAgent.findMany({ where: { id: { in: topAgents.map((a) => a.agentId) } }, select: { id: true, name: true, teamId: true, model: true, status: true } });

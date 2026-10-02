@@ -83,7 +83,7 @@ function BillingPage() {
             {usage.length === 0 && <tr><td className="px-4 py-3 text-neutral-500" colSpan={3}>—</td></tr>}
             {usage.map((u) => (
               <tr key={u.resourceId + u.unit} className="border-t border-neutral-100 dark:border-neutral-800">
-                <td className="px-4 py-2">{u.resourceType} <span className="font-mono text-xs text-neutral-500">{u.resourceId.slice(-6)}</span></td>
+                <td className="px-4 py-2">{u.resourceType} <span className="font-mono text-xs text-neutral-500">{u.resourceId.includes(':') ? `${u.resourceId.split(':')[0].slice(-6)} ${u.resourceId.split(':').slice(1).join(':')}` : u.resourceId.slice(-6)}</span></td>
                 <td className="px-4 py-2">{Math.round(u.quantity * 100) / 100} {u.unit}</td>
                 <td className="px-4 py-2 text-end">{money(u.amountMinor, u.currency, locale)}</td>
               </tr>

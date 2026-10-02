@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { BetaMessageParam, MessageCreateParamsNonStreaming, BetaToolUnion, BetaOutputConfig } from '@anthropic-ai/sdk/resources/beta/messages/messages';
 import { findModel } from './catalog';
-import { ModelError, type Block, type ModelProvider, type ModelRequest, type ModelResponse } from './provider';
+import { ModelError, type Block, type ModelProvider, type ModelRequest, type ModelResponse, type ModelUsage } from './provider';
 
 export const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
 
@@ -19,6 +19,9 @@ export const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
  *  - refusal fallbacks: on models that support it, `fallbacks: "default"` under the
  *    server-side-fallback-2026-07-01 beta (CONNECT_MODEL_FALLBACKS)
  *  - retries: the SDK retries 429 and 5xx with backoff (maxRetries); typed errors map to codes
+ *  - no premium features: fast mode (`speed: "fast"`) and server tools (web search, web fetch,
+ *    code execution, ...) cost more than the Connect token prices, so they are never sent.
+ *    assertPricedParams checks every request before it leaves.
  */
 export class AnthropicProvider implements ModelProvider {
   readonly name = 'anthropic';
@@ -53,6 +56,7 @@ export class AnthropicProvider implements ModelProvider {
       params.betas = [FALLBACK_BETA];
       params.fallbacks = 'default';
     }
+    assertPricedParams(params);
     return params;
   }
 
@@ -61,22 +65,83 @@ export class AnthropicProvider implements ModelProvider {
     try {
       const res = await this.client.beta.messages.create(params, { signal: req.signal });
       const content = res.content as unknown as Block[];
+      const top = usageOf(res.usage);
+      const attempts = attemptsOf(res.usage?.iterations, req.model, res.model);
       return {
         content,
         stopReason: res.stop_reason ?? 'end_turn',
         stopDetails: res.stop_details ?? undefined,
-        usage: {
-          inputTokens: res.usage.input_tokens ?? 0,
-          outputTokens: res.usage.output_tokens ?? 0,
-          cacheReadTokens: res.usage.cache_read_input_tokens ?? 0,
-          cacheWriteTokens: res.usage.cache_creation_input_tokens ?? 0,
-        },
+        usage: attempts ? sumUsage(attempts.map((a) => a.usage)) : top,
+        ...(attempts ? { attempts } : {}),
         servedBy: res.model,
         fallbacks: content.filter((b) => b.type === 'fallback').map((b) => ({ from: (b.from as { model?: string })?.model, to: (b.to as { model?: string })?.model })),
         requestId: (res as { _request_id?: string | null })._request_id ?? undefined,
       };
     } catch (err) {
       throw mapError(err);
+    }
+  }
+}
+
+type RawUsage = { input_tokens?: number | null; output_tokens?: number | null; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null; cache_creation?: { ephemeral_1h_input_tokens?: number | null } | null };
+
+function usageOf(u: RawUsage | null | undefined): ModelUsage {
+  return {
+    inputTokens: u?.input_tokens ?? 0,
+    outputTokens: u?.output_tokens ?? 0,
+    cacheReadTokens: u?.cache_read_input_tokens ?? 0,
+    cacheWriteTokens: u?.cache_creation_input_tokens ?? 0,
+    cacheWrite1hTokens: u?.cache_creation?.ephemeral_1h_input_tokens ?? 0,
+  };
+}
+
+export function sumUsage(list: ModelUsage[]): ModelUsage {
+  const out: ModelUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cacheWrite1hTokens: 0 };
+  for (const u of list) {
+    out.inputTokens += u.inputTokens;
+    out.outputTokens += u.outputTokens;
+    out.cacheReadTokens += u.cacheReadTokens;
+    out.cacheWriteTokens += u.cacheWriteTokens;
+    out.cacheWrite1hTokens! += u.cacheWrite1hTokens ?? 0;
+  }
+  return out;
+}
+
+/**
+ * Billed attempts from usage.iterations. The top level usage covers only the attempt that
+ * produced the message; iterations list every attempt, and Anthropic bills each one at the
+ * rates of the model that ran it (a declined attempt included). `message` entries without a
+ * model ran on the requested model; `fallback_message` and `advisor_message` name theirs; a
+ * `compaction` entry (not used by Connect) is counted on the model that answered. Returns
+ * undefined when there are no iterations, so the top level usage applies.
+ */
+export function attemptsOf(iterations: unknown, requested: string, servedBy: string): { model: string; usage: ModelUsage }[] | undefined {
+  if (!Array.isArray(iterations) || !iterations.length) return undefined;
+  const out: { model: string; usage: ModelUsage }[] = [];
+  for (const it of iterations as (RawUsage & { type?: string; model?: string | null })[]) {
+    if (!it || typeof it !== 'object') continue;
+    const model = it.model || (it.type === 'compaction' ? servedBy : requested);
+    out.push({ model, usage: usageOf(it) });
+  }
+  return out.length ? out : undefined;
+}
+
+/**
+ * Connect prices cover standard speed tokens and the platform's own tools only. Fast mode
+ * (`speed: "fast"`, on the request or on a fallback hop) and Anthropic server tools such as web
+ * search are billed by Anthropic above those prices, so a request that carries any of them is
+ * refused before it is sent.
+ */
+export function assertPricedParams(params: object) {
+  const p = params as { speed?: unknown; fallbacks?: unknown; tools?: unknown; betas?: unknown };
+  if (p.speed !== undefined && p.speed !== null && p.speed !== 'standard') throw new ModelError('model_bad_request', 'Fast mode is not available in Connect.');
+  if (Array.isArray(p.fallbacks) && p.fallbacks.some((f) => f && typeof f === 'object' && (f as { speed?: unknown }).speed === 'fast')) throw new ModelError('model_bad_request', 'Fast mode is not available in Connect.');
+  if (Array.isArray(p.betas) && p.betas.some((b) => typeof b === 'string' && b.startsWith('fast-mode'))) throw new ModelError('model_bad_request', 'Fast mode is not available in Connect.');
+  if (Array.isArray(p.tools)) {
+    for (const t of p.tools as { type?: unknown; name?: unknown; input_schema?: unknown }[]) {
+      // Client tools have an input schema and no type (or "custom"). Anything else is a server tool.
+      const server = (t.type !== undefined && t.type !== null && t.type !== 'custom') || !t.input_schema;
+      if (server) throw new ModelError('model_bad_request', `Server tools such as web search are not available in Connect (${String(t.type ?? t.name)}).`);
     }
   }
 }
