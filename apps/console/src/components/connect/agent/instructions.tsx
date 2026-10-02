@@ -8,7 +8,7 @@ import { ErrorBox, Field, Notice, useAction, useC } from '../ui';
 import type { AgentTabProps } from './types';
 
 type Form = { name: string; description: string; instructions: string; model: string; effort: Effort; variables: Omit<Variable, 'hasValue'>[]; limits: Limits };
-const toForm = (a: AgentDetail): Form => ({ name: a.name, description: a.description, instructions: a.instructions, model: a.model, effort: a.effort, variables: a.variables.map(({ hasValue, ...v }) => v), limits: a.limits }); // eslint-disable-line @typescript-eslint/no-unused-vars
+const toForm = (a: AgentDetail): Form => ({ name: a.name, description: a.description, instructions: a.instructions, model: a.model, effort: a.effort, variables: a.variables.map(({ hasValue, value, ...v }) => v), limits: a.limits }); // eslint-disable-line @typescript-eslint/no-unused-vars
 
 export function InstructionsTab({ agent, reload }: AgentTabProps) {
   const { c } = useC();
@@ -18,6 +18,7 @@ export function InstructionsTab({ agent, reload }: AgentTabProps) {
   useEffect(() => setF(toForm(agent)), [agent]);
   const dirty = JSON.stringify(f) !== JSON.stringify(toForm(agent));
   const hasValue = Object.fromEntries(agent.variables.map((v) => [v.key, v.hasValue]));
+  const values = Object.fromEntries(agent.variables.map((v) => [v.key, v.value]));
 
   async function save() {
     setSaved(false);
@@ -48,7 +49,7 @@ export function InstructionsTab({ agent, reload }: AgentTabProps) {
       <section className="card">
         <h2 className="font-semibold">{c('variables')}</h2>
         <p className="mb-3 text-sm text-neutral-500">{c('secretWriteOnly')}</p>
-        <VariablesEditor value={f.variables.map((v) => ({ ...v, hasValue: hasValue[v.key] }))} onChange={(v) => setF({ ...f, variables: v.map(({ hasValue: _h, ...x }) => x) })} onSetValue={setValue} />
+        <VariablesEditor value={f.variables.map((v) => ({ ...v, hasValue: hasValue[v.key], value: values[v.key] }))} onChange={(v) => setF({ ...f, variables: v.map(({ hasValue: _h, value: _v, ...x }) => x) })} onSetValue={setValue} />
       </section>
       <section className="card">
         <h2 className="mb-3 font-semibold">{c('limits')}</h2>

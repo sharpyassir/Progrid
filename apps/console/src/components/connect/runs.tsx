@@ -83,6 +83,13 @@ export function useLiveRun(initial: Run | null) {
   return { run, steps, lost };
 }
 
+/** A plain agent answers {text}; show that as text, anything else as JSON. */
+function outputText(o: unknown): string | null {
+  if (typeof o === 'string') return o;
+  if (o && typeof o === 'object' && !Array.isArray(o) && Object.keys(o).length === 1 && typeof (o as { text?: unknown }).text === 'string') return (o as { text: string }).text;
+  return null;
+}
+
 /** Run view used by Test and the run drawer: summary, response, timeline and a raw JSON switch. */
 export function RunView({ run: initial, onStatus }: { run: Run; onStatus?: (s: Run['status']) => void }) {
   const { c } = useC();
@@ -99,7 +106,7 @@ export function RunView({ run: initial, onStatus }: { run: Run; onStatus?: (s: R
       {run.output !== undefined && run.output !== null && (
         <section>
           <h3 className="mb-1 text-sm font-medium">{c('response')}</h3>
-          {typeof run.output === 'string' ? <p dir="auto" className="whitespace-pre-wrap rounded-md bg-neutral-50 p-3 text-sm dark:bg-neutral-900">{run.output}</p> : <Json value={run.output} maxH="max-h-64" />}
+          {outputText(run.output) !== null ? <p dir="auto" className="whitespace-pre-wrap rounded-md bg-neutral-50 p-3 text-sm dark:bg-neutral-900">{outputText(run.output)}</p> : <Json value={run.output} maxH="max-h-64" />}
         </section>
       )}
       <div className="flex flex-wrap items-center gap-2">
@@ -149,7 +156,7 @@ export function RunsTable({ runs, agentNames, onSelect }: { runs: Run[]; agentNa
             <Td className="whitespace-nowrap">
               <button type="button" className="text-start font-medium text-blue-700 hover:underline focus-visible:underline focus-visible:outline-none dark:text-blue-400" onClick={() => onSelect(r.id)}>{fmtDate(r.startedAt, locale)}</button>
             </Td>
-            {agentNames && <Td className="whitespace-nowrap">{agentNames[r.agentId] ? <Link className="hover:underline" href={`/connect/agents/${r.agentId}`}>{agentNames[r.agentId]}</Link> : '—'}</Td>}
+            {agentNames && <Td className="whitespace-nowrap">{agentNames[r.agentId] || r.agentName ? <Link className="hover:underline" href={`/connect/agents/${r.agentId}`}>{agentNames[r.agentId] || r.agentName}</Link> : '—'}</Td>}
             <Td><Status status={r.status} /></Td>
             <Td className="whitespace-nowrap text-neutral-600 dark:text-neutral-300">{cd('src_', r.source)}</Td>
             <Td className="whitespace-nowrap tabular-nums">{fmtMs(r.durationMs)}</Td>

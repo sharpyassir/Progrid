@@ -22,7 +22,19 @@ export default function UsagePage() {
   const t = data?.totals;
   const cost = !data ? '…' : data.pricingConfigured ? money(data.estimatedCostMinor, data.currency, locale) : c('pricingNotSet');
   const monthLabel = (p: string) => new Date(`${p}-01T00:00:00Z`).toLocaleDateString(locale === 'ar' ? 'ar-SA-u-ca-gregory-nu-latn' : locale, { month: 'long', year: 'numeric', timeZone: 'UTC' });
-  const max = Math.max(1, ...(data?.byDay ?? []).map((d) => d.executions));
+  // Every day of the period, so one busy day is not drawn as the whole chart.
+  const days = (() => {
+    if (!data) return [];
+    const [y, m] = period.split('-').map(Number);
+    const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const out: { date: string; executions: number }[] = [];
+    for (let d = 1; d <= last; d++) {
+      const date = `${period}-${String(d).padStart(2, '0')}`;
+      out.push({ date, executions: data.byDay.find((x) => x.date === date)?.executions ?? 0 });
+    }
+    return out;
+  })();
+  const max = Math.max(1, ...days.map((d) => d.executions));
   const cards: [string, string][] = t ? [
     [c('executions'), n(t.executions)], [c('workflowExecutions'), n(t.workflowExecutions)], [c('aiInput'), n(t.aiInputTokens)], [c('aiOutput'), n(t.aiOutputTokens)],
     [c('aiCache'), n(t.aiCacheReadTokens)], [c('toolCalls'), n(t.toolCalls)], [c('apiCalls'), n(t.apiCalls)], [c('compute'), cf('seconds')(n(t.computeSeconds))], [c('storage'), fmtBytes(t.storageBytes)],
@@ -46,17 +58,17 @@ export default function UsagePage() {
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {cards.map(([k, v]) => <div key={k} className="card min-w-0"><dt className="truncate text-xs text-neutral-500">{k}</dt><dd className="mt-1 truncate text-xl font-semibold tabular-nums">{v}</dd></div>)}
         </dl>
-        {data && data.byDay.length > 0 && (
+        {data && data.byDay.length > 0 && days.length > 0 && (
           <section className="card">
             <h2 className="mb-3 font-semibold">{c('perDay')}</h2>
             <div className="flex h-32 items-end gap-1" role="img" aria-label={c('perDay')} dir="ltr">
-              {data.byDay.map((d) => (
+              {days.map((d) => (
                 <div key={d.date} className="group relative flex h-full min-w-0 flex-1 items-end" title={`${d.date}: ${d.executions}`}>
-                  <div className="w-full rounded-t bg-blue-600/80 dark:bg-blue-500/80" style={{ height: `${Math.max(2, (d.executions / max) * 100)}%` }} />
+                  <div className="w-full rounded-t bg-blue-600/80 dark:bg-blue-500/80" style={{ height: d.executions ? `${Math.max(2, (d.executions / max) * 100)}%` : '0' }} />
                 </div>
               ))}
             </div>
-            <div className="mt-1 flex justify-between text-xs text-neutral-500" dir="ltr"><span>{data.byDay[0].date}</span><span>{data.byDay[data.byDay.length - 1].date}</span></div>
+            <div className="mt-1 flex justify-between text-xs text-neutral-500" dir="ltr"><span>{days[0].date}</span><span>{days[days.length - 1].date}</span></div>
           </section>
         )}
         {data && data.byAgent.length > 0 && (
@@ -67,7 +79,7 @@ export default function UsagePage() {
               <tbody>
                 {data.byAgent.map((r) => (
                   <tr key={r.agentId} className="border-t border-neutral-100 dark:border-neutral-800">
-                    <Td className="whitespace-nowrap"><Link href={`/connect/agents/${r.agentId}?tab=usage`} className="text-blue-700 hover:underline dark:text-blue-400">{r.name ?? agents.find((a) => a.id === r.agentId)?.name ?? r.agentId}</Link></Td>
+                    <Td className="whitespace-nowrap"><Link href={`/connect/agents/${r.agentId}?tab=usage`} className="text-blue-700 hover:underline dark:text-blue-400">{r.agentName ?? agents.find((a) => a.id === r.agentId)?.name ?? r.agentId}{r.deleted ? ` (${c('deletedAgent')})` : ''}</Link></Td>
                     <Td className="text-end tabular-nums">{n(r.executions)}</Td><Td className="text-end tabular-nums">{n(r.aiInputTokens)}</Td><Td className="text-end tabular-nums">{n(r.aiOutputTokens)}</Td><Td className="text-end tabular-nums">{n(r.toolCalls)}</Td>
                     <Td className="whitespace-nowrap text-end">{data.pricingConfigured && r.estimatedCostMinor != null ? money(r.estimatedCostMinor, data.currency, locale) : '—'}</Td>
                   </tr>

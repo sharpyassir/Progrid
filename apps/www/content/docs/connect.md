@@ -95,7 +95,7 @@ Save a version with a note, then choose **Deploy**. Connect serves that immutabl
 A deployed agent gets:
 
 - an API endpoint: `https://api.progrid.sa/v1/connect/agents/{id}/run`
-- agent API keys, created on the agent's **API** tab or under **Connect, Keys**. A key starts with `prgd_ca_` and is shown once.
+- agent API keys, created on the agent's **Deploy** tab or under **Connect, Keys**. A key starts with `prgd_ca_` and is shown once.
 - webhook URLs that start a run when they are called
 
 ## Call your agent
@@ -144,7 +144,7 @@ run = requests.post(
 ).json()
 ```
 
-The **Docs** tab of each agent shows these examples with its own endpoint, plus PHP.
+The **API** tab of each agent shows these examples with its own endpoint, plus PHP.
 
 - The call waits up to 60 seconds. Longer runs answer `202` with a `statusUrl` to poll.
 - Send `"async": true` to get `202` at once, then poll `GET /v1/connect/agents/{id}/runs/{runId}` with the same key.

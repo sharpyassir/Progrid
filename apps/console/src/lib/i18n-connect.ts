@@ -49,7 +49,7 @@ const en = {
   aiPrompt: 'What should the agent do?', aiPromptPh: 'When someone fills the form on our website, look up the company in our CRM, score the lead from 0 to 100 and email sales if the score is 80 or more.',
   aiPromptHint: 'Mention the systems it should use and what should happen at the end.', generate: 'Generate draft', generating: 'Drafting your agent…',
   draftTitle: 'Review the draft', draftNote: 'Nothing is saved yet. Change anything you like, then create the agent.',
-  variables: 'Variables', connectionsNeeded: 'Connections needed', connectionsNeededNote: 'Add these under Connections, then pick them on each tool.', usedBy: 'Used by',
+  variables: 'Variables', connectionsNeeded: 'Connections needed', connectionsNeededNote: 'Pick an existing connection for each, or add one under Connections. You can also connect them later on the Tools tab.', usedBy: 'Used by',
   workflow: 'Workflow', startOver: 'Start over', creating: 'Creating…', addConnection: 'Add connection',
   // templates
   templatesTitle: 'Templates', templatesNote: 'Each template creates an agent you can edit before you deploy it.', useTemplate: 'Use template',
@@ -81,7 +81,7 @@ const en = {
   auth: 'Authentication', auth_none: 'None', auth_bearer: 'Bearer token', auth_basic: 'Basic', auth_header: 'Header', auth_query: 'Query parameter', authFromConnection: 'Taken from the connection.',
   headers: 'Headers', endpointPath: 'Endpoint path', endpointPathHint: 'Relative to the base URL. Use {name} for values the model fills in.', method: 'Method',
   queryParams: 'Query parameters', bodyTemplate: 'Body', bodyHint: 'JSON. Use {{input.field}} for values from the model.',
-  inputSchema: 'Input schema', inputSchemaHint: 'JSON Schema for the arguments the model sends.',
+  inputSchema: 'Input schema', inputSchemaHint: 'JSON Schema for the arguments the model sends. Leave {} to derive it from the path and method.',
   dbMode: 'Query type', mode_sql: 'SQL', mode_mongo_find: 'Mongo find', mode_mongo_aggregate: 'Mongo aggregate', maxRows: 'Max rows',
   readOnlyNotice: 'Read only. Queries that change data are blocked.', writesAllowed: 'This connection allows writes. Review what the agent may run.', pickDbConnection: 'Pick a database connection.',
   emailTo: 'To', emailToHint: 'Leave empty to let the agent choose the address.', subjectTemplate: 'Subject', sendWith: 'Send with', via_platform: 'Progrid mail (rate limited)', via_smtp: 'Your SMTP connection',
@@ -125,7 +125,7 @@ const en = {
   apiKeys: 'API keys', createKey: 'Create key', keyName: 'Key name', keyNamePh: 'Website backend', keyShownOnce: 'Copy this key now. You will not see it again.',
   revoke: 'Revoke', revokeConfirm: 'Revoke this key? Apps that use it stop working right away.', noKeys: 'No keys yet.', prefix: 'Prefix', lastUsed: 'Last used',
   webhookUrls: 'Webhook URLs', addWebhook: 'Add webhook', webhookPath: 'Path', rotate: 'Rotate URL', rotateConfirm: 'Rotate this URL? The old URL stops working right away.',
-  signing: 'Signature', signingNote: (h: string, a: string) => `Optional. Verify the ${h} header (${a}).`, noWebhooks: 'No webhooks yet.', readDocs: 'Read the docs',
+  signing: 'Signature', signingNote: (h: string, a: string) => `signed webhooks require the ${h} header (${a} of the timestamp and raw body with the signing secret), at most five minutes old:`, noWebhooks: 'No webhooks yet.', readDocs: 'Read the docs',
   seeApiTab: 'See the API tab', deleteWebhookConfirm: 'Delete this webhook? Calls to its URL stop working.', urlIsSecret: 'Treat this URL like a password.',
   // api
   requestSchema: 'Request schema', responseSchema: 'Response schema', authNote: 'Send an agent key as a bearer token in the Authorization header.',
@@ -158,6 +158,15 @@ const en = {
   // versions
   noVersions: 'No versions yet. Save one from the Deploy tab.', note: 'Note', createdBy: 'By', liveBadge: 'Live', deployThis: 'Deploy this version',
   agentUsageNote: 'This agent in the current billing period.',
+  // integration with the API
+  requireSignature: 'Require signature', hookShownOnce: 'Copy the webhook URL now. It contains a secret token and is shown only once; rotate to get a new one.',
+  signed: 'Signed', tokenHidden: 'The token in the URL is hidden. It ends in', issuesTitle: 'Before you deploy',
+  connectLater: 'Connect later', refresh: 'Refresh', fullUrl: 'URL',
+  noConnectionUrlNote: 'Without a connection the tool calls a full URL with no credentials, only on the allowed hosts. Pick a connection to use a base URL and authentication.',
+  toolHostsHint: 'Hosts this tool may call, separated by commas. Defaults to the host of the URL.',
+  st_waiting: 'Waiting', st_approved: 'Approved', st_denied: 'Denied',
+  removeWorkflow: 'Remove workflow', removeWorkflowConfirm: 'Remove the workflow? The agent will answer each call directly.',
+  testPath: 'Test path', deletedAgent: 'deleted',
 };
 
 export type ConnectDict = { [K in keyof typeof en]: (typeof en)[K] };
@@ -204,7 +213,7 @@ const tr: ConnectDict = {
   aiPrompt: 'Ajan ne yapmalı?', aiPromptPh: 'Biri web sitemizdeki formu doldurduğunda şirketi CRM’de bul, adayı 0 ile 100 arasında puanla ve puan 80 veya üstündeyse satışa e-posta gönder.',
   aiPromptHint: 'Kullanacağı sistemleri ve sonunda ne olması gerektiğini belirt.', generate: 'Taslak oluştur', generating: 'Ajanın hazırlanıyor…',
   draftTitle: 'Taslağı incele', draftNote: 'Henüz hiçbir şey kaydedilmedi. İstediğini değiştir, sonra ajanı oluştur.',
-  variables: 'Değişkenler', connectionsNeeded: 'Gereken bağlantılar', connectionsNeededNote: 'Bunları Bağlantılar altında ekle, sonra her araçta seç.', usedBy: 'Kullanan',
+  variables: 'Değişkenler', connectionsNeeded: 'Gereken bağlantılar', connectionsNeededNote: 'Her biri için mevcut bir bağlantı seç ya da Bağlantılar altında yenisini ekle. Daha sonra Araçlar sekmesinden de bağlayabilirsin.', usedBy: 'Kullanan',
   workflow: 'İş akışı', startOver: 'Baştan başla', creating: 'Oluşturuluyor…', addConnection: 'Bağlantı ekle',
   templatesTitle: 'Şablonlar', templatesNote: 'Her şablon, yayınlamadan önce düzenleyebileceğin bir ajan oluşturur.', useTemplate: 'Şablonu kullan',
   tpl_customer_support: 'Müşteri Desteği', tplD_customer_support: 'Yardım merkezinden müşteri sorularını yanıtla, gerektiğinde destek kaydı aç.',
@@ -232,7 +241,7 @@ const tr: ConnectDict = {
   auth: 'Kimlik doğrulama', auth_none: 'Yok', auth_bearer: 'Bearer token', auth_basic: 'Basic', auth_header: 'Başlık', auth_query: 'Sorgu parametresi', authFromConnection: 'Bağlantıdan alınır.',
   headers: 'Başlıklar', endpointPath: 'Uç nokta yolu', endpointPathHint: 'Temel URL’ye göre. Modelin dolduracağı değerler için {name} kullan.', method: 'Yöntem',
   queryParams: 'Sorgu parametreleri', bodyTemplate: 'Gövde', bodyHint: 'JSON. Modelden gelen değerler için {{input.field}} kullan.',
-  inputSchema: 'Girdi şeması', inputSchemaHint: 'Modelin gönderdiği argümanlar için JSON Schema.',
+  inputSchema: 'Girdi şeması', inputSchemaHint: 'Modelin gönderdiği argümanlar için JSON Schema. Yoldan ve yöntemden türetilmesi için {} bırak.',
   dbMode: 'Sorgu türü', mode_sql: 'SQL', mode_mongo_find: 'Mongo find', mode_mongo_aggregate: 'Mongo aggregate', maxRows: 'En çok satır',
   readOnlyNotice: 'Salt okunur. Veriyi değiştiren sorgular engellenir.', writesAllowed: 'Bu bağlantı yazmaya izin veriyor. Ajanın neler çalıştırabileceğini gözden geçir.', pickDbConnection: 'Bir veritabanı bağlantısı seç.',
   emailTo: 'Alıcı', emailToHint: 'Adresi ajanın seçmesi için boş bırak.', subjectTemplate: 'Konu', sendWith: 'Gönderim yolu', via_platform: 'Progrid e-postası (sınırlı)', via_smtp: 'Kendi SMTP bağlantın',
@@ -273,7 +282,7 @@ const tr: ConnectDict = {
   apiKeys: 'API anahtarları', createKey: 'Anahtar oluştur', keyName: 'Anahtar adı', keyNamePh: 'Web sitesi sunucusu', keyShownOnce: 'Bu anahtarı şimdi kopyala. Bir daha göremeyeceksin.',
   revoke: 'İptal et', revokeConfirm: 'Bu anahtar iptal edilsin mi? Onu kullanan uygulamalar hemen çalışmayı durdurur.', noKeys: 'Henüz anahtar yok.', prefix: 'Önek', lastUsed: 'Son kullanım',
   webhookUrls: 'Webhook URL’leri', addWebhook: 'Webhook ekle', webhookPath: 'Yol', rotate: 'URL’yi yenile', rotateConfirm: 'Bu URL yenilensin mi? Eski URL hemen çalışmayı durdurur.',
-  signing: 'İmza', signingNote: (h: string, a: string) => `İsteğe bağlı. ${h} başlığını doğrula (${a}).`, noWebhooks: 'Henüz webhook yok.', readDocs: 'Dokümanları oku',
+  signing: 'İmza', signingNote: (h: string, a: string) => `imzalı webhook'lar ${h} başlığını ister (zaman damgası ve ham gövdenin imzalama anahtarıyla ${a} değeri), en fazla beş dakikalık:`, noWebhooks: 'Henüz webhook yok.', readDocs: 'Dokümanları oku',
   seeApiTab: 'API sekmesine bak', deleteWebhookConfirm: 'Bu webhook silinsin mi? URL’sine gelen çağrılar çalışmayı durdurur.', urlIsSecret: 'Bu URL’yi bir parola gibi sakla.',
   requestSchema: 'İstek şeması', responseSchema: 'Yanıt şeması', authNote: 'Authorization başlığında bir ajan anahtarını bearer token olarak gönder.',
   exampleRequest: 'Örnek istek', syncNote: 'Çalışmalar en fazla 60 saniye bekler. Hemen bir çalışma kimliği almak ve durum URL’sini sorgulamak için "async": true gönder.',
@@ -300,6 +309,14 @@ const tr: ConnectDict = {
   noWorkflows: 'Henüz iş akışı yok.', createAgentFirst: 'Önce bir ajan oluştur.',
   noVersions: 'Henüz sürüm yok. Yayınla sekmesinden bir sürüm kaydet.', note: 'Not', createdBy: 'Oluşturan', liveBadge: 'Canlı', deployThis: 'Bu sürümü yayınla',
   agentUsageNote: 'Bu ajanın güncel fatura dönemindeki kullanımı.',
+  requireSignature: 'İmza zorunlu', hookShownOnce: 'Webhook adresini şimdi kopyala. Gizli bir anahtar içerir ve yalnızca bir kez gösterilir; yenisi için yenile.',
+  signed: 'İmzalı', tokenHidden: 'Adresteki anahtar gizlidir. Sonu:', issuesTitle: 'Yayınlamadan önce',
+  connectLater: 'Sonra bağla', refresh: 'Yenile', fullUrl: 'Adres',
+  noConnectionUrlNote: 'Bağlantı olmadan araç, kimlik bilgisi olmadan tam bir adresi ve yalnızca izinli sunuculara çağırır. Temel adres ve kimlik doğrulama için bir bağlantı seç.',
+  toolHostsHint: 'Bu aracın çağırabileceği sunucular, virgülle ayrılır. Varsayılan, adresin sunucusudur.',
+  st_waiting: 'Bekliyor', st_approved: 'Onaylandı', st_denied: 'Reddedildi',
+  removeWorkflow: 'İş akışını kaldır', removeWorkflowConfirm: 'İş akışı kaldırılsın mı? Ajan her çağrıyı doğrudan yanıtlar.',
+  testPath: 'Test yolu', deletedAgent: 'silindi',
 };
 
 const ar: ConnectDict = {
@@ -342,7 +359,7 @@ const ar: ConnectDict = {
   aiPrompt: 'وش تبي الوكيل يسوي؟', aiPromptPh: 'لما أحد يعبّي النموذج في موقعنا، ابحث عن شركته في نظام CRM، قيّمه من 0 إلى 100، وأرسل بريدًا للمبيعات إذا كان التقييم 80 أو أكثر.',
   aiPromptHint: 'اذكر الأنظمة اللي يستخدمها ووش المفروض يصير في النهاية.', generate: 'أنشئ المسودة', generating: 'جارٍ تجهيز الوكيل…',
   draftTitle: 'راجع المسودة', draftNote: 'ما انحفظ شيء للحين. عدّل اللي تبيه، وبعدين أنشئ الوكيل.',
-  variables: 'المتغيرات', connectionsNeeded: 'الاتصالات المطلوبة', connectionsNeededNote: 'أضفها من صفحة الاتصالات، وبعدين اخترها في كل أداة.', usedBy: 'تستخدمها',
+  variables: 'المتغيرات', connectionsNeeded: 'الاتصالات المطلوبة', connectionsNeededNote: 'اختر اتصالًا موجودًا لكل واحد، أو أضف واحد من صفحة الاتصالات. وتقدر تربطها بعدين من تبويب الأدوات.', usedBy: 'تستخدمها',
   workflow: 'سير العمل', startOver: 'ابدأ من جديد', creating: 'جارٍ الإنشاء…', addConnection: 'إضافة اتصال',
   templatesTitle: 'القوالب', templatesNote: 'كل قالب ينشئ وكيلًا تقدر تعدّله قبل النشر.', useTemplate: 'استخدم القالب',
   tpl_customer_support: 'دعم العملاء', tplD_customer_support: 'يرد على أسئلة العملاء من مركز المساعدة ويفتح تذكرة عند الحاجة.',
@@ -370,7 +387,7 @@ const ar: ConnectDict = {
   auth: 'المصادقة', auth_none: 'بدون', auth_bearer: 'Bearer token', auth_basic: 'Basic', auth_header: 'ترويسة', auth_query: 'معامل استعلام', authFromConnection: 'تؤخذ من الاتصال.',
   headers: 'الترويسات', endpointPath: 'مسار النقطة', endpointPathHint: 'نسبةً للرابط الأساسي. استخدم {name} للقيم اللي يعبّيها النموذج.', method: 'الطريقة',
   queryParams: 'معاملات الاستعلام', bodyTemplate: 'المحتوى', bodyHint: 'JSON. استخدم {{input.field}} للقيم اللي تجي من النموذج.',
-  inputSchema: 'مخطط المدخلات', inputSchemaHint: 'JSON Schema للمعاملات اللي يرسلها النموذج.',
+  inputSchema: 'مخطط المدخلات', inputSchemaHint: 'JSON Schema للمعاملات اللي يرسلها النموذج. خلّها {} عشان تنبني تلقائيًا من المسار والطريقة.',
   dbMode: 'نوع الاستعلام', mode_sql: 'SQL', mode_mongo_find: 'Mongo find', mode_mongo_aggregate: 'Mongo aggregate', maxRows: 'أقصى عدد صفوف',
   readOnlyNotice: 'للقراءة فقط. الاستعلامات اللي تغيّر البيانات ممنوعة.', writesAllowed: 'هذا الاتصال يسمح بالكتابة. راجع وش يقدر الوكيل يشغّل.', pickDbConnection: 'اختر اتصال قاعدة بيانات.',
   emailTo: 'إلى', emailToHint: 'خلّه فاضي عشان الوكيل يختار العنوان.', subjectTemplate: 'الموضوع', sendWith: 'الإرسال عبر', via_platform: 'بريد Progrid (بحد معيّن)', via_smtp: 'اتصال SMTP الخاص بك',
@@ -411,7 +428,7 @@ const ar: ConnectDict = {
   apiKeys: 'مفاتيح API', createKey: 'إنشاء مفتاح', keyName: 'اسم المفتاح', keyNamePh: 'خادم الموقع', keyShownOnce: 'انسخ المفتاح الحين. ما راح تشوفه مرة ثانية.',
   revoke: 'إلغاء', revokeConfirm: 'تلغي هذا المفتاح؟ التطبيقات اللي تستخدمه توقف فورًا.', noKeys: 'ما فيه مفاتيح للحين.', prefix: 'البادئة', lastUsed: 'آخر استخدام',
   webhookUrls: 'روابط Webhook', addWebhook: 'إضافة Webhook', webhookPath: 'المسار', rotate: 'تغيير الرابط', rotateConfirm: 'تغيّر هذا الرابط؟ الرابط القديم يوقف فورًا.',
-  signing: 'التوقيع', signingNote: (h: string, a: string) => `اختياري. تحقق من الترويسة ${h} (${a}).`, noWebhooks: 'ما فيه Webhooks للحين.', readDocs: 'اقرأ التوثيق',
+  signing: 'التوقيع', signingNote: (h: string, a: string) => `الـ webhooks الموقّعة تتطلب الترويسة \u2066${h}\u2069 (قيمة \u2066${a}\u2069 للطابع الزمني والجسم الخام بمفتاح التوقيع)، وعمرها ما يتجاوز خمس دقائق:`, noWebhooks: 'ما فيه Webhooks للحين.', readDocs: 'اقرأ التوثيق',
   seeApiTab: 'شوف تبويب API', deleteWebhookConfirm: 'تحذف هذا الـ Webhook؟ الاستدعاءات على رابطه توقف.', urlIsSecret: 'تعامل مع هذا الرابط مثل كلمة المرور.',
   requestSchema: 'مخطط الطلب', responseSchema: 'مخطط الرد', authNote: 'أرسل مفتاح الوكيل كـ bearer token في ترويسة Authorization.',
   exampleRequest: 'مثال طلب', syncNote: 'التشغيل ينتظر لين 60 ثانية. أرسل "async": true عشان تحصل على معرّف التشغيل فورًا وتتابع رابط الحالة.',
@@ -438,6 +455,14 @@ const ar: ConnectDict = {
   noWorkflows: 'ما فيه سير عمل للحين.', createAgentFirst: 'أنشئ وكيلًا أولًا.',
   noVersions: 'ما فيه إصدارات للحين. احفظ إصدارًا من تبويب النشر.', note: 'ملاحظة', createdBy: 'بواسطة', liveBadge: 'مباشر', deployThis: 'انشر هذا الإصدار',
   agentUsageNote: 'استخدام هذا الوكيل في فترة الفوترة الحالية.',
+  requireSignature: 'اطلب التوقيع', hookShownOnce: 'انسخ رابط الـ webhook الحين. فيه رمز سري ويظهر مرة وحدة بس؛ استخدم التدوير عشان تاخذ رابط جديد.',
+  signed: 'موقّع', tokenHidden: 'الرمز اللي في الرابط مخفي. ينتهي بـ', issuesTitle: 'قبل النشر',
+  connectLater: 'اربط لاحقًا', refresh: 'تحديث', fullUrl: 'الرابط',
+  noConnectionUrlNote: 'بدون اتصال، الأداة تستدعي رابطًا كاملًا بدون بيانات دخول وعلى المضيفين المسموحين فقط. اختر اتصالًا عشان تستخدم رابطًا أساسيًا ومصادقة.',
+  toolHostsHint: 'المضيفون اللي تقدر الأداة تستدعيهم، افصل بفاصلة. الافتراضي هو مضيف الرابط.',
+  st_waiting: 'بالانتظار', st_approved: 'تمت الموافقة', st_denied: 'مرفوض',
+  removeWorkflow: 'احذف سير العمل', removeWorkflowConfirm: 'تحذف سير العمل؟ الوكيل بيرد على كل استدعاء مباشرة.',
+  testPath: 'مسار الاختبار', deletedAgent: 'محذوف',
 };
 
 

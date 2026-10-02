@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { money, WWW_URL } from '@/lib/api';
-import { Agent, capi, Connection, fmtNum, loadAgentDetails, Overview, Template } from '@/lib/connect';
+import { Agent, capi, fmtNum, Overview } from '@/lib/connect';
 import { AgentStatusDot, ErrorBox, FourSteps, useC, useLoad } from '@/components/connect/ui';
 import { RunDrawer, RunsTable } from '@/components/connect/runs';
 
@@ -12,27 +12,19 @@ export default function ConnectOverviewPage() {
   const [runId, setRunId] = useState<string | null>(null);
   const overview = useLoad(() => capi<Overview>('/overview'), []);
   const agents = useLoad(() => capi<{ data: Agent[] }>('/agents').then((r) => r.data), []);
-  const side = useLoad(async () => {
-    const [conns, tpls, details] = await Promise.all([
-      capi<{ data: Connection[] }>('/connections').then((r) => r.data.length).catch(() => null),
-      capi<{ data: Template[] }>('/templates').then((r) => r.data.length).catch(() => null),
-      loadAgentDetails().catch(() => null),
-    ]);
-    return { conns, tpls, hooks: details?.reduce((n, a) => n + a.webhooks.length, 0) ?? null, keys: details?.reduce((n, a) => n + a.keys.length, 0) ?? null };
-  }, []);
-
   const o = overview.data;
+  const side = o?.counts ? { conns: o.counts.connections, tpls: o.counts.templates, hooks: o.counts.webhooks, keys: o.counts.keys } : null;
   const list = agents.data ?? [];
-  const names = Object.fromEntries(list.map((a) => [a.id, a.name]));
+  const names = Object.fromEntries([...(o?.recentRuns ?? []).map((r) => [r.agentId, r.agentName ?? '']), ...list.map((a) => [a.id, a.name])]);
   const empty = o ? o.agents === 0 : agents.data ? list.length === 0 : false;
   const usage = o?.usageThisPeriod;
   const n = (v: number | null | undefined) => (v == null ? '—' : fmtNum(v, locale));
 
   const cards: { href: string; title: string; desc: string; count?: string; external?: boolean }[] = [
-    { href: '/connect/templates', title: c('nTemplates'), desc: c('cardTemplatesD'), count: side.data?.tpls != null ? cf('templatesCount')(side.data.tpls) : undefined },
-    { href: '/connect/connections', title: c('nConnections'), desc: c('cardConnectionsD'), count: n(side.data?.conns) },
-    { href: '/connect/keys', title: c('nKeys'), desc: c('cardKeysD'), count: n(side.data?.keys) },
-    { href: '/connect/webhooks', title: c('nWebhooks'), desc: c('cardWebhooksD'), count: n(side.data?.hooks) },
+    { href: '/connect/templates', title: c('nTemplates'), desc: c('cardTemplatesD'), count: side?.tpls != null ? cf('templatesCount')(side.tpls) : undefined },
+    { href: '/connect/connections', title: c('nConnections'), desc: c('cardConnectionsD'), count: n(side?.conns) },
+    { href: '/connect/keys', title: c('nKeys'), desc: c('cardKeysD'), count: n(side?.keys) },
+    { href: '/connect/webhooks', title: c('nWebhooks'), desc: c('cardWebhooksD'), count: n(side?.hooks) },
     { href: '/connect/logs', title: c('nLogs'), desc: c('cardLogsD'), count: o ? n(o.runs24h) : undefined },
     { href: '/connect/usage', title: c('nUsage'), desc: c('cardUsageD'),
       count: usage ? (usage.pricingConfigured && usage.estimatedCostMinor != null ? money(usage.estimatedCostMinor, usage.currency ?? 'USD', locale) : n(usage.executions)) : undefined },

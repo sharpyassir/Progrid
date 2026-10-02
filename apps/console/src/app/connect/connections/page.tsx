@@ -22,10 +22,8 @@ function Connections() {
   async function test(x: Connection) {
     setTests((t) => ({ ...t, [x.id]: 'busy' }));
     try {
-      const r = await post<{ ok?: boolean; error?: { message: string } | null }>(`/connections/${x.id}/test`);
-      const fresh = await capi<Connection>(`/connections/${x.id}`).catch(() => null);
-      const ok = r?.ok ?? fresh?.status === 'ok';
-      setTests((t) => ({ ...t, [x.id]: { ok, message: r?.error?.message ?? fresh?.lastError ?? undefined } }));
+      const r = await post<{ ok: boolean; status: string; error: string | null; durationMs: number; testedAt: string }>(`/connections/${x.id}/test`);
+      setTests((t) => ({ ...t, [x.id]: { ok: r.ok, message: r.error ?? undefined } }));
       reload();
     } catch (e) {
       setTests((t) => ({ ...t, [x.id]: { ok: false, message: e instanceof Error ? e.message : undefined } }));
@@ -142,6 +140,7 @@ function ConnectionForm({ initial, onDone, onCancel }: { initial: Connection | n
       {kind === 'rest_api' && (
         <>
           {text('baseUrl', c('baseUrl'), { type: 'url', ph: 'https://api.example.com' })}
+          {text('testPath', `${c('testPath')} (${c('optional')})`, { ph: '/health' })}
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label={c('auth')}>
               {(id) => <select id={id} className="input" value={auth} onChange={(e) => { set('auth', { type: e.target.value }); setSecrets({}); }}>{['none', 'bearer', 'basic', 'header', 'query'].map((a) => <option key={a} value={a}>{cd('auth_', a)}</option>)}</select>}

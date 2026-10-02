@@ -25,6 +25,9 @@ const ICONS: Record<NodeType, string> = { trigger: '⚡', agent: '✦', tool: '�
 
 type StepData = Record<string, unknown> & { _label: string; _summary: string };
 
+/** Templates may be a string or a JSON value with {{...}} references inside. */
+const asText = (v: unknown) => (v === undefined || v === null ? '' : typeof v === 'string' ? v : JSON.stringify(v));
+
 function summary(n: GraphNode, tools: Tool[]): string {
   const d = n.data ?? {};
   switch (n.type) {
@@ -33,8 +36,8 @@ function summary(n: GraphNode, tools: Tool[]): string {
     case 'tool': return tools.find((t) => t.id === d.toolId)?.name ?? String(d.toolId ?? '');
     case 'condition': return String(d.expression ?? '');
     case 'action': return String(d.kind ?? '');
-    case 'transform': return String(d.template ?? '');
-    case 'end': return String(d.output ?? '');
+    case 'transform': return asText(d.template);
+    case 'end': return asText(d.output);
   }
 }
 
@@ -142,7 +145,7 @@ export function validateWorkflow(g: Graph, locale: Locale): string[] {
 
 const DEFAULT_DATA: Record<NodeType, Record<string, unknown>> = {
   trigger: { source: 'api' }, agent: { prompt: '{{trigger.body}}' }, tool: { toolId: '', input: {} }, condition: { expression: '' },
-  action: { kind: 'notify', config: {} }, transform: { template: '{}' }, end: { output: '{{steps}}' },
+  action: { kind: 'notify', config: {} }, transform: { template: {} }, end: { output: '{{steps}}' },
 };
 
 export const emptyGraph = (): Graph => autoLayout({
@@ -330,9 +333,24 @@ function NodeForm({ node, tools, onPatch, onDelete }: { node: GraphNode; tools: 
           {jsonField('config', c('settingsJson'), c('promptHint'))}
         </>
       )}
-      {node.type === 'transform' && text('template', c('templateJson'), c('promptHint'), true, 5)}
-      {node.type === 'end' && text('output', c('outputTemplate'), c('promptHint'))}
+      {node.type === 'transform' && <TemplateField key={`${node.id}-template`} label={c('templateJson')} hint={c('promptHint')} rows={5} value={d.template} onValue={(v) => onPatch({ template: v })} />}
+      {node.type === 'end' && <TemplateField key={`${node.id}-output`} label={c('outputTemplate')} hint={c('promptHint')} value={d.output} onValue={(v) => onPatch({ output: v })} />}
     </div>
+  );
+}
+
+/** A template that is JSON when it parses as an object or array, else plain text. */
+function TemplateField({ label, hint, value, onValue, rows = 3 }: { label: string; hint?: string; value: unknown; onValue: (v: unknown) => void; rows?: number }) {
+  const [textValue, setText] = useState(() => (value === undefined || value === null ? '' : typeof value === 'string' ? value : pretty(value)));
+  return (
+    <Field label={label} hint={hint}>
+      {(id, h) => <textarea id={id} aria-describedby={h} dir="ltr" rows={rows} className="input text-start font-mono text-xs" value={textValue} onChange={(e) => {
+        const t = e.target.value;
+        setText(t);
+        if (/^\s*[[{]/.test(t)) { try { onValue(JSON.parse(t)); return; } catch { /* not JSON yet: keep it as text */ } }
+        onValue(t);
+      }} />}
+    </Field>
   );
 }
 

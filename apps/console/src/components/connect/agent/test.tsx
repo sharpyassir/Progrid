@@ -18,9 +18,10 @@ export function TestTab({ agent }: AgentTabProps) {
   async function send(e: FormEvent) {
     e.preventDefault();
     let body: Record<string, unknown>;
-    if (mode === 'message') body = { input: { message }, message, useDraft: true };
+    // async: the API answers with the queued run at once and the steps stream in over SSE.
+    if (mode === 'message') body = { input: { message }, message, useDraft: true, async: true };
     else {
-      try { body = { input: JSON.parse(json), useDraft: true }; } catch { return; }
+      try { body = { input: JSON.parse(json), useDraft: true, async: true }; } catch { return; }
     }
     setRun(null);
     const r = await act(() => post<Run>(`/agents/${agent.id}/test`, body));

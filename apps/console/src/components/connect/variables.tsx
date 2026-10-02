@@ -48,7 +48,8 @@ function ValueSetter({ v, onSetValue }: { v: Var; onSetValue: (key: string, valu
   return (
     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
       <span className={`badge ${v.hasValue ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' : 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300'}`}>{v.hasValue ? c('valueSet') : c('noValue')}</span>
-      {!open && <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={() => setOpen(true)}>{v.hasValue ? c('replaceValue') : c('setValue')}</button>}
+      {v.hasValue && !v.secret && v.value !== undefined && !open && <code dir="ltr" className="max-w-xs truncate font-mono text-xs text-neutral-600 dark:text-neutral-300">{v.value}</code>}
+      {!open && <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={() => { setVal(!v.secret && v.value ? v.value : ''); setOpen(true); }}>{v.hasValue ? c('replaceValue') : c('setValue')}</button>}
       {open && (
         <form className="flex min-w-0 flex-1 gap-2" onSubmit={async (e) => { e.preventDefault(); setBusy(true); try { await onSetValue(v.key, val); setVal(''); setOpen(false); } finally { setBusy(false); } }}>
           <input aria-label={`${c('newValue')} ${v.key}`} dir="ltr" type={v.secret ? 'password' : 'text'} autoComplete="off" className="input min-w-0 flex-1 py-1 font-mono text-xs" value={val} onChange={(e) => setVal(e.target.value)} required />

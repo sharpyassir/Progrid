@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { capi, del, fmtDate, fmtMs, Page, Run } from '@/lib/connect';
-import { CopyField, ErrorBox, FourSteps, useAction, useC, useLoad } from '../ui';
+import { CopyField, ErrorBox, FourSteps, IssuesNotice, useAction, useC, useLoad } from '../ui';
 import type { AgentTabProps } from './types';
 
 export function OverviewTab({ agent }: AgentTabProps) {
@@ -42,6 +42,7 @@ export function OverviewTab({ agent }: AgentTabProps) {
           <FourSteps done={steps} links={[`${base}instructions`, `${base}tools`, `${base}test`, `${base}deploy`]} />
         </section>
       )}
+      <IssuesNotice issues={agent.issues ?? []} />
       <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
         <section className="card min-w-0">
           <dl className="divide-y divide-neutral-100 text-sm dark:divide-neutral-800">

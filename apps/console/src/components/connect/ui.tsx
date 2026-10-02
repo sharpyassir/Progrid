@@ -55,7 +55,27 @@ export function ErrorBox({ error, className = '' }: { error: unknown; className?
   else if (e?.status === 402 || e?.code === 'payment_required' || e?.code === 'spend_limit_reached') body = <>{c('err402')} <Link href="/billing" className="font-medium underline">{c('goBilling')}</Link></>;
   else if (e?.status === 429) body = c('err429');
   else if (e?.status === 404 && !e.message) body = c('errNotFound');
-  return <div role="alert" className={`rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300 ${className}`}>{body}</div>;
+  // Validation errors (drafts, workflows, deploys) list each problem in details.issues.
+  const raw = e?.details?.issues;
+  const issues = Array.isArray(raw) ? raw.map((i) => (typeof i === 'string' ? i : i && typeof i === 'object' ? [(i as { path?: string }).path, (i as { message?: string }).message].filter(Boolean).join(': ') : '')).filter(Boolean) : [];
+  return (
+    <div role="alert" className={`rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300 ${className}`}>
+      {body}
+      {issues.length > 0 && <ul className="mt-1 list-disc space-y-0.5 ps-5">{issues.map((i) => <li key={i} dir="auto">{i}</li>)}</ul>}
+    </div>
+  );
+}
+
+/** What still blocks a deploy (GET /agents/:id issues). */
+export function IssuesNotice({ issues }: { issues: string[] }) {
+  const { c } = useC();
+  if (!issues.length) return null;
+  return (
+    <div role="status" className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+      <p className="font-medium">{c('issuesTitle')}</p>
+      <ul className="mt-1 list-disc space-y-0.5 ps-5">{issues.map((i) => <li key={i} dir="auto">{i}</li>)}</ul>
+    </div>
+  );
 }
 
 export function Notice({ children, tone = 'green' }: { children: ReactNode; tone?: 'green' | 'amber' | 'blue' }) {

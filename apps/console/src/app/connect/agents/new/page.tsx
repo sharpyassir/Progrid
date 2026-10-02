@@ -3,9 +3,9 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, Suspense, useMemo, useState } from 'react';
-import { AgentDetail, capi, Connection, Draft, Effort, post, Tool, ToolDraft } from '@/lib/connect';
+import { AgentDetail, capi, Connection, Draft, DraftIssue, Effort, GenerateResult, post, Tool, ToolDraft } from '@/lib/connect';
 import { InstructionsEditor, ModelEffort } from '@/components/connect/agent-fields';
-import { Drawer, ErrorBox, Field, Notice, PageHeader, useAction, useC, useLoad } from '@/components/connect/ui';
+import { Drawer, ErrorBox, Field, IssuesNotice, Notice, PageHeader, useAction, useC, useLoad } from '@/components/connect/ui';
 import { autoLayout, emptyGraph, WorkflowEditor } from '@/components/connect/workflow-editor';
 import { blankTool, KindPicker, ToolForm } from '@/components/connect/tool-form';
 import { VariablesEditor } from '@/components/connect/variables';
@@ -86,13 +86,14 @@ function BuildWithAi() {
   const { c } = useC();
   const [prompt, setPrompt] = useState('');
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [issues, setIssues] = useState<DraftIssue[]>([]);
   const { busy, error, run } = useAction();
   async function generate(e: FormEvent) {
     e.preventDefault();
-    const r = await run(() => post<{ draft: Draft }>('/agents/generate', { prompt }));
-    if (r) setDraft({ ...r.draft, workflow: r.draft.workflow ? autoLayout(r.draft.workflow) : null });
+    const r = await run(() => post<GenerateResult>('/agents/generate', { prompt }));
+    if (r) { setIssues(r.issues ?? []); setDraft({ ...r.draft, workflow: r.draft.workflow ? autoLayout(r.draft.workflow) : null }); }
   }
-  if (draft) return <DraftReview draft={draft} onChange={setDraft} onReset={() => setDraft(null)} />;
+  if (draft) return <DraftReview draft={draft} issues={issues} onChange={setDraft} onReset={() => { setDraft(null); setIssues([]); }} />;
   return (
     <form onSubmit={generate} className="card space-y-3">
       <Field label={c('aiPrompt')} hint={c('aiPromptHint')}>
@@ -108,21 +109,25 @@ function BuildWithAi() {
 }
 
 /** The generated draft, every part editable before anything is saved. */
-function DraftReview({ draft, onChange, onReset }: { draft: Draft; onChange: (d: Draft) => void; onReset: () => void }) {
+function DraftReview({ draft, issues, onChange, onReset }: { draft: Draft; issues: DraftIssue[]; onChange: (d: Draft) => void; onReset: () => void }) {
   const { c, cd } = useC();
   const router = useRouter();
   const { busy, error, run } = useAction();
   const [editing, setEditing] = useState<number | 'new' | null>(null);
   const [newKind, setNewKind] = useState<ToolDraft | null>(null);
   const [layoutKey, setLayoutKey] = useState(0);
-  const connections = useLoad(() => capi<{ data: Connection[] }>('/connections').then((r) => r.data), []).data ?? [];
+  const connLoad = useLoad(() => capi<{ data: Connection[] }>('/connections').then((r) => r.data), []);
+  const connections = connLoad.data ?? [];
+  // connectionsNeeded ref -> chosen connection id; unmapped tools are saved without a connection.
+  const [mapping, setMapping] = useState<Record<string, string>>({});
   const setAgent = (p: Partial<Draft['agent']>) => onChange({ ...draft, agent: { ...draft.agent, ...p } });
   // Draft tools have no ids yet; the canvas refers to them by name.
   const pseudoTools = useMemo(() => draft.tools.map((t) => ({ ...t, id: t.name, agentId: '', enabled: t.enabled ?? true, requiresApproval: !!t.requiresApproval })) as Tool[], [draft.tools]);
   const graph = draft.workflow;
 
   async function create() {
-    const a = await run(() => post<AgentDetail>('/agents/from-draft', { draft }));
+    const chosen = Object.fromEntries(Object.entries(mapping).filter(([ref, id]) => id && draft.connectionsNeeded.some((n) => n.ref === ref)));
+    const a = await run(() => post<AgentDetail>('/agents/from-draft', { draft, ...(Object.keys(chosen).length ? { connections: chosen } : {}) }));
     if (a) router.push(`/connect/agents/${a.id}?tab=test`);
   }
   const saveTool = async (t: ToolDraft) => {
@@ -133,6 +138,7 @@ function DraftReview({ draft, onChange, onReset }: { draft: Draft; onChange: (d:
   return (
     <div className="space-y-5">
       <Notice tone="blue"><span className="font-medium">{c('draftTitle')}.</span> {c('draftNote')}</Notice>
+      {issues.length > 0 && <IssuesNotice issues={issues.map((i) => `${i.path}: ${i.message}`)} />}
       <section className="card space-y-3">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label={c('agentName')}>{(id) => <input id={id} className="input" value={draft.agent.name} onChange={(e) => setAgent({ name: e.target.value })} />}</Field>
@@ -168,7 +174,14 @@ function DraftReview({ draft, onChange, onReset }: { draft: Draft; onChange: (d:
                 <span className="badge bg-neutral-200 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">{cd('conn_', String(n.kind))}</span>
                 {n.reason && <span className="text-neutral-500">{n.reason}</span>}
                 {n.usedBy?.length ? <span className="text-xs text-neutral-500">{c('usedBy')}: <code dir="ltr" className="font-mono">{n.usedBy.join(', ')}</code></span> : null}
-                <Link href="/connect/connections?new=1" target="_blank" className="ms-auto text-xs font-medium text-blue-700 hover:underline dark:text-blue-400">{c('addConnection')} ↗</Link>
+                <span className="ms-auto flex flex-wrap items-center gap-2">
+                  <select aria-label={`${c('connection')}: ${n.name}`} className="input w-auto py-1 text-xs" value={mapping[n.ref] ?? ''} onChange={(e) => setMapping((m) => ({ ...m, [n.ref]: e.target.value }))}>
+                    <option value="">{c('connectLater')}</option>
+                    {connections.filter((x) => x.kind === n.kind || (n.kind === 'postgres' && x.kind === 'mysql')).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                  </select>
+                  <button type="button" className="text-xs font-medium text-blue-700 hover:underline dark:text-blue-400" onClick={() => connLoad.reload()}>{c('refresh')}</button>
+                  <Link href="/connect/connections?new=1" target="_blank" className="text-xs font-medium text-blue-700 hover:underline dark:text-blue-400">{c('addConnection')} ↗</Link>
+                </span>
               </li>
             ))}
           </ul>
@@ -199,8 +212,8 @@ function DraftReview({ draft, onChange, onReset }: { draft: Draft; onChange: (d:
 
       <Drawer open={editing !== null} onClose={() => { setEditing(null); setNewKind(null); }} title={editing === 'new' ? c('newTool') : c('editTool')}>
         {editing === 'new' && !newKind && <KindPicker onPick={(k) => setNewKind(blankTool(k))} />}
-        {editing === 'new' && newKind && <ToolForm initial={newKind} connections={connections} onSave={saveTool} onCancel={() => { setEditing(null); setNewKind(null); }} />}
-        {typeof editing === 'number' && draft.tools[editing] && <ToolForm initial={draft.tools[editing]} connections={connections} onSave={saveTool} onCancel={() => setEditing(null)} />}
+        {editing === 'new' && newKind && <ToolForm initial={newKind} connections={connections} refs={draft.connectionsNeeded} onSave={saveTool} onCancel={() => { setEditing(null); setNewKind(null); }} />}
+        {typeof editing === 'number' && draft.tools[editing] && <ToolForm initial={draft.tools[editing]} connections={connections} refs={draft.connectionsNeeded} onSave={saveTool} onCancel={() => setEditing(null)} />}
       </Drawer>
     </div>
   );

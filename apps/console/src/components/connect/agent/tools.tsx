@@ -47,7 +47,7 @@ export function ToolsTab({ agent, reload }: AgentTabProps) {
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <code dir="ltr" className="font-mono text-sm font-medium">{t.name}</code>
               <span className="badge bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">{cd('kind_', t.kind)}</span>
-              {t.kind === 'http_request' && <code dir="ltr" className="font-mono text-xs text-neutral-500">{String(t.config.method ?? 'GET')} {String(t.config.path ?? '')}</code>}
+              {t.kind === 'http_request' && <code dir="ltr" className="font-mono text-xs text-neutral-500">{String(t.config.method ?? 'GET')} {String(t.config.path ?? t.config.url ?? '')}</code>}
               {t.kind === 'progrid' && <span className="text-xs text-neutral-500">{cd('act_', String(t.config.action))}</span>}
               {connName(t.connectionId) && <span className="text-xs text-neutral-500">· {connName(t.connectionId)}</span>}
               {t.requiresApproval && <span className="badge bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">{c('requiresApproval')}</span>}
@@ -76,7 +76,7 @@ export function ToolsTab({ agent, reload }: AgentTabProps) {
 function ToolTester({ agentId, tool }: { agentId: string; tool: Tool }) {
   const { c } = useC();
   const [input, setInput] = useState(() => pretty(sampleInput(tool.inputSchema)));
-  const [result, setResult] = useState<{ ok: boolean; output: unknown; durationMs: number; error: { code?: string; message: string } | null } | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; output: unknown; durationMs: number; error: string | null } | null>(null);
   const { busy, error, run } = useAction();
   async function go() {
     let parsed: unknown;
@@ -98,7 +98,7 @@ function ToolTester({ agentId, tool }: { agentId: string; tool: Tool }) {
               <span className={`badge ${result.ok ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'}`}>{result.ok ? c('st_succeeded') : c('st_failed')}</span>
               <span className="text-neutral-500">{c('duration')}: <span className="tabular-nums">{fmtMs(result.durationMs)}</span></span>
             </div>
-            {result.error && <p className="rounded bg-red-50 p-2 text-sm text-red-800 dark:bg-red-950/30 dark:text-red-300">{c('error')}: <span dir="ltr" className="font-mono text-xs">{result.error.code ? `${result.error.code} ` : ''}</span>{result.error.message}</p>}
+            {result.error && <p className="rounded bg-red-50 p-2 text-sm text-red-800 dark:bg-red-950/30 dark:text-red-300">{c('error')}: <span dir="auto">{result.error}</span></p>}
             {result.output !== null && result.output !== undefined && <><div className="text-xs font-medium text-neutral-500">{c('output')}</div><Json value={result.output} maxH="max-h-64" /></>}
           </div>
         )}

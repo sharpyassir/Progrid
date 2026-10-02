@@ -27,6 +27,13 @@ export function WorkflowTab({ agent, reload }: AgentTabProps) {
     const r = await run(() => put(`/agents/${agent.id}/workflow`, { graph }));
     if (r !== undefined) { await reload(); setSaved(true); }
   }
+  /** An empty graph removes the workflow; the agent then answers each call directly. */
+  async function removeWorkflow() {
+    if (!savedGraph) { setGraph(null); return; }
+    if (!confirm(c('removeWorkflowConfirm'))) return;
+    const r = await run(() => put(`/agents/${agent.id}/workflow`, { graph: { nodes: [], edges: [] } }));
+    if (r !== undefined) { setGraph(null); await reload(); }
+  }
 
   if (!graph) {
     return (
@@ -42,6 +49,7 @@ export function WorkflowTab({ agent, reload }: AgentTabProps) {
         <button type="button" className="btn-primary" disabled={busy || !dirty} onClick={save}>{busy ? c('saving') : c('saveWorkflow')}</button>
         <button type="button" className="btn-ghost" onClick={check}>{c('check')}</button>
         <button type="button" className="btn-ghost" onClick={() => { setGraph(autoLayout(graph)); setLayoutKey((k) => k + 1); }}>{c('autoLayout')}</button>
+        <button type="button" className="btn-danger ms-auto" disabled={busy} onClick={removeWorkflow}>{c('removeWorkflow')}</button>
         {dirty && <span className="text-sm text-amber-700 dark:text-amber-400">{c('unsaved')}</span>}
       </div>
       {problems && (problems.length === 0

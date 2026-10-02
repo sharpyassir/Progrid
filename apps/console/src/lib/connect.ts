@@ -10,15 +10,17 @@ export type AgentStatus = 'draft' | 'deployed' | 'paused';
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'waiting_approval' | 'cancelled';
 export type RunSource = 'api' | 'webhook' | 'test' | 'schedule' | 'manual';
 
-export interface Variable { key: string; description: string; required: boolean; secret: boolean; hasValue: boolean }
+/** `value` is returned for non secret variables only; secret values are write only. */
+export interface Variable { key: string; description: string; required: boolean; secret: boolean; hasValue: boolean; value?: string }
 export interface Limits { maxSteps: number; maxTokensPerRun: number; timeoutSeconds: number }
 
 export interface Agent {
   id: string; name: string; slug: string; description: string; instructions: string; model: string; effort: Effort; status: AgentStatus;
   currentVersion: number | null; deployedVersion: number | null; toolIds: string[]; workflowId: string | null;
-  variables: Variable[]; limits: Limits; runEndpoint: string; createdAt: string; updatedAt: string; lastRunAt: string | null;
+  variables: Variable[]; limits: Limits; runEndpoint: string; templateSlug: string | null; projectId: string; createdAt: string; updatedAt: string; lastRunAt: string | null;
 }
-export interface AgentDetail extends Agent { tools: Tool[]; workflow: Workflow | null; webhooks: Webhook[]; keys: AgentKey[] }
+/** `issues` lists what still blocks a deploy (missing connections, variables without a value, workflow problems). */
+export interface AgentDetail extends Agent { tools: Tool[]; workflow: Workflow | null; webhooks: Webhook[]; keys: AgentKey[]; issues: string[] }
 
 export interface AgentVersion { version: number; createdAt: string; createdBy: string; note: string; snapshot: Record<string, unknown> }
 
@@ -41,7 +43,8 @@ export interface Tool {
   id: string; agentId: string; name: string; description: string; kind: ToolKind; connectionId: string | null; enabled: boolean; requiresApproval: boolean;
   config: Record<string, unknown>; inputSchema: Record<string, unknown>;
 }
-export type ToolDraft = Omit<Tool, 'id' | 'agentId' | 'enabled' | 'requiresApproval'> & { enabled?: boolean; requiresApproval?: boolean };
+/** A tool before it is saved. In a Build with AI draft or a template, `connectionRef` names an entry of connectionsNeeded instead of a connection id. */
+export type ToolDraft = Omit<Tool, 'id' | 'agentId' | 'enabled' | 'requiresApproval' | 'connectionId'> & { connectionId?: string | null; connectionRef?: string | null; enabled?: boolean; requiresApproval?: boolean };
 
 export type NodeType = 'trigger' | 'agent' | 'tool' | 'condition' | 'action' | 'transform' | 'end';
 export const NODE_TYPES: NodeType[] = ['trigger', 'agent', 'tool', 'condition', 'action', 'transform', 'end'];
@@ -55,35 +58,46 @@ export interface Run {
   id: string; agentId: string; version: number | null; source: RunSource; status: RunStatus; input: unknown; output: unknown;
   error: { code: string; message: string } | null; startedAt: string; finishedAt: string | null; durationMs: number | null;
   usage: Usage | null; costEstimateMinor: number | null; currency: string; steps?: RunStep[];
+  workflow?: boolean; createdAt?: string; agentName?: string; pendingApprovals?: { id: string; summary?: string; expiresAt?: string }[];
 }
 export interface RunStep {
   id: string; runId: string; index: number; type: 'node' | 'model' | 'tool' | 'condition' | 'approval'; nodeId?: string; name: string; status: string;
   input: unknown; output: unknown; error: { code?: string; message: string } | null; startedAt: string; durationMs: number | null;
-  tokens?: { input?: number; output?: number } | null;
+  tokens?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } | null;
 }
 
-export interface Webhook { id: string; agentId: string; name: string; path: string; url: string; secretHint: string; signing?: { header: string; algo: string } | null; lastCalledAt: string | null; enabled: boolean }
-export interface AgentKey { id: string; agentId: string; name: string; prefix: string; createdAt: string; lastUsedAt: string | null }
+/**
+ * The URL token is stored hashed: `url` holds the token only in the create and rotate responses
+ * (which also carry `token`, and `signingSecret` when signing is on). Afterwards it ends in `{token}`.
+ */
+export interface Webhook { id: string; agentId: string; name: string; path: string; url: string; secretHint: string; signing?: { header: string; algo: string } | null; lastCalledAt: string | null; enabled: boolean; createdAt?: string; agentName?: string }
+export interface WebhookSecrets extends Webhook { token: string; signingSecret?: string }
+export interface AgentKey { id: string; agentId: string; name: string; prefix: string; createdAt: string; lastUsedAt: string | null; agentName?: string }
 
-export interface Model { id: string; label: string; default?: boolean }
-export interface Template { slug: string; name: string; description: string; category: string; instructions: string; tools: ToolDraft[]; workflow: Graph | null; variables: Omit<Variable, 'hasValue'>[] }
+export interface Model { id: string; label: string; description?: string; default?: boolean; efforts?: Effort[]; available?: boolean }
 
 export interface Draft {
   agent: { name: string; description?: string; instructions: string; model?: string; effort?: Effort };
   tools: ToolDraft[]; workflow: Graph | null; variables: Omit<Variable, 'hasValue'>[];
-  connectionsNeeded: { kind: ConnectionKind | string; name: string; reason?: string; usedBy?: string[] }[];
+  connectionsNeeded: ConnectionNeeded[];
 }
+export interface ConnectionNeeded { ref: string; kind: ConnectionKind; name: string; reason: string; usedBy: string[] }
+/** Templates are drafts with a slug; tools that need credentials point at connectionsNeeded refs. */
+export interface Template extends Draft { slug: string; name: string; description: string; category: string }
+export interface DraftIssue { path: string; message: string }
+export interface GenerateResult { draft: Draft; issues: DraftIssue[]; model: string; usage: { inputTokens: number; outputTokens: number } }
 
 export interface Overview {
   agents: number; deployed: number; runs24h: number; failed24h: number; recentRuns: Run[];
+  counts?: { connections: number; webhooks: number; keys: number; templates: number };
   usageThisPeriod?: { executions?: number; aiInputTokens?: number; aiOutputTokens?: number; estimatedCostMinor?: number; currency?: string; pricingConfigured?: boolean } | null;
 }
 
 export interface UsageReport {
   period: string;
-  totals: { executions: number; workflowExecutions: number; aiInputTokens: number; aiOutputTokens: number; aiCacheReadTokens: number; toolCalls: number; apiCalls: number; computeSeconds: number; storageBytes: number };
-  byAgent: { agentId: string; name?: string; executions: number; aiInputTokens?: number; aiOutputTokens?: number; toolCalls?: number; estimatedCostMinor?: number }[];
-  byDay: { date: string; executions: number; aiInputTokens?: number }[];
+  totals: { executions: number; workflowExecutions: number; aiInputTokens: number; aiOutputTokens: number; aiCacheReadTokens: number; aiCacheWriteTokens?: number; toolCalls: number; apiCalls: number; computeSeconds: number; storageBytes: number };
+  byAgent: { agentId: string; agentName: string | null; deleted?: boolean; executions: number; failed?: number; aiInputTokens: number; aiOutputTokens: number; aiCacheReadTokens?: number; toolCalls: number; apiCalls?: number; estimatedCostMinor: number }[];
+  byDay: { date: string; executions: number; failed?: number; aiInputTokens: number; aiOutputTokens: number; aiCacheReadTokens?: number; toolCalls?: number }[];
   estimatedCostMinor: number; currency: string; pricingConfigured: boolean;
 }
 
@@ -98,7 +112,7 @@ export const patch = <T,>(path: string, body: unknown) => capi<T>(path, { method
 export const put = <T,>(path: string, body: unknown) => capi<T>(path, { method: 'PUT', body: JSON.stringify(body) });
 export const del = (path: string) => capi<null>(path, { method: 'DELETE' });
 
-/** Every agent with its tools, webhooks and keys: the contract has no cross agent list for webhooks and keys. */
+/** Every agent with its tools and workflow (the Workflows page). Webhooks and keys have their own cross agent lists. */
 export async function loadAgentDetails(): Promise<AgentDetail[]> {
   const list = await capi<{ data: Agent[] }>('/agents');
   return Promise.all(list.data.map((a) => capi<AgentDetail>(`/agents/${a.id}`)));

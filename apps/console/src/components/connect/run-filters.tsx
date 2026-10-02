@@ -48,13 +48,11 @@ export function RunFilters({ value, onChange, agents, dates = true }: { value: R
           <option value="">{c('allStatuses')}</option>{STATUSES.map((s) => <option key={s} value={s}>{cd('st_', s)}</option>)}
         </select>
       </label>
-      {!agents && (
-        <label className="text-xs text-neutral-500">{c('source')}
-          <select className={`${sel} mt-1 block`} value={value.source ?? ''} onChange={(e) => set('source', e.target.value)}>
-            <option value="">{c('allSources')}</option>{SOURCES.map((s) => <option key={s} value={s}>{cd('src_', s)}</option>)}
-          </select>
-        </label>
-      )}
+      <label className="text-xs text-neutral-500">{c('source')}
+        <select className={`${sel} mt-1 block`} value={value.source ?? ''} onChange={(e) => set('source', e.target.value)}>
+          <option value="">{c('allSources')}</option>{SOURCES.map((s) => <option key={s} value={s}>{cd('src_', s)}</option>)}
+        </select>
+      </label>
       {dates && (
         <>
           <label className="text-xs text-neutral-500">{c('from')}<input type="date" className={`${sel} mt-1 block`} value={value.from?.slice(0, 10) ?? ''} onChange={(e) => set('from', e.target.value ? new Date(e.target.value).toISOString() : '')} /></label>

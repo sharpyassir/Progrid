@@ -161,6 +161,8 @@ Results are cut at `maxRows` (default 200, max 1,000) and shrunk further to fit 
 
 In Ansible the key comes from `vault_anthropic_api_key` in `vault.yml`.
 
+**Local end to end testing.** With `CONNECT_MODEL_PROVIDER=fake`, a whole agent (tools, workflow, approvals, public API, webhooks) runs without a key. To point a REST connection at a test server on the same machine, start the API with `CONNECT_NETWORK_ALLOWLIST=127.0.0.1/32` and use `http://127.0.0.1:<port>` as the base URL (the name `localhost` stays refused). Never set this in production.
+
 ## Back office
 
 `GET /admin/v1/connect/overview?period=YYYY-MM` (staff with the finance or support area): totals, per team runs, failures, error rate, tokens, internal cost in dollars and metered amount in dollars, and the 20 busiest agents. It follows the existing back office prefix `/admin/v1` rather than `/admin/connect`.

@@ -2,8 +2,8 @@
 
 import { FormEvent, useState } from 'react';
 import { WWW_URL } from '@/lib/api';
-import { AgentKey, AgentVersion, del, fmtDate, patch, post, Webhook } from '@/lib/connect';
-import { CopyField, ErrorBox, Field, Notice, SecretOnce, Status, useAction, useC } from '../ui';
+import { AgentKey, AgentVersion, del, fmtDate, patch, post, Webhook, WebhookSecrets } from '@/lib/connect';
+import { CopyField, ErrorBox, Field, IssuesNotice, Notice, SecretOnce, Status, useAction, useC } from '../ui';
 import type { AgentTabProps } from './types';
 
 export function DeployTab({ agent, reload, setTab }: AgentTabProps) {
@@ -46,6 +46,7 @@ export function DeployTab({ agent, reload, setTab }: AgentTabProps) {
           </button>
           {agent.status === 'deployed' && <button type="button" className="btn-ghost" disabled={busy} onClick={pause}>{c('pause')}</button>}
         </div>
+        <IssuesNotice issues={agent.issues ?? []} />
         {notice && <Notice>{notice}</Notice>}
         <ErrorBox error={error} />
       </section>
@@ -108,19 +109,23 @@ export function WebhooksSection({ agentId, hooks, reload, agentName }: { agentId
   const { c, cf } = useC();
   const [name, setName] = useState('');
   const [path, setPath] = useState('');
+  const [signing, setSigning] = useState(false);
+  const [fresh, setFresh] = useState<WebhookSecrets | null>(null);
   const { busy, error, run } = useAction();
   async function create(e: FormEvent) {
     e.preventDefault();
-    const r = await run(() => post<Webhook>(`/agents/${agentId}/webhooks`, { name, path: path || undefined }));
-    if (r) { setName(''); setPath(''); await reload(); }
+    const r = await run(() => post<WebhookSecrets>(`/agents/${agentId}/webhooks`, { name, path: path || undefined, signing }));
+    if (r) { setFresh(r); setName(''); setPath(''); setSigning(false); await reload(); }
   }
-  const rotate = (h: Webhook) => confirm(c('rotateConfirm')) && run(async () => { await post(`/agents/${agentId}/webhooks/${h.id}/rotate`); await reload(); });
+  const rotate = (h: Webhook) => confirm(c('rotateConfirm')) && run(async () => { setFresh(await post<WebhookSecrets>(`/agents/${agentId}/webhooks/${h.id}/rotate`)); await reload(); });
   const toggle = (h: Webhook) => run(async () => { await patch(`/agents/${agentId}/webhooks/${h.id}`, { enabled: !h.enabled }); await reload(); });
   const remove = (h: Webhook) => confirm(c('deleteWebhookConfirm')) && run(async () => { await del(`/agents/${agentId}/webhooks/${h.id}`); await reload(); });
+  const signed = hooks.find((h) => h.signing)?.signing;
   return (
     <section className="card">
       <h2 className="font-semibold">{c('webhookUrls')}{agentName ? <span className="font-normal text-neutral-500"> · {agentName}</span> : null}</h2>
       <p className="mb-3 text-sm text-neutral-500">{c('urlIsSecret')}</p>
+      {fresh && <div className="mb-3"><HookSecretsOnce hook={fresh} onDone={() => setFresh(null)} /></div>}
       {hooks.length === 0 ? <p className="mb-3 text-sm text-neutral-500">{c('noWebhooks')}</p> : (
         <ul className="mb-3 space-y-3">
           {hooks.map((h) => <WebhookRow key={h.id} h={h} onRotate={() => rotate(h)} onToggle={() => toggle(h)} onDelete={() => remove(h)} />)}
@@ -129,11 +134,25 @@ export function WebhooksSection({ agentId, hooks, reload, agentName }: { agentId
       <form onSubmit={create} className="flex flex-wrap items-end gap-2">
         <Field label={c('name')} className="min-w-40 flex-1">{(id) => <input id={id} required className="input" placeholder="Website form" value={name} onChange={(e) => setName(e.target.value)} />}</Field>
         <Field label={<>{c('webhookPath')} <span className="font-normal text-neutral-500">({c('optional')})</span></>} className="min-w-40 flex-1">{(id) => <input id={id} dir="ltr" className="input font-mono text-xs" placeholder="new-lead" value={path} onChange={(e) => setPath(e.target.value.replace(/[^a-z0-9-]/g, ''))} />}</Field>
+        <label className="flex items-center gap-2 pb-2 text-sm"><input type="checkbox" checked={signing} onChange={(e) => setSigning(e.target.checked)} /> {c('requireSignature')}</label>
         <button className="btn-primary" disabled={busy}>{c('addWebhook')}</button>
       </form>
       <ErrorBox error={error} className="mt-3" />
-      {hooks[0]?.signing && <p className="mt-3 text-xs text-neutral-500">{c('signing')}: {cf('signingNote')(hooks[0].signing.header, hooks[0].signing.algo)}</p>}
+      {signed && <p className="mt-3 text-xs text-neutral-500">{c('signing')}: {cf('signingNote')(signed.header, signed.algo)} <code dir="ltr" className="font-mono">{'t=<unix seconds>,v1=<hex of HMAC("<t>.<body>")>'}</code></p>}
     </section>
+  );
+}
+
+/** The full webhook URL (and signing secret) exist only in the create and rotate responses. */
+export function HookSecretsOnce({ hook, onDone }: { hook: WebhookSecrets; onDone: () => void }) {
+  const { c } = useC();
+  return (
+    <div role="status" className="space-y-2 rounded-md border border-blue-300 bg-blue-50 p-3 text-sm dark:border-blue-800 dark:bg-blue-950/30">
+      <p className="font-medium">{c('hookShownOnce')}</p>
+      <div><div className="mb-1 text-xs text-neutral-600 dark:text-neutral-300">{c('url')}</div><CopyField value={hook.url} label={c('url')} /></div>
+      {hook.signingSecret && <div><div className="mb-1 text-xs text-neutral-600 dark:text-neutral-300">{c('signingSecret')}</div><CopyField value={hook.signingSecret} label={c('signingSecret')} /></div>}
+      <button type="button" className="btn-ghost text-xs" onClick={onDone}>{c('close')}</button>
+    </div>
   );
 }
 
@@ -145,9 +164,11 @@ export function WebhookRow({ h, onRotate, onToggle, onDelete, agentLabel }: { h:
         <span className="font-medium">{h.name}</span>
         {agentLabel}
         <span className={`badge ${h.enabled ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' : 'bg-neutral-200 text-neutral-600 dark:bg-neutral-800'}`}>{h.enabled ? c('enabled') : c('disabled')}</span>
+        {h.signing && <span className="badge bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300">{c('signed')}</span>}
         <span className="text-xs text-neutral-500">{c('lastCalled')}: {h.lastCalledAt ? fmtDate(h.lastCalledAt, locale) : c('never')}</span>
       </div>
-      <CopyField value={h.url} label={h.name} />
+      <code dir="ltr" className="block truncate rounded bg-neutral-50 px-2 py-1.5 font-mono text-xs text-neutral-600 dark:bg-neutral-900 dark:text-neutral-300" title={h.url}>{h.url}</code>
+      <p className="mt-1 text-xs text-neutral-500">{c('tokenHidden')} <code dir="ltr" className="font-mono">{h.secretHint}</code></p>
       <div className="mt-2 flex flex-wrap gap-1">
         <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={onToggle}>{h.enabled ? c('disable') : c('enable')}</button>
         <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={onRotate}>{c('rotate')}</button>

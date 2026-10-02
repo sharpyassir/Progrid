@@ -2,7 +2,7 @@
 
 /** Add or edit one tool. Fields change with the tool kind; advanced JSON stays one click away. */
 import { FormEvent, useState } from 'react';
-import { Connection, DB_KINDS, DESTRUCTIVE_ACTIONS, HTTP_METHODS, pretty, PROGRID_ACTIONS, SNAKE, toSnake, TOOL_KINDS, ToolDraft, ToolKind } from '@/lib/connect';
+import { Connection, ConnectionKind, ConnectionNeeded, DB_KINDS, DESTRUCTIVE_ACTIONS, HTTP_METHODS, pretty, PROGRID_ACTIONS, SNAKE, toSnake, TOOL_KINDS, ToolDraft, ToolKind } from '@/lib/connect';
 import { ErrorBox, Field, JsonInput, KeyValueEditor, Notice, Toggle, useC } from './ui';
 
 const KIND_ICON: Record<ToolKind, string> = { http_request: '↔', database_query: '⛁', send_email: '✉', notify: '🔔', webhook_out: '⇢', progrid: '☁' };
@@ -28,13 +28,18 @@ export function KindPicker({ onPick }: { onPick: (k: ToolKind) => void }) {
 
 export function blankTool(kind: ToolKind): ToolDraft {
   const config: Record<ToolKind, Record<string, unknown>> = {
-    http_request: { method: 'GET', path: '/', query: {}, headers: {} }, database_query: { mode: 'sql', maxRows: 200 },
+    http_request: { method: 'GET', path: '/' }, database_query: { mode: 'sql', maxRows: 200 },
     send_email: { via: 'platform' }, notify: { channel: 'email', target: '' }, webhook_out: {}, progrid: { action: 'list_servers' },
   };
-  return { name: '', description: '', kind, connectionId: null, config: config[kind], inputSchema: { type: 'object', properties: {} }, enabled: true, requiresApproval: false };
+  // An empty input schema lets the API derive one from the config (path {params}, body).
+  return { name: '', description: '', kind, connectionId: null, config: config[kind], inputSchema: {}, enabled: true, requiresApproval: false };
 }
 
-export function ToolForm({ initial, connections, onSave, onCancel, saveLabel }: { initial: ToolDraft; connections: Connection[]; onSave: (t: ToolDraft) => Promise<unknown>; onCancel: () => void; saveLabel?: string }) {
+/**
+ * `refs` switches the form to draft mode (Build with AI review): the connection is one of the
+ * draft's connectionsNeeded, stored as connectionRef, because nothing exists yet.
+ */
+export function ToolForm({ initial, connections, refs, onSave, onCancel, saveLabel }: { initial: ToolDraft; connections: Connection[]; refs?: ConnectionNeeded[]; onSave: (t: ToolDraft) => Promise<unknown>; onCancel: () => void; saveLabel?: string }) {
   const { c, cd } = useC();
   const [t, setT] = useState<ToolDraft>(initial);
   const [schemaText, setSchemaText] = useState(pretty(initial.inputSchema ?? {}));
@@ -45,29 +50,46 @@ export function ToolForm({ initial, connections, onSave, onCancel, saveLabel }: 
   const setCfg = (p: Record<string, unknown>) => setT((x) => ({ ...x, config: { ...x.config, ...p } }));
   const nameOk = SNAKE.test(t.name);
 
-  const relevant = connections.filter((x) =>
-    t.kind === 'http_request' ? x.kind === 'rest_api' || x.kind === 'custom'
-      : t.kind === 'database_query' ? DB_KINDS.includes(x.kind)
-        : t.kind === 'send_email' ? x.kind === 'smtp'
-          : t.kind === 'webhook_out' ? x.kind === 'webhook_out' : false);
-  const conn = connections.find((x) => x.id === t.connectionId);
+  const fits = (k: ConnectionKind) =>
+    t.kind === 'http_request' ? k === 'rest_api' || k === 'custom'
+      : t.kind === 'database_query' ? DB_KINDS.includes(k)
+        : t.kind === 'send_email' ? k === 'smtp'
+          : t.kind === 'webhook_out' ? k === 'webhook_out' : false;
+  const relevant = connections.filter((x) => fits(x.kind));
+  const conn = refs ? undefined : connections.find((x) => x.id === t.connectionId);
+  const hasConn = refs ? !!t.connectionRef : !!t.connectionId;
+  const hostOf = (u: string) => { try { return new URL(u.replace(/\{(\w+)\}/g, 'x')).hostname; } catch { return ''; } };
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     let inputSchema: Record<string, unknown>;
     try { inputSchema = schemaText.trim() ? JSON.parse(schemaText) : {}; } catch { setError(new Error(c('errBadJson'))); return; }
     setBusy(true); setError(null);
-    try { await onSave({ ...t, inputSchema, config: t.kind === 'http_request' ? { ...cfg, bodyTemplate: bodyText || undefined } : cfg }); }
+    let config = cfg;
+    if (t.kind === 'http_request') {
+      let bodyTemplate: unknown = bodyText.trim() ? bodyText : undefined;
+      if (typeof bodyTemplate === 'string') { try { bodyTemplate = JSON.parse(bodyTemplate); } catch { /* plain text body */ } }
+      // A connection supplies the base URL and auth; without one the tool calls an absolute URL on allowed hosts only.
+      const { url, allowedHosts, baseUrl: _b, auth: _a, ...rest } = cfg as Record<string, unknown>; // eslint-disable-line @typescript-eslint/no-unused-vars
+      config = hasConn ? { ...rest, bodyTemplate } : { ...rest, url, allowedHosts: Array.isArray(allowedHosts) && allowedHosts.length ? allowedHosts : [hostOf(String(url ?? ''))].filter(Boolean), bodyTemplate };
+      if (!hasConn) delete (config as Record<string, unknown>).path;
+      for (const k of Object.keys(config)) if ((config as Record<string, unknown>)[k] === undefined) delete (config as Record<string, unknown>)[k];
+    }
+    try { await onSave({ ...t, inputSchema, config }); }
     catch (err) { setError(err); }
     finally { setBusy(false); }
   }
 
   const connectionSelect = (allowNone: boolean) => (
     <Field label={c('connection')}>
-      {(id) => (
+      {(id) => refs ? (
+        <select id={id} className="input" value={t.connectionRef ?? ''} onChange={(e) => setT({ ...t, connectionRef: e.target.value || null })}>
+          <option value="">{allowNone ? c('none') : '—'}</option>
+          {refs.filter((x) => fits(x.kind)).map((x) => <option key={x.ref} value={x.ref}>{x.name} ({cd('conn_', x.kind)})</option>)}
+        </select>
+      ) : (
         <select id={id} className="input" value={t.connectionId ?? ''} onChange={(e) => setT({ ...t, connectionId: e.target.value || null })}>
-          {allowNone && <option value="">{c('none')}</option>}
-          {!allowNone && <option value="">—</option>}
+          <option value="">{allowNone ? c('none') : '—'}</option>
           {relevant.map((x) => <option key={x.id} value={x.id}>{x.name} ({cd('conn_', x.kind)})</option>)}
         </select>
       )}
@@ -87,28 +109,30 @@ export function ToolForm({ initial, connections, onSave, onCancel, saveLabel }: 
       {t.kind === 'http_request' && (
         <>
           {connectionSelect(true)}
-          {!t.connectionId ? (
-            <>
-              <Field label={c('baseUrl')} hint={c('baseUrlHint')}>
-                {(id, h) => <input id={id} aria-describedby={h} dir="ltr" type="url" className="input font-mono text-xs" placeholder="https://api.example.com" value={String(cfg.baseUrl ?? '')} onChange={(e) => setCfg({ baseUrl: e.target.value })} />}
-              </Field>
-              <Field label={c('auth')}>
-                {(id) => (
-                  <select id={id} className="input" value={String((cfg.auth as { type?: string } | undefined)?.type ?? 'none')} onChange={(e) => setCfg({ auth: { type: e.target.value } })}>
-                    {['none', 'bearer', 'basic', 'header', 'query'].map((a) => <option key={a} value={a}>{cd('auth_', a)}</option>)}
-                  </select>
-                )}
-              </Field>
-            </>
-          ) : <p className="text-xs text-neutral-500">{c('authFromConnection')} <code dir="ltr" className="font-mono">{String(conn?.config.baseUrl ?? '')}</code></p>}
+          {hasConn
+            ? <p className="text-xs text-neutral-500">{c('authFromConnection')} {conn && <code dir="ltr" className="font-mono">{String(conn.config.baseUrl ?? '')}</code>}</p>
+            : <p className="text-xs text-neutral-500">{c('noConnectionUrlNote')}</p>}
           <div className="grid gap-3 sm:grid-cols-[8rem_1fr]">
             <Field label={c('method')}>
               {(id) => <select id={id} className="input font-mono" value={String(cfg.method ?? 'GET')} onChange={(e) => setCfg({ method: e.target.value })}>{HTTP_METHODS.map((m) => <option key={m}>{m}</option>)}</select>}
             </Field>
-            <Field label={c('endpointPath')} hint={c('endpointPathHint')}>
-              {(id, h) => <input id={id} aria-describedby={h} dir="ltr" className="input font-mono text-xs" placeholder="/companies/{domain}" value={String(cfg.path ?? '')} onChange={(e) => setCfg({ path: e.target.value })} />}
-            </Field>
+            {hasConn ? (
+              <Field label={c('endpointPath')} hint={c('endpointPathHint')}>
+                {(id, h) => <input id={id} aria-describedby={h} dir="ltr" className="input font-mono text-xs" placeholder="/companies/{domain}" value={String(cfg.path ?? '')} onChange={(e) => setCfg({ path: e.target.value })} />}
+              </Field>
+            ) : (
+              <Field label={c('fullUrl')} hint={c('endpointPathHint')}>
+                {(id, h) => <input id={id} aria-describedby={h} dir="ltr" required className="input font-mono text-xs" placeholder="https://api.example.com/companies/{domain}" value={String(cfg.url ?? '')} onChange={(e) => setCfg({ url: e.target.value })} />}
+              </Field>
+            )}
           </div>
+          {!hasConn && (
+            <Field label={c('allowedHosts')} hint={c('toolHostsHint')}>
+              {(id, h) => <input id={id} aria-describedby={h} dir="ltr" className="input font-mono text-xs" placeholder={hostOf(String(cfg.url ?? '')) || 'api.example.com'}
+                value={Array.isArray(cfg.allowedHosts) ? (cfg.allowedHosts as string[]).join(', ') : ''}
+                onChange={(e) => setCfg({ allowedHosts: e.target.value.split(',').map((x) => x.trim()).filter(Boolean) })} />}
+            </Field>
+          )}
           <KeyValueEditor label={c('queryParams')} value={(cfg.query as Record<string, string>) ?? {}} onChange={(v) => setCfg({ query: v })} keyPh="q" valuePh="{query}" />
           <KeyValueEditor label={c('headers')} value={(cfg.headers as Record<string, string>) ?? {}} onChange={(v) => setCfg({ headers: v })} keyPh="Accept" valuePh="application/json" />
           {['POST', 'PUT', 'PATCH'].includes(String(cfg.method)) && <JsonInput label={c('bodyTemplate')} hint={c('bodyHint')} value={bodyText} onChange={setBodyText} rows={5} />}
@@ -118,7 +142,7 @@ export function ToolForm({ initial, connections, onSave, onCancel, saveLabel }: 
       {t.kind === 'database_query' && (
         <>
           {connectionSelect(false)}
-          {!t.connectionId && <p className="text-xs text-neutral-500">{c('pickDbConnection')}</p>}
+          {!hasConn && <p className="text-xs text-neutral-500">{c('pickDbConnection')}</p>}
           {conn && (conn.access.readOnly ? <Notice tone="blue">{c('readOnlyNotice')}</Notice> : <Notice tone="amber">{c('writesAllowed')}</Notice>)}
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label={c('dbMode')}>
