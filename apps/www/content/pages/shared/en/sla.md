@@ -23,7 +23,7 @@ Availability is measured per calendar month as the share of minutes in which the
 
 ## What is not covered
 
-- Scheduled maintenance announced at least 72 hours in advance, up to 4 hours a month, placed outside Saudi business hours where possible.
+- Scheduled maintenance announced at least 72 hours in advance, up to 4 hours a month, placed outside the busiest hours of the day where possible.
 - Faults inside your server or application: the operating system, your software, your configuration, a full disk, or a firewall rule you set.
 - Suspension for non payment or a breach of the [Acceptable Use Policy](/legal/acceptable-use).
 - Events outside our reasonable control, such as upstream network failures beyond our providers, attacks that exceed our mitigation capacity, or force majeure.
@@ -39,7 +39,7 @@ When a service misses its commitment, you receive credit on the next invoice for
 | Below 99.0%, down to 95.0% | 25% |
 | Below 95.0% | 50% |
 
-Claim within 30 days of the end of the month by writing to support@progrid.sa with the resource ids and the times you observed. We check against our monitoring and apply the credit within 10 business days. Credit is the only remedy for missing a commitment and is not paid in cash.
+Claim within 30 days of the end of the month by writing to {{support_email}} with the resource ids and the times you observed. We check against our monitoring and apply the credit within 10 business days. Credit is the only remedy for missing a commitment and is not paid in cash.
 
 ## Support response
 

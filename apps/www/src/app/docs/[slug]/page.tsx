@@ -3,8 +3,6 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { allDocs, getDoc } from '@/lib/docs';
 
-export const dynamicParams = false;
-export function generateStaticParams() { return allDocs().map((d) => ({ slug: d.slug })); }
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const d = getDoc((await params).slug);
   return { title: d?.title, description: d?.description };

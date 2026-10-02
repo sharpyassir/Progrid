@@ -13,6 +13,7 @@ Progrid uses cookies and browser storage only to make the site and the console w
 | Session token | Console, browser storage | Keeps you signed in after login | Until you sign out, or 24 hours |
 | Language | Website and console, browser storage | Remembers the language you chose | Until you change it |
 | CSRF and security cookies | Console | Protect forms and sign in against forgery | Session |
+| Site choice | Website, cookie `prgd_site` | Keeps you on the global site after you choose it, instead of the site for your country | 1 year |
 | Payment provider cookies | Checkout page hosted by our payment provider | Complete a card or wallet payment | Set by the provider |
 
 These are strictly necessary for the service you asked for, so no consent banner is shown. Server side we keep request logs with IP addresses for security, as described in the [Privacy policy](/legal/privacy).

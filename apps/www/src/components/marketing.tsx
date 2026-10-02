@@ -2,7 +2,8 @@
 
 import { createContext, useContext, useEffect, useState } from 'react';
 import { HeroGrid } from './hero-grid';
-import { COPY, LANGS, type Copy, type Lang } from '@/lib/copy';
+import { getCopy, LANGS, SITE_SWITCH, type Copy, type Lang } from '@/lib/copy';
+import { useSite } from './site-context';
 
 const LangCtx = createContext<Lang>('en');
 export function LangProvider({ lang, children }: { lang: Lang; children: React.ReactNode }) {
@@ -10,17 +11,26 @@ export function LangProvider({ lang, children }: { lang: Lang; children: React.R
   useEffect(() => { document.documentElement.lang = lang; document.documentElement.dir = dir; }, [lang, dir]);
   return <LangCtx.Provider value={lang}><div dir={dir}>{children}</div></LangCtx.Provider>;
 }
-function useCopy(): Copy { return COPY[useContext(LangCtx)]; }
+function useCopy(): Copy { return getCopy(useContext(LangCtx), useSite().site); }
 function useLang(): Lang { return useContext(LangCtx); }
+/** The console of this domain (console.progrid.co or console.progrid.sa). */
+function useConsole(): string { return useSite().urls.console; }
 
-const CONSOLE = process.env.NEXT_PUBLIC_CONSOLE_URL ?? 'http://localhost:3000';
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+/** Link to the same page on the other storefront. The global site link carries ?site=global so a visitor from Saudi Arabia is not sent back. */
+export function SiteSwitch({ className = '' }: { className?: string }) {
+  const site = useSite();
+  const lang = useLang();
+  const home = LANGS.find((l) => l.code === lang)?.path ?? '/';
+  const sw = SITE_SWITCH[site.site];
+  const href = `${site.other.www}${home === '/' ? '/' : home}${site.other.site === 'global' ? '?site=global' : ''}`;
+  return <a href={href} hrefLang={site.other.site === 'sa' ? 'en-SA' : 'en'} title={sw.title} className={className}>{sw.label}</a>;
+}
 
 /* ───────────────────────── Header ───────────────────────── */
 
 export function Header() {
   const [open, setOpen] = useState(false);
-  const c = useCopy(); const lang = useLang();
+  const c = useCopy(); const lang = useLang(); const consoleUrl = useConsole();
   const home = LANGS.find((l) => l.code === lang)?.path ?? '/';
   const links = [
     [`${home}#products`, c.nav.products], [`${home === '/' ? '' : home}/connect`, c.nav.connect], [`${home}#agents`, c.nav.agents], [`${home}#pricing`, c.nav.pricing], [`${home}#marketplace`, c.nav.marketplace], ['/docs', c.nav.docs],
@@ -34,9 +44,10 @@ export function Header() {
           {links.map(([h, l]) => <a key={h} href={h} className="hover:text-white">{l}</a>)}
         </nav>
         <div className="ms-auto hidden items-center gap-3 md:flex">
+          <SiteSwitch className="hidden text-xs text-slate-400 hover:text-white lg:inline" />
           {langs}
-          <a href={`${CONSOLE}/login`} className="text-sm text-slate-300 hover:text-white">{c.nav.signIn}</a>
-          <a href={`${CONSOLE}/login`} className="btn-primary py-2">{c.nav.startFree}</a>
+          <a href={`${consoleUrl}/login`} className="text-sm text-slate-300 hover:text-white">{c.nav.signIn}</a>
+          <a href={`${consoleUrl}/login`} className="btn-primary py-2">{c.nav.startFree}</a>
         </div>
         <button className="ms-auto md:hidden" aria-label={c.nav.menu} onClick={() => setOpen(!open)}>☰</button>
       </div>
@@ -44,7 +55,8 @@ export function Header() {
         <div className="border-t border-white/10 px-5 py-4 md:hidden">
           {links.map(([h, l]) => <a key={h} href={h} className="block py-2 text-slate-200" onClick={() => setOpen(false)}>{l}</a>)}
           <div className="py-2">{langs}</div>
-          <a href={`${CONSOLE}/login`} className="btn-primary mt-3 w-full">{c.nav.startFree}</a>
+          <SiteSwitch className="block py-2 text-sm text-slate-300" />
+          <a href={`${consoleUrl}/login`} className="btn-primary mt-3 w-full">{c.nav.startFree}</a>
         </div>
       )}
     </header>
@@ -59,7 +71,7 @@ export function Logo({ white = false, size = 28 }: { white?: boolean; size?: num
 /* ───────────────────────── Hero ───────────────────────── */
 
 export function Hero() {
-  const c = useCopy();
+  const c = useCopy(); const consoleUrl = useConsole();
   return (
     <section className="hero-bg relative overflow-hidden text-white">
       <HeroGrid />
@@ -75,7 +87,7 @@ export function Hero() {
             {c.hero.lead}
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <a href={`${CONSOLE}/login`} className="btn-primary">{c.hero.ctaPrimary}</a>
+ <a href={`${consoleUrl}/login`} className="btn-primary">{c.hero.ctaPrimary}</a>
             <a href="#agents" className="btn-light">{c.hero.ctaSecondary}</a>
           </div>
           <dl className="mt-10 grid grid-cols-3 gap-6 border-t border-white/10 pt-6 text-sm">
@@ -158,7 +170,10 @@ export function Products() {
 /* ───────────────────────── Agents ───────────────────────── */
 
 export function Agents() {
-  const c = useCopy();
+  const c = useCopy(); const { site } = useSite();
+  // The same story in each storefront's currency: a cap of $15 or 50 SAR, in minor units.
+  const cap = site === 'sa' ? 5000 : 1500;
+  const added = site === 'sa' ? 6500 : 2700;
   return (
     <section id="agents" className="bg-slate-950 py-20 text-white">
       <div className="container-x grid items-center gap-12 lg:grid-cols-2">
@@ -179,12 +194,12 @@ export function Agents() {
   "name": "claude-code",
   "isAgent": true,
   "scopes": ["servers:read", "servers:write"],
-  "spendCapMinor": 1500,          `}<span className="c">{c.agents.codeCap}</span>{`
+  "spendCapMinor": ${cap},          `}<span className="c">{c.agents.codeCap}</span>{`
   "requireApprovalFor": ["servers:delete", "servers:resize-down"]
 }`}</pre>
           <div className="c mt-4">{c.agents.codeOver}</div>
           <div><span className="k">402</span> <span className="p">spend_limit_reached</span></div>
-          <div className="c">{`{ "capMinor": 1500, "spentMinor": 900, "addedMonthlyMinor": 2700 }`}</div>
+          <div className="c">{`{ "capMinor": ${cap}, "spentMinor": 900, "addedMonthlyMinor": ${added} }`}</div>
         </div>
       </div>
     </section>
@@ -208,21 +223,33 @@ const FALLBACK: Price[] = [
 ];
 const MANAGED_NAMES: Record<string, string> = { 's-2vcpu-4gb': 'Managed Start', 's-4vcpu-8gb': 'Managed Business', 's-8vcpu-16gb': 'Managed Pro' };
 
+/** Book prices (halalas) the pricing note quotes: support plans and the smallest App Platform instance. */
+const SUPPORT_FROM_SAR_MINOR = 9000;
+const APP_FROM_SAR_MINOR = 1900;
+
 export function Pricing() {
-  const c = useCopy(); const lang = useLang();
-  const [currency, setCurrency] = useState<'USD' | 'SAR'>('SAR');
-  const [list, setList] = useState<PriceList>({ currency: 'SAR', baseCurrency: 'SAR', fxRate: 1, data: FALLBACK });
+  const c = useCopy(); const lang = useLang(); const site = useSite();
+  // Each storefront prices in its own currency: US dollars on progrid.co, riyals with VAT on progrid.sa.
+  const currency = site.currency;
+  const showVat = site.site === 'sa';
+  const toCurrency = (sarMinor: number) => (currency === 'SAR' ? sarMinor : Math.round(sarMinor / 3.75));
+  const fallback = (): PriceList => ({ currency, baseCurrency: 'SAR', fxRate: currency === 'SAR' ? 1 : 1 / 3.75, data: FALLBACK.map((p) => ({ ...p, monthlyMinor: toCurrency(p.monthlyMinor), hourlyMinor: toCurrency(p.hourlyMinor) })) });
+  const [list, setList] = useState<PriceList>(fallback);
   useEffect(() => {
-    fetch(`${API}/v1/pricing?currency=${currency}`)
+    fetch(`${site.urls.api}/v1/pricing?currency=${currency}`)
       .then((r) => r.json())
       .then((d: PriceList) => setList({ ...d, data: d.data.filter((p) => p.size || p.sku === 'snapshot_gb').sort((a, b) => a.monthlyMinor - b.monthlyMinor) }))
-      .catch(() => setList({ currency, baseCurrency: 'SAR', fxRate: currency === 'SAR' ? 1 : 1 / 3.75, data: FALLBACK.map((p) => ({ ...p, monthlyMinor: currency === 'SAR' ? p.monthlyMinor : Math.round(p.monthlyMinor / 3.75), hourlyMinor: currency === 'SAR' ? p.hourlyMinor : Math.round(p.hourlyMinor / 3.75) })) }));
-  }, [currency]);
+      .catch(() => setList(fallback()));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currency, site.urls.api]);
   const cur = list.currency;
   const fmt = (m: number, digits = 2) => new Intl.NumberFormat(lang === 'ar' ? 'ar-SA' : 'en-US', { style: 'currency', currency: cur, maximumFractionDigits: digits }).format(m / 100);
   const plans = list.data.filter((p) => p.resourceType === 'server' && p.size);
   const managed = list.data.filter((p) => p.resourceType === 'managed_server' && p.size).map((m) => ({ ...m, base: plans.find((p) => p.sku === m.size!.id) }));
-  const snapshot = list.data.find((p) => p.sku === 'snapshot_gb')?.monthlyMinor ?? 25;
+  const snapshot = list.data.find((p) => p.sku === 'snapshot_gb')?.monthlyMinor ?? toCurrency(25);
+  const rate = currency === 'SAR' ? 1 : list.fxRate || 1 / 3.75;
+  const note = { snapshot: fmt(snapshot), support: fmt(Math.round(SUPPORT_FROM_SAR_MINOR * rate)), app: fmt(Math.round(APP_FROM_SAR_MINOR * rate)) };
+  const cols = showVat ? [...c.pricing.cols, c.pricing.vatCol] : c.pricing.cols;
   const ram = (mb: number) => (mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`);
   return (
     <section id="pricing" className="py-20">
@@ -233,15 +260,13 @@ export function Pricing() {
             <h2 className="h2">{c.pricing.h2}</h2>
             <p className="lead">{c.pricing.lead}<code className="rounded bg-slate-100 px-1.5 py-0.5 text-sm" dir="ltr">{c.pricing.leadCode}</code>.</p>
           </div>
-          <div className="flex rounded-lg border border-slate-300 p-1 text-sm">
-            {(['SAR', 'USD'] as const).map((cc) => <button key={cc} onClick={() => setCurrency(cc)} className={`rounded-md px-4 py-1.5 ${currency === cc ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>{cc}</button>)}
-          </div>
+          <span className="rounded-lg border border-slate-300 px-4 py-1.5 text-sm font-medium text-slate-700">{currency}</span>
         </div>
         <h3 className="mt-10 text-lg font-semibold">{c.pricing.unmanagedH3}</h3>
         <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-              <tr>{c.pricing.cols.map((h, i) => <th key={h} className={`px-5 py-3 ${i >= 4 ? 'text-end' : 'text-start'}`}>{h}</th>)}</tr>
+              <tr>{cols.map((h, i) => <th key={h} className={`px-5 py-3 ${i >= 4 ? 'text-end' : 'text-start'}`}>{h}</th>)}</tr>
             </thead>
             <tbody>
               {plans.map((p) => (
@@ -251,7 +276,7 @@ export function Pricing() {
                   <td className="px-5 py-3">{ram(p.size!.memoryMb)}</td>
                   <td className="px-5 py-3">{p.size!.diskGb} GB NVMe</td>
                   <td className="px-5 py-3 text-end font-semibold">{fmt(p.monthlyMinor)}</td>
-                  <td className="px-5 py-3 text-end text-slate-500">{fmt(Math.round(p.monthlyMinor * (1 + VAT)))}</td>
+                  {showVat && <td className="px-5 py-3 text-end text-slate-500">{fmt(Math.round(p.monthlyMinor * (1 + VAT)))}</td>}
                 </tr>
               ))}
             </tbody>
@@ -262,7 +287,7 @@ export function Pricing() {
         <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
-              <tr>{c.pricing.cols.map((h, i) => <th key={h} className={`px-5 py-3 ${i >= 4 ? 'text-end' : 'text-start'}`}>{h}</th>)}</tr>
+              <tr>{cols.map((h, i) => <th key={h} className={`px-5 py-3 ${i >= 4 ? 'text-end' : 'text-start'}`}>{h}</th>)}</tr>
             </thead>
             <tbody>
               {managed.map((m) => {
@@ -274,7 +299,7 @@ export function Pricing() {
                     <td className="px-5 py-3">{ram(m.size!.memoryMb)}</td>
                     <td className="px-5 py-3">{m.size!.diskGb} GB NVMe</td>
                     <td className="px-5 py-3 text-end font-semibold">{fmt(total)}</td>
-                    <td className="px-5 py-3 text-end text-slate-500">{fmt(Math.round(total * (1 + VAT)))}</td>
+                    {showVat && <td className="px-5 py-3 text-end text-slate-500">{fmt(Math.round(total * (1 + VAT)))}</td>}
                   </tr>
                 );
               })}
@@ -282,8 +307,8 @@ export function Pricing() {
           </table>
         </div>
         <p className="mt-3 text-xs text-slate-500">
-          {cur === 'SAR' ? c.pricing.noteTry((list.usdToSar ?? 3.75).toFixed(2)) : c.pricing.noteUsd}
-          {c.pricing.noteTail(fmt(snapshot))}
+          {c.pricing.note}
+          {c.pricing.noteTail(note)}
         </p>
       </div>
     </section>
@@ -334,14 +359,14 @@ export function Compare() {
 /* ───────────────────────── CTA + Footer ───────────────────────── */
 
 export function Cta() {
-  const c = useCopy();
+  const c = useCopy(); const consoleUrl = useConsole();
   return (
     <section className="hero-bg py-20 text-white">
       <div className="container-x text-center">
         <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{c.cta.h2}</h2>
         <p className="mx-auto mt-4 max-w-xl text-slate-300">{c.cta.lead}</p>
         <div className="mt-8 flex justify-center gap-3">
-          <a href={`${CONSOLE}/login`} className="btn-primary">{c.cta.create}</a>
+          <a href={`${consoleUrl}/login`} className="btn-primary">{c.cta.create}</a>
           <a href="/docs/api" className="btn-light">{c.cta.docs}</a>
         </div>
       </div>
@@ -359,7 +384,15 @@ export function Footer() {
         <div className="lg:col-span-1"><div className="flex items-center gap-2.5 font-bold text-[#0b47c9]"><Logo size={30} /> Progrid</div><p className="mt-3 text-slate-500">{c.footer.tagline}</p><p className="mt-3 flex gap-2 text-slate-500">{LANGS.map((l) => <a key={l.code} href={l.path} className="hover:text-slate-900">{l.label}</a>)}</p></div>
         {cols.map(([h, ls]) => <div key={h}><div className="font-semibold">{h}</div><ul className="mt-3 space-y-2 text-slate-600">{ls.map(([l, href]) => <li key={l}><a href={href.startsWith('/docs') || href.startsWith('http') || href === '#' ? href : `${prefix}${href}`} className="hover:text-slate-900">{l}</a></li>)}</ul></div>)}
       </div>
-      <div className="container-x mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-6 text-xs text-slate-500"><span>© {new Date().getFullYear()} {c.footer.copyright}</span><span>{c.footer.builtOn}</span></div>
+      <div className="container-x mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-6 text-xs text-slate-500">
+        <span>© {new Date().getFullYear()} {c.footer.copyright} {c.footer.providedBy}</span>
+        <SiteSwitch className="font-medium text-slate-700 hover:text-slate-900" />
+      </div>
+      <div className="container-x mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+        <span>{c.footer.builtOn}</span>
+        {/* DB-IP Lite is CC BY 4.0: the attribution is required wherever its data is used. */}
+        <a href="https://db-ip.com" target="_blank" rel="noopener" className="hover:text-slate-600">{c.footer.geoCredit}</a>
+      </div>
     </footer>
   );
 }

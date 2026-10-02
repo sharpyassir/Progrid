@@ -157,7 +157,7 @@ describe('social sign in', () => {
   it('signs up a new person with a new team and a verified email', async () => {
     const b: Browser = { client: new Client(s.baseUrl) };
     const email = newEmail();
-    const landing = await socialRound(b, 'google', googleClaims(email), { intent: 'signup', locale: 'ar' });
+    const landing = await socialRound(b, 'google', googleClaims(email), { intent: 'signup', locale: 'ar', country: 'SA' });
     expect(landing.pathname).toBe('/auth/callback');
     expect(landing.searchParams.get('error')).toBeNull();
     expect(landing.toString()).not.toMatch(/session|eyJ/); // never a session token in a URL
@@ -170,6 +170,7 @@ describe('social sign in', () => {
     expect(res.team.name).toBe('Nora Alharbi');
     expect(res.team.country).toBe('SA');
     expect(res.team.currency).toBe('SAR');
+    expect(res.team.billingEntity).toBe('progrid_arabia');
     expect(res.team.status).toBe('active');
     expect(res.teams).toHaveLength(1);
     b.client.token = res.session;

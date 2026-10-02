@@ -1,10 +1,13 @@
 import type { Metadata } from 'next';
 import { Agents, Compare, Cta, Footer, Header, Hero, LangProvider, Marketplace, Pricing, Products, TrustStrip } from '@/components/marketing';
-import { COPY, type Lang } from '@/lib/copy';
+import { getCopy, type Lang } from '@/lib/copy';
+import { getSite } from '@/lib/site';
+import { alternatesFor } from '@/lib/alternates';
 
-export function pageMetadata(lang: Lang): Metadata {
-  const c = COPY[lang];
-  return { title: c.meta.title, description: c.meta.description, alternates: { languages: { en: '/', tr: '/tr', ar: '/ar' } }, openGraph: { title: 'Progrid', description: c.meta.description, type: 'website' } };
+export async function pageMetadata(lang: Lang): Promise<Metadata> {
+  const site = await getSite();
+  const c = getCopy(lang, site.site);
+  return { title: c.meta.title, description: c.meta.description, alternates: alternatesFor(site, lang, '/'), openGraph: { title: 'Progrid', description: c.meta.description, type: 'website' } };
 }
 
 

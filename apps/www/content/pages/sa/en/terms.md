@@ -4,7 +4,7 @@ description: The agreement between you and Progrid Arabia for every Progrid serv
 updated: 27 September 2026
 ---
 
-These terms are a contract between you and Progrid Arabia (بروجريد العربية), a company established in the Kingdom of Saudi Arabia ("Progrid", "we"). They apply to the console, the API, the command line tools, the SDKs and every service you create through them (the "Services"). By creating an account or using the Services you accept these terms, the [Acceptable Use Policy](/legal/acceptable-use), the [Privacy Policy](/legal/privacy), the [Refund and Cancellation Policy](/legal/refunds) and the [Service Level Agreement](/legal/sla), which together form the agreement.
+These terms are a contract between you and Progrid Arabia (بروجريد العربية), a company established in the Kingdom of Saudi Arabia ("Progrid", "we"). They apply to customers whose billing country is Saudi Arabia. Customers in every other country contract with Progrid Technologies LLC under the terms published at [progrid.co/legal/terms](https://progrid.co/legal/terms). They apply to the console, the API, the command line tools, the SDKs and every service you create through them (the "Services"). By creating an account or using the Services you accept these terms, the [Acceptable Use Policy](/legal/acceptable-use), the [Privacy Policy](/legal/privacy), the [Refund and Cancellation Policy](/legal/refunds) and the [Service Level Agreement](/legal/sla), which together form the agreement.
 
 ## 1. Your account
 
@@ -20,7 +20,7 @@ Features marked as beta or preview may change or be withdrawn without notice. We
 
 ## 3. Subscriptions, pricing and billing
 
-**Prices.** Prices are published in Saudi riyals, excluding value added tax, at [progrid.sa/#pricing](/#pricing) and through the pricing API. Dollar prices are the riyal prices converted at the published rate. VAT at the statutory rate (currently 15 percent) is added for customers in Saudi Arabia and shown before you confirm a purchase.
+**Prices.** Prices are published in Saudi riyals, excluding value added tax, at [progrid.sa/#pricing](/#pricing) and through the pricing API. VAT at the statutory rate (currently 15 percent) is added and shown before you confirm a purchase.
 
 **Hourly metering with a monthly cap.** Every resource is metered for each hour it exists and charged at one 672nd of its monthly price per hour, so a resource that exists for the whole month never costs more than its monthly price. Stopping a server does not stop the meter; deleting it does. Managed plans, support plans and add ons are metered the same way unless their page says otherwise.
 

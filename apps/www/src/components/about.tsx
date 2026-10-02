@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import { Footer, Header, LangProvider } from '@/components/marketing';
 import type { Lang } from '@/lib/copy';
-
-const CONSOLE = process.env.NEXT_PUBLIC_CONSOLE_URL ?? 'http://localhost:3000';
+import type { Site } from '@/lib/site-shared';
+import { getSite } from '@/lib/site';
+import { alternatesFor } from '@/lib/alternates';
 
 interface AboutCopy {
   metaTitle: string; metaDescription: string;
@@ -11,104 +12,120 @@ interface AboutCopy {
   valuesH2: string; values: [string, string][];
   numbers: [string, string][];
   howH2: string; how: [string, string][];
-  companyH2: string; company: [string, string][];
+  companyH2: string;
   ctaH2: string; ctaLead: string; ctaPrimary: string; ctaSecondary: string;
 }
 
 const COPY: Record<Lang, AboutCopy> = {
   en: {
-    metaTitle: 'About Progrid Arabia', metaDescription: 'Progrid Arabia builds the developer cloud for Saudi Arabia: servers, managed databases, Kubernetes and an app platform, priced in riyals and built for people and AI tools alike.',
-    eyebrow: 'About us', h1: 'A Saudi cloud platform for the people who build.',
-    lead: 'Progrid Arabia is a Saudi company. We give developers, startups and IT teams the cloud they expect from the global providers, with riyal pricing, local invoicing and support that answers in Arabic.',
+    metaTitle: 'About Progrid', metaDescription: 'Progrid builds a developer cloud for people and AI agents: servers, managed databases, Kubernetes, an app platform and Connect, with clear hourly pricing.',
+    eyebrow: 'About us', h1: 'A cloud platform for the people who build.',
+    lead: 'Progrid gives developers, startups and IT teams the cloud they expect from the largest providers. Simple hourly pricing, one API for everything, and support from the engineers who run it.',
     storyH2: 'Why we started',
     story: [
-      'Every developer in the Kingdom knows the trade off. Global clouds have the best tooling but bill in dollars, keep support far away and treat the region as an afterthought. Local hosts speak the language but stop at a control panel and a monthly invoice.',
-      'We built Progrid to remove that trade off. One API drives everything: the console, the command line, Terraform and the AI coding tools your team already uses. Prices are in riyals, excluding VAT, and every invoice is a ZATCA e-invoice.',
+      'Every developer knows the trade off. Large clouds have the best tooling, but the bills are hard to read and support is far away. Simple hosts are easy to start with, but they stop at a control panel and a monthly invoice.',
+      'We built Progrid to remove that trade off. One API drives everything: the console, the command line, Terraform and the AI coding tools your team already uses. Billing is by the hour and never more than the monthly price.',
       'We are a small team of engineers who have run infrastructure for banks, telecoms and startups. We would rather ship one product that works than ten that look good in a deck.',
     ],
     valuesH2: 'What we stand for',
     values: [
-      ['Honest pricing', 'A server costs what the page says. Billing is by the hour, capped at the monthly price, and VAT is shown before you pay.'],
+      ['Honest pricing', 'A server costs what the page says. Billing is by the hour, capped at the monthly price, and any tax is shown before you pay.'],
       ['Nothing hidden behind a ticket', 'Anything the console can do, the API can do. Resize, rebuild, snapshot, scale: all yours, no request forms.'],
       ['Built for automation', 'Terraform, SDKs, an MCP server and API tokens with spending caps, so a script or an AI tool can work safely on your account.'],
       ['Support that knows the stack', 'The people who answer tickets are the people who run the platform. Arabic and English, with response targets we publish.'],
     ],
-    numbers: [['60 s', 'from request to a running server'], ['4', 'server plans, one price list'], ['3', 'managed database engines'], ['15%', 'VAT, shown before you pay']],
+    numbers: [['60 s', 'from request to a running server'], ['4', 'server plans, one price list'], ['3', 'managed database engines'], ['1', 'API for the console, CLI, Terraform and agents']],
     howH2: 'How we work',
     how: [
       ['Open source underneath', 'Proxmox VE, Ceph, PostgreSQL, Temporal and NATS. Proven components, no lock in, and you can read how it fits together in our docs.'],
-      ['Saudi first', 'Riyal price book, ZATCA e-invoicing, mada and Apple Pay through Moyasar, Arabic console and support. Global customers are welcome and pay in dollars at the pegged rate.'],
+      ['Local where it matters', 'You pay in your own storefront. US dollars on progrid.co. Saudi riyals with VAT, mada and Apple Pay on progrid.sa. Invoices always come from the local contracting company.'],
       ['Ship, then promise', 'We publish what is live and what is on the roadmap. A feature is not marketed until you can create it from the console.'],
     ],
     companyH2: 'The company',
-    company: [['Legal name', 'Progrid Arabia (بروجريد العربية)'], ['Headquarters', 'Riyadh, Kingdom of Saudi Arabia'], ['Commercial registration', 'Pending publication'], ['VAT registration', 'Pending publication'], ['Contact', 'support@progrid.sa']],
     ctaH2: 'Talk to us', ctaLead: 'Whether you are moving a workload, starting a company or evaluating us for a team, we answer within a business day.', ctaPrimary: 'Create an account', ctaSecondary: 'Contact us',
   },
   tr: {
-    metaTitle: 'Progrid Arabia hakkında', metaDescription: 'Progrid Arabia, Suudi Arabistan için geliştirici bulutunu kurar: sunucular, yönetilen veritabanları, Kubernetes ve uygulama platformu, riyal fiyatlı, insanlar ve yapay zeka araçları için.',
-    eyebrow: 'Hakkımızda', h1: 'Üretenler için bir Suudi bulut platformu.',
-    lead: 'Progrid Arabia bir Suudi şirketidir. Geliştiricilere, girişimlere ve BT ekiplerine küresel sağlayıcılardan bekledikleri bulutu, riyal fiyat, yerel fatura ve Arapça yanıt veren destekle sunar.',
+    metaTitle: 'Progrid hakkında', metaDescription: 'Progrid, insanlar ve yapay zeka ajanları için bir geliştirici bulutu kurar: sunucular, yönetilen veritabanları, Kubernetes, uygulama platformu ve Connect, anlaşılır saatlik fiyatlarla.',
+    eyebrow: 'Hakkımızda', h1: 'Üretenler için bir bulut platformu.',
+    lead: 'Progrid, geliştiricilere, girişimlere ve BT ekiplerine en büyük sağlayıcılardan bekledikleri bulutu sunar. Basit saatlik fiyat, her şey için tek API ve platformu işleten mühendislerden destek.',
     storyH2: 'Neden başladık',
     story: [
-      'Krallıktaki her geliştirici bu ikilemi bilir. Küresel bulutların araçları en iyisidir ama dolarla faturalar, desteği uzaktadır ve bölgeyi sonradan düşünür. Yerel sağlayıcılar dili konuşur ama bir kontrol paneli ve aylık faturada durur.',
-      'Progrid’i bu ikilemi kaldırmak için kurduk. Tek bir API her şeyi yönetir: konsol, komut satırı, Terraform ve ekibinizin zaten kullandığı yapay zeka araçları. Fiyatlar KDV hariç riyal cinsindendir ve her fatura bir ZATCA e-faturasıdır.',
+      'Her geliştirici bu ikilemi bilir. Büyük bulutların araçları en iyisidir ama faturaları zor okunur ve destek uzaktadır. Basit sağlayıcılarla başlamak kolaydır ama bir kontrol paneli ve aylık faturada dururlar.',
+      'Progrid’i bu ikilemi kaldırmak için kurduk. Tek bir API her şeyi yönetir: konsol, komut satırı, Terraform ve ekibinizin zaten kullandığı yapay zeka araçları. Faturalama saatliktir ve aylık fiyatı asla aşmaz.',
       'Bankalar, telekomlar ve girişimler için altyapı işletmiş küçük bir mühendis ekibiyiz. Sunumda iyi görünen on üründense çalışan tek bir ürünü tercih ederiz.',
     ],
     valuesH2: 'Neyi savunuyoruz',
     values: [
-      ['Dürüst fiyat', 'Bir sunucu sayfada yazan kadar tutar. Saatlik faturalanır, aylık fiyatla sınırlıdır ve KDV ödemeden önce gösterilir.'],
+      ['Dürüst fiyat', 'Bir sunucu sayfada yazan kadar tutar. Saatlik faturalanır, aylık fiyatla sınırlıdır ve vergiler ödemeden önce gösterilir.'],
       ['Talep formunun arkasında hiçbir şey yok', 'Konsolun yapabildiği her şeyi API de yapar. Boyutlandırma, yeniden kurma, anlık görüntü, ölçekleme: hepsi sizin.'],
       ['Otomasyon için kurulu', 'Terraform, SDK’lar, MCP sunucusu ve harcama limitli API tokenları; bir betik veya yapay zeka aracı hesabınızda güvenle çalışır.'],
       ['Altyapıyı bilen destek', 'Talepleri yanıtlayanlar platformu işletenlerdir. Arapça ve İngilizce, yayınladığımız yanıt hedefleriyle.'],
     ],
-    numbers: [['60 sn', 'istekten çalışan sunucuya'], ['4', 'sunucu planı, tek fiyat listesi'], ['3', 'yönetilen veritabanı motoru'], ['%15', 'KDV, ödemeden önce gösterilir']],
+    numbers: [['60 sn', 'istekten çalışan sunucuya'], ['4', 'sunucu planı, tek fiyat listesi'], ['3', 'yönetilen veritabanı motoru'], ['1', 'konsol, CLI, Terraform ve ajanlar için tek API']],
     howH2: 'Nasıl çalışıyoruz',
     how: [
       ['Altta açık kaynak', 'Proxmox VE, Ceph, PostgreSQL, Temporal ve NATS. Kanıtlanmış bileşenler, bağımlılık yok; nasıl birleştiğini dokümanlarda okuyabilirsiniz.'],
-      ['Önce Suudi Arabistan', 'Riyal fiyat listesi, ZATCA e-fatura, Moyasar ile mada ve Apple Pay, Arapça konsol ve destek. Küresel müşteriler sabit kurla dolar öder.'],
+      ['Gereken yerde yerel', 'Kendi mağazanızda ödersiniz. progrid.co’da ABD doları. progrid.sa’da KDV ile Suudi riyali, mada ve Apple Pay. Faturalar her zaman yerel sözleşme şirketinden gelir.'],
       ['Önce çıkar, sonra söz ver', 'Neyin canlı, neyin yol haritasında olduğunu yayınlarız. Konsoldan oluşturamadığınız bir özelliğin pazarlaması yapılmaz.'],
     ],
     companyH2: 'Şirket',
-    company: [['Yasal ad', 'Progrid Arabia (بروجريد العربية)'], ['Merkez', 'Riyad, Suudi Arabistan Krallığı'], ['Ticaret sicili', 'Yayınlanacak'], ['KDV kaydı', 'Yayınlanacak'], ['İletişim', 'support@progrid.sa']],
     ctaH2: 'Bizimle konuşun', ctaLead: 'İş yükü taşıyor, şirket kuruyor ya da ekibiniz için bizi değerlendiriyor olun, bir iş günü içinde yanıtlarız.', ctaPrimary: 'Hesap oluştur', ctaSecondary: 'İletişim',
   },
   ar: {
-    metaTitle: 'عن بروجريد العربية', metaDescription: 'بروجريد العربية شركة سعودية تبني الخدمات السحابية للمطورين: سيرفرات وقواعد بيانات مُدارة وKubernetes ومنصة تطبيقات، بأسعار بالريال، للناس ولأدوات الذكاء الاصطناعي.',
-    eyebrow: 'من نحن', h1: 'منصة سحابية سعودية لأهل البناء.',
-    lead: 'بروجريد العربية شركة سعودية. نعطي المطورين والشركات الناشئة وفرق تقنية المعلومات السحابة اللي يتوقعونها من المزودين العالميين، بأسعار بالريال وفاتورة محلية ودعم يرد عليك بالعربي.',
-    storyH2: 'ليش بدأنا',
+    metaTitle: 'عن Progrid', metaDescription: 'تبني Progrid سحابة للمطورين وللوكلاء الأذكياء: خوادم وقواعد بيانات مُدارة وKubernetes ومنصة تطبيقات وConnect، بأسعار واضحة بالساعة.',
+    eyebrow: 'من نحن', h1: 'منصة سحابية لمن يبنون.',
+    lead: 'تقدّم Progrid للمطورين والشركات الناشئة وفرق تقنية المعلومات السحابة التي يتوقعونها من كبار المزودين: أسعار بسيطة بالساعة، وواجهة API واحدة لكل شيء، ودعم من المهندسين الذين يشغّلون المنصة.',
+    storyH2: 'لماذا بدأنا',
     story: [
-      'كل مطور في المملكة يعرف المعادلة. السحابات العالمية عندها أفضل الأدوات، لكنها تفوتر بالدولار ودعمها بعيد وتتعامل مع المنطقة كأنها على الهامش. المزودون المحليون يتكلمون لغتك، لكن ينتهون عند لوحة تحكم وفاتورة شهرية.',
-      'بنينا Progrid عشان نلغي هذي المعادلة. واجهة API وحدة تشغّل كل شي: لوحة التحكم وسطر الأوامر وTerraform وأدوات الذكاء الاصطناعي اللي فريقك يستخدمها أصلًا. الأسعار بالريال بدون ضريبة، وكل فاتورة هي فاتورة زاتكا إلكترونية.',
-      'إحنا فريق صغير من المهندسين، شغّلنا بنى تحتية لبنوك وشركات اتصالات وشركات ناشئة. نفضّل نطلّع منتج واحد يشتغل على عشرة تبيّن حلوة في العرض.',
+      'يعرف كل مطور هذه المفاضلة. تملك السحابات الكبرى أفضل الأدوات، لكن فواتيرها صعبة القراءة ودعمها بعيد. أما الاستضافة البسيطة فسهلة البداية، لكنها تتوقف عند لوحة تحكم وفاتورة شهرية.',
+      'بنينا Progrid لننهي هذه المفاضلة. واجهة API واحدة تدير كل شيء: لوحة التحكم وسطر الأوامر وTerraform وأدوات البرمجة بالذكاء الاصطناعي التي يستخدمها فريقك. والفوترة بالساعة ولا تتجاوز السعر الشهري أبدًا.',
+      'نحن فريق صغير من المهندسين شغّلنا بنى تحتية لبنوك وشركات اتصالات وشركات ناشئة. ونفضّل إطلاق منتج واحد يعمل على عشرة منتجات تبدو جيدة في عرض تقديمي.',
     ],
-    valuesH2: 'وش نؤمن فيه',
+    valuesH2: 'ما نؤمن به',
     values: [
-      ['سعر صريح', 'السيرفر يكلّف اللي مكتوب في الصفحة. تحاسب بالساعة، بسقف السعر الشهري، والضريبة تشوفها قبل ما تدفع.'],
-      ['ما في شي وراء تذكرة', 'كل اللي تسويه لوحة التحكم تسويه الـ API. تغيير الحجم وإعادة البناء واللقطات والتوسّع: كلها بيدك، بدون نماذج طلب.'],
-      ['مبني للأتمتة', 'Terraform وحزم SDK وخادم MCP ورموز API بحد إنفاق، عشان السكربت أو أداة الذكاء الاصطناعي تشتغل على حسابك بأمان.'],
-      ['دعم يفهم التقنية', 'اللي يرد على تذكرتك هو نفسه اللي يشغّل المنصة. بالعربي والإنجليزي، وبأهداف رد ننشرها.'],
+      ['أسعار صادقة', 'تكلفة الخادم هي ما تعرضه الصفحة. الفوترة بالساعة وبسقف السعر الشهري، وتظهر أي ضريبة قبل الدفع.'],
+      ['لا شيء خلف تذكرة دعم', 'كل ما تفعله لوحة التحكم تفعله واجهة API. تغيير الحجم وإعادة البناء واللقطات والتوسع كلها بيدك، دون نماذج طلب.'],
+      ['مصمم للأتمتة', 'Terraform وحزم SDK وخادم MCP ورموز API بحد إنفاق، ليعمل النص البرمجي أو أداة الذكاء الاصطناعي على حسابك بأمان.'],
+      ['دعم يعرف التقنية', 'من يجيب عن التذاكر هم من يشغّلون المنصة، بالعربية والإنجليزية، وبأهداف استجابة ننشرها.'],
     ],
-    numbers: [['60 ثانية', 'من الطلب إلى سيرفر شغّال'], ['4', 'باقات سيرفرات، وقائمة أسعار وحدة'], ['3', 'محركات قواعد بيانات مُدارة'], ['15%', 'ضريبة، تشوفها قبل الدفع']],
-    howH2: 'كيف نشتغل',
+    numbers: [['60 ثانية', 'من الطلب إلى خادم يعمل'], ['4', 'باقات خوادم وقائمة أسعار واحدة'], ['3', 'محركات قواعد بيانات مُدارة'], ['1', 'واجهة API للوحة التحكم وسطر الأوامر وTerraform والوكلاء']],
+    howH2: 'كيف نعمل',
     how: [
-      ['مصادر مفتوحة من تحت', 'Proxmox VE وCeph وPostgreSQL وTemporal وNATS. مكوّنات مجرّبة، بدون احتكار، وتقدر تقرأ كيف مترابطة في الدليل.'],
-      ['السعودية أول', 'قائمة أسعار بالريال، فاتورة زاتكا، مدى وApple Pay عبر Moyasar، لوحة تحكم ودعم بالعربي. والعملاء من خارج المملكة يدفعون بالدولار بسعر الصرف الثابت.'],
-      ['نطلّع، وبعدين نوعد', 'ننشر وش المتوفر ووش على الطريق. ما نسوّق لأي ميزة قبل ما تقدر تنشئها من لوحة التحكم.'],
+      ['مصادر مفتوحة في الأساس', 'Proxmox VE وCeph وPostgreSQL وTemporal وNATS. مكونات مجرّبة دون احتكار، ويمكنك قراءة كيف تترابط في الوثائق.'],
+      ['محليون حيث يهم ذلك', 'تدفع عبر متجرك المحلي: بالدولار الأمريكي على progrid.co، وبالريال السعودي مع ضريبة القيمة المضافة ومدى وApple Pay على progrid.sa. وتصدر الفواتير دائمًا من الشركة المتعاقدة المحلية.'],
+      ['نطلق أولًا ثم نعد', 'ننشر ما هو متاح وما هو على خارطة الطريق. ولا نسوّق ميزة قبل أن تتمكن من إنشائها من لوحة التحكم.'],
     ],
     companyH2: 'الشركة',
-    company: [['الاسم القانوني', 'بروجريد العربية (Progrid Arabia)'], ['المقر', 'الرياض، المملكة العربية السعودية'], ['السجل التجاري', 'يُنشر قريبًا'], ['الرقم الضريبي', 'يُنشر قريبًا'], ['التواصل', 'support@progrid.sa']],
-    ctaH2: 'كلّمنا', ctaLead: 'سواء تنقل عمل قائم، أو تبدأ شركة، أو تقيّمنا لفريقك، نرد عليك خلال يوم عمل.', ctaPrimary: 'أنشئ حسابك', ctaSecondary: 'تواصل معنا',
+    ctaH2: 'تحدث إلينا', ctaLead: 'سواء كنت تنقل عملًا قائمًا أو تؤسس شركة أو تقيّمنا لفريقك، نرد عليك خلال يوم عمل.', ctaPrimary: 'أنشئ حسابك', ctaSecondary: 'تواصل معنا',
   },
 };
 
-export function aboutMetadata(lang: Lang): Metadata {
+/**
+ * The contracting company of each storefront. Addresses appear only here, in the company facts,
+ * never as a marketing claim. Registration numbers are published once they exist.
+ */
+const COMPANY: Record<Site, Record<Lang, [string, string][]>> = {
+  global: {
+    en: [['Contracting company', 'Progrid Technologies LLC'], ['Jurisdiction', 'United States'], ['Registered address', 'Published once registration is complete'], ['Contact', 'support@progrid.co'], ['Customers in Saudi Arabia', 'Contract with Progrid Arabia through progrid.sa']],
+    tr: [['Sözleşme şirketi', 'Progrid Technologies LLC'], ['Yargı yetkisi', 'Amerika Birleşik Devletleri'], ['Kayıtlı adres', 'Kayıt tamamlandığında yayınlanacak'], ['İletişim', 'support@progrid.co'], ['Suudi Arabistan’daki müşteriler', 'progrid.sa üzerinden Progrid Arabia ile sözleşme yapar']],
+    ar: [['الشركة المتعاقدة', 'Progrid Technologies LLC'], ['الولاية القضائية', 'الولايات المتحدة'], ['العنوان المسجل', 'يُنشر بعد اكتمال التسجيل'], ['التواصل', 'support@progrid.co'], ['العملاء في المملكة العربية السعودية', 'يتعاقدون مع Progrid Arabia عبر progrid.sa']],
+  },
+  sa: {
+    en: [['Contracting company in Saudi Arabia', 'Progrid Arabia (بروجريد العربية)'], ['Registered address', 'Riyadh, Kingdom of Saudi Arabia'], ['Commercial registration', 'Published once registration is complete'], ['VAT registration', 'Published once registration is complete'], ['Contact', 'support@progrid.sa']],
+    tr: [['Suudi Arabistan’daki sözleşme şirketi', 'Progrid Arabia (بروجريد العربية)'], ['Kayıtlı adres', 'Riyad, Suudi Arabistan Krallığı'], ['Ticaret sicili', 'Kayıt tamamlandığında yayınlanacak'], ['KDV kaydı', 'Kayıt tamamlandığında yayınlanacak'], ['İletişim', 'support@progrid.sa']],
+    ar: [['الشركة المتعاقدة في المملكة العربية السعودية', 'بروجريد العربية (Progrid Arabia)'], ['العنوان المسجل', 'الرياض، المملكة العربية السعودية'], ['السجل التجاري', 'يُنشر بعد اكتمال التسجيل'], ['الرقم الضريبي', 'يُنشر بعد اكتمال التسجيل'], ['التواصل', 'support@progrid.sa']],
+  },
+};
+
+export async function aboutMetadata(lang: Lang): Promise<Metadata> {
   const c = COPY[lang];
-  return { title: c.metaTitle, description: c.metaDescription };
+  return { title: c.metaTitle, description: c.metaDescription, alternates: alternatesFor(await getSite(), lang, '/about') };
 }
 
-export function About({ lang }: { lang: Lang }) {
+export async function About({ lang }: { lang: Lang }) {
   const c = COPY[lang];
+  const site = await getSite();
+  const company = COMPANY[site.site][lang];
   const prefix = lang === 'en' ? '' : `/${lang}`;
   return (
     <LangProvider lang={lang}>
@@ -159,7 +176,7 @@ export function About({ lang }: { lang: Lang }) {
           <div className="container-x max-w-3xl">
             <h2 className="text-2xl font-bold">{c.companyH2}</h2>
             <dl className="mt-6 grid gap-x-8 gap-y-3 text-sm sm:grid-cols-[200px_1fr]">
-              {c.company.map(([k, v]) => <div key={k} className="contents"><dt className="text-slate-500">{k}</dt><dd className="font-medium text-slate-900">{v}</dd></div>)}
+              {company.map(([k, v]) => <div key={k} className="contents"><dt className="text-slate-500">{k}</dt><dd className="font-medium text-slate-900">{v}</dd></div>)}
             </dl>
           </div>
         </section>
@@ -169,7 +186,7 @@ export function About({ lang }: { lang: Lang }) {
             <h2 className="text-3xl font-bold tracking-tight">{c.ctaH2}</h2>
             <p className="mx-auto mt-4 max-w-xl text-slate-300">{c.ctaLead}</p>
             <div className="mt-8 flex justify-center gap-3">
-              <a href={`${CONSOLE}/login`} className="btn-primary">{c.ctaPrimary}</a>
+              <a href={`${site.urls.console}/login`} className="btn-primary">{c.ctaPrimary}</a>
               <a href={`${prefix}/contact`} className="btn-light">{c.ctaSecondary}</a>
             </div>
           </div>

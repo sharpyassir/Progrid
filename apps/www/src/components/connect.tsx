@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 import { Footer, Header, LangProvider } from '@/components/marketing';
 import type { Lang } from '@/lib/copy';
-
-const CONSOLE = process.env.NEXT_PUBLIC_CONSOLE_URL ?? 'http://localhost:3000';
+import { getSite } from '@/lib/site';
+import { alternatesFor } from '@/lib/alternates';
 
 interface ConnectCopy {
   metaTitle: string; metaDescription: string;
@@ -12,7 +12,7 @@ interface ConnectCopy {
   devEyebrow: string; devH2: string; devLead: string; devPoints: [string, string][];
   priceEyebrow: string; priceH2: string; priceLead: string;
   perExecution: string; executionNote: string; perToolCall: string; toolCallNote: string;
-  tokensH3: string; tokenCols: [string, string, string, string, string]; vatNote: string; cacheNote: string;
+  tokensH3: string; tokenCols: [string, string, string, string, string]; vatNote: string; vatNoteSa: string; cacheNote: string;
   ctaH2: string; ctaLead: string;
 }
 
@@ -73,7 +73,7 @@ const COPY: Record<Lang, ConnectCopy> = {
     perExecution: 'per execution', executionNote: 'One agent run or one workflow execution.',
     perToolCall: 'per tool call', toolCallNote: 'Each API, database, email, notification or Progrid action an agent runs.',
     tokensH3: 'AI tokens, per 1M tokens', tokenCols: ['Model', 'Input', 'Output', 'Cache read', 'Cache write'],
-    vatNote: 'Prices are in Saudi riyals and exclude 15% VAT.',
+    vatNote: 'Prices are in US dollars. Any tax that applies is shown at checkout.', vatNoteSa: 'Prices are in Saudi riyals and exclude 15% VAT.',
     cacheNote: 'Cache reads and writes come from prompt caching. It makes instructions that repeat on every call much cheaper.',
     ctaH2: 'Build your first agent today.', ctaLead: 'Progrid Connect is part of your Progrid account. Usage is metered per run, and your project spend limit applies.',
   },
@@ -119,7 +119,7 @@ const COPY: Record<Lang, ConnectCopy> = {
     perExecution: 'çalışma başına', executionNote: 'Bir ajan çalışması veya bir iş akışı çalışması.',
     perToolCall: 'araç çağrısı başına', toolCallNote: 'Ajanın çalıştırdığı her API, veritabanı, e-posta, bildirim veya Progrid işlemi.',
     tokensH3: 'Yapay zekâ tokenları, 1 milyon token başına', tokenCols: ['Model', 'Giriş', 'Çıkış', 'Önbellekten okuma', 'Önbelleğe yazma'],
-    vatNote: 'Fiyatlar Suudi riyali cinsindendir ve %15 KDV hariçtir.',
+    vatNote: 'Fiyatlar ABD doları cinsindendir. Uygulanan vergiler ödeme sırasında gösterilir.', vatNoteSa: 'Fiyatlar Suudi riyali cinsindendir ve %15 KDV hariçtir.',
     cacheNote: 'Önbellekten okuma ve önbelleğe yazma, istem önbelleklemesinden gelir. Her çağrıda tekrar eden talimatları çok daha ucuz hale getirir.',
     ctaH2: 'İlk ajanını bugün oluştur.', ctaLead: 'Progrid Connect, Progrid hesabının bir parçasıdır. Kullanım çalışma başına ölçülür ve proje harcama sınırın geçerlidir.',
   },
@@ -165,18 +165,18 @@ const COPY: Record<Lang, ConnectCopy> = {
     perExecution: 'لكل تشغيل', executionNote: 'تشغيل وكيل واحد أو تنفيذ سير عمل واحد.',
     perToolCall: 'لكل استدعاء أداة', toolCallNote: 'كل عملية API أو قاعدة بيانات أو بريد أو إشعار أو Progrid ينفذها الوكيل.',
     tokensH3: 'رموز الذكاء الاصطناعي، لكل مليون رمز', tokenCols: ['النموذج', 'الإدخال', 'الإخراج', 'القراءة من الذاكرة المؤقتة', 'الكتابة في الذاكرة المؤقتة'],
-    vatNote: 'الأسعار بالريال السعودي ولا تشمل ضريبة القيمة المضافة 15%.',
+    vatNote: 'الأسعار بالدولار الأمريكي، وتظهر أي ضريبة مستحقة عند الدفع.', vatNoteSa: 'الأسعار بالريال السعودي ولا تشمل ضريبة القيمة المضافة 15%.',
     cacheNote: 'القراءة والكتابة في الذاكرة المؤقتة تأتي من التخزين المؤقت للتعليمات. يجعل التعليمات التي تتكرر في كل استدعاء أرخص بكثير.',
     ctaH2: 'ابنِ أول وكيل لك اليوم.', ctaLead: 'Progrid Connect جزء من حسابك في Progrid. الاستخدام يُحتسب لكل تشغيل، وحد الصرف لمشروعك يسري عليه.',
   },
 };
 
-export function connectMetadata(lang: Lang): Metadata {
+export async function connectMetadata(lang: Lang): Promise<Metadata> {
   const c = COPY[lang];
-  return { title: c.metaTitle, description: c.metaDescription, alternates: { languages: { en: '/connect', tr: '/tr/connect', ar: '/ar/connect' } } };
+  return { title: c.metaTitle, description: c.metaDescription, alternates: alternatesFor(await getSite(), lang, '/connect') };
 }
 
-const SAMPLE = `curl -X POST https://api.progrid.sa/v1/connect/agents/{id}/run \\
+const sample = (api: string) => `curl -X POST ${api}/v1/connect/agents/{id}/run \\
   -H "Authorization: Bearer $PRGD_AGENT_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"input": {"email": "sara@company.com", "company": "Company Ltd"}}'`;
@@ -189,9 +189,13 @@ const RESPONSE = `{
   "durationMs": 4910
 }`;
 
-export function ConnectPage({ lang }: { lang: Lang }) {
+export async function ConnectPage({ lang }: { lang: Lang }) {
   const c = COPY[lang];
-  const sar = (minor: number) => new Intl.NumberFormat(lang === 'ar' ? 'ar-SA' : 'en-US', { style: 'currency', currency: 'SAR', minimumFractionDigits: 2, maximumFractionDigits: 3 }).format(minor / 100);
+  const site = await getSite();
+  const CONSOLE = site.urls.console;
+  // Book prices are in halalas; progrid.co shows them in US dollars at the pegged 3.75.
+  const usd = site.currency === 'USD';
+  const sar = (minor: number) => new Intl.NumberFormat(lang === 'ar' ? 'ar-SA' : 'en-US', { style: 'currency', currency: site.currency, minimumFractionDigits: 2, maximumFractionDigits: usd ? 4 : 3 }).format((usd ? minor / 3.75 : minor) / 100);
   return (
     <LangProvider lang={lang}>
       <Header />
@@ -256,7 +260,7 @@ export function ConnectPage({ lang }: { lang: Lang }) {
               </ul>
             </div>
             <div className="min-w-0 space-y-4" dir="ltr">
-              <pre className="code overflow-x-auto text-start"><code>{SAMPLE}</code></pre>
+              <pre className="code overflow-x-auto text-start"><code>{sample(site.urls.api.startsWith('https://') ? site.urls.api : 'https://api.progrid.co')}</code></pre>
               <pre className="code overflow-x-auto text-start"><code>{RESPONSE}</code></pre>
             </div>
           </div>
@@ -292,7 +296,7 @@ export function ConnectPage({ lang }: { lang: Lang }) {
                 </tbody>
               </table>
             </div>
-            <p className="mt-4 text-sm text-slate-600">{c.vatNote}</p>
+            <p className="mt-4 text-sm text-slate-600">{usd ? c.vatNote : c.vatNoteSa}</p>
             <p className="mt-1 text-sm text-slate-500">{c.cacheNote}</p>
           </div>
         </section>

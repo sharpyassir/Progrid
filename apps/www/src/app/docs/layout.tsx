@@ -2,11 +2,13 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { nav } from '@/lib/docs';
 import { DocsNav } from '@/components/docs-nav';
+import { getSite } from '@/lib/site';
 
 export const metadata: Metadata = { title: { default: 'Docs', template: '%s · Progrid docs' } };
 
-export default function DocsLayout({ children }: { children: React.ReactNode }) {
+export default async function DocsLayout({ children }: { children: React.ReactNode }) {
   const groups = nav();
+  const site = await getSite();
   return (
     <div className="min-h-screen bg-white text-slate-900">
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
@@ -15,7 +17,7 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
           <Link href="/docs" className="text-sm font-medium text-slate-600">Docs</Link>
           <div className="ms-auto flex items-center gap-4 text-sm">
             <Link href="/docs/api-reference" className="text-slate-600 hover:text-slate-900">API reference</Link>
-            <a href={`${process.env.NEXT_PUBLIC_CONSOLE_URL ?? 'http://localhost:3000'}/login`} className="rounded-lg bg-blue-600 px-3 py-1.5 font-semibold text-white hover:bg-blue-500">Console</a>
+            <a href={`${site.urls.console}/login`} className="rounded-lg bg-blue-600 px-3 py-1.5 font-semibold text-white hover:bg-blue-500">Console</a>
           </div>
         </div>
       </header>
