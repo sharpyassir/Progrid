@@ -101,7 +101,7 @@ export class PaymentsService {
         }
         const applied = await this.prisma.$transaction(async (tx) => {
           // Claim the pending row first so a concurrent webhook and callback cannot both credit it.
-          const claimed = await tx.payment.updateMany({ where: { id: p.id, status: 'pending' }, data: { status: 'succeeded', paidAt: new Date() } });
+          const claimed = await tx.payment.updateMany({ where: { id: p.id, status: 'pending' }, data: { status: 'succeeded', paidAt: new Date(), cardFingerprint: ev.cardFingerprint ?? null } });
           if (!claimed.count) return false;
           const invoiceOpen = p.invoiceId ? (await tx.invoice.updateMany({ where: { id: p.invoiceId, status: 'open' }, data: { status: 'paid', paidAt: new Date() } })).count === 1 : false;
           if (p.invoiceId && !invoiceOpen) {

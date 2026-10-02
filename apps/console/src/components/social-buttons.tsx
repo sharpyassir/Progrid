@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { currentRef } from '@/lib/referral';
 import { runtimeUrls } from '@/lib/urls';
 import type { Locale } from '@/lib/i18n';
 import { ts, type SocialProvider } from '@/lib/i18n-social';
@@ -25,10 +26,16 @@ export function configuredProviders(): Promise<SocialProvider[]> {
  * Sends the browser to the API, which redirects to Google or Microsoft. Linking needs the
  * console session, which a redirect cannot carry, so it first trades it for a one time ticket.
  */
-export async function startSocial(provider: SocialProvider, opts: { intent: SocialIntent; locale: Locale; returnPath?: string; invite?: string; country?: string }) {
+export async function startSocial(provider: SocialProvider, opts: { intent: SocialIntent; locale: Locale; returnPath?: string; invite?: string; country?: string; promo?: string }) {
   const q = new URLSearchParams({ intent: opts.intent, locale: opts.locale });
   // The billing country picked on the signup form; it decides the billing company of a new team.
   if (opts.country) q.set('country', opts.country);
+  // A partner referral and promo code travel with a signup (docs/affiliates.md).
+  if (opts.intent === 'signup') {
+    const ref = currentRef();
+    if (ref) q.set('ref', ref);
+    if (opts.promo) q.set('promo', opts.promo);
+  }
   if (opts.returnPath) q.set('return', opts.returnPath);
   if (opts.invite) q.set('invite', opts.invite);
   if (opts.intent === 'link') {
@@ -83,7 +90,7 @@ export function SocialButton({ provider, locale, onClick, disabled }: { provider
 }
 
 /** The buttons for every configured provider, then an "or" divider above the email form. */
-export function SocialButtons({ locale, intent, invite, returnPath, country, divider = true }: { locale: Locale; intent: SocialIntent; invite?: string; returnPath?: string; country?: string; divider?: boolean }) {
+export function SocialButtons({ locale, intent, invite, returnPath, country, promo, divider = true }: { locale: Locale; intent: SocialIntent; invite?: string; returnPath?: string; country?: string; promo?: string; divider?: boolean }) {
   const [providers, setProviders] = useState<SocialProvider[]>([]);
   const [busy, setBusy] = useState(false);
   useEffect(() => { configuredProviders().then(setProviders); }, []);
@@ -91,7 +98,7 @@ export function SocialButtons({ locale, intent, invite, returnPath, country, div
   return (
     <div className="space-y-3">
       {providers.map((p) => (
-        <SocialButton key={p} provider={p} locale={locale} disabled={busy} onClick={() => { setBusy(true); startSocial(p, { intent, locale, invite, returnPath, country }).catch(() => setBusy(false)); }} />
+        <SocialButton key={p} provider={p} locale={locale} disabled={busy} onClick={() => { setBusy(true); startSocial(p, { intent, locale, invite, returnPath, country, promo }).catch(() => setBusy(false)); }} />
       ))}
       {divider && (
         <div className="flex items-center gap-3 text-xs uppercase text-neutral-500" role="separator">

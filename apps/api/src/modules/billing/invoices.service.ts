@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma, type BillingEntity, type Currency } from '@prisma/client';
+import { Prisma, type BillingEntity, type CreditKind, type Currency } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EventsService } from '../events/events.service';
 import { startOfMonth } from './pricing';
@@ -90,7 +90,8 @@ export class InvoicesService {
         if (subtotal <= 0) return null;
 
         const tax = Math.round(subtotal * entity.taxRate);
-        const credit = await this.consumeCredits(tx, team.id, billing.currency, subtotal + tax, now);
+        const uses = await this.consumeCredits(tx, team.id, billing.currency, subtotal + tax, now);
+        const credit = uses.reduce((s, u) => s + u.amountMinor, 0);
         const total = subtotal + tax - credit;
         // The sequence name comes from the fixed entity profile, never from input.
         const [{ seq }] = await tx.$queryRawUnsafe<{ seq: bigint }[]>(`SELECT nextval('${entity.invoiceSequence}') AS seq`);
@@ -117,6 +118,8 @@ export class InvoicesService {
         // Only records nobody else has claimed; a mismatch means a concurrent run, so roll back.
         const linked = await tx.usageRecord.updateMany({ where: { id: { in: records.map((r) => r.id) }, invoiceId: null }, data: { invoiceId: invoice.id } });
         if (linked.count !== records.length) throw new Error(`usage records changed while invoicing (${linked.count} of ${records.length} linked)`);
+        // Which credit paid what: affiliate commission counts prepaid credit but not promo, goodwill or refund credit.
+        if (uses.length) await tx.creditApplication.createMany({ data: uses.map((u) => ({ ...u, invoiceId: invoice.id, currency: billing.currency })) });
         // Managed cloud: the worklogs counted for the managed lines on this invoice point at it.
         await linkManagedWorkLogs(tx, invoice.id);
         return invoice;
@@ -128,7 +131,7 @@ export class InvoicesService {
     }
   }
 
-  /** Applies promo/prepaid credits oldest-expiry first inside the invoice transaction; returns the amount consumed. */
+  /** Applies promo/prepaid credits oldest-expiry first inside the invoice transaction; returns what each credit gave. */
   private async consumeCredits(tx: Prisma.TransactionClient, teamId: string, currency: Currency, amountMinor: number, now: Date) {
     // Credit in another currency (from before a billing entity change) is not spent here.
     const credits = await tx.credit.findMany({
@@ -136,6 +139,7 @@ export class InvoicesService {
       orderBy: [{ expiresAt: 'asc' }, { createdAt: 'asc' }],
     });
     let left = amountMinor;
+    const uses: { creditId: string; kind: CreditKind; amountMinor: number }[] = [];
     for (const c of credits) {
       if (left <= 0) break;
       const use = Math.min(c.remainingMinor, left);
@@ -143,8 +147,9 @@ export class InvoicesService {
       const r = await tx.credit.updateMany({ where: { id: c.id, remainingMinor: { gte: use } }, data: { remainingMinor: { decrement: use } } });
       if (r.count !== 1) throw new Error(`credit ${c.id} changed while invoicing`);
       left -= use;
+      uses.push({ creditId: c.id, kind: c.kind, amountMinor: use });
     }
-    return amountMinor - left;
+    return uses;
   }
 
   list(teamId: string) {

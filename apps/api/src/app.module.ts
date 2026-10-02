@@ -37,6 +37,7 @@ import { OpsSettingsModule } from './modules/ops/settings/ops-settings.service';
 import { OpsModule } from './modules/ops/ops.module';
 import { OAuthModule } from './modules/oauth/oauth.module';
 import { ConnectModule } from './modules/connect/connect.module';
+import { AffiliatesModule } from './modules/affiliates/affiliates.module';
 import { JobsModule } from './jobs/jobs.module';
 import { HealthController } from './health.controller';
 import { GeoController } from './common/geo/geo.controller';
@@ -50,7 +51,7 @@ import { GeoController } from './common/geo/geo.controller';
     IamModule,
     ApprovalsModule, EventsModule, ComputeModule, SchedulerModule, NetworkModule, StorageModule, MarketplaceModule, BillingModule, TrustModule, AdminModule, DeployModule, GithubModule, MonitoringModule, LbModule, DnsModule, ObjectsModule, DatabasesModule,
     SupportModule, KubernetesModule, AppPlatformModule, TeamModule, OpsSettingsModule, ManagedModule, OpsModule,
-    OAuthModule, ConnectModule,
+    OAuthModule, ConnectModule, AffiliatesModule,
     // background
     JobsModule,
   ],

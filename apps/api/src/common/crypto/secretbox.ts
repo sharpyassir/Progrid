@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto';
 import { loadConfig } from '../../config/config';
 
 /**
@@ -30,3 +30,8 @@ export function open(stored: string): string {
 }
 
 export const isSealed = (v: string) => v.startsWith(PREFIX);
+
+/** A keyed hash for values we compare but should not keep in clear (visitor addresses). */
+export function keyedHash(value: string, purpose: string): string {
+  return createHmac('sha256', key()).update(`${purpose}:${value}`).digest('base64url').slice(0, 32);
+}

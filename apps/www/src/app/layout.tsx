@@ -3,6 +3,7 @@ import './globals.css';
 import { SiteProvider } from '@/components/site-context';
 import { getSite } from '@/lib/site';
 import { getCopy } from '@/lib/copy';
+import { RefBeacon } from '@/components/ref-beacon';
 
 /** Every page depends on the Host (progrid.co or progrid.sa), so nothing is prerendered at build time. */
 export const dynamic = 'force-dynamic';
@@ -32,7 +33,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
       </head>
       <body>
-        <SiteProvider value={site}>{children}</SiteProvider>
+        <SiteProvider value={site}>
+          <RefBeacon />
+          {children}
+        </SiteProvider>
       </body>
     </html>
   );

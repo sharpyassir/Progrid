@@ -6,7 +6,8 @@ import { FormEvent, useEffect, useState } from 'react';
 import { api, ApiError, setToken } from '@/lib/api';
 import { useUrls } from '@/lib/urls';
 import { countryOptions, ENTITY_NAME, entityForCountry } from '@/lib/countries';
-import { t } from '@/lib/i18n';
+import { t, tf } from '@/lib/i18n';
+import { captureRef, currentRef, normalizeCode, promoFromUrl, type PromoInfo } from '@/lib/referral';
 import { useShell } from '@/components/shell';
 import { SocialButtons } from '@/components/social-buttons';
 
@@ -20,6 +21,25 @@ export default function LoginPage() {
   const { www: WWW_URL, domain } = useUrls();
   // Billing country, prefilled from GET /v1/geo (the .sa domain suggests Saudi Arabia, .co the country of your address).
   const [country, setCountry] = useState('');
+  // Partner referral (docs/affiliates.md): a ?ref= link straight to the console is remembered like
+  // one to the website, and a referral or promo link opens the signup form.
+  const [promo, setPromo] = useState('');
+  const [promoInfo, setPromoInfo] = useState<PromoInfo | 'checking' | null>(null);
+  useEffect(() => {
+    captureRef(domain);
+    const q = new URLSearchParams(window.location.search);
+    const fromUrl = promoFromUrl();
+    if (fromUrl) { setPromo(fromUrl); checkPromo(fromUrl); }
+    if (q.get('mode') === 'signup' || q.get('ref') || fromUrl) setMode('signup');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [domain]);
+  function checkPromo(raw: string) {
+    const code = normalizeCode(raw);
+    if (!raw.trim()) return setPromoInfo(null);
+    if (!code) return setPromoInfo({ code: null, valid: false });
+    setPromoInfo('checking');
+    api<PromoInfo>(`/v1/affiliates/codes/${code}`).then(setPromoInfo).catch(() => setPromoInfo(null));
+  }
   useEffect(() => {
     if (mode !== 'signup' || country) return;
     api<{ country: string }>('/v1/geo').then((g) => setCountry((c) => c || g.country)).catch(() => setCountry((c) => c || (domain?.endsWith('.sa') ? 'SA' : 'US')));
@@ -34,7 +54,7 @@ export default function LoginPage() {
       const body =
         mode === 'login'
           ? { email: f.get('email'), password: f.get('password'), ...(f.get('totp') ? { totp: f.get('totp') } : {}) }
-          : { email: f.get('email'), password: f.get('password'), name: f.get('name'), teamName: f.get('teamName'), country: f.get('country') || undefined, locale };
+          : { email: f.get('email'), password: f.get('password'), name: f.get('name'), teamName: f.get('teamName'), country: f.get('country') || undefined, locale, ref: currentRef(), promoCode: normalizeCode(promo) ?? undefined };
       const res = await api<{ session: string }>(`/v1/auth/${mode}`, { method: 'POST', body: JSON.stringify(body) });
       setToken(res.session);
       router.replace(mode === 'signup' ? '/security?welcome=1' : '/servers');
@@ -50,7 +70,7 @@ export default function LoginPage() {
     <div className="mx-auto mt-16 max-w-sm">
       <h1 className="mb-6 text-2xl font-semibold">{t(locale, mode === 'login' ? 'login' : 'signup')}</h1>
       <form onSubmit={submit} className="card space-y-3">
-        <SocialButtons locale={locale} intent={mode} country={mode === 'signup' ? country || undefined : undefined} />
+        <SocialButtons locale={locale} intent={mode} country={mode === 'signup' ? country || undefined : undefined} promo={mode === 'signup' && promoInfo !== 'checking' && promoInfo?.valid ? promoInfo.code ?? undefined : undefined} />
         {mode === 'signup' && (
           <>
             <input className="input" name="name" placeholder={t(locale, 'name')} required />
@@ -62,6 +82,15 @@ export default function LoginPage() {
                 {countryOptions(locale).map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
               </select>
               <span className="block text-xs text-neutral-500">{t(locale, 'billingCountryHint')}{country && <> <strong>{t(locale, 'billedBy')}: {ENTITY_NAME[entityForCountry(country)]}</strong></>}</span>
+            </label>
+            <label className="block space-y-1 text-sm">
+              <span>{t(locale, 'promoCode')}</span>
+              <input className="input uppercase" name="promoCode" value={promo} maxLength={20} autoComplete="off" dir="ltr"
+                onChange={(e) => { setPromo(e.target.value); setPromoInfo(null); }} onBlur={(e) => checkPromo(e.target.value)} />
+              {promoInfo === 'checking' && <span className="block text-xs text-neutral-500">{t(locale, 'promoChecking')}</span>}
+              {promoInfo && promoInfo !== 'checking' && (promoInfo.valid
+                ? <span className="block text-xs text-green-700 dark:text-green-400">{tf(locale, 'promoGives')(promoInfo.discountPercent ?? 0, promoInfo.discountMonths ?? 0)}</span>
+                : <span className="block text-xs text-red-600">{t(locale, 'promoInvalid')}</span>)}
             </label>
           </>
         )}

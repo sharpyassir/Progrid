@@ -11,6 +11,7 @@ import type { Actor } from '../../common/auth/actor';
 import { passwordNotSet } from '../oauth/password-not-set';
 import { currencyForEntity, entityForCountry } from '../../common/entities/entities';
 import { defaultSignupCountry } from '../../common/geo/signup-country';
+import { AttributionService } from '../affiliates/attribution.service';
 
 @Injectable()
 export class IamService {
@@ -21,10 +22,11 @@ export class IamService {
     private readonly tokens: TokenService,
     private readonly events: EventsService,
     private readonly security: AccountSecurityService,
+    private readonly attribution: AttributionService,
   ) {}
 
   async signup(dto: SignupDto, meta: { ip?: string; userAgent?: string } = {}) {
-    const { user, team } = await this.createAccount(dto);
+    const { user, team } = await this.createAccount({ ...dto, ip: meta.ip });
     return { user: publicUser(user), team, session: await this.tokens.issueSession(user.id, team.id, meta) };
   }
 
@@ -32,9 +34,11 @@ export class IamService {
    * A new user with a new team, the way signup makes them. Social sign up passes no password
    * and `emailVerified` when the provider vouches for the address, so no confirmation mail goes out.
    */
-  async createAccount(dto: Omit<SignupDto, 'password'> & { password?: string; emailVerified?: boolean }) {
+  async createAccount(dto: Omit<SignupDto, 'password'> & { password?: string; emailVerified?: boolean; ip?: string }) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } });
     if (existing) throw ApiError.conflict('email_taken', 'An account with this email already exists');
+    // A mistyped promo code is reported before anything is created; a stale referral cookie is just ignored.
+    await this.attribution.assertPromo(dto.promoCode);
 
     const country = dto.country ?? defaultSignupCountry();
     // The company follows the billing country, never the IP address (docs/domains-and-entities.md).
@@ -46,6 +50,7 @@ export class IamService {
         passwordHash: dto.password ? await argon2.hash(dto.password) : null,
         emailVerified: dto.emailVerified ? new Date() : undefined,
         name: dto.name,
+        signupIp: dto.ip ?? null,
         locale: dto.locale ?? (country === 'SA' ? 'ar' : country === 'TR' ? 'tr' : 'en'),
         memberships: {
           create: {
@@ -68,6 +73,7 @@ export class IamService {
     });
     const team = user.memberships[0].team;
     await this.events.emit('team.created', { teamId: team.id, userId: user.id }, { teamId: team.id });
+    await this.attribution.attributeSignup({ teamId: team.id, userId: user.id, email: user.email, ip: dto.ip, ref: dto.ref, promoCode: dto.promoCode });
     this.security.sendVerification(user.id).catch((e) => this.log.warn(`verification mail failed: ${e.message}`));
     return { user, team };
   }

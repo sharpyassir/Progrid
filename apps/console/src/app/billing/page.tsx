@@ -3,7 +3,8 @@
 import { FormEvent, Suspense, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api, ApiError, API_URL, Balance, getToken, money } from '@/lib/api';
-import { t } from '@/lib/i18n';
+import { t, tf, type Locale } from '@/lib/i18n';
+import { normalizeCode } from '@/lib/referral';
 import { useShell } from '@/components/shell';
 import { StatusBadge } from '@/components/status-badge';
 
@@ -77,6 +78,8 @@ function BillingPage() {
         </section>
       )}
 
+      <PromoCard locale={locale} canAdd={!invoices.some((i) => i.status === 'paid' && i.totalMinor > 0)} />
+
       <section className="card space-y-3">
         <h2 className="font-medium">Add credit</h2>
         <p className="text-sm text-neutral-500">{t(locale, 'addCreditLead')}</p>
@@ -143,6 +146,45 @@ function BillingPage() {
         </section>
       )}
     </div>
+  );
+}
+
+interface Referral { code: string; source: string; discountPercent: number; discountUntil: string | null }
+
+/** The partner promo code on this account, or a form to add one before the first paid invoice (docs/affiliates.md). */
+function PromoCard({ locale, canAdd }: { locale: Locale; canAdd: boolean }) {
+  const [referral, setReferral] = useState<Referral | null | undefined>(undefined);
+  const [code, setCode] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api<{ referral: Referral | null }>('/v1/billing/referral').then((r) => setReferral(r.referral)).catch(() => setReferral(null)); }, []);
+
+  async function apply(e: FormEvent) {
+    e.preventDefault();
+    const c = normalizeCode(code);
+    if (!c) return setError(t(locale, 'promoInvalid'));
+    setBusy(true); setError(null);
+    try { setReferral((await api<{ referral: Referral }>('/v1/billing/promo-code', { method: 'POST', body: JSON.stringify({ code: c }) })).referral); }
+    catch (err) { setError(err instanceof ApiError ? err.message : String(err)); }
+    finally { setBusy(false); }
+  }
+
+  if (referral === undefined) return null;
+  if (referral && (referral.source === 'promo_code' || !canAdd)) {
+    const until = referral.discountUntil ? new Date(referral.discountUntil).toLocaleDateString(locale) : '';
+    return <section className="card text-sm"><h2 className="font-medium">{t(locale, 'promoTitle')}</h2><p className="mt-1 text-neutral-600 dark:text-neutral-400">{tf(locale, 'promoActive')(referral.code, referral.discountUntil ? referral.discountPercent : 0, until)}</p></section>;
+  }
+  if (!canAdd) return null;
+  return (
+    <section className="card space-y-3">
+      <h2 className="font-medium">{t(locale, 'promoTitle')}</h2>
+      <p className="text-sm text-neutral-500">{t(locale, 'promoNote')}</p>
+      <form onSubmit={apply} className="flex flex-wrap items-center gap-2">
+        <input className="input max-w-[14rem] uppercase" dir="ltr" maxLength={20} value={code} onChange={(e) => setCode(e.target.value)} placeholder={t(locale, 'promoTitle')} />
+        <button className="btn-primary" disabled={busy || !code.trim()}>{t(locale, 'promoApply')}</button>
+      </form>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+    </section>
   );
 }
 

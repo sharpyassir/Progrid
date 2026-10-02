@@ -1,9 +1,11 @@
 import { timingSafeEqual } from 'node:crypto';
 import { ApiError } from '../../../common/errors/api-error';
+import { keyedHash } from '../../../common/crypto/secretbox';
 import { loadConfig } from '../../../config/config';
 import type { CheckoutInput, CheckoutResult, PaymentEvent, PaymentProvider, RefundResult } from './provider';
 
-interface MoyasarInvoice { id: string; status: string; amount: number; currency: string; url: string; payments?: { id: string; status: string; amount?: number; currency?: string }[] }
+interface MoyasarInvoice { id: string; status: string; amount: number; currency: string; url: string; payments?: MoyasarInvoicePayment[] }
+interface MoyasarInvoicePayment { id: string; status: string; amount?: number; currency?: string; source?: { type?: string; company?: string; name?: string; number?: string } }
 interface MoyasarPayment { id: string; status: string; amount: number; currency: string; invoice_id?: string | null; metadata?: Record<string, string> }
 
 /**
@@ -54,7 +56,7 @@ export class MoyasarProvider implements PaymentProvider {
       const paid = (inv.payments ?? []).filter((p) => p.status === 'paid' && typeof p.amount === 'number');
       const amountMinor = paid.length ? paid.reduce((s, p) => s + (p.amount ?? 0), 0) : inv.amount;
       const currency = (paid.find((p) => p.currency && p.currency.toUpperCase() !== inv.currency.toUpperCase())?.currency ?? inv.currency).toUpperCase();
-      return [{ providerRef: inv.id, status: 'succeeded', amountMinor, currency: currency as PaymentEvent['currency'] }];
+      return [{ providerRef: inv.id, status: 'succeeded', amountMinor, currency: currency as PaymentEvent['currency'], cardFingerprint: moyasarFingerprint(paid[0]) }];
     }
     if (['failed', 'canceled', 'expired', 'voided'].includes(inv.status)) return [{ providerRef: inv.id, status: 'failed', reason: inv.status }];
     return [];
@@ -89,4 +91,15 @@ export class MoyasarProvider implements PaymentProvider {
     if (!res.ok) throw new ApiError(502, 'payment_provider_error', `Moyasar: ${out.message ?? res.status}`);
     return out;
   }
+}
+
+/**
+ * Moyasar has no card fingerprint, so one is derived from the masked number (first six and last
+ * four digits), the brand and the holder name. Enough to tell the same card again; never stored in clear.
+ */
+export function moyasarFingerprint(p: MoyasarInvoicePayment | undefined): string | undefined {
+  const s = p?.source;
+  if (!s?.number || !/\d{4}$/.test(s.number)) return undefined;
+  const digits = s.number.replace(/[^0-9]/g, '');
+  return `moyasar:${keyedHash(`${(s.company ?? '').toLowerCase()}|${digits}|${(s.name ?? '').trim().toLowerCase()}`, 'card')}`;
 }

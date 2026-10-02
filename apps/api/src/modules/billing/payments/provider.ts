@@ -19,7 +19,15 @@ export interface CheckoutResult { providerRef: string; redirectUrl: string }
 
 export interface RefundResult { refundRef: string }
 
-export interface PaymentEvent { providerRef: string; status: 'succeeded' | 'failed'; amountMinor?: number; currency?: Currency; reason?: string }
+export interface PaymentEvent {
+  providerRef: string;
+  status: 'succeeded' | 'failed';
+  amountMinor?: number;
+  currency?: Currency;
+  reason?: string;
+  /** Identifies the card across payments (affiliate self referral check), when the provider tells. */
+  cardFingerprint?: string;
+}
 
 /** One card payment provider. Adapters do HTTP only; the service owns the database. */
 export interface PaymentProvider {

@@ -4,6 +4,8 @@ import { loadConfig } from '../../../config/config';
 import type { CheckoutInput, CheckoutResult, PaymentEvent, PaymentProvider, RefundResult } from './provider';
 
 interface StripeSession { id: string; url?: string | null; status?: string; payment_status?: string; amount_total?: number | null; currency?: string | null; payment_intent?: string | null }
+/** The session with `expand[]=payment_intent.payment_method`. */
+interface StripeSessionExpanded extends Omit<StripeSession, 'payment_intent'> { payment_intent?: { id: string; payment_method?: { card?: { fingerprint?: string } } | string | null } | string | null }
 interface StripeEvent { type?: string; data?: { object?: { id?: string; object?: string } } }
 
 /** Seconds a signed webhook stays valid, as in Stripe's own libraries. */
@@ -52,9 +54,11 @@ export class StripeProvider implements PaymentProvider {
       sessionId = query.session_id;
     }
     if (!sessionId || !/^cs_[A-Za-z0-9_]+$/.test(sessionId)) throw ApiError.invalid('No Stripe checkout session in the request');
-    const s = await this.call<StripeSession>('GET', `/v1/checkout/sessions/${sessionId}`);
+    const s = await this.call<StripeSessionExpanded>('GET', `/v1/checkout/sessions/${sessionId}?expand[]=payment_intent.payment_method`);
     if (s.payment_status === 'paid' || s.payment_status === 'no_payment_required') {
-      return [{ providerRef: s.id, status: 'succeeded', amountMinor: s.amount_total ?? undefined, currency: (s.currency ?? '').toUpperCase() as PaymentEvent['currency'] }];
+      const pm = typeof s.payment_intent === 'object' ? s.payment_intent?.payment_method : undefined;
+      const fingerprint = typeof pm === 'object' ? pm?.card?.fingerprint : undefined;
+      return [{ providerRef: s.id, status: 'succeeded', amountMinor: s.amount_total ?? undefined, currency: (s.currency ?? '').toUpperCase() as PaymentEvent['currency'], cardFingerprint: fingerprint ? `stripe:${fingerprint}` : undefined }];
     }
     if (s.status === 'expired') return [{ providerRef: s.id, status: 'failed', reason: 'expired' }];
     return [];
