@@ -1,4 +1,13 @@
-# TLS from Let's Encrypt, automatic renewal. DOMAIN and ACME_EMAIL come from prgd.env.
+# TLS from Let's Encrypt, automatic renewal. DOMAIN, DOMAIN_SA and ACME_EMAIL come from prgd.env.
+#
+# Two domains, one platform (docs/domains-and-entities.md): DOMAIN (progrid.co) is the primary,
+# global one and DOMAIN_SA (progrid.sa) serves the same apps for customers in Saudi Arabia. Every
+# site below exists once per domain, so both get certificates and both work fully. The apps read
+# the Host header to pick their addresses (console.X talks to api.X).
+#
+# The apps trust X-Real-IP and X-Forwarded-For because only Caddy reaches them (the internal
+# network has no published ports). Caddy sets both to the address it saw and drops what the client
+# sent, since no proxy in front of it is listed in trusted_proxies.
 {
     email {$ACME_EMAIL}
 }
@@ -14,67 +23,80 @@
     }
 }
 
-{$DOMAIN} {
-    import common
-    reverse_proxy www:3001
-}
-
-www.{$DOMAIN} {
-    redir https://{$DOMAIN}{uri} permanent
-}
-
-console.{$DOMAIN} {
-    import common
-    reverse_proxy console:3000
-}
-
-# DevOps console for on call engineers. The app sets its own Content Security Policy with a nonce
-# per request; these are the same static headers it sends, repeated here so they hold even for
-# responses the app does not produce (errors from the proxy).
-ops.{$DOMAIN} {
-    encode zstd gzip
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-        X-Content-Type-Options nosniff
-        X-Frame-Options DENY
-        Referrer-Policy no-referrer
-        Cross-Origin-Opener-Policy same-origin
-        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), clipboard-read=(), publickey-credentials-get=(self), publickey-credentials-create=(self)"
-        X-Robots-Tag "noindex, nofollow"
-        -Server
-        -X-Powered-By
-    }
-    reverse_proxy ops:3002
-}
-
-api.{$DOMAIN} {
-    import common
-    # Long polling and webhook bodies are small; keep uploads bounded.
-    request_body {
-        max_size 2MB
-    }
-    reverse_proxy api:4000 {
-        header_up X-Forwarded-For {remote_host}
-    }
-}
-
-# Terminal gateway: WebSockets from the ops console only (the gateway checks Origin). Nothing
-# but /v1/terminal is published; no compression on upgraded connections.
-gateway.{$DOMAIN} {
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-        X-Content-Type-Options nosniff
-        -Server
-    }
-    @terminal path /v1/terminal
-    handle @terminal {
-        reverse_proxy gateway:4100 {
+# Every public site of one domain; imported once per domain at the bottom.
+(sites) {
+    # Website. Visitors from Saudi Arabia on the global domain are sent to the Saudi one by the
+    # app itself (apps/www/src/middleware.ts), from the client address passed here.
+    {args[0]} {
+        import common
+        reverse_proxy www:3001 {
+            header_up X-Real-IP {remote_host}
             header_up X-Forwarded-For {remote_host}
-            # Keep terminals open across Caddy config reloads.
-            stream_close_delay 4h
         }
     }
-    handle {
-        respond 404
+
+    # www goes to the apex of the same domain, never across domains.
+    www.{args[0]} {
+        redir https://{args[0]}{uri} permanent
+    }
+
+    console.{args[0]} {
+        import common
+        reverse_proxy console:3000
+    }
+
+    # DevOps console for on call engineers. The app sets its own Content Security Policy with a
+    # nonce per request; these are the same static headers it sends, repeated here so they hold
+    # even for responses the app does not produce (errors from the proxy).
+    ops.{args[0]} {
+        encode zstd gzip
+        header {
+            Strict-Transport-Security "max-age=31536000; includeSubDomains"
+            X-Content-Type-Options nosniff
+            X-Frame-Options DENY
+            Referrer-Policy no-referrer
+            Cross-Origin-Opener-Policy same-origin
+            Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), clipboard-read=(), publickey-credentials-get=(self), publickey-credentials-create=(self)"
+            X-Robots-Tag "noindex, nofollow"
+            -Server
+            -X-Powered-By
+        }
+        reverse_proxy ops:3002
+    }
+
+    api.{args[0]} {
+        import common
+        # Long polling and webhook bodies are small; keep uploads bounded.
+        request_body {
+            max_size 2MB
+        }
+        reverse_proxy api:4000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+        }
+    }
+
+    # Terminal gateway: WebSockets from the ops consoles only (the gateway checks Origin against
+    # both ops hosts). Nothing but /v1/terminal is published; no compression on upgraded connections.
+    gateway.{args[0]} {
+        header {
+            Strict-Transport-Security "max-age=31536000; includeSubDomains"
+            X-Content-Type-Options nosniff
+            -Server
+        }
+        @terminal path /v1/terminal
+        handle @terminal {
+            reverse_proxy gateway:4100 {
+                header_up X-Forwarded-For {remote_host}
+                # Keep terminals open across Caddy config reloads.
+                stream_close_delay 4h
+            }
+        }
+        handle {
+            respond 404
+        }
     }
 }
+
+import sites {$DOMAIN}
+import sites {$DOMAIN_SA}

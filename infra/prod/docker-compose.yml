@@ -1,6 +1,7 @@
 # Production control plane. One management host (phase 0) or one VM per role (phase 1) runs this.
 # Secrets and settings come from /etc/prgd/prgd.env, rendered by Ansible. Nothing here is
-# customer facing except through Caddy, which terminates TLS for the public hostnames.
+# customer facing except through Caddy, which terminates TLS for the public hostnames of both
+# domains: DOMAIN (progrid.co, primary) and DOMAIN_SA (progrid.sa). See docs/domains-and-entities.md.
 #
 #   docker compose --env-file /etc/prgd/prgd.env -f docker-compose.yml up -d
 name: prgd
@@ -30,6 +31,7 @@ services:
     ports: ["80:80", "443:443", "443:443/udp"]
     environment:
       DOMAIN: ${DOMAIN}
+      DOMAIN_SA: ${DOMAIN_SA:?set DOMAIN_SA (progrid.sa) in prgd.env}
       ACME_EMAIL: ${ACME_EMAIL}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
@@ -76,7 +78,7 @@ services:
     restart: "no"
     profiles: [ops]
 
-  # One shot: promote a signed up account to full staff.  run --rm staff you@progrid.sa
+  # One shot: promote a signed up account to full staff.  run --rm staff you@progrid.co
   staff:
     <<: *api
     entrypoint: ["node_modules/.bin/ts-node", "--transpile-only", "prisma/make-staff.ts"]
@@ -84,20 +86,26 @@ services:
     restart: "no"
     profiles: [ops]
 
+  # The console derives api.X from the console.X host it is served on; no settings needed.
   console:
     image: ${REGISTRY:-ghcr.io/sharpyassir}/prgd-console:${IMAGE_TAG:-latest}
     restart: unless-stopped
     networks: [internal]
     logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
 
+  # The website. The Host picks the storefront (DOMAIN: global, DOMAIN_SA: Saudi Arabia); visitors
+  # from Saudi Arabia on DOMAIN are redirected to DOMAIN_SA using the DB-IP database in the image.
   www:
     image: ${REGISTRY:-ghcr.io/sharpyassir}/prgd-www:${IMAGE_TAG:-latest}
     restart: unless-stopped
+    environment:
+      PRGD_DOMAIN: ${DOMAIN}
+      PRGD_DOMAIN_SA: ${DOMAIN_SA}
     networks: [internal]
     logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
 
   # Terminal gateway of the DevOps console (services/prgd-gateway). Caddy publishes only its
-  # WebSocket endpoint at gateway.$DOMAIN; it calls the API's /internal/gateway on this network.
+  # WebSocket endpoint at gateway.$DOMAIN and gateway.$DOMAIN_SA; it calls the API's /internal/gateway on this network.
   # It also opens SSH to asset management addresses over WireGuard: the host must route the
   # management network (docs/devops-console.md, "Running the gateway").
   gateway:
@@ -109,7 +117,7 @@ services:
       PRGD_API_URL: http://api:4000
       PRGD_GATEWAY_SECRET: ${PRGD_GATEWAY_SECRET}
       PRGD_GATEWAY_ID: ${PRGD_GATEWAY_ID:-gw-1}
-      PRGD_GATEWAY_ALLOWED_ORIGINS: ${PRGD_GATEWAY_ALLOWED_ORIGINS:-https://ops.progrid.sa}
+      PRGD_GATEWAY_ALLOWED_ORIGINS: ${PRGD_GATEWAY_ALLOWED_ORIGINS:-https://ops.progrid.co,https://ops.progrid.sa}
       PRGD_GATEWAY_KNOWN_HOSTS: ${PRGD_GATEWAY_KNOWN_HOSTS:-}
       PRGD_GATEWAY_MAX_SESSIONS: ${PRGD_GATEWAY_MAX_SESSIONS:-50}
       NATS_URL: nats://nats:4222
@@ -132,7 +140,8 @@ services:
     networks: [internal]
     logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
 
-  # The DevOps console for on call engineers (apps/ops), published by Caddy at ops.$DOMAIN.
+  # The DevOps console for on call engineers (apps/ops), published by Caddy at ops.$DOMAIN (primary)
+  # and ops.$DOMAIN_SA.
   # It holds no secrets: everything goes through the API with the engineer's own session.
   ops:
     image: ${REGISTRY:-ghcr.io/sharpyassir}/prgd-ops:${IMAGE_TAG:-latest}

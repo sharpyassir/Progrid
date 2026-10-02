@@ -7,9 +7,12 @@ name: deploy
 # Secrets (repository settings):
 #   DEPLOY_HOST   management host address        DEPLOY_USER  ssh user (the Ansible user)
 #   DEPLOY_SSH_KEY  private key for that user
-# The public addresses baked into the website, the console and the ops console default to progrid.sa.
-# Override them with repository variables PUBLIC_API_URL, PUBLIC_CONSOLE_URL, PUBLIC_WWW_URL,
-# PUBLIC_OPS_URL and PUBLIC_GATEWAY_URL (the terminal gateway, wss://) for another domain.
+# The website, the console and the ops console derive their addresses at runtime from the host
+# they are served on (console.X talks to api.X), so one build serves progrid.co and progrid.sa.
+# The build time addresses below are only the fallback for other hosts and default to progrid.co,
+# the primary domain. Override them with repository variables PUBLIC_API_URL, PUBLIC_CONSOLE_URL,
+# PUBLIC_WWW_URL, PUBLIC_OPS_URL and PUBLIC_GATEWAY_URL (wss://). GEOIP_MONTH makes the www and api
+# images fetch the current DB-IP country database once a month (docs/domains-and-entities.md).
 # Set the `production` environment to require a reviewer if you want a manual gate.
 # Images are only built after the ci workflow succeeded for the same commit, so a failing
 # commit never reaches the host.
@@ -49,6 +52,8 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - id: month
+        run: echo "geoip=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
       - id: meta
         uses: docker/metadata-action@v5
         with:
@@ -66,11 +71,12 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            NEXT_PUBLIC_API_URL=${{ vars.PUBLIC_API_URL || 'https://api.progrid.sa' }}
-            NEXT_PUBLIC_CONSOLE_URL=${{ vars.PUBLIC_CONSOLE_URL || 'https://console.progrid.sa' }}
-            NEXT_PUBLIC_WWW_URL=${{ vars.PUBLIC_WWW_URL || 'https://progrid.sa' }}
-            NEXT_PUBLIC_OPS_URL=${{ vars.PUBLIC_OPS_URL || 'https://ops.progrid.sa' }}
-            NEXT_PUBLIC_GATEWAY_URL=${{ vars.PUBLIC_GATEWAY_URL || 'wss://gateway.progrid.sa' }}
+            NEXT_PUBLIC_API_URL=${{ vars.PUBLIC_API_URL || 'https://api.progrid.co' }}
+            NEXT_PUBLIC_CONSOLE_URL=${{ vars.PUBLIC_CONSOLE_URL || 'https://console.progrid.co' }}
+            NEXT_PUBLIC_WWW_URL=${{ vars.PUBLIC_WWW_URL || 'https://progrid.co' }}
+            NEXT_PUBLIC_OPS_URL=${{ vars.PUBLIC_OPS_URL || 'https://ops.progrid.co' }}
+            NEXT_PUBLIC_GATEWAY_URL=${{ vars.PUBLIC_GATEWAY_URL || 'wss://gateway.progrid.co' }}
+            GEOIP_MONTH=${{ steps.month.outputs.geoip }}
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}
 

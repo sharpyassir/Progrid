@@ -1,7 +1,11 @@
 # Copy to group_vars/all/vars.yml. Secrets go in group_vars/all/vault.yml (ansible-vault) with the vault_ prefix.
 # Both files must sit in the group_vars/all directory so Ansible applies them to every host.
-domain: progrid.sa
-acme_email: support@progrid.sa
+# Two domains on one platform (docs/domains-and-entities.md). domain is the primary, global one;
+# domain_sa serves the same console, API, ops console and gateway for customers in Saudi Arabia.
+# Caddy gets certificates for both, so create the DNS records of both before the first run.
+domain: progrid.co
+domain_sa: progrid.sa
+acme_email: hostmaster@progrid.co
 registry: ghcr.io/sharpyassir
 image_tag: latest
 hypervisor_driver: proxmox          # fake for a demo box without Proxmox
@@ -20,22 +24,32 @@ proxmox_vxlan_zone: tenants         # SDN zone for sdn_vnet mode; Proxmox zone i
 wireguard_cidr: 10.9.0.0/24         # inside control_plane_cidr, clear of the tenant pool and the DO VPC
 wireguard_port: 51820
 mail_provider: resend
-mail_from: "Progrid <no-reply@progrid.sa>"
-support_inbox: support@progrid.sa
+mail_from: "Progrid <no-reply@progrid.co>"   # staff and system mail; customers get their billing company's sender
+support_inbox: support@progrid.co            # staff inbox; support@progrid.sa is accepted too
 require_totp_for_owners: true
 fx_usd_sar: 3.75
 backup_keep_days: 14
 backup_s3_url: ""
 ssh_allow_from: []                  # CIDRs allowed to reach 22; empty means anywhere
 control_plane_cidr: 10.0.0.0/12     # management network that may reach platform agents; must not overlap the tenant pool (10.96.0.0/12)
-company_name: Progrid Arabia
-company_address: "Riyadh, Kingdom of Saudi Arabia"
-company_tax_id: ""                  # VAT registration number, printed on invoices
-payment_provider: moyasar           # fake only on a demo box; it hands out free credit
+company_name: Progrid                # brand on PDFs and mails
+# Billing companies. Leave a value empty until the owner provides it: invoices print a placeholder.
+entity_llc_legal_name: Progrid Technologies LLC
+entity_llc_address: ""              # registered address in the United States
+entity_llc_ein: ""                  # EIN from the IRS
+entity_llc_tax_rate: 0              # 0 prints no tax line; set only on advice
+entity_llc_bank_details: ""         # bank transfer instructions, lines separated by |
+entity_arabia_legal_name: Progrid Arabia
+entity_arabia_address: "Riyadh, Kingdom of Saudi Arabia"
+entity_arabia_cr: ""                # commercial registration number
+entity_arabia_vat_number: ""        # 15 digit VAT registration number
+entity_arabia_bank_details: ""
+payment_provider: moyasar           # Progrid Arabia (SAR); fake only on a demo box, it hands out free credit
+payment_provider_llc: stripe        # Progrid Technologies LLC (USD); fake only on a demo box
 dns_provider: powerdns              # fake only on a demo box
 dns_nameservers: ns1.progrid.sa,ns2.progrid.sa
 object_storage_provider: rgw        # fake only on a demo box
-s3_endpoint: https://s3.sa1.progrid.sa
+s3_endpoint: https://s3.sa1.progrid.sa   # platform endpoint; unchanged by the second domain
 # Managed cloud
 paging_mode: live                   # log records pages without sending them
 twilio_account_sid: ""
@@ -48,15 +62,17 @@ maintenance_playbook_dir: /opt/prgd/maintenance
 maintenance_ssh_user: prgd
 maintenance_ssh_key_file: ""
 # DevOps console (docs/devops-console.md)
-prgd_ops_url: https://ops.progrid.sa
-prgd_ops_rp_id: ops.progrid.sa
+prgd_ops_url: https://ops.progrid.co     # primary ops console; staff register passkeys here
+prgd_ops_rp_id: ops.progrid.co
+prgd_ops_url_sa: https://ops.progrid.sa  # same app on the Saudi domain; passkeys from .co do not work here
+prgd_ops_rp_id_sa: ops.progrid.sa
 prgd_grafana_url: https://grafana.progrid.sa
 prgd_ssh_ca: step-ca                # local keeps the CA key in the database: development only
 prgd_stepca_url: https://ca.internal.progrid.sa:9000
 prgd_stepca_provisioner: prgd-gateway
 prgd_stepca_root_fingerprint: ""
 prgd_ssh_login_user: prgd
-prgd_gateway_public_url: wss://gateway.progrid.sa
+prgd_gateway_public_url: wss://gateway.progrid.co   # sessions opened from ops.progrid.sa use gateway.progrid.sa
 prgd_gateway_source_addresses: ""   # the gateway's management network address: the management host's WireGuard address, 10.9.0.1/32
 prgd_recordings_bucket: prgd-session-recordings
 prgd_secret_store: vault            # vault | infisical
@@ -64,7 +80,7 @@ prgd_vault_addr: https://vault.internal.progrid.sa:8200
 prgd_vault_mount: prgd
 prgd_infisical_project: ""
 # Social sign in (docs/social-sign-in.md); leave a client id empty to hide that button
-google_client_id: ""                # xxxx.apps.googleusercontent.com
+google_client_id: ""                # xxxx.apps.googleusercontent.com; add the redirect URI of both api hosts
 microsoft_client_id: ""             # Application (client) ID from the Entra app registration
 microsoft_tenant: common            # common accepts work, school and personal accounts
 # Progrid Connect (docs/connect.md); the Anthropic key lives in vault.yml as vault_anthropic_api_key
@@ -82,6 +98,8 @@ connect_network_allowlist: ""            # admin only: private CIDRs or hosts ag
 # vault_mail_api_key: ...
 # vault_moyasar_secret_key: ...
 # vault_moyasar_webhook_secret: ...
+# vault_stripe_secret_key: ...          # Stripe secret key (sk_live_...) of Progrid Technologies LLC
+# vault_stripe_webhook_secret: ...      # signing secret (whsec_...) of the endpoint /v1/billing/payments/stripe/webhook
 # vault_support_inbound_secret: ...
 # vault_resend_webhook_secret: ""       # Resend webhook signing secret (whsec_...) for inbound support mail
 # vault_alertmanager_webhook_secret: ...  # shared secret for POST /internal/alerts/alertmanager
