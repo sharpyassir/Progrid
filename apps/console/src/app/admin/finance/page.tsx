@@ -35,7 +35,7 @@ export default function AdminFinance() {
         <section className="card space-y-3">
           <h2 className="font-medium">Exchange rate</h2>
           <p className="text-sm">USD to SAR: <span className="text-2xl font-semibold">{fx?.rate.toFixed(4) ?? '…'}</span></p>
-          <p className="text-xs text-neutral-500">Prices are kept in dollars. Riyal prices and invoices use the rate stored at the hour of usage. The hourly job refreshes it from the provider; set it by hand when the provider is down or the central bank rate must be used.</p>
+          <p className="text-xs text-neutral-500">Prices are kept in riyals. Dollar prices and invoices use the rate stored at the hour of usage. The hourly job refreshes it from the provider; set it by hand when the provider is down or the central bank rate must be used.</p>
           <form className="flex gap-2" onSubmit={(e: FormEvent<HTMLFormElement>) => { e.preventDefault(); const rate = Number(new FormData(e.currentTarget).get('rate')); run(() => api('/admin/v1/fx', { method: 'POST', body: JSON.stringify({ rate }) }), 'Rate set.'); }}>
             <input className="input max-w-[10rem]" name="rate" type="number" step="0.0001" min="0.0001" placeholder="41.2500" required />
             <button className="btn-primary">Set rate</button>
@@ -44,14 +44,14 @@ export default function AdminFinance() {
           <table className="w-full text-xs"><tbody>{fx?.history.slice(0, 6).map((h, i) => <tr key={i} className="border-t border-neutral-100 dark:border-neutral-800"><td className="py-1 text-neutral-500">{fmtDate(h.at)}</td><td className="py-1">{Number(h.rate).toFixed(4)}</td><td className="py-1 text-neutral-500">{h.source}</td></tr>)}</tbody></table>
         </section>
         <section className="card space-y-3">
-          <h2 className="font-medium">Price list (USD per month)</h2>
-          <p className="text-xs text-neutral-500">Changing a price closes the old row and opens a new one from now. Hours already rated keep their rate.</p>
+          <h2 className="font-medium">Price list (SAR, excluding VAT)</h2>
+          <p className="text-xs text-neutral-500">Changing a price closes the old row and opens a new one from now. Hours already rated keep their rate. Most prices are per month. Connect prices are per unit shown: per_1k is per 1,000 executions or tool calls, per_10m is per 10M tokens of that model.</p>
           <table className="w-full text-sm"><tbody>
             {prices.map((p) => (
               <tr key={p.id} className="border-t border-neutral-100 dark:border-neutral-800">
                 <td className="py-1 font-mono text-xs">{p.sku}</td><td className="py-1 text-xs text-neutral-500">{p.resourceType} · {p.unit}</td>
                 <td className="py-1 text-end">
-                  <form className="inline-flex gap-1" onSubmit={(e: FormEvent<HTMLFormElement>) => { e.preventDefault(); const v = Number(new FormData(e.currentTarget).get('usd')); if (confirm(`Set ${p.sku} to $${v}/mo?`)) run(() => api('/admin/v1/prices', { method: 'POST', body: JSON.stringify({ sku: p.sku, monthlyMinor: Math.round(v * 100) }) }), 'Price set.'); }}>
+                  <form className="inline-flex gap-1" onSubmit={(e: FormEvent<HTMLFormElement>) => { e.preventDefault(); const v = Number(new FormData(e.currentTarget).get('usd')); if (confirm(`Set ${p.sku} to SAR ${v} (${p.unit})?`)) run(() => api('/admin/v1/prices', { method: 'POST', body: JSON.stringify({ sku: p.sku, monthlyMinor: Math.round(v * 100) }) }), 'Price set.'); }}>
                     <input className="input w-24 py-0.5 text-end text-xs" name="usd" type="number" step="0.01" min="0" defaultValue={(p.monthlyMinor / 100).toFixed(2)} /><button className="btn-ghost px-2 py-0.5 text-xs">Set</button>
                   </form>
                 </td>
