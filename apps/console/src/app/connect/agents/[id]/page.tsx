@@ -42,8 +42,8 @@ function Agent() {
   return (
     <div>
       <PageHeader back={{ href: '/connect/agents', label: c('agentsTitle') }}
-        title={<span className="flex flex-wrap items-center gap-3">{agent.name}<AgentStatusDot status={agent.status} /></span>}
-        subtitle={agent.description || undefined}
+        title={<span className="flex flex-wrap items-center gap-3"><span dir="auto">{agent.name}</span><AgentStatusDot status={agent.status} /></span>}
+        subtitle={agent.description ? <span dir="auto">{agent.description}</span> : undefined}
         actions={<>
           <button type="button" className="btn-ghost" onClick={() => setTab('test')}>{c('tTest')}</button>
           <button type="button" className="btn-primary" onClick={() => setTab('deploy')}>{c('tDeploy')}</button>

@@ -26,7 +26,7 @@ export default function AgentsListPage() {
               <tr key={a.id} className="border-t border-neutral-100 dark:border-neutral-800">
                 <Td className="min-w-48">
                   <Link href={`/connect/agents/${a.id}`} className="font-medium text-blue-700 hover:underline dark:text-blue-400">{a.name}</Link>
-                  {a.description && <div className="max-w-sm truncate text-xs text-neutral-500">{a.description}</div>}
+                  {a.description && <div className="max-w-sm truncate text-xs text-neutral-500"><bdi>{a.description}</bdi></div>}
                 </Td>
                 <Td><AgentStatusDot status={a.status} /></Td>
                 <Td className="whitespace-nowrap"><code dir="ltr" className="font-mono text-xs">{a.model}</code></Td>

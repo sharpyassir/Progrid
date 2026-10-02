@@ -77,8 +77,8 @@ export default function ConnectOverviewPage() {
             {list.slice(0, 6).map((a) => (
               <li key={a.id}>
                 <Link href={`/connect/agents/${a.id}`} className="card block h-full hover:border-blue-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:hover:border-blue-700">
-                  <div className="flex items-center gap-2"><span className="min-w-0 flex-1 truncate font-medium">{a.name}</span><AgentStatusDot status={a.status} /></div>
-                  <p className="mt-1 line-clamp-2 text-sm text-neutral-500">{a.description || '—'}</p>
+                  <div className="flex items-center gap-2"><span className="min-w-0 flex-1 truncate font-medium"><bdi>{a.name}</bdi></span><AgentStatusDot status={a.status} /></div>
+                  <p className="mt-1 line-clamp-2 text-sm text-neutral-500"><bdi>{a.description || '—'}</bdi></p>
                   <p className="mt-2 text-xs text-neutral-500">{cf('toolsN')(a.toolIds.length)}{a.deployedVersion ? ` · ${cf('versionN')(a.deployedVersion)}` : ''}</p>
                 </Link>
               </li>

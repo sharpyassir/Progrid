@@ -158,7 +158,8 @@ export function upsertStep(steps: RunStep[], s: RunStep) {
   return out.sort((a, b) => a.index - b.index);
 }
 
-export const fmtMs = (ms: number | null | undefined) => (ms == null ? '—' : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(ms < 10000 ? 2 : 1)} s`);
+/** Duration with its unit, isolated left to right so "452 ms" reads correctly inside Arabic text. */
+export const fmtMs = (ms: number | null | undefined) => (ms == null ? '—' : `\u2066${ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(ms < 10000 ? 2 : 1)} s`}\u2069`);
 export const fmtNum = (n: number | null | undefined, locale = 'en') => (n == null ? '—' : new Intl.NumberFormat(locale === 'ar' ? 'ar-SA-u-nu-latn' : locale).format(n));
 export const fmtDate = (iso: string | null | undefined, locale = 'en') => (iso ? new Date(iso).toLocaleString(locale === 'ar' ? 'ar-SA-u-nu-latn-ca-gregory' : locale, { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 export const pretty = (v: unknown) => JSON.stringify(v, null, 2);
