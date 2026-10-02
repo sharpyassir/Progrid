@@ -5,6 +5,10 @@ import { CurrentActor, RequireScopes, StaffAreas } from '../../common/auth/decor
 import type { Actor } from '../../common/auth/actor';
 import { AffiliateAdminService } from './admin.service';
 import { AffiliateSettingsService } from './settings';
+import { TaxService } from './tax.service';
+import { BackupWithholdingDto, InvalidateTaxFormDto } from './tax.dto';
+import { toCsv } from './admin.service';
+import { ApiError } from '../../common/errors/api-error';
 
 class ApproveDto {
   /** Overrides the applicant's code (4 to 20 letters and digits). */
@@ -28,7 +32,7 @@ class NoteDto {
 @RequireScopes('admin')
 @StaffAreas('finance')
 export class AffiliateAdminController {
-  constructor(private readonly admin: AffiliateAdminService, private readonly settings: AffiliateSettingsService) {}
+  constructor(private readonly admin: AffiliateAdminService, private readonly settings: AffiliateSettingsService, private readonly tax: TaxService) {}
 
   @Get()
   list(@Query('status') status?: string, @Query('q') q?: string) {
@@ -81,6 +85,49 @@ export class AffiliateAdminController {
     return this.admin.resolveFlag(actor, id);
   }
 
+  // ---- US tax (docs/affiliates-tax.md) ----
+
+  /** Form 1099-NEC data for a calendar year (payouts paid in that year), plus foreign payees on a W-8. */
+  @Get('tax/1099')
+  report1099(@Query('year') year?: string) {
+    return this.tax.report1099(parseYear(year));
+  }
+
+  /** The 1099-NEC records to file, with full TINs, for an e-filing service or the IRS IRIS portal. Audited. */
+  @Get('export/1099')
+  @Header('content-type', 'text/csv; charset=utf-8')
+  @Header('cache-control', 'no-store')
+  async export1099(@CurrentActor() actor: Actor, @Query('year') year?: string) {
+    const r = await this.tax.csv1099(parseYear(year), actor);
+    return toCsv(r.header, r.rows);
+  }
+
+  /** Monthly journal entries and the payable balance, per currency. */
+  @Get('tax/accounting')
+  accounting(@Query('month') month: string, @Query('currency') currency?: string) {
+    return this.tax.accounting(month, currency === 'SAR' ? 'SAR' : 'USD');
+  }
+
+  @Get('export/journal')
+  @Header('content-type', 'text/csv; charset=utf-8')
+  @Header('cache-control', 'no-store')
+  async exportJournal(@Query('month') month: string, @Query('currency') currency?: string) {
+    const r = await this.tax.accounting(month, currency === 'SAR' ? 'SAR' : 'USD');
+    return toCsv(['date', 'company', 'currency', 'account', 'debit', 'credit', 'memo'], r.lines.map((l) => [l.date, r.company, r.currency, l.account, (l.debitMinor / 100).toFixed(2), (l.creditMinor / 100).toFixed(2), l.memo]));
+  }
+
+  /** IRS B notice (CP2100) received, or resolved: 24% backup withholding on this W-9's payouts. */
+  @Post('tax-forms/:id/backup-withholding') @HttpCode(200)
+  backupWithholding(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: BackupWithholdingDto) {
+    return this.tax.setBackupWithholding(actor, id, dto.on, dto.reason);
+  }
+
+  /** The form is wrong: USD payouts stop until the affiliate signs a new one (they get an email). */
+  @Post('tax-forms/:id/invalidate') @HttpCode(200)
+  invalidateTaxForm(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: InvalidateTaxFormDto) {
+    return this.tax.invalidate(actor, id, dto.reason);
+  }
+
   /** CSV download: affiliates, referrals, commissions or payouts (same filters as the lists). */
   @Get('export/:kind')
   @Header('content-type', 'text/csv; charset=utf-8')
@@ -113,4 +160,10 @@ export class AffiliateAdminController {
   reinstate(@CurrentActor() actor: Actor, @Param('id') id: string) {
     return this.admin.reinstate(actor, id);
   }
+}
+
+function parseYear(raw?: string) {
+  const y = Number(raw ?? new Date().getUTCFullYear() - 1);
+  if (!Number.isInteger(y) || y < 2020 || y > 2100) throw ApiError.invalid('year must look like 2026');
+  return y;
 }

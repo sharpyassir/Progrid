@@ -1,5 +1,8 @@
 # Affiliate program
 
+US tax forms, backup withholding, Forms 1099-NEC and the accounting journal: see
+[`affiliates-tax.md`](affiliates-tax.md).
+
 Content creators earn a share of what the customers they refer pay. This page covers how
 referrals are tracked and how the program is configured. Built in phases; this page grows with
 them.

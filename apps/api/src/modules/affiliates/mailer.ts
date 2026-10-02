@@ -4,7 +4,7 @@ import { MailService } from '../../common/mail/mail.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { entityForCountry, urlsFor, publicDomains, entityProfile } from '../../common/entities/entities';
 
-export type AffiliateMail = 'received' | 'approved' | 'rejected' | 'suspended' | 'reinstated' | 'payout_requested' | 'payout_paid';
+export type AffiliateMail = 'received' | 'approved' | 'rejected' | 'suspended' | 'reinstated' | 'payout_requested' | 'payout_paid' | 'tax_form_needed';
 
 type Lang = 'en' | 'ar';
 interface Vars { name: string; code: string; portal: string; reason?: string; amount?: string; reference?: string }
@@ -18,6 +18,7 @@ const T: Record<Lang, Record<AffiliateMail, (v: Vars) => { subject: string; text
     reinstated: (v) => ({ subject: 'Your affiliate account is active again', text: `Hi ${v.name},\n\nYour Progrid affiliate account is active again. Your code ${v.code} works as before.\n\n${v.portal}` }),
     payout_requested: (v) => ({ subject: `Payout request received: ${v.amount}`, text: `Hi ${v.name},\n\nWe received your payout request for ${v.amount}. We pay by bank transfer to the account in your payout details and will email you when it is sent.\n\n${v.portal}` }),
     payout_paid: (v) => ({ subject: `Payout sent: ${v.amount}`, text: `Hi ${v.name},\n\nYour payout of ${v.amount} was sent.${v.reference ? ` Reference: ${v.reference}.` : ''} It can take a few business days to reach your account.\n\n${v.portal}` }),
+    tax_form_needed: (v) => ({ subject: 'Please update your tax information', text: `Hi ${v.name},\n\nWe need a new tax form from you before we can send payouts in US dollars.${v.reason ? `\n\nReason: ${v.reason}` : ''}\n\nOpen Payouts, Tax information in your affiliate portal and sign the form again:\n${v.portal}` }),
   },
   ar: {
     received: (v) => ({ subject: 'استلمنا طلب انضمامك إلى برنامج الشركاء', text: `مرحبًا ${v.name}،\n\nشكرًا لتقديمك على برنامج شركاء Progrid. نراجع كل طلب ونرد عادة خلال أيام عمل قليلة، وسيصلك بريد عند اتخاذ القرار.\n\nطلبك: ${v.portal}` }),
@@ -27,6 +28,7 @@ const T: Record<Lang, Record<AffiliateMail, (v: Vars) => { subject: string; text
     reinstated: (v) => ({ subject: 'أُعيد تفعيل حساب الشريك الخاص بك', text: `مرحبًا ${v.name}،\n\nأُعيد تفعيل حساب الشريك الخاص بك في Progrid، ويعمل رمزك ${v.code} كما كان.\n\n${v.portal}` }),
     payout_requested: (v) => ({ subject: `استلمنا طلب الصرف: ${v.amount}`, text: `مرحبًا ${v.name}،\n\nاستلمنا طلب صرف بمبلغ ${v.amount}. نحوّل المبلغ بتحويل بنكي إلى الحساب المسجل في بيانات الصرف، وسنرسل لك بريدًا عند التحويل.\n\n${v.portal}` }),
     payout_paid: (v) => ({ subject: `تم تحويل الدفعة: ${v.amount}`, text: `مرحبًا ${v.name}،\n\nتم تحويل دفعتك بمبلغ ${v.amount}.${v.reference ? ` المرجع: ${v.reference}.` : ''} قد يستغرق وصولها إلى حسابك بضعة أيام عمل.\n\n${v.portal}` }),
+    tax_form_needed: (v) => ({ subject: 'يرجى تحديث بياناتك الضريبية', text: `مرحبًا ${v.name}،\n\nنحتاج إلى نموذج ضريبي جديد منك قبل صرف الدفعات بالدولار الأمريكي.${v.reason ? `\n\nالسبب: ${v.reason}` : ''}\n\nافتح الدفعات ثم البيانات الضريبية في بوابة الشركاء ووقّع النموذج مرة أخرى:\n${v.portal}` }),
   },
 };
 

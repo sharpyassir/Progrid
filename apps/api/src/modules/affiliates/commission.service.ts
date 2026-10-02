@@ -79,9 +79,12 @@ export class CommissionService {
       // Claim the invoice first so a concurrent run (payment hook and catch up job) does nothing.
       const claimed = await tx.invoice.updateMany({ where: { id: inv.id, affiliateCheckedAt: null }, data: { affiliateCheckedAt: now } });
       if (!claimed.count) return [];
-      return Promise.all(lines.map((l) => tx.affiliateCommission.create({
+      const rows = await Promise.all(lines.map((l) => tx.affiliateCommission.create({
         data: { affiliateId: ref.affiliateId, referralId: ref.id, invoiceId: inv.id, currency: inv.currency, holdUntil, ...l },
       })));
+      // Accounting ledger: commission expense accrued (docs/affiliates-tax.md).
+      if (rows.length) await tx.affiliateLedgerEntry.createMany({ data: rows.map((c) => ({ affiliateId: c.affiliateId, currency: c.currency, kind: 'earned' as const, amountMinor: c.amountMinor, commissionId: c.id, invoiceId: c.invoiceId, memo: c.category, at: now })) });
+      return rows;
     });
     if (created.length) {
       await this.events.emit('affiliate.commission_earned', { affiliateId: ref.affiliateId, invoiceId: inv.id, currency: inv.currency, amountMinor: created.reduce((t, c) => t + c.amountMinor, 0) }, { resource: `affiliate:${ref.affiliateId}` });
@@ -163,20 +166,22 @@ export class CommissionService {
       if (take <= 0) continue;
       total += take;
       const fully = c.reversedMinor + take >= c.amountMinor;
-      if (c.status === 'paid' || c.payoutId) {
-        await this.prisma.$transaction(async (tx) => {
+      await this.prisma.$transaction(async (tx) => {
+        if (c.status === 'paid' || c.payoutId) {
           await tx.affiliateCommission.update({ where: { id: c.id }, data: { reversedMinor: { increment: take }, reversedAt: now, reversalReason: reason } });
           const n = await tx.affiliateCommission.count({ where: { invoiceId, category: { startsWith: `${c.category}:clawback:` } } });
           await tx.affiliateCommission.create({
             data: { affiliateId: c.affiliateId, referralId: c.referralId, invoiceId, category: `${c.category}:clawback:${n + 1}`, currency: c.currency, baseMinor: 0, rateBp: c.rateBp, amountMinor: -take, status: 'approved', holdUntil: now, approvedAt: now, reversalReason: reason },
           });
-        });
-      } else {
-        await this.prisma.affiliateCommission.update({
-          where: { id: c.id },
-          data: { reversedMinor: { increment: take }, reversedAt: now, reversalReason: reason, ...(fully ? { status: 'reversed' } : {}) },
-        });
-      }
+        } else {
+          await tx.affiliateCommission.update({
+            where: { id: c.id },
+            data: { reversedMinor: { increment: take }, reversedAt: now, reversalReason: reason, ...(fully ? { status: 'reversed' } : {}) },
+          });
+        }
+        // Accounting ledger: the expense comes back, whether or not the commission was paid out.
+        await tx.affiliateLedgerEntry.create({ data: { affiliateId: c.affiliateId, currency: c.currency, kind: 'reversed', amountMinor: take, commissionId: c.id, invoiceId, memo: reason.slice(0, 200), at: now } });
+      });
     }
     if (total > 0 && rows[0]) {
       await this.events.emit('affiliate.commission_reversed', { affiliateId: rows[0].affiliateId, invoiceId, amountMinor: total, currency: rows[0].currency, reason }, { resource: `affiliate:${rows[0].affiliateId}` });

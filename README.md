@@ -94,6 +94,11 @@ each commission when it is earned. For Stripe chargebacks to reverse commission,
 `charge.dispute.created` event to the Stripe webhook endpoint; Moyasar chargebacks are recorded
 by finance (Back office, Invoices, Payments, Chargeback).
 
+**US tax.** USD payouts by Progrid Technologies LLC require a Form W-9 or W-8 signed in the portal;
+backup withholding, the year end Form 1099-NEC file and the monthly accounting journal are under
+Back office, Affiliates, Tax & accounting. See [`docs/affiliates-tax.md`](docs/affiliates-tax.md).
+Set the payer EIN and address under Settings, US tax once the LLC has them.
+
 ## Design principles (from the architecture doc)
 
 1. **API-first** — every action exists in the public API before the console.

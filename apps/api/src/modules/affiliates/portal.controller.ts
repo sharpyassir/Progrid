@@ -7,6 +7,7 @@ import { ApiError } from '../../common/errors/api-error';
 import { clientIpOf } from '../../common/net/client-ip';
 import { PortalService } from './portal.service';
 import { ApplyDto, PayoutDetailsDto, PayoutRequestDto } from './portal.dto';
+import { TaxFormDto } from './tax.dto';
 
 /** Console sessions only: payout details and money requests never go through API tokens. */
 function session(actor: Actor) {
@@ -49,6 +50,17 @@ export class PortalController {
   @Put('me/payout-details')
   setPayoutDetails(@CurrentActor() actor: Actor, @Body() dto: PayoutDetailsDto) {
     return this.portal.setPayoutDetails(session(actor), dto);
+  }
+
+  /** US tax information (Form W-9, W-8BEN or W-8BEN-E) for payouts in US dollars. */
+  @Get('me/tax-form')
+  taxForm(@CurrentActor() actor: Actor) {
+    return this.portal.taxForm(session(actor));
+  }
+
+  @Post('me/tax-form') @HttpCode(201)
+  submitTaxForm(@CurrentActor() actor: Actor, @Body() dto: TaxFormDto, @Req() req: Request) {
+    return this.portal.submitTaxForm(session(actor), dto, clientIpOf(req) || actor.ip);
   }
 
   @Get('me/payouts')

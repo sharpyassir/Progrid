@@ -8,13 +8,14 @@ import { EventsService } from '../events/events.service';
 import { AffiliateMailer } from './mailer';
 import { formatMoney } from './portal.service';
 import { normalizeCode } from './rules';
+import { TaxService, present as presentTaxForm } from './tax.service';
 
 const STATUSES: AffiliateStatus[] = ['pending', 'approved', 'rejected', 'suspended'];
 
 /** Finance staff tools for the affiliate program (docs/affiliates.md, back office). */
 @Injectable()
 export class AffiliateAdminService {
-  constructor(private readonly prisma: PrismaService, private readonly events: EventsService, private readonly mailer: AffiliateMailer) {}
+  constructor(private readonly prisma: PrismaService, private readonly events: EventsService, private readonly mailer: AffiliateMailer, private readonly tax: TaxService) {}
 
   /** Affiliates with their numbers: referrals, balances per currency, open flags. */
   async list(q: { status?: string; q?: string }) {
@@ -50,8 +51,10 @@ export class AffiliateAdminService {
     const sums = await this.prisma.affiliateCommission.groupBy({ by: ['affiliateId', 'currency', 'status'], where: { affiliateId: id }, _sum: { amountMinor: true, reversedMinor: true } });
     const clicks = await this.prisma.affiliateClick.count({ where: { affiliateId: id } });
     const { payoutDetails, ...rest } = a;
+    const taxForms = await this.prisma.affiliateTaxForm.findMany({ where: { affiliateId: id }, orderBy: { signedAt: 'desc' } });
     return {
       ...rest,
+      taxForms: taxForms.map(presentTaxForm),
       clicks,
       balances: balances(sums),
       payoutDetails: payoutDetails ? JSON.parse(open(payoutDetails)) : null,
@@ -132,20 +135,35 @@ export class AffiliateAdminService {
       take: 200,
       include: { affiliate: { select: { id: true, code: true, name: true, email: true, country: true } }, _count: { select: { commissions: true } } },
     });
-    return rows.map(({ details, ...p }) => ({ ...p, details: details ? JSON.parse(open(details)) : null, payingCompany: p.currency === 'SAR' ? 'Progrid Arabia' : 'Progrid Technologies LLC' }));
+    return rows.map(({ details, ...p }) => ({ ...p, netMinor: p.amountMinor - p.withheldMinor, details: details ? JSON.parse(open(details)) : null, payingCompany: p.currency === 'SAR' ? 'Progrid Arabia' : 'Progrid Technologies LLC' }));
   }
 
   /** After the bank transfer: the payout and its commissions become paid, and the affiliate gets an email. */
   async markPaid(actor: Actor, id: string, reference: string, note?: string) {
     const now = new Date();
+    const before = await this.prisma.affiliatePayout.findUnique({ where: { id } });
+    if (!before || before.status !== 'requested') throw ApiError.invalidState('Only requested payouts can be marked paid');
+    // USD: the tax form must still be valid when the money goes out, and backup withholding is
+    // worked out on the form as it is now (an IRS B notice may have arrived since the request).
+    const tax = before.currency === 'USD' ? await this.tax.forUsdPayout(before.affiliateId, before.amountMinor) : null;
     const p = await this.prisma.$transaction(async (tx) => {
-      const r = await tx.affiliatePayout.updateMany({ where: { id, status: 'requested' }, data: { status: 'paid', paidAt: now, paidById: actor.userId, reference, note } });
+      const r = await tx.affiliatePayout.updateMany({
+        where: { id, status: 'requested' },
+        data: { status: 'paid', paidAt: now, paidById: actor.userId, reference, note, ...(tax ? { taxFormId: tax.form.id, withheldMinor: tax.withheldMinor } : {}) },
+      });
       if (!r.count) throw ApiError.invalidState('Only requested payouts can be marked paid');
       await tx.affiliateCommission.updateMany({ where: { payoutId: id }, data: { status: 'paid', paidAt: now } });
-      return tx.affiliatePayout.findUniqueOrThrow({ where: { id }, include: { affiliate: true } });
+      const paid = await tx.affiliatePayout.findUniqueOrThrow({ where: { id }, include: { affiliate: true } });
+      // Accounting ledger: payable settled, cash out, backup withholding owed to the IRS.
+      await tx.affiliateLedgerEntry.create({ data: { affiliateId: paid.affiliateId, currency: paid.currency, kind: 'paid', amountMinor: paid.amountMinor, withheldMinor: paid.withheldMinor, payoutId: id, memo: reference.slice(0, 200), at: now } });
+      return paid;
     });
-    await this.events.emit('affiliate.payout_paid', { affiliateId: p.affiliateId, payoutId: id, currency: p.currency, amountMinor: p.amountMinor, reference }, { actor, resource: `affiliate_payout:${id}` });
-    await this.mailer.send(p.affiliate, 'payout_paid', { amount: formatMoney(p.amountMinor, p.currency as Currency), reference });
+    await this.events.emit('affiliate.payout_paid', { affiliateId: p.affiliateId, payoutId: id, currency: p.currency, amountMinor: p.amountMinor, withheldMinor: p.withheldMinor, reference }, { actor, resource: `affiliate_payout:${id}` });
+    const cur = p.currency as Currency;
+    const amount = p.withheldMinor
+      ? `${formatMoney(p.amountMinor - p.withheldMinor, cur)} (${formatMoney(p.amountMinor, cur)} less ${formatMoney(p.withheldMinor, cur)} US backup withholding paid to the IRS)`
+      : formatMoney(p.amountMinor, cur);
+    await this.mailer.send(p.affiliate, 'payout_paid', { amount, reference });
     const { details, affiliate, ...rest } = p;
     return rest;
   }
@@ -199,8 +217,8 @@ export class AffiliateAdminService {
     }
     if (kind === 'payouts') {
       const rows = await this.payouts(q);
-      return toCsv(['id', 'affiliate_code', 'affiliate', 'email', 'paying_company', 'currency', 'amount', 'status', 'requested', 'paid', 'reference', 'holder', 'bank', 'bank_country', 'iban', 'swift'],
-        rows.map((p) => [p.id, p.affiliate.code, p.affiliate.name, p.affiliate.email, p.payingCompany, p.currency, amount(p.amountMinor), p.status, day(p.requestedAt), day(p.paidAt), p.reference ?? '', p.details?.holderName ?? '', p.details?.bankName ?? '', p.details?.bankCountry ?? '', p.details?.iban ?? '', p.details?.swift ?? '']));
+      return toCsv(['id', 'affiliate_code', 'affiliate', 'email', 'paying_company', 'currency', 'gross', 'backup_withholding', 'net_to_send', 'status', 'requested', 'paid', 'reference', 'holder', 'bank', 'bank_country', 'iban', 'swift'],
+        rows.map((p) => [p.id, p.affiliate.code, p.affiliate.name, p.affiliate.email, p.payingCompany, p.currency, amount(p.amountMinor), amount(p.withheldMinor), amount(p.netMinor), p.status, day(p.requestedAt), day(p.paidAt), p.reference ?? '', p.details?.holderName ?? '', p.details?.bankName ?? '', p.details?.bankCountry ?? '', p.details?.iban ?? '', p.details?.swift ?? '']));
     }
     throw ApiError.invalid('Export one of affiliates, referrals, commissions, payouts');
   }

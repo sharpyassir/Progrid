@@ -3495,12 +3495,14 @@ model Affiliate {
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
-  user        User                  @relation(fields: [userId], references: [id])
+  user        User                   @relation(fields: [userId], references: [id])
   clicks      AffiliateClick[]
   referrals   Referral[]
   commissions AffiliateCommission[]
   payouts     AffiliatePayout[]
   flags       AffiliateFlag[]
+  taxForms    AffiliateTaxForm[]
+  ledger      AffiliateLedgerEntry[]
 
   @@index([status, createdAt])
   @@map("prgd_affiliates")
@@ -3621,21 +3623,26 @@ enum AffiliatePayoutStatus {
 /// A payout of approved commission in one currency. Paid by hand (bank transfer) and marked in
 /// the back office; SAR by Progrid Arabia, USD by Progrid Technologies LLC.
 model AffiliatePayout {
-  id          String                @id @default(cuid())
-  affiliateId String
-  currency    Currency
-  amountMinor Int
-  status      AffiliatePayoutStatus @default(requested)
+  id            String                @id @default(cuid())
+  affiliateId   String
+  currency      Currency
+  amountMinor   Int
+  status        AffiliatePayoutStatus @default(requested)
   /// Payout method and details at the time of the request, sealed.
-  details     String?
-  reference   String?
-  note        String?
-  requestedAt DateTime              @default(now())
-  paidAt      DateTime?
-  paidById    String?
+  details       String?
+  reference     String?
+  note          String?
+  requestedAt   DateTime              @default(now())
+  paidAt        DateTime?
+  paidById      String?
+  /// US federal backup withholding (24%) kept from a USD payout and owed to the IRS (Form 945; 1099-NEC box 4).
+  withheldMinor Int                   @default(0)
+  /// The tax form on file when the payout was requested (USD payouts require one).
+  taxFormId     String?
 
   affiliate   Affiliate             @relation(fields: [affiliateId], references: [id])
   commissions AffiliateCommission[]
+  taxForm     AffiliateTaxForm?     @relation(fields: [taxFormId], references: [id])
 
   @@index([affiliateId, requestedAt])
   @@index([status])
@@ -3669,4 +3676,118 @@ model AffiliateSettings {
   updatedAt   DateTime @updatedAt
 
   @@map("prgd_affiliate_settings")
+}
+
+enum AffiliateTaxFormType {
+  /// US person: Request for Taxpayer Identification Number and Certification.
+  W9
+  /// Foreign individual: Certificate of Foreign Status of Beneficial Owner.
+  W8BEN
+  /// Foreign entity.
+  W8BENE
+
+  @@map("prgd_affiliate_tax_form_type")
+}
+
+enum AffiliateTaxFormStatus {
+  active
+  /// Replaced by a newer form.
+  superseded
+  /// Rejected by staff (wrong name or number, B notice): the affiliate must send a new one.
+  invalid
+
+  @@map("prgd_affiliate_tax_form_status")
+}
+
+/// IRS tax forms the affiliate signed electronically in the portal (docs/affiliates-tax.md). USD
+/// payouts by Progrid Technologies LLC need an active one. The taxpayer identification number is
+/// sealed; only the last four digits are stored in clear.
+model AffiliateTaxForm {
+  id                      String                 @id @default(cuid())
+  affiliateId             String
+  formType                AffiliateTaxFormType
+  status                  AffiliateTaxFormStatus @default(active)
+  /// IRS revision the certification text was taken from, e.g. "W-9 (Rev. March 2024)".
+  revision                String
+  /// Line 1: name (as on the tax return); line 2: business or disregarded entity name.
+  legalName               String
+  businessName            String?
+  /// W-9 line 3a (individual, c_corporation, s_corporation, partnership, trust_estate, llc_c, llc_s, llc_p, other)
+  /// or the W-8BEN-E chapter 3 status.
+  taxClassification       String?
+  /// W-9 exempt payee code and FATCA exemption code (line 4), if any.
+  exemptPayeeCode         String?
+  fatcaCode               String?
+  /// W-8BEN-E chapter 4 (FATCA) status.
+  fatcaStatus             String?
+  /// ssn, ein, itin (W-9), or foreign (the W-8 foreign TIN).
+  tinType                 String
+  tin                     String?
+  tinLast4                String?
+  /// W-8: country of citizenship (individual) or of incorporation (entity).
+  citizenshipCountry      String?
+  dateOfBirth             String?
+  /// Address: US address for a W-9, permanent residence address for a W-8.
+  addressLine1            String
+  addressLine2            String?
+  city                    String
+  region                  String?
+  postalCode              String?
+  country                 String
+  mailingAddress          String?
+  /// W-9 certification 2 crossed out, or an IRS B notice: payouts withhold 24%.
+  backupWithholding       Boolean                @default(false)
+  backupWithholdingReason String?
+  /// W-8: the partner certified that all services for Progrid are performed outside the US.
+  servicesOutsideUs       Boolean                @default(false)
+  signatureName           String
+  signedAt                DateTime
+  signedIp                String?
+  /// The certification text the person agreed to, as shown.
+  certificationText       String
+  /// W-8 forms stay valid until the end of the third calendar year after signing.
+  expiresAt               DateTime?
+  reviewedById            String?
+  statusReason            String?
+  createdAt               DateTime               @default(now())
+
+  affiliate Affiliate         @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  payouts   AffiliatePayout[]
+
+  @@index([affiliateId, status])
+  @@map("prgd_affiliate_tax_forms")
+}
+
+enum AffiliateLedgerKind {
+  /// Commission earned: Dr Affiliate commissions / Cr Affiliate commissions payable.
+  earned
+  /// Commission taken back (refund, credit note, chargeback, self referral): the reverse entry.
+  reversed
+  /// Payout sent: Dr payable (gross) / Cr cash (net) / Cr backup withholding payable.
+  paid
+
+  @@map("prgd_affiliate_ledger_kind")
+}
+
+/// Accounting ledger of the affiliate program, one row per money event, for the monthly journal
+/// (docs/affiliates-tax.md). Never updated.
+model AffiliateLedgerEntry {
+  id            String              @id @default(cuid())
+  affiliateId   String
+  currency      Currency
+  kind          AffiliateLedgerKind
+  /// Positive. For paid: the gross payout.
+  amountMinor   Int
+  withheldMinor Int                 @default(0)
+  commissionId  String?
+  payoutId      String?
+  invoiceId     String?
+  memo          String?
+  at            DateTime            @default(now())
+
+  affiliate Affiliate @relation(fields: [affiliateId], references: [id])
+
+  @@index([currency, at])
+  @@index([affiliateId, at])
+  @@map("prgd_affiliate_ledger")
 }

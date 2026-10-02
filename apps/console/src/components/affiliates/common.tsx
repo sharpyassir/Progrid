@@ -28,7 +28,7 @@ export interface AffiliateInfo {
 export interface Me { user: { name: string; email: string }; affiliate: AffiliateInfo | null; canReapplyAt: string | null; program: Program }
 
 export function date(iso: string | null | undefined, locale: string) {
-  return iso ? new Date(iso).toLocaleDateString(locale === 'ar' ? 'ar-SA-u-nu-latn' : locale, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+  return iso ? new Date(iso).toLocaleDateString(locale === 'ar' ? 'ar-SA-u-nu-latn-ca-gregory' : locale, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
 }
 
 export function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {

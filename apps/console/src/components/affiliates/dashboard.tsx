@@ -6,12 +6,13 @@ import { useUrls } from '@/lib/urls';
 import { countryOptions } from '@/lib/countries';
 import { CopyButton, CopyField, ErrorBox, Notice, TableCard, Td, Th, useAction, useLoad } from '@/components/connect/ui';
 import { CURRENCIES, date, Stat, useA, type AffiliateInfo, type Cur, type Program } from './common';
+import { TaxCard } from './tax';
 
 interface Sums { pending: number; approved: number; paid: number; reversed: number }
 interface Balance { pending: number; available: number; requested: number; paidOut: number; minPayoutMinor: number }
 interface Dashboard { code: string; links: string[]; range: { from: string; to: string }; clicks: number; signups: number; payingCustomers: number; commissions: Record<Cur, Sums>; balances: Record<Cur, Balance> }
 interface Referral { id: string; customer: string; signedUpAt: string; commissionUntil: string; status: string; services: string[]; commission: { currency: string; amountMinor: number }[] }
-interface Payout { id: string; currency: Cur; amountMinor: number; status: string; reference: string | null; requestedAt: string; paidAt: string | null }
+interface Payout { id: string; currency: Cur; amountMinor: number; withheldMinor: number; status: string; reference: string | null; requestedAt: string; paidAt: string | null }
 interface Details { method: string; holderName: string; bankName: string; bankCountry: string; ibanLast4: string; swift: string | null; note: string | null }
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -164,6 +165,7 @@ export function PayoutsTab({ onDetailsSaved }: { onDetailsSaved: () => void }) {
     <div className="space-y-5">
       {notice && <Notice>{notice}</Notice>}
       <ErrorBox error={req.error ?? dash.error} />
+      <TaxCard />
       <section className="grid gap-3 sm:grid-cols-2">
         {CURRENCIES.map((c) => {
           const b = dash.data?.balances[c];
@@ -214,12 +216,14 @@ export function PayoutsTab({ onDetailsSaved }: { onDetailsSaved: () => void }) {
         <h2 className="font-medium">{a('historyH')}</h2>
         {!hist.data ? <p className="text-sm text-neutral-500">{a('loading')}</p> : !hist.data.data.length ? <div className="card text-sm text-neutral-500">{a('noPayouts')}</div> : (
           <TableCard>
-            <thead><tr><Th>{a('requestedOn')}</Th><Th end>{a('amount')}</Th><Th>{a('status')}</Th><Th>{a('paidOn')}</Th><Th>{a('reference')}</Th></tr></thead>
+            <thead><tr><Th>{a('requestedOn')}</Th><Th end>{a('amount')}</Th><Th end>{a('withheld')}</Th><Th end>{a('net')}</Th><Th>{a('status')}</Th><Th>{a('paidOn')}</Th><Th>{a('reference')}</Th></tr></thead>
             <tbody>
               {hist.data.data.map((p) => (
                 <tr key={p.id} className="border-t border-neutral-100 dark:border-neutral-800">
                   <Td>{date(p.requestedAt, locale)}</Td>
                   <Td className="text-end">{money(p.amountMinor, p.currency, locale)}</Td>
+                  <Td className="text-end">{p.withheldMinor ? money(p.withheldMinor, p.currency, locale) : '·'}</Td>
+                  <Td className="text-end">{money(p.amountMinor - p.withheldMinor, p.currency, locale)}</Td>
                   <Td>{ad('ps_', p.status)}</Td>
                   <Td>{date(p.paidAt, locale) || '·'}</Td>
                   <Td className="font-mono text-xs">{p.reference ?? '·'}</Td>
