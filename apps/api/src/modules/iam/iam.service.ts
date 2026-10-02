@@ -9,6 +9,8 @@ import { AccountSecurityService } from './account-security.service';
 import { EventsService } from '../events/events.service';
 import type { Actor } from '../../common/auth/actor';
 import { passwordNotSet } from '../oauth/password-not-set';
+import { currencyForEntity, entityForCountry } from '../../common/entities/entities';
+import { defaultSignupCountry } from '../../common/geo/signup-country';
 
 @Injectable()
 export class IamService {
@@ -34,7 +36,9 @@ export class IamService {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } });
     if (existing) throw ApiError.conflict('email_taken', 'An account with this email already exists');
 
-    const country = dto.country ?? 'SA';
+    const country = dto.country ?? defaultSignupCountry();
+    // The company follows the billing country, never the IP address (docs/domains-and-entities.md).
+    const billingEntity = entityForCountry(country);
     const slug = await this.uniqueSlug(dto.teamName);
     const user = await this.prisma.user.create({
       data: {
@@ -51,7 +55,8 @@ export class IamService {
                 name: dto.teamName,
                 slug,
                 country,
-                currency: country === 'SA' ? 'SAR' : 'USD',
+                billingEntity,
+                currency: currencyForEntity(billingEntity),
                 ...(dto.emailVerified ? { status: 'active' as const } : {}),
                 projects: { create: { name: 'Default', slug: 'default' } },
               },

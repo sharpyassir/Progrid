@@ -64,18 +64,23 @@ export class OidcProviders {
     this.jwks.clear();
   }
 
-  redirectUri(id: ProviderId) {
+  /**
+   * Where the provider sends the browser back. Both api.progrid.co and api.progrid.sa take the
+   * callback, so each must be registered with Google and Microsoft (docs/social-sign-in.md).
+   */
+  redirectUri(id: ProviderId, domain?: string) {
     const cfg = loadConfig();
-    return `${(cfg.OAUTH_REDIRECT_BASE ?? cfg.PUBLIC_API_URL).replace(/\/+$/, '')}/v1/auth/oauth/${id}/callback`;
+    const base = cfg.OAUTH_REDIRECT_BASE ?? (domain ? `https://api.${domain}` : cfg.PUBLIC_API_URL);
+    return `${base.replace(/\/+$/, '')}/v1/auth/oauth/${id}/callback`;
   }
 
-  async authorizationUrl(s: ProviderSettings, p: { state: string; nonce: string; codeChallenge: string; loginHint?: string }) {
+  async authorizationUrl(s: ProviderSettings, p: { state: string; nonce: string; codeChallenge: string; loginHint?: string; domain?: string }) {
     const d = await this.discover(s);
     const url = new URL(d.authorization_endpoint);
     url.search = new URLSearchParams({
       client_id: s.clientId,
       response_type: 'code',
-      redirect_uri: this.redirectUri(s.id),
+      redirect_uri: this.redirectUri(s.id, p.domain),
       scope: OIDC_SCOPES,
       state: p.state,
       nonce: p.nonce,
@@ -88,12 +93,12 @@ export class OidcProviders {
   }
 
   /** Exchanges the authorization code (with the PKCE verifier) and verifies the id token. */
-  async redeem(s: ProviderSettings, code: string, codeVerifier: string, nonce: string): Promise<{ account: ProviderAccount; claims: JWTPayload }> {
+  async redeem(s: ProviderSettings, code: string, codeVerifier: string, nonce: string, domain?: string): Promise<{ account: ProviderAccount; claims: JWTPayload }> {
     const d = await this.discover(s);
     const res = await fetch(d.token_endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
-      body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: this.redirectUri(s.id), client_id: s.clientId, client_secret: s.clientSecret, code_verifier: codeVerifier }),
+      body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: this.redirectUri(s.id, domain), client_id: s.clientId, client_secret: s.clientSecret, code_verifier: codeVerifier }),
       signal: AbortSignal.timeout(10_000),
     });
     const body = (await res.json().catch(() => ({}))) as { id_token?: string; error?: string; error_description?: string };

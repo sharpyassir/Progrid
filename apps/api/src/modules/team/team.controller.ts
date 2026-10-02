@@ -5,9 +5,10 @@ import type { TeamRole } from '@prisma/client';
 import { CurrentActor, Public, RequireScopes } from '../../common/auth/decorators';
 import type { Actor } from '../../common/auth/actor';
 import { TeamService } from './team.service';
+import { COUNTRY_CODES } from '../../common/entities/countries';
 
 const ROLES = ['owner', 'admin', 'member', 'billing', 'readonly'] as const;
-const COUNTRIES = ['SA', 'AE', 'KW', 'QA', 'BH', 'OM', 'EG', 'JO', 'TR', 'US', 'DE', 'GB', 'NL', 'FR'];
+const COUNTRIES = COUNTRY_CODES as unknown as string[];
 
 class TeamProfileDto {
   @IsOptional() @IsString() @Length(2, 60) name?: string;
@@ -15,6 +16,7 @@ class TeamProfileDto {
   /** Buyer VAT number printed on invoices (15 digits for a Saudi VAT registration). */
   @IsOptional() @IsString() @Length(0, 40) taxId?: string | null;
   @IsOptional() @IsString() @Length(0, 500) billingAddress?: string | null;
+  /** Billing country. A change that would move the team to the other billing company is refused (staff only). */
   @IsOptional() @IsIn(COUNTRIES) country?: string;
 }
 

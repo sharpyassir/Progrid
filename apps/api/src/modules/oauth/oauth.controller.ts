@@ -32,7 +32,7 @@ export class OAuthController {
   /** The browser navigates here; answers with a redirect to Google or Microsoft. */
   @Public() @Get('oauth/:provider/start')
   async start(@Param('provider') provider: string, @Query() q: Record<string, string>, @Res() res: Response) {
-    const r = await this.oauth.start(provider, { intent: q.intent, return: q.return, invite: q.invite, ticket: q.ticket, locale: q.locale });
+    const r = await this.oauth.start(provider, { intent: q.intent, return: q.return, invite: q.invite, ticket: q.ticket, locale: q.locale, country: q.country });
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Referrer-Policy', 'no-referrer');
     if (r.error) return res.redirect(302, r.error);

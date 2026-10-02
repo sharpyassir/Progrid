@@ -38,6 +38,7 @@
     "class-validator": "^0.14.1",
     "ioredis": "^5.4.2",
     "jose": "^5.9.6",
+    "mmdb-lib": "^3.0.3",
     "mongodb": "^6.21.0",
     "mysql2": "^3.24.5",
     "nats": "^2.29.1",

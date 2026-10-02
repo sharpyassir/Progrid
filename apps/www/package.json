@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "marked": "^15.0.12",
+    "mmdb-lib": "^3.0.3",
     "next": "^15.1.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

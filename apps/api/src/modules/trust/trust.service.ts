@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { returnConsoleUrl } from '../../common/entities/entities';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ApiError } from '../../common/errors/api-error';
@@ -58,7 +59,7 @@ export class TrustService {
     const used = await this.prisma.usageRecord.aggregate({ where: { project: { teamId }, hourStart: { gte: startOfMonth(new Date()) } }, _sum: { amountMinor: true } });
     const left = cfg.FREE_ALLOWANCE_MINOR - (used._sum.amountMinor ?? 0);
     if (left > 0 && addedMonthlyMinor <= left) return;
-    throw new ApiError(402, 'payment_required', `Add credit once before creating billable resources. Top up on the billing page: ${cfg.CONSOLE_URL}/billing`, { billingUrl: `${cfg.CONSOLE_URL}/billing` });
+    throw new ApiError(402, 'payment_required', `Add credit once before creating billable resources. Top up on the billing page: ${returnConsoleUrl()}/billing`, { billingUrl: `${returnConsoleUrl()}/billing` });
   }
 
   /** Outbound bandwidth cap for accounts with no verification history (anti-spam). */

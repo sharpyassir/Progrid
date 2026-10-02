@@ -35,9 +35,10 @@ export class ResendInboundService {
     }
     if (event.type !== 'email.received' || !event.data?.email_id) return { ignored: true, reason: 'event_type' };
 
-    const inbox = addressOf(cfg.SUPPORT_INBOX || '');
+    // Support mail is accepted for both companies (support@progrid.co and support@progrid.sa) and the staff inbox.
+    const inboxes = new Set([cfg.SUPPORT_INBOX, cfg.ENTITY_LLC_SUPPORT_EMAIL, cfg.ENTITY_ARABIA_SUPPORT_EMAIL].map((a) => addressOf(a || '')).filter(Boolean));
     const to = (Array.isArray(event.data.to) ? event.data.to : [event.data.to ?? '']).map(addressOf);
-    if (!inbox || !to.includes(inbox)) return { ignored: true, reason: 'not_support_inbox' };
+    if (!to.some((a) => inboxes.has(a))) return { ignored: true, reason: 'not_support_inbox' };
 
     const emailId = event.data.email_id;
     const key = `resend-inbound:${emailId}`;
@@ -58,6 +59,7 @@ export class ResendInboundService {
         from: addressOf(email.from || event.data.from || ''),
         subject: email.subject ?? event.data.subject ?? '',
         text: stripReply(body),
+        to,
       });
     } catch (err) {
       // Let Resend retry: release the id so the next delivery is processed.

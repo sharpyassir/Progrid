@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req } from '@nestjs/common';
+import { clientIpOf } from '../../common/net/client-ip';
 import type { Request } from 'express';
 import { TokenService } from './token.service';
 import { IsOptional, IsString, Length, Matches } from 'class-validator';
@@ -33,8 +34,7 @@ export class AuthController {
 
 /** Where a sign in came from, for the sessions list. Caddy sets X-Forwarded-For. */
 export function clientMeta(req: Request) {
-  const fwd = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
-  return { ip: fwd || req.ip, userAgent: String(req.headers['user-agent'] ?? '') };
+  return { ip: clientIpOf(req) || undefined, userAgent: String(req.headers['user-agent'] ?? '') };
 }
 
 class InterestDto {

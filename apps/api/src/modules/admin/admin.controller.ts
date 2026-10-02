@@ -15,6 +15,11 @@ import { BackupsService } from '../storage/backups.service';
 import { FxService } from '../billing/fx.service';
 import { startOfMonth } from '../billing/pricing';
 import { ApiError } from '../../common/errors/api-error';
+import { BILLING_ENTITIES, currencyForEntity, entityForCountry, entityProfile, publicEntity } from '../../common/entities/entities';
+import { isCountryCode } from '../../common/entities/countries';
+import { billingAt, nextBillingPeriod } from '../billing/entity-change';
+
+const isEntity = (v?: string): v is 'progrid_arabia' | 'progrid_llc' => v === 'progrid_arabia' || v === 'progrid_llc';
 
 class RegisterHostDto {
   @IsString() name: string;
@@ -67,6 +72,12 @@ class ManualPaymentDto {
   /** Bank transfer reference or receipt number. */
   @IsOptional() @IsString() @Length(0, 200) reference?: string;
   @IsOptional() @IsDateString() receivedAt?: string;
+}
+
+class BillingCountryDto {
+  /** ISO 3166-1 alpha-2. SA moves the team to Progrid Arabia, any other country to Progrid Technologies LLC. */
+  @IsString() @Length(2, 2) country: string;
+  @IsString() @Length(3, 500) reason: string;
 }
 
 class ResolveDto {
@@ -122,8 +133,9 @@ export class AdminController {
       this.prisma.invoice.aggregate({ where: { status: 'open' }, _count: true, _sum: { totalMinor: true } }),
       this.prisma.usageRecord.groupBy({ by: ['currency'], where: { hourStart: { gte: month } }, _sum: { amountMinor: true } }),
       this.prisma.payment.groupBy({ by: ['currency'], where: { status: 'succeeded', paidAt: { gte: month } }, _sum: { amountMinor: true } }),
-      this.prisma.team.findMany({ orderBy: { createdAt: 'desc' }, take: 8, select: { id: true, name: true, slug: true, country: true, currency: true, status: true, createdAt: true } }),
+      this.prisma.team.findMany({ orderBy: { createdAt: 'desc' }, take: 8, select: { id: true, name: true, slug: true, country: true, currency: true, billingEntity: true, status: true, createdAt: true } }),
     ]);
+    const byEntity = await this.revenueByEntity(month);
     return {
       teams: Object.fromEntries(teams.map((t) => [t.status, t._count])), teamsNewThisWeek: teamsNew,
       servers: Object.fromEntries(servers.map((s) => [s.status, s._count])),
@@ -133,7 +145,48 @@ export class AdminController {
       monthToDate: Object.fromEntries(mtd.map((m) => [m.currency, m._sum.amountMinor ?? 0])),
       paymentsThisMonth: Object.fromEntries(payments.map((m) => [m.currency, m._sum.amountMinor ?? 0])),
       recentTeams,
+      byEntity,
     };
+  }
+
+  /**
+   * Revenue per contracting company for one month (YYYY-MM, default this month): invoices issued
+   * (subtotal, tax, total), card and manual payments received, what is still open, and how many
+   * teams each company bills.
+   */
+  @StaffAreas('finance')
+  @Get('finance/entities')
+  async financeByEntity(@Query('month') month?: string) {
+    const m = month && /^\d{4}-\d{2}$/.test(month) ? new Date(`${month}-01T00:00:00Z`) : startOfMonth(new Date());
+    return { month: m.toISOString().slice(0, 7), data: await this.revenueByEntity(m) };
+  }
+
+  private async revenueByEntity(month: Date) {
+    const end = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1));
+    const [issued, open, payments, teams] = await Promise.all([
+      this.prisma.invoice.groupBy({ by: ['billingEntity', 'currency'], where: { createdAt: { gte: month, lt: end }, status: { not: 'void' } }, _count: true, _sum: { subtotalMinor: true, taxMinor: true, totalMinor: true } }),
+      this.prisma.invoice.groupBy({ by: ['billingEntity', 'currency'], where: { status: 'open' }, _count: true, _sum: { totalMinor: true, creditedMinor: true } }),
+      this.prisma.payment.findMany({ where: { status: { in: ['succeeded', 'refunded'] }, paidAt: { gte: month, lt: end } }, select: { amountMinor: true, refundedMinor: true, currency: true, invoice: { select: { billingEntity: true } }, team: { select: { billingEntity: true } } } }),
+      this.prisma.team.groupBy({ by: ['billingEntity'], where: { status: { not: 'closed' } }, _count: true }),
+    ]);
+    return BILLING_ENTITIES.map((id) => {
+      const e = entityProfile(id);
+      const collected: Record<string, number> = {};
+      for (const p of payments) {
+        // A payment belongs to the company of the invoice it paid, a top up to the team's company.
+        if ((p.invoice?.billingEntity ?? p.team.billingEntity) !== id) continue;
+        collected[p.currency] = (collected[p.currency] ?? 0) + p.amountMinor - p.refundedMinor;
+      }
+      return {
+        billingEntity: id,
+        legalName: e.legalName,
+        currency: e.currency,
+        teams: teams.find((t) => t.billingEntity === id)?._count ?? 0,
+        invoiced: issued.filter((r) => r.billingEntity === id).map((r) => ({ currency: r.currency, count: r._count, subtotalMinor: r._sum.subtotalMinor ?? 0, taxMinor: r._sum.taxMinor ?? 0, totalMinor: r._sum.totalMinor ?? 0 })),
+        open: open.filter((r) => r.billingEntity === id).map((r) => ({ currency: r.currency, count: r._count, dueMinor: (r._sum.totalMinor ?? 0) - (r._sum.creditedMinor ?? 0) })),
+        collected: Object.entries(collected).map(([currency, amountMinor]) => ({ currency, amountMinor })),
+      };
+    });
   }
 
   @StaffAreas('ops')
@@ -150,8 +203,8 @@ export class AdminController {
 
   @StaffAreas('finance')
   @Get('invoices')
-  async listInvoices(@Query('status') status?: string) {
-    return { data: await this.billingAdmin.listInvoices(status) };
+  async listInvoices(@Query('status') status?: string, @Query('entity') entity?: string) {
+    return { data: await this.billingAdmin.listInvoices(status, entity) };
   }
 
   /** Recent payments of every kind, for refunds of top ups and invoice payments alike. */
@@ -263,10 +316,13 @@ export class AdminController {
 
   @StaffAreas('support')
   @Get('teams')
-  async teams(@Query('q') q?: string) {
+  async teams(@Query('q') q?: string, @Query('entity') entity?: string) {
     return {
       data: await this.prisma.team.findMany({
-        where: q ? { OR: [{ name: { contains: q, mode: 'insensitive' } }, { slug: { contains: q } }, { members: { some: { user: { email: { contains: q, mode: 'insensitive' } } } } }] } : {},
+        where: {
+          ...(q ? { OR: [{ name: { contains: q, mode: 'insensitive' as const } }, { slug: { contains: q } }, { members: { some: { user: { email: { contains: q, mode: 'insensitive' as const } } } } }] } : {}),
+          ...(isEntity(entity) ? { billingEntity: entity } : {}),
+        },
         include: { _count: { select: { projects: true, abuseFlags: true } } },
         take: 50,
       }),
@@ -304,6 +360,46 @@ export class AdminController {
   }
 
   // ---- finance ----
+
+  /**
+   * Changes a team's billing country. Customers cannot move themselves between companies, because
+   * the company decides tax, invoice series, currency and payment gateway. A change that keeps the
+   * company applies now. A change of company is scheduled for the start of the next billing
+   * period: this period is still invoiced by the old company, usage from then on is rated in the
+   * new currency. Credit left in the old currency is not converted (refund or reissue it by hand).
+   */
+  @StaffAreas('finance')
+  @Post('teams/:id/billing-country')
+  async setBillingCountry(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: BillingCountryDto) {
+    const country = dto.country.toUpperCase();
+    if (!isCountryCode(country)) throw ApiError.invalid(`${dto.country} is not an ISO 3166-1 country code`);
+    const team = await this.prisma.team.findUniqueOrThrow({ where: { id } });
+    const now = new Date();
+    const current = billingAt(team, now);
+    const entity = entityForCountry(country);
+    if (entity === current.entity) {
+      const updated = await this.prisma.team.update({ where: { id }, data: { country, pendingCountry: null, pendingBillingEntity: null, billingChangeAt: null } });
+      await this.events.emit('admin.team_billing_country_set', { teamId: id, from: team.country, to: country, billingEntity: entity, reason: dto.reason, effectiveAt: now }, { actor, teamId: id, resource: `team:${id}` });
+      return { team: updated, billingEntity: publicEntity(entity), effectiveAt: now, scheduled: false };
+    }
+    const effectiveAt = nextBillingPeriod(now);
+    const updated = await this.prisma.team.update({ where: { id }, data: { pendingCountry: country, pendingBillingEntity: entity, billingChangeAt: effectiveAt } });
+    const leftover = await this.prisma.credit.aggregate({ where: { teamId: id, currency: team.currency, remainingMinor: { gt: 0 } }, _sum: { remainingMinor: true } });
+    await this.events.emit('admin.team_billing_entity_scheduled', { teamId: id, from: { country: team.country, billingEntity: team.billingEntity, currency: team.currency }, to: { country, billingEntity: entity, currency: currencyForEntity(entity) }, reason: dto.reason, effectiveAt }, { actor, teamId: id, resource: `team:${id}` });
+    return { team: updated, billingEntity: publicEntity(entity), effectiveAt, scheduled: true, creditLeftInOldCurrencyMinor: leftover._sum.remainingMinor ?? 0 };
+  }
+
+  /** Cancels a scheduled change of billing company before it takes effect. */
+  @StaffAreas('finance')
+  @Post('teams/:id/billing-country/cancel') @HttpCode(200)
+  async cancelBillingChange(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: ReasonDto) {
+    const team = await this.prisma.team.findUniqueOrThrow({ where: { id } });
+    if (!team.pendingBillingEntity) throw ApiError.invalidState('No change of billing company is scheduled');
+    if (team.billingChangeAt && team.billingChangeAt <= new Date()) throw ApiError.invalidState('The change has already taken effect');
+    const updated = await this.prisma.team.update({ where: { id }, data: { pendingCountry: null, pendingBillingEntity: null, billingChangeAt: null } });
+    await this.events.emit('admin.team_billing_entity_cancelled', { teamId: id, pending: { country: team.pendingCountry, billingEntity: team.pendingBillingEntity }, reason: dto.reason }, { actor, teamId: id, resource: `team:${id}` });
+    return updated;
+  }
 
   @StaffAreas('finance')
   @Post('teams/:id/credits')

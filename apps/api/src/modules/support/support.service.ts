@@ -6,6 +6,8 @@ import { cursorArgs, toPage } from '../../common/pagination';
 import { MailService } from '../../common/mail/mail.service';
 import type { Actor } from '../../common/auth/actor';
 import { loadConfig } from '../../config/config';
+import { entityProfile } from '../../common/entities/entities';
+import { teamEntity } from '../../common/entities/lookup';
 import { EventsService } from '../events/events.service';
 import { SpendService } from '../billing/spend.service';
 import { FxService } from '../billing/fx.service';
@@ -13,7 +15,7 @@ import { BOOK_CURRENCY } from '../billing/pricing';
 import { AdminListTicketsQuery, CreateTicketDto, ListTicketsQuery, PLAN_CATALOG, Priority, SUPPORT_PLANS, SupportPlanId, TicketMessageDto } from './support.dto';
 
 /** Normalized inbound email, from whichever provider posts it. */
-export interface InboundMail { from: string; subject: string; text: string }
+export interface InboundMail { from: string; subject: string; text: string; /** Recipient addresses, when the provider sends them. */ to?: string[] }
 
 /** Drops the quoted previous message from an email reply so the ticket shows only the new text. */
 function stripQuoted(text: string) {
@@ -157,12 +159,15 @@ export class SupportService {
     if (!email || /^(no-?reply|mailer-daemon|postmaster)@/i.test(email)) return { accepted: false, reason: 'ignored_sender' };
     const subject = (msg.subject || '(no subject)').trim().slice(0, 140);
     const body = (msg.text || '').trim().slice(0, 20000) || '(empty message)';
-    const user = await this.prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } }, include: { memberships: { orderBy: { role: 'asc' }, include: { team: { select: { id: true, createdAt: true } } } } } });
+    const user = await this.prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } }, include: { memberships: { orderBy: { role: 'asc' }, include: { team: { select: { id: true, createdAt: true, billingEntity: true } } } } } });
     const membership = user?.memberships.sort((a, b) => (a.role === 'owner' ? -1 : b.role === 'owner' ? 1 : a.team.createdAt.getTime() - b.team.createdAt.getTime()))[0];
     if (!user || !membership) {
-      await this.mail.send({ to: email, subject: `Re: ${subject}`, text: `Thanks for writing to ${loadConfig().COMPANY_NAME} support. We received your message and a person will answer by email within one business day.\n\nIf you have an account, please write from the email address on it, or open a ticket from Support in the console, so we can attach the conversation to your account.` }).catch((e) => this.log.warn(`support ack failed: ${e}`));
+      // No account: answer from the company whose inbox received it (the .sa address means Progrid Arabia).
+      const viaArabia = (msg.to ?? []).some((a) => a.toLowerCase().includes(loadConfig().ENTITY_ARABIA_SUPPORT_EMAIL.toLowerCase()));
+      await this.mail.send({ to: email, entity: viaArabia ? 'progrid_arabia' : 'progrid_llc', subject: `Re: ${subject}`, text: `Thanks for writing to ${loadConfig().COMPANY_NAME} support. We received your message and a person will answer by email within one business day.\n\nIf you have an account, please write from the email address on it, or open a ticket from Support in the console, so we can attach the conversation to your account.` }).catch((e) => this.log.warn(`support ack failed: ${e}`));
       return { accepted: false, reason: 'unknown_sender' };
     }
+    const entity = membership.team.billingEntity;
     const actor: Actor = { userId: user.id, teamId: membership.teamId, role: membership.role, scopes: new Set(['support:read', 'support:write']), isAgent: false, requireApprovalFor: new Set(), locale: 'en' };
     const ref = /\[#(\d+)\]/.exec(subject);
     if (ref) {
@@ -174,11 +179,11 @@ export class SupportService {
     }
     try {
       const t = await this.create(actor, { subject: subject.replace(/^(re|fwd?):\s*/i, ''), body: stripQuoted(body), priority: 'normal' });
-      await this.mail.send({ to: email, subject: `Re: [#${t.number}] ${t.subject}`, text: `Your ticket #${t.number} is open. Reply to this email or follow it in the console:\n${loadConfig().CONSOLE_URL}/support/${t.id}` }).catch((e) => this.log.warn(`support ack failed: ${e}`));
+      await this.mail.send({ to: email, entity, subject: `Re: [#${t.number}] ${t.subject}`, text: `Your ticket #${t.number} is open. Reply to this email or follow it in the console:\n${entityProfile(entity).consoleUrl}/support/${t.id}` }).catch((e) => this.log.warn(`support ack failed: ${e}`));
       return { accepted: true, action: 'created', ticketId: t.id, number: t.number };
     } catch (e) {
       const reason = e instanceof ApiError ? e.message : 'could not open a ticket';
-      await this.mail.send({ to: email, subject: `Re: ${subject}`, text: `We could not open a ticket from your email: ${reason}\n\nOpen one from Support in the console:\n${loadConfig().CONSOLE_URL}/support` }).catch((err) => this.log.warn(`support ack failed: ${err}`));
+      await this.mail.send({ to: email, entity, subject: `Re: ${subject}`, text: `We could not open a ticket from your email: ${reason}\n\nOpen one from Support in the console:\n${entityProfile(entity).consoleUrl}/support` }).catch((err) => this.log.warn(`support ack failed: ${err}`));
       return { accepted: false, reason };
     }
   }
@@ -284,8 +289,9 @@ export class SupportService {
       ticket.createdById ? this.prisma.user.findUnique({ where: { id: ticket.createdById }, select: { email: true } }) : null,
     ]);
     const to = new Set([...owners.map((m) => m.user.email), ...(opener ? [opener.email] : [])]);
-    const url = `${loadConfig().CONSOLE_URL}/support/${ticket.id}`;
-    await Promise.all([...to].map((email) => this.mail.send({ to: email, subject: `Re: [#${ticket.number}] ${ticket.subject}`, text: `${body}\n\nReply or close the ticket here:\n${url}` }).catch((e) => this.log.warn(`support mail failed: ${e}`))));
+    const entity = await teamEntity(this.prisma, ticket.teamId);
+    const url = `${entity ? entityProfile(entity).consoleUrl : loadConfig().CONSOLE_URL}/support/${ticket.id}`;
+    await Promise.all([...to].map((email) => this.mail.send({ to: email, entity, subject: `Re: [#${ticket.number}] ${ticket.subject}`, text: `${body}\n\nReply or close the ticket here:\n${url}` }).catch((e) => this.log.warn(`support mail failed: ${e}`))));
   }
 
   /** Customers see a managed P1 waiting for its postmortem (resolved_pending_pm) as closed. */

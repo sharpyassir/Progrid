@@ -30,6 +30,15 @@ enum Currency {
   @@map("prgd_currency")
 }
 
+/// The company that contracts with, invoices and collects from a team (docs/domains-and-entities.md).
+/// Assigned from the team's billing country: SA is Progrid Arabia, every other country Progrid Technologies LLC.
+enum BillingEntity {
+  progrid_arabia
+  progrid_llc
+
+  @@map("prgd_billing_entity")
+}
+
 enum AccountStatus {
   active
   pending_verification
@@ -111,7 +120,13 @@ model Team {
   slug     String        @unique
   name     String
   currency Currency      @default(USD)
-  country  String        @default("SA") // ISO 3166-1; drives SAR billing, ZATCA e-invoicing and PDPL residency
+  country  String        @default("US") // ISO 3166-1 billing country; picks the billing entity (SA: Progrid Arabia, else Progrid Technologies LLC)
+  /// Contracting and invoicing company. Changes only through the back office, from the next billing period.
+  billingEntity BillingEntity @default(progrid_llc)
+  /// A staff approved change of billing country and entity that takes effect at billingChangeAt (start of a month).
+  pendingCountry       String?
+  pendingBillingEntity BillingEntity?
+  billingChangeAt      DateTime?
   status   AccountStatus @default(pending_verification)
   /// Why the team is suspended. "billing: ..." is lifted automatically once the overdue invoices are settled.
   suspensionReason String?
@@ -147,6 +162,7 @@ model Team {
   connectAgents      ConnectAgent[]
   connectConnections ConnectConnection[]
 
+  @@index([billingEntity])
   @@map("prgd_teams")
 }
 
@@ -895,7 +911,9 @@ enum InvoiceStatus {
 model Invoice {
   id          String        @id @default(cuid())
   teamId      String
-  number      String        @unique // "PRGD-2026-000123", from the prgd_invoice_number_seq sequence
+  number      String        @unique // "PRGD-SA-2026-00001" or "PRGD-US-2026-00001"; older invoices "PRGD-2026-000123"
+  /// The company that issued it. Fixed at issue time; later entity changes never touch it.
+  billingEntity BillingEntity @default(progrid_arabia)
   currency    Currency
   periodStart DateTime
   periodEnd   DateTime
@@ -924,6 +942,7 @@ model Invoice {
 
   @@unique([teamId, periodStart, periodEnd])
   @@index([status, dueAt])
+  @@index([billingEntity, createdAt])
 
   @@map("prgd_invoices")
 }
@@ -954,6 +973,8 @@ model Credit {
 
 enum PaymentProvider {
   moyasar
+  /// Card payments for Progrid Technologies LLC (Stripe Checkout).
+  stripe
   bank_transfer
   manual
   /// The built in test page (development and demos). Never set in production.
@@ -1007,6 +1028,8 @@ model Payment {
 model CreditNote {
   id          String   @id @default(cuid())
   number      String   @unique
+  /// Same company as the invoice it reverses.
+  billingEntity BillingEntity @default(progrid_arabia)
   teamId      String
   invoiceId   String
   currency    Currency

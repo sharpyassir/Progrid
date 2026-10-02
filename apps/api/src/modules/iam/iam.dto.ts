@@ -1,12 +1,18 @@
 import { ArrayNotEmpty, IsArray, IsBoolean, IsEmail, IsIn, IsInt, IsOptional, IsString, Length, Matches, Min, MinLength } from 'class-validator';
 import { ALL_SCOPES } from '../../common/auth/actor';
+import { COUNTRY_CODES } from '../../common/entities/countries';
 
 export class SignupDto {
   @IsEmail() email: string;
   @IsString() @MinLength(10) password: string;
   @IsString() @Length(1, 80) name: string;
   @IsString() @Length(2, 60) teamName: string;
-  @IsOptional() @IsIn(['SA', 'AE', 'KW', 'QA', 'BH', 'OM', 'EG', 'JO', 'TR', 'US', 'DE', 'GB', 'NL', 'FR']) country?: string;
+  /**
+   * Billing country (ISO 3166-1 alpha-2). It decides the contracting company: SA is Progrid Arabia
+   * (SAR), every other country Progrid Technologies LLC (USD). Omitted: SA on the progrid.sa
+   * domain, otherwise the country of the caller's IP address, otherwise US.
+   */
+  @IsOptional() @IsIn(COUNTRY_CODES as unknown as string[]) country?: string;
   @IsOptional() @IsIn(['en', 'tr', 'ar']) locale?: string;
 }
 

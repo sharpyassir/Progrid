@@ -10,6 +10,7 @@ import { SpendService } from './spend.service';
 import { FxService } from './fx.service';
 import { BOOK_CURRENCY, VAT_RATE, displayPrice, startOfMonth, taxRateFor } from './pricing';
 import { loadConfig } from '../../config/config';
+import { publicEntity } from '../../common/entities/entities';
 
 @ApiTags('billing')
 @ApiBearerAuth()
@@ -21,9 +22,18 @@ export class BillingController {
   @Get('balance')
   async balance(@CurrentActor() actor: Actor) {
     const team = await this.prisma.team.findUniqueOrThrow({ where: { id: actor.teamId }, include: { credits: true, projects: { select: { id: true } } } });
-    const credit = team.credits.reduce((s, c) => s + (!c.expiresAt || c.expiresAt > new Date() ? c.remainingMinor : 0), 0);
-    const mtd = await this.prisma.usageRecord.aggregate({ where: { projectId: { in: team.projects.map((p) => p.id) }, hourStart: { gte: startOfMonth(new Date()) } }, _sum: { amountMinor: true } });
-    return { currency: team.currency, creditMinor: credit, monthToDateMinor: mtd._sum.amountMinor ?? 0, status: team.status };
+    const credit = team.credits.reduce((s, c) => s + (c.currency === team.currency && (!c.expiresAt || c.expiresAt > new Date()) ? c.remainingMinor : 0), 0);
+    const mtd = await this.prisma.usageRecord.aggregate({ where: { projectId: { in: team.projects.map((p) => p.id) }, hourStart: { gte: startOfMonth(new Date()) }, currency: team.currency }, _sum: { amountMinor: true } });
+    return {
+      currency: team.currency,
+      creditMinor: credit,
+      monthToDateMinor: mtd._sum.amountMinor ?? 0,
+      status: team.status,
+      billingCountry: team.country,
+      // The company that invoices this team, shown on the billing page and in the console footer.
+      billingEntity: publicEntity(team.billingEntity),
+      pendingChange: team.pendingBillingEntity && team.billingChangeAt ? { country: team.pendingCountry, billingEntity: publicEntity(team.pendingBillingEntity), effectiveAt: team.billingChangeAt } : null,
+    };
   }
 
   @Get('usage')
@@ -51,8 +61,9 @@ export class BillingController {
 }
 
 /**
- * Public price list (no auth). Prices are kept in USD; asking for SAR returns the same
- * list converted at the current exchange rate, plus the rate used.
+ * Public price list (no auth). The book is kept in SAR (BOOK_CURRENCY); asking for USD returns the
+ * same list converted at the current exchange rate (the pegged 3.75), plus the rate used. Customers
+ * of Progrid Technologies LLC are billed in USD, customers of Progrid Arabia in SAR.
  */
 @ApiTags('pricing')
 @Controller('v1/pricing')
@@ -69,8 +80,10 @@ export class PricingController {
       baseCurrency: BOOK_CURRENCY,
       fxRate: rate,
       usdToSar: await this.fx.rate('SAR'),
-      vatRate: taxRateFor(currency, 'SA') || VAT_RATE,
-      vatNote: 'Prices exclude VAT; Saudi customers pay 15% VAT, shown at checkout.',
+      vatRate: VAT_RATE,
+      // Tax follows the contracting company: Progrid Arabia (SAR) adds 15% VAT; Progrid Technologies LLC (USD) adds none by default.
+      taxRate: currency === 'SAR' ? taxRateFor('progrid_arabia') : taxRateFor('progrid_llc'),
+      vatNote: currency === 'SAR' ? 'Prices exclude VAT. Customers billed by Progrid Arabia pay 15% VAT, shown at checkout.' : 'Prices exclude any tax. Customers billed by Progrid Technologies LLC see any tax at checkout.',
       hoursPerMonth: h,
       data: prices.map((p) => {
         const monthly = p.unit === 'percent' ? p.monthlyMinor : Math.round(p.monthlyMinor * rate);

@@ -39,6 +39,7 @@ import { OAuthModule } from './modules/oauth/oauth.module';
 import { ConnectModule } from './modules/connect/connect.module';
 import { JobsModule } from './jobs/jobs.module';
 import { HealthController } from './health.controller';
+import { GeoController } from './common/geo/geo.controller';
 
 /** The modular monolith. One module per bounded context (docs/adr/0001). */
 @Module({
@@ -53,7 +54,7 @@ import { HealthController } from './health.controller';
     // background
     JobsModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, GeoController],
   providers: [
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: RateLimitGuard }, // after AuthGuard so limits can key by token

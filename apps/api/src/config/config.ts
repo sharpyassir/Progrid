@@ -3,6 +3,11 @@ import { z } from 'zod';
 /** An optional URL where an empty value (KEY= in an env file) means unset. */
 const optionalUrl = () => z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional());
 
+/** An optional plain value where an empty value means unset. */
+const optionalString = () => z.preprocess((v) => (v === '' ? undefined : v), z.string().optional());
+/** A bare domain name such as progrid.co, or empty for unset. */
+const optionalDomain = () => z.preprocess((v) => (v === '' ? undefined : typeof v === 'string' ? v.trim().toLowerCase() : v), z.string().regex(/^[a-z0-9-]+(\.[a-z0-9-]+)+$/, 'a domain such as progrid.co').optional());
+
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
@@ -54,9 +59,14 @@ const schema = z.object({
   GITHUB_APP_SLUG: z.string().optional(),
   GITHUB_APP_PRIVATE_KEY: z.string().optional(),
   GITHUB_APP_WEBHOOK_SECRET: z.string().optional(),
-  /** Card payments. fake = built in test page (development and demos). */
-  /** Card payments for both currencies: Moyasar (mada, Visa, Mastercard, Apple Pay) or the built in test page. */
+  /** Card payments of Progrid Arabia (SAR): Moyasar (mada, Visa, Mastercard, Apple Pay) or the built in test page. */
   PAYMENT_PROVIDER: z.enum(['moyasar', 'fake']).default('fake'),
+  /** Card payments of Progrid Technologies LLC (USD): Stripe Checkout or the built in test page. */
+  PAYMENT_PROVIDER_LLC: z.enum(['stripe', 'fake']).default('fake'),
+  STRIPE_SECRET_KEY: optionalString(),
+  /** Signing secret (whsec_...) of the Stripe webhook endpoint POST /v1/billing/payments/stripe/webhook. */
+  STRIPE_WEBHOOK_SECRET: optionalString(),
+  STRIPE_BASE_URL: z.string().url().default('https://api.stripe.com'),
   MOYASAR_SECRET_KEY: z.string().optional(),
   MOYASAR_WEBHOOK_SECRET: z.string().optional(),
   MOYASAR_BASE_URL: z.string().url().default('https://api.moyasar.com'),
@@ -67,15 +77,63 @@ const schema = z.object({
   REQUIRE_PREPAID_BEFORE_POSTPAID: z.enum(['true', 'false', '1', '0']).default('true').transform((v) => v === 'true' || v === '1'),
   /** Usage a team may run up per month before that first top up, in the team's currency minor units (halalas for SAR). */
   FREE_ALLOWANCE_MINOR: z.coerce.number().int().min(0).default(0),
-  /** Seller details printed on invoices. */
+  /** The brand on PDFs and mails. Legal seller details come from the ENTITY_* settings below. */
   COMPANY_NAME: z.string().default('Progrid'),
-  COMPANY_ADDRESS: z.string().default('Saudi Arabia'),
-  COMPANY_TAX_ID: z.string().optional(),
+  /** Older single company settings; still the fallback for Progrid Arabia's address and VAT number. */
+  COMPANY_ADDRESS: optionalString(),
+  COMPANY_TAX_ID: optionalString(),
+  /** Primary (global) console, used for staff links and wherever no customer entity applies. */
   CONSOLE_URL: z.string().url().default('http://localhost:3000'),
+  /** Primary marketing site. */
+  WWW_URL: z.string().url().default('http://localhost:3001'),
+
+  // ---- domains and billing entities (docs/domains-and-entities.md) ----
+  /**
+   * Domain of Progrid Technologies LLC, the primary one (progrid.co). Links for its customers go to
+   * console.<domain>, api.<domain> and <domain>. Empty uses CONSOLE_URL, PUBLIC_API_URL and WWW_URL.
+   */
+  ENTITY_LLC_DOMAIN: optionalDomain(),
+  /** Domain of Progrid Arabia (progrid.sa). Empty uses CONSOLE_URL, PUBLIC_API_URL and WWW_URL. */
+  ENTITY_ARABIA_DOMAIN: optionalDomain(),
+  /**
+   * DB-IP "IP to Country Lite" database (mmdb, CC BY 4.0) that prefills the signup country.
+   * Downloaded at image build time; a missing file only means no prefill.
+   */
+  GEOIP_DB_PATH: z.string().default('/opt/prgd/geoip/dbip-country-lite.mmdb'),
+  /** More browser origins allowed to call the API with credentials, comma separated. */
+  CORS_EXTRA_ORIGINS: z.string().default(''),
+  ENTITY_LLC_LEGAL_NAME: z.string().default('Progrid Technologies LLC'),
+  /** Registered address, printed on invoices. Empty prints a placeholder until the owner provides it. */
+  ENTITY_LLC_ADDRESS: optionalString(),
+  /** Employer Identification Number from the IRS, printed on invoices once set. */
+  ENTITY_LLC_EIN: optionalString(),
+  /** Tax rate added to LLC invoices, 0 to 1. 0 prints no tax line. */
+  ENTITY_LLC_TAX_RATE: z.coerce.number().min(0).max(1).default(0),
+  ENTITY_LLC_TAX_LABEL: z.string().default('Tax'),
+  /** Bank transfer instructions printed on LLC invoices (one line, or lines separated by |). */
+  ENTITY_LLC_BANK_DETAILS: optionalString(),
+  ENTITY_LLC_SUPPORT_EMAIL: z.string().default('support@progrid.co'),
+  ENTITY_LLC_MAIL_FROM: z.string().default('Progrid <no-reply@progrid.co>'),
+  /** Terms the LLC's invoices refer to. Empty uses <www>/legal/terms of its domain. */
+  ENTITY_LLC_TERMS_URL: optionalUrl(),
+  ENTITY_ARABIA_LEGAL_NAME: z.string().default('Progrid Arabia'),
+  /** Registered address in Saudi Arabia. Empty uses COMPANY_ADDRESS, then a placeholder. */
+  ENTITY_ARABIA_ADDRESS: optionalString(),
+  /** Commercial registration (CR) number. */
+  ENTITY_ARABIA_CR: optionalString(),
+  /** VAT registration number (15 digits). Empty uses COMPANY_TAX_ID. */
+  ENTITY_ARABIA_VAT_NUMBER: optionalString(),
+  ENTITY_ARABIA_VAT_RATE: z.coerce.number().min(0).max(1).default(0.15),
+  ENTITY_ARABIA_BANK_DETAILS: optionalString(),
+  ENTITY_ARABIA_SUPPORT_EMAIL: z.string().default('support@progrid.sa'),
+  ENTITY_ARABIA_MAIL_FROM: z.string().default('Progrid <no-reply@progrid.sa>'),
+  ENTITY_ARABIA_TERMS_URL: optionalUrl(),
+
   MAIL_PROVIDER: z.enum(['log', 'postmark', 'resend']).default('log'),
-  MAIL_FROM: z.string().default('Progrid <no-reply@progrid.sa>'),
+  /** Sender of mails that belong to no customer entity (staff notices). Customer mail uses the entity's sender. */
+  MAIL_FROM: z.string().default('Progrid <no-reply@progrid.co>'),
   /** Where new support tickets and customer replies are mailed for the on duty engineer. Empty disables. */
-  SUPPORT_INBOX: z.string().default('support@progrid.sa'),
+  SUPPORT_INBOX: z.string().default('support@progrid.co'),
   /** Shared secret the mail provider sends with inbound email webhooks (POST /v1/support/inbound). Empty disables intake. */
   SUPPORT_INBOUND_SECRET: z.string().optional(),
   /** Svix signing secret (whsec_...) of the Resend webhook for email.received (POST /v1/support/inbound/resend). Empty disables it. */
@@ -140,8 +198,14 @@ const schema = z.object({
   // ---- DevOps console (docs/devops-console.md) ----
   /** Origin of the ops console app (apps/ops); links in mails and the WebAuthn origin. */
   PRGD_OPS_URL: z.string().url().default('http://localhost:3002'),
-  /** WebAuthn relying party id: the ops console's registrable domain (ops.progrid.sa or progrid.sa). */
+  /** WebAuthn relying party id: the ops console's registrable domain (ops.progrid.co or progrid.co). */
   PRGD_OPS_RP_ID: z.string().default('localhost'),
+  /**
+   * The ops console on the second domain (https://ops.progrid.sa) and its relying party id. Passkeys
+   * are bound to one relying party, so a key registered on one domain does not work on the other.
+   */
+  PRGD_OPS_URL_SA: optionalUrl(),
+  PRGD_OPS_RP_ID_SA: optionalString(),
   PRGD_OPS_RP_NAME: z.string().default('Progrid Ops'),
   /** Ops console session lifetime; twelve hours. */
   PRGD_OPS_SESSION_TTL_SECONDS: z.coerce.number().int().min(300).default(43_200),
@@ -191,7 +255,11 @@ const schema = z.object({
   MICROSOFT_CLIENT_SECRET: z.string().optional(),
   /** Entra directory that may sign in: common (work, school and personal accounts), organizations, consumers or a tenant id. */
   MICROSOFT_TENANT: z.preprocess((v) => (v === '' ? undefined : v), z.string().regex(/^[A-Za-z0-9.-]+$/).default('common')),
-  /** Base of the provider redirect URIs (<base>/v1/auth/oauth/<provider>/callback). Empty uses PUBLIC_API_URL. */
+  /**
+   * Base of the provider redirect URIs (<base>/v1/auth/oauth/<provider>/callback). Empty uses
+   * https://api.<domain> of the domain the sign in started on (both domains must be registered
+   * with Google and Microsoft), else PUBLIC_API_URL.
+   */
   OAUTH_REDIRECT_BASE: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
 
   // ---- Progrid Connect (docs/connect.md) ----
@@ -205,7 +273,10 @@ const schema = z.object({
   CONNECT_MODEL_FALLBACKS: z.enum(['true', 'false', '1', '0']).default('true').transform((v) => v === 'true' || v === '1'),
   /** Output token cap of one model call. Thinking counts toward it. */
   CONNECT_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(1024).max(64_000).default(16_000),
-  /** Public base the run endpoint, webhook URLs and docs print, e.g. https://api.progrid.sa. Empty uses PUBLIC_API_URL. */
+  /**
+   * Public base the run endpoint and webhook URLs use when the request did not come through a
+   * known domain, e.g. https://api.progrid.co. Empty uses PUBLIC_API_URL.
+   */
   CONNECT_PUBLIC_BASE_URL: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
   /** Per team caps. */
   CONNECT_MAX_AGENTS_PER_TEAM: z.coerce.number().int().min(1).default(50),

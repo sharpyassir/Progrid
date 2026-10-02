@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { loadConfig } from './config/config';
+import { configureHttp } from './common/http/setup';
 
 async function bootstrap() {
   const cfg = loadConfig();
@@ -11,7 +12,7 @@ async function bootstrap() {
     rawBody: true, // GitHub webhook signatures are computed over the raw payload
  logger: cfg.NODE_ENV === 'production' ? ['log', 'warn', 'error'] : ['debug', 'log', 'warn', 'error'] });
 
-  app.enableCors({ origin: true, credentials: true });
+  configureHttp(app);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidUnknownValues: false }));
   app.enableShutdownHooks();
 
@@ -19,6 +20,8 @@ async function bootstrap() {
     .setTitle('prgd API')
     .setVersion('v1')
     .setDescription('The same API powers the console, CLI, Terraform, SDKs and AI agents. Canonical spec: packages/openapi/openapi.yaml')
+    .addServer('https://api.progrid.co', 'Primary')
+    .addServer('https://api.progrid.sa', 'Saudi Arabia')
     .addBearerAuth()
     .build();
   SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, swagger));

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Prisma, type Currency } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { FxService } from '../billing/fx.service';
+import { billingAt } from '../billing/entity-change';
 import { BOOK_CURRENCY, startOfHour } from '../billing/pricing';
 import type { Actor } from '../../common/auth/actor';
 import { MODELS, PRICED_MODELS, pricedModel } from './models/catalog';
@@ -215,8 +216,11 @@ export class ConnectUsageService {
         GROUP BY 1, 2`,
     ]);
     if (!groups.length) return 0;
-    const projects = await this.prisma.project.findMany({ where: { id: { in: [...new Set(groups.map((g) => g.projectId))] } }, include: { team: { select: { currency: true } } } });
-    const currencyOf = new Map(projects.map((p) => [p.id, p.team.currency]));
+    const projects = await this.prisma.project.findMany({
+      where: { id: { in: [...new Set(groups.map((g) => g.projectId))] } },
+      include: { team: { select: { country: true, currency: true, billingEntity: true, pendingCountry: true, pendingBillingEntity: true, billingChangeAt: true } } },
+    });
+    const currencyOf = new Map(projects.map((p) => [p.id, billingAt(p.team, hourStart).currency]));
     const modelsOf = new Map<string, TokensByModel>();
     for (const r of modelRows) addTokens((modelsOf.get(r.agentId) ?? modelsOf.set(r.agentId, {}).get(r.agentId))!, r.model, rowTokens(r));
     const prices = await this.prices(hourEnd);

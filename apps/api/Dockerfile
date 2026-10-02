@@ -17,11 +17,21 @@ RUN pnpm --filter @prgd/api prisma:generate && pnpm --filter @prgd/api build
 RUN pnpm --filter @prgd/api deploy --legacy /out && cp -r apps/api/dist /out/dist && cp -r apps/api/prisma /out/prisma && cp -r apps/api/assets /out/assets \
     && cd /out && node node_modules/prisma/build/index.js generate
 
+# IP to country database for the signup country prefill (DB-IP Lite, CC BY 4.0). Monthly refresh:
+# every image build fetches the current month's file.
+FROM debian:bookworm-slim AS geoip
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
+COPY infra/geoip/fetch-dbip.sh /fetch-dbip.sh
+# The deploy workflow passes the month (YYYY-MM) so the layer is rebuilt once a month, not cached forever.
+ARG GEOIP_MONTH=unset
+RUN echo "geoip month ${GEOIP_MONTH}" && sh /fetch-dbip.sh /geoip/dbip-country-lite.mmdb && touch /geoip/.keep
+
 FROM node:22-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates curl fonts-dejavu-core && rm -rf /var/lib/apt/lists/* \
     && useradd -r -u 10001 prgd
 WORKDIR /app
 COPY --from=build --chown=prgd:prgd /out /app
+COPY --from=geoip --chown=prgd:prgd /geoip /opt/prgd/geoip
 ENV NODE_ENV=production PORT=4000
 USER prgd
 EXPOSE 4000

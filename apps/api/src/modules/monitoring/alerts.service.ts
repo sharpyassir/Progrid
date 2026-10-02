@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { teamEntity } from '../../common/entities/lookup';
 import { NatsService, Subjects } from '../../common/nats/nats.service';
 import type { AlertMetric, AlertPolicy } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -164,8 +165,10 @@ export class AlertsService {
     const owners = await this.prisma.teamMember.findMany({ where: { teamId: policy.teamId, role: { in: ['owner', 'admin'] } }, include: { user: { select: { email: true, name: true } } } });
     const to = new Set([...owners.map((m) => m.user.email), ...policy.emails]);
     const url = text?.url ?? `${loadConfig().CONSOLE_URL}/servers/${server.id}`;
+    const entity = await teamEntity(this.prisma, policy.teamId);
     await Promise.all([...to].map((email) => this.mail.send({
       to: email,
+      entity,
       subject: `${edge === 'triggered' ? 'Alert' : 'Resolved'}: ${policy.name} on ${server.name}`,
       text: edge === 'triggered'
         ? `${summary}.\n\n${text ? 'Details' : 'Open the server'}:\n${url}\n\nYou get one email when an alert starts and one when it ends. Edit or mute the rule under Core Cloud, Monitoring.`

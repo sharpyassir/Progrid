@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { opsRelyingParty } from '../../../common/entities/entities';
 import * as argon2 from 'argon2';
 import { createHash } from 'node:crypto';
 import {
@@ -26,6 +27,8 @@ const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 export interface ClientMeta {
   ip: string;
   userAgent: string;
+  /** Browser Origin; picks the ops console (ops.progrid.co or ops.progrid.sa) and its WebAuthn relying party. */
+  origin?: string;
 }
 
 type SignInUser = {
@@ -113,9 +116,10 @@ export class OpsAuthService {
   async webauthnRegisterOptions(who: { challenge?: string; userId?: string }, meta: ClientMeta) {
     const user = await this.enrollUser(who, meta);
     const c = loadConfig();
+    const rp = opsRelyingParty(meta.origin);
     const options = await generateRegistrationOptions({
       rpName: c.PRGD_OPS_RP_NAME,
-      rpID: c.PRGD_OPS_RP_ID,
+      rpID: rp.rpId,
       userName: user.name,
       userID: new TextEncoder().encode(user.id),
       userDisplayName: user.name,
@@ -131,10 +135,10 @@ export class OpsAuthService {
     const user = await this.enrollUser(who, meta);
     const expected = await this.recall(`ops:webauthn:reg:${user.id}`);
     if (!expected) throw ApiError.invalid('Registration expired; start again');
-    const c = loadConfig();
+    const rp = opsRelyingParty(meta.origin);
     let result;
     try {
-      result = await verifyRegistrationResponse({ response, expectedChallenge: expected, expectedOrigin: c.PRGD_OPS_URL, expectedRPID: c.PRGD_OPS_RP_ID, requireUserVerification: false });
+      result = await verifyRegistrationResponse({ response, expectedChallenge: expected, expectedOrigin: rp.origin, expectedRPID: rp.rpId, requireUserVerification: false });
     } catch (e) {
       throw new ApiError(401, 'webauthn_invalid', `The security key response was not accepted: ${(e as Error).message}`);
     }
@@ -154,7 +158,7 @@ export class OpsAuthService {
     const { user, jti } = await this.challengeUser(challenge, meta);
     if (!user.webAuthnCredentials.length) throw ApiError.invalid('No security key is registered for this account');
     const options = await generateAuthenticationOptions({
-      rpID: loadConfig().PRGD_OPS_RP_ID,
+      rpID: opsRelyingParty(meta.origin).rpId,
       allowCredentials: user.webAuthnCredentials.map((w) => ({ id: w.credentialId, transports: w.transports as AuthenticatorTransportFuture[] })),
       userVerification: 'preferred',
     });
@@ -168,11 +172,11 @@ export class OpsAuthService {
     if (!expected) throw ApiError.invalid('Sign in expired; start again');
     const cred = await this.prisma.webAuthnCredential.findUnique({ where: { credentialId: response.id } });
     if (!cred || cred.userId !== user.id) throw new ApiError(401, 'webauthn_invalid', 'Unknown security key');
-    const c = loadConfig();
+    const rp = opsRelyingParty(meta.origin);
     let result;
     try {
       result = await verifyAuthenticationResponse({
-        response, expectedChallenge: expected, expectedOrigin: c.PRGD_OPS_URL, expectedRPID: c.PRGD_OPS_RP_ID, requireUserVerification: false,
+        response, expectedChallenge: expected, expectedOrigin: rp.origin, expectedRPID: rp.rpId, requireUserVerification: false,
         credential: { id: cred.credentialId, publicKey: new Uint8Array(cred.publicKey), counter: cred.counter, transports: cred.transports as AuthenticatorTransportFuture[] },
       });
     } catch (e) {

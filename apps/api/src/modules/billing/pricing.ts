@@ -1,3 +1,5 @@
+import { entityProfile, type BillingEntityId } from '../../common/entities/entities';
+
 /**
  * Pure rating math (no I/O) so it can be unit-tested.
  * See docs/adr/0004-metering-and-rating.md.
@@ -29,11 +31,15 @@ export function displayPrice(monthlyMinor: number, hoursPerMonth: number) {
   return { monthlyMinor, hourlyMinor: Math.round(monthlyMinor / hoursPerMonth) };
 }
 
-/** Saudi VAT (15%) applies to riyal invoices and to teams in Saudi Arabia. Prices are shown without it; checkout shows the total with it. */
+/** Saudi VAT (15%), charged by Progrid Arabia. Prices are shown without it; checkout shows the total with it. */
 export const VAT_RATE = 0.15;
 
-export function taxRateFor(currency: 'USD' | 'SAR', country: string): number {
-  return currency === 'SAR' || country === 'SA' ? 0.15 : 0;
+/**
+ * Tax rate of an invoice, from the company that issues it: VAT for Progrid Arabia, the configured
+ * rate (0 by default) for Progrid Technologies LLC. See common/entities/entities.ts.
+ */
+export function taxRateFor(entity: BillingEntityId): number {
+  return entityProfile(entity).taxRate;
 }
 
 export function startOfHour(d: Date) {
@@ -44,12 +50,12 @@ export function startOfMonth(d: Date) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
 }
 
-/** Invoice number from the global prgd_invoice_number_seq sequence, e.g. PRGD-2026-000123. */
+/** Invoice number of the single company era (before billing entities), e.g. PRGD-2026-000123. New invoices use entityInvoiceNumber. */
 export function invoiceNumber(year: number, seq: number | bigint) {
   return `PRGD-${year}-${String(seq).padStart(6, '0')}`;
 }
 
-/** Credit note number from the global prgd_credit_note_number_seq sequence, e.g. CN-2026-000045. */
+/** Credit note number of the single company era, e.g. CN-2026-000045. New notes use entityCreditNoteNumber. */
 export function creditNoteNumber(year: number, seq: number | bigint) {
   return `CN-${year}-${String(seq).padStart(6, '0')}`;
 }

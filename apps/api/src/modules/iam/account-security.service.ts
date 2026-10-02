@@ -7,6 +7,8 @@ import { MailService } from '../../common/mail/mail.service';
 import { ApiError } from '../../common/errors/api-error';
 import { EventsService } from '../events/events.service';
 import { loadConfig } from '../../config/config';
+import { returnConsoleUrl } from '../../common/entities/entities';
+import { userEntity } from '../../common/entities/lookup';
 import { generateRecoveryCodes, generateSecret, otpauthUrl, verifyTotp } from '../../common/auth/totp';
 import type { Actor } from '../../common/auth/actor';
 import { dropUnprovenIdentities } from '../oauth/unproven-identities';
@@ -26,9 +28,12 @@ export class AccountSecurityService {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     if (user.emailVerified) return;
     const token = await this.issueToken(userId, 'verify', 24 * 3600);
-    const url = `${loadConfig().CONSOLE_URL}/verify?token=${token}`;
+    // The console the person signed up on, else their company's console; sent by that company.
+    const entity = await userEntity(this.prisma, userId);
+    const url = `${returnConsoleUrl(entity)}/verify?token=${token}`;
     await this.mail.send({
       to: user.email,
+      entity,
       subject: 'Confirm your email for prgd',
       text: `Hi ${user.name},\n\nConfirm your email address to start creating servers:\n${url}\n\nThe link is valid for 24 hours. If you did not create a prgd account, ignore this message.`,
     });
@@ -51,9 +56,11 @@ export class AccountSecurityService {
     const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
     if (!user) return;
     const token = await this.issueToken(user.id, 'reset', 3600);
-    const url = `${loadConfig().CONSOLE_URL}/reset-password?token=${token}`;
+    const entity = await userEntity(this.prisma, user.id);
+    const url = `${returnConsoleUrl(entity)}/reset-password?token=${token}`;
     await this.mail.send({
       to: user.email,
+      entity,
       subject: 'Reset your prgd password',
       text: `Hi ${user.name},\n\nSomeone asked to reset the password for this account. If that was you, choose a new password here:\n${url}\n\nThe link is valid for one hour. If you did not ask for this, you can ignore it; your password has not changed.`,
     });

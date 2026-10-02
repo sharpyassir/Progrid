@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { teamEntity } from '../../common/entities/lookup';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { MailService, type Mail } from '../../common/mail/mail.service';
 import { loadConfig } from '../../config/config';
@@ -17,7 +18,8 @@ export class ManagedNotify {
 
   async toOwners(teamId: string, mail: Omit<Mail, 'to'>) {
     const to = await this.ownerEmails(teamId);
-    await Promise.all(to.map((email) => this.send({ ...mail, to: email })));
+    const entity = mail.entity ?? (await teamEntity(this.prisma, teamId));
+    await Promise.all(to.map((email) => this.send({ ...mail, entity, to: email })));
     return to;
   }
 

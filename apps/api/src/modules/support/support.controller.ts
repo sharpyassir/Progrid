@@ -38,7 +38,8 @@ export class SupportController {
     const str = (v: unknown) => (typeof v === 'string' ? v : '');
     const fromRaw = str(raw.From) || str(raw.from) || str((raw.sender as Record<string, unknown> | undefined)?.email);
     const from = /<([^>]+)>/.exec(fromRaw)?.[1] ?? fromRaw;
-    return this.support.inbound({ from, subject: str(raw.Subject) || str(raw.subject), text: str(raw.StrippedTextReply) || str(raw.TextBody) || str(raw.text) });
+    const to = (str(raw.To) || str(raw.to)).split(',').map((a) => (/<([^>]+)>/.exec(a)?.[1] ?? a).trim()).filter(Boolean);
+    return this.support.inbound({ from, subject: str(raw.Subject) || str(raw.subject), text: str(raw.StrippedTextReply) || str(raw.TextBody) || str(raw.text), to });
   }
 
   /**

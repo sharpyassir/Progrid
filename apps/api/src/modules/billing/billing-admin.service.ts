@@ -5,7 +5,7 @@ import { ApiError } from '../../common/errors/api-error';
 import type { Actor } from '../../common/auth/actor';
 import { EventsService } from '../events/events.service';
 import { PaymentsService } from './payments/payments.service';
-import { creditNoteNumber } from './pricing';
+import { entityCreditNoteNumber, entityProfile } from '../../common/entities/entities';
 
 /**
  * Back office money operations: card refunds, credit notes, void, payments received outside
@@ -17,11 +17,11 @@ export class BillingAdminService {
 
   constructor(private readonly prisma: PrismaService, private readonly events: EventsService, private readonly payments: PaymentsService) {}
 
-  listInvoices(status?: string) {
+  listInvoices(status?: string, billingEntity?: string) {
     return this.prisma.invoice.findMany({
-      where: status ? { status: status as never } : {},
+      where: { ...(status ? { status: status as never } : {}), ...(billingEntity === 'progrid_arabia' || billingEntity === 'progrid_llc' ? { billingEntity } : {}) },
       include: {
-        team: { select: { id: true, name: true, slug: true, country: true } },
+        team: { select: { id: true, name: true, slug: true, country: true, billingEntity: true } },
         payments: { select: { id: true, provider: true, providerRef: true, status: true, amountMinor: true, refundedMinor: true, currency: true, paidAt: true, createdAt: true }, orderBy: { createdAt: 'desc' } },
         creditNotes: { select: { id: true, number: true, amountMinor: true, reason: true, createdAt: true }, orderBy: { createdAt: 'asc' } },
       },
@@ -88,9 +88,10 @@ export class BillingAdminService {
       const credit = toCredit > 0
         ? await tx.credit.create({ data: { teamId: inv.teamId, kind: 'refund', currency: inv.currency, amountMinor: toCredit, remainingMinor: toCredit, reason: `Credit note on invoice ${inv.number}: ${reason}` } })
         : null;
-      const [{ seq }] = await tx.$queryRaw<{ seq: bigint }[]>`SELECT nextval('prgd_credit_note_number_seq') AS seq`;
+      // A credit note is issued by the company that issued the invoice, in its own series.
+      const [{ seq }] = await tx.$queryRawUnsafe<{ seq: bigint }[]>(`SELECT nextval('${entityProfile(inv.billingEntity).creditNoteSequence}') AS seq`);
       const note = await tx.creditNote.create({
-        data: { number: creditNoteNumber(new Date().getUTCFullYear(), seq), teamId: inv.teamId, invoiceId: inv.id, currency: inv.currency, amountMinor, appliedToDueMinor: toDue, creditId: credit?.id, reason, createdBy: actor.userId },
+        data: { number: entityCreditNoteNumber(inv.billingEntity, new Date().getUTCFullYear(), seq), billingEntity: inv.billingEntity, teamId: inv.teamId, invoiceId: inv.id, currency: inv.currency, amountMinor, appliedToDueMinor: toDue, creditId: credit?.id, reason, createdBy: actor.userId },
       });
       const fully = already + amountMinor >= gross || (inv.status === 'open' && toDue === due);
       await tx.invoice.update({ where: { id: inv.id }, data: { creditedMinor: { increment: toDue }, ...(fully ? { status: 'credited' } : {}) } });

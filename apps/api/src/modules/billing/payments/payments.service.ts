@@ -1,35 +1,41 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { Currency, PaymentProvider as ProviderName } from '@prisma/client';
+import type { BillingEntity, Currency, PaymentProvider as ProviderName } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ApiError } from '../../../common/errors/api-error';
 import { EventsService } from '../../events/events.service';
-import { loadConfig } from '../../../config/config';
+import { entityProfile, requestApiBase, returnConsoleUrl } from '../../../common/entities/entities';
 import type { Actor } from '../../../common/auth/actor';
 import type { PaymentProvider } from './provider';
 import { MoyasarProvider } from './moyasar.provider';
 import { FakeProvider } from './fake.provider';
+import { StripeProvider } from './stripe.provider';
 import { TrustService } from '../../trust/trust.service';
 
 /** A pending checkout younger than this is handed out again instead of starting a second one. */
 const PENDING_REUSE_MS = 30 * 60_000;
 
-/** Card payments: prepaid credit top ups and paying open invoices, in riyals or dollars through Moyasar. */
+type CardProvider = 'moyasar' | 'stripe' | 'fake';
+
+/**
+ * Card payments: prepaid credit top ups and paying open invoices. The money goes to the company
+ * that bills the team (or issued the invoice): Progrid Arabia collects riyals through Moyasar,
+ * Progrid Technologies LLC collects dollars through Stripe, each with its own credentials.
+ */
 @Injectable()
 export class PaymentsService {
   private readonly log = new Logger(PaymentsService.name);
-  private readonly providers: Record<'moyasar' | 'fake', PaymentProvider> = { moyasar: new MoyasarProvider(), fake: new FakeProvider() };
+  private readonly providers: Record<CardProvider, PaymentProvider> = { moyasar: new MoyasarProvider(), stripe: new StripeProvider(), fake: new FakeProvider() };
 
   constructor(private readonly prisma: PrismaService, private readonly events: EventsService, private readonly trust: TrustService) {}
 
   /** The adapter that took a stored payment (for refunds). */
   providerByName(name: ProviderName): PaymentProvider | undefined {
-    return name === 'moyasar' || name === 'fake' ? this.providers[name] : undefined;
+    return name === 'moyasar' || name === 'stripe' || name === 'fake' ? this.providers[name] : undefined;
   }
 
-  providerFor(currency: Currency): PaymentProvider {
-    const c = loadConfig();
-    void currency; // one provider serves both currencies
-    return this.providers[c.PAYMENT_PROVIDER];
+  /** The card gateway of a company: Moyasar for Progrid Arabia, Stripe for the LLC (or the test page). */
+  providerFor(entity: BillingEntity): PaymentProvider {
+    return this.providers[entityProfile(entity).paymentProvider];
   }
 
   /** Limits per currency in minor units: keeps typos and card testing out. */
@@ -42,7 +48,7 @@ export class PaymentsService {
     const team = await this.prisma.team.findUniqueOrThrow({ where: { id: actor.teamId } });
     const { min, max } = this.limits(team.currency);
     if (!Number.isInteger(amountMinor) || amountMinor < min || amountMinor > max) throw ApiError.invalid(`Amount must be between ${min / 100} and ${max / 100} ${team.currency}`, { min, max });
-    return this.start(actor, team, amountMinor, `Progrid credit top up for ${team.name}`, undefined);
+    return this.start(actor, team, { entity: team.billingEntity, currency: team.currency }, amountMinor, `Progrid credit top up for ${team.name}`, undefined);
   }
 
   async payInvoice(actor: Actor, invoiceId: string) {
@@ -63,7 +69,8 @@ export class PaymentsService {
     }
     const due = inv.totalMinor - inv.creditedMinor;
     if (due <= 0) throw ApiError.invalidState(`Invoice ${inv.number} has nothing left to pay`);
-    return this.start(actor, team, due, `Progrid invoice ${inv.number}`, inv.id);
+    // Paid to the company that issued the invoice, in its currency, even if the team has moved since.
+    return this.start(actor, team, { entity: inv.billingEntity, currency: inv.currency }, due, `Progrid invoice ${inv.number}`, inv.id);
   }
 
   list(actor: Actor) {
@@ -71,8 +78,8 @@ export class PaymentsService {
   }
 
   /** Provider webhook or callback: idempotent, so redelivery is harmless. */
-  async handle(provider: ProviderName | 'fake', rawBody: Buffer, headers: Record<string, string | undefined>, query?: Record<string, string>) {
-    const events = await this.providers[provider as 'moyasar' | 'fake'].parseEvent(rawBody, headers, query);
+  async handle(provider: CardProvider, rawBody: Buffer, headers: Record<string, string | undefined>, query?: Record<string, string>) {
+    const events = await this.providers[provider].parseEvent(rawBody, headers, query);
     const out: { paymentId: string; status: string; successUrl?: string; cancelUrl?: string }[] = [];
     for (const ev of events) {
       const p = await this.prisma.payment.findFirst({ where: { provider, providerRef: ev.providerRef }, include: { invoice: true } });
@@ -124,27 +131,31 @@ export class PaymentsService {
     await this.trust.reinstateIfSettled(teamId).catch((e) => this.log.error(`reinstating team ${teamId} failed: ${(e as Error).message}`));
   }
 
-  private async start(actor: Actor, team: { id: string; name: string; currency: Currency }, amountMinor: number, description: string, invoiceId: string | undefined) {
+  private async start(actor: Actor, team: { id: string; name: string }, billing: { entity: BillingEntity; currency: Currency }, amountMinor: number, description: string, invoiceId: string | undefined) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } });
-    const provider = this.providerFor(team.currency);
-    const c = loadConfig();
-    const successUrl = `${c.CONSOLE_URL}/billing?payment=success`;
-    const cancelUrl = `${c.CONSOLE_URL}/billing?payment=cancel`;
-    const metadata = { successUrl, cancelUrl, providerName: provider.name };
+    const provider = this.providerFor(billing.entity);
+    const entity = entityProfile(billing.entity);
+    // Back to the console the person paid from (their session lives there), else the company's console.
+    const consoleUrl = returnConsoleUrl(billing.entity);
+    const apiBase = requestApiBase(entity.apiUrl);
+    const successUrl = `${consoleUrl}/billing?payment=success`;
+    const cancelUrl = `${consoleUrl}/billing?payment=cancel`;
+    const metadata = { successUrl, cancelUrl, providerName: provider.name, billingEntity: billing.entity };
+    const currency = billing.currency;
     const payment = invoiceId
       ? await this.prisma.$transaction(async (tx) => {
           // Serializes concurrent "pay" clicks on one invoice so only one checkout is created.
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`invoice-pay:${invoiceId}`}))`;
           const busy = await tx.payment.findFirst({ where: { invoiceId, status: 'pending', createdAt: { gt: new Date(Date.now() - PENDING_REUSE_MS) } } });
           if (busy) throw ApiError.conflict('payment_in_progress', 'A payment for this invoice is already being started. Try again in a moment.');
-          return tx.payment.create({ data: { teamId: team.id, invoiceId, provider: provider.name, currency: team.currency, amountMinor, metadata } });
+          return tx.payment.create({ data: { teamId: team.id, invoiceId, provider: provider.name, currency, amountMinor, metadata } });
         })
-      : await this.prisma.payment.create({ data: { teamId: team.id, provider: provider.name, currency: team.currency, amountMinor, metadata } });
+      : await this.prisma.payment.create({ data: { teamId: team.id, provider: provider.name, currency, amountMinor, metadata } });
     try {
-      const r = await provider.createCheckout({ paymentId: payment.id, amountMinor, currency: team.currency, description, customer: { email: user.email, name: user.name, teamId: team.id }, successUrl, cancelUrl, callbackUrl: `${c.PUBLIC_API_URL}/v1/billing/payments/${provider.name}/callback` });
+      const r = await provider.createCheckout({ paymentId: payment.id, amountMinor, currency, description, customer: { email: user.email, name: user.name, teamId: team.id }, successUrl, cancelUrl, callbackUrl: `${apiBase}/v1/billing/payments/${provider.name}/callback`, apiBase });
       await this.prisma.payment.update({ where: { id: payment.id }, data: { providerRef: r.providerRef, metadata: { ...metadata, redirectUrl: r.redirectUrl } } });
-      await this.events.emit('payment.started', { paymentId: payment.id, amountMinor, currency: team.currency, invoiceId }, { actor, resource: `payment:${payment.id}` });
-      return { paymentId: payment.id, provider: provider.name, amountMinor, currency: team.currency, redirectUrl: r.redirectUrl };
+      await this.events.emit('payment.started', { paymentId: payment.id, amountMinor, currency, invoiceId, billingEntity: billing.entity }, { actor, resource: `payment:${payment.id}` });
+      return { paymentId: payment.id, provider: provider.name, amountMinor, currency, billingEntity: billing.entity, redirectUrl: r.redirectUrl };
     } catch (err) {
       await this.prisma.payment.update({ where: { id: payment.id }, data: { status: 'failed', failureReason: (err as Error).message } });
       throw err;

@@ -1,4 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { returnConsoleUrl } from '../entities/entities';
+import { clientIpOf } from '../net/client-ip';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { ApiError } from '../errors/api-error';
@@ -56,7 +58,7 @@ export class AuthGuard implements CanActivate {
     // Staff keep the back office even if their own team is suspended.
     const staffCall = req.path.startsWith('/admin/') && hasStaffScope(actor.scopes);
     if (actor.teamStatus === 'suspended' && !staffCall && !allowedWhileSuspended(req.method, req.path, required)) {
-      throw new ApiError(403, 'account_suspended', `This account is suspended. Only billing is available: pay any overdue invoice at ${loadConfig().CONSOLE_URL}/billing, or contact support.`);
+      throw new ApiError(403, 'account_suspended', `This account is suspended. Only billing is available: pay any overdue invoice at ${returnConsoleUrl()}/billing, or contact support.`);
     }
     const missing = required.filter((s) => !actor.scopes.has(s));
     if (missing.length) {
@@ -91,8 +93,8 @@ export const OPS_SESSION_COOKIE = 'prgd_ops_session';
 
 /** Client address (Caddy sets X-Forwarded-For) and user agent of a request. */
 export function clientOf(req: Request) {
-  const fwd = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
-  return { ip: (fwd || req.ip || '').slice(0, 64), userAgent: String(req.headers['user-agent'] ?? '').slice(0, 300) };
+  const origin = typeof req.headers.origin === 'string' ? req.headers.origin.slice(0, 200) : undefined;
+  return { ip: clientIpOf(req).slice(0, 64), userAgent: String(req.headers['user-agent'] ?? '').slice(0, 300), origin };
 }
 
 export function readCookie(header: string | undefined, name: string): string | undefined {

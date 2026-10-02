@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { rateHour, taxRateFor } from './pricing';
 
+// taxRateFor reads the entity settings; the config needs a database URL to parse.
+process.env.DATABASE_URL ??= 'postgresql://unit@localhost:5432/unit';
+
 describe('rateHour', () => {
   const monthly = 2400; // $24.00 → 672h → ~3.57¢/h
   it('bills a full hour at monthly/672', () => {
@@ -20,11 +23,10 @@ describe('rateHour', () => {
 });
 
 describe('taxRateFor', () => {
-  it('charges 15% VAT for Saudi Arabia', () => {
-    expect(taxRateFor('SAR', 'SA')).toBe(0.15);
-    expect(taxRateFor('USD', 'SA')).toBe(0.15);
+  it('charges 15% VAT on Progrid Arabia invoices', () => {
+    expect(taxRateFor('progrid_arabia')).toBe(0.15);
   });
-  it('charges no tax for international USD', () => {
-    expect(taxRateFor('USD', 'DE')).toBe(0);
+  it('charges no tax on Progrid Technologies LLC invoices by default', () => {
+    expect(taxRateFor('progrid_llc')).toBe(0);
   });
 });

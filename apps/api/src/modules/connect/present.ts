@@ -1,13 +1,19 @@
 import type { ConnectAgent, ConnectAgentKey, ConnectRun, ConnectTool, ConnectWebhook, ConnectWorkflow } from '@prisma/client';
+import { requestApiBase } from '../../common/entities/entities';
 import { loadConfig } from '../../config/config';
 import { normalizeLimits, normalizeVariables } from './runtime/spec';
 import { parseTokensByModel } from './pricing';
 
 /** Response shapes (see the Connect contract). Nothing here ever includes a secret value. */
 
+/**
+ * Base of run endpoints and webhook URLs: the API host the request came through when it is one of
+ * ours (api.progrid.co or api.progrid.sa, so customers see their own domain), else
+ * CONNECT_PUBLIC_BASE_URL or PUBLIC_API_URL.
+ */
 export function publicBase() {
   const c = loadConfig();
-  return (c.CONNECT_PUBLIC_BASE_URL ?? c.PUBLIC_API_URL).replace(/\/+$/, '');
+  return requestApiBase(c.CONNECT_PUBLIC_BASE_URL ?? c.PUBLIC_API_URL);
 }
 
 export function runEndpoint(agentId: string) {

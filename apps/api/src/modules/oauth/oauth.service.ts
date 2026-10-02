@@ -13,6 +13,10 @@ import { TeamService } from '../team/team.service';
 import { OidcProviders } from './providers';
 import { OAuthStore, randomToken, sha256, type Completion, type PendingLogin } from './oauth.store';
 import { dropUnprovenIdentities } from './unproven-identities';
+import { requestDomain, urlsFor } from '../../common/entities/entities';
+import { currentRequest } from '../../common/entities/request-context';
+import { isCountryCode } from '../../common/entities/countries';
+import { suggestedCountry } from '../../common/geo/signup-country';
 import { decideLink, PROVIDERS, safeReturnPath, type Intent, type ProviderAccount, type ProviderId, type RefuseCode } from './linking';
 
 export const BROWSER_COOKIE = 'prgd_oauth';
@@ -46,9 +50,11 @@ export class OAuthService {
    * Returns the provider URL to redirect to and the random value for the browser cookie. Any
    * error becomes a redirect back to the console with an error code (the browser navigated here).
    */
-  async start(provider: string, q: { intent?: string; return?: string; invite?: string; ticket?: string; locale?: string }) {
+  async start(provider: string, q: { intent?: string; return?: string; invite?: string; ticket?: string; locale?: string; country?: string }) {
+    // The API host the browser came to (api.progrid.co or api.progrid.sa) decides the callback and the console to return to.
+    const domain = requestDomain();
     const s = this.providers.settings(provider);
-    if (!s) return { error: this.consoleError('provider_unavailable', provider) };
+    if (!s) return { error: this.consoleError('provider_unavailable', provider, undefined, undefined, domain) };
     const intent: Intent = q.intent === 'link' ? 'link' : q.intent === 'signup' ? 'signup' : 'login';
     const returnPath = safeReturnPath(q.return, intent === 'link' ? '/security' : '/servers');
 
@@ -57,7 +63,7 @@ export class OAuthService {
       const t = q.ticket ? await this.store.takeLinkTicket(q.ticket) : null;
       const session = t ? await this.prisma.session.findUnique({ where: { id: t.sessionId } }) : null;
       if (!t || !session || session.revokedAt || session.expiresAt < new Date() || session.userId !== t.userId) {
-        return { error: this.consoleError('link_session_invalid', provider, 'link', returnPath) };
+        return { error: this.consoleError('link_session_invalid', provider, 'link', returnPath, domain) };
       }
       linkUserId = t.userId;
     }
@@ -76,13 +82,15 @@ export class OAuthService {
       invite: typeof q.invite === 'string' && q.invite.length <= 200 ? q.invite : undefined,
       locale: q.locale === 'en' || q.locale === 'tr' || q.locale === 'ar' ? q.locale : undefined,
       linkUserId,
+      domain,
+      country: isCountryCode(q.country?.toUpperCase()) ? q.country!.toUpperCase() : undefined,
     };
     let url: string;
     try {
-      url = await this.providers.authorizationUrl(s, { state, nonce, codeChallenge: createHash('sha256').update(codeVerifier).digest('base64url') });
+      url = await this.providers.authorizationUrl(s, { state, nonce, codeChallenge: createHash('sha256').update(codeVerifier).digest('base64url'), domain });
     } catch (err) {
       this.log.warn(`${provider} discovery failed: ${(err as Error).message}`);
-      return { error: this.consoleError('provider_error', provider, intent, returnPath) };
+      return { error: this.consoleError('provider_error', provider, intent, returnPath, domain) };
     }
     await this.store.putState(state, pending);
     return { url, browser };
@@ -93,17 +101,17 @@ export class OAuthService {
   /** Returns the console URL to redirect to: a one time code on success, an error code otherwise. */
   async callback(provider: string, q: { code?: string; state?: string; error?: string }, browserCookie: string | undefined, meta: Meta): Promise<string> {
     const pending = typeof q.state === 'string' && q.state.length <= 100 ? await this.store.takeState(q.state) : null;
-    if (!pending || pending.provider !== provider) return this.consoleError('state_invalid', provider);
+    if (!pending || pending.provider !== provider) return this.consoleError('state_invalid', provider, undefined, undefined, requestDomain());
     // The state must come back to the browser that started the sign in (login CSRF).
-    if (!browserCookie || !safeEqual(sha256(browserCookie), pending.browserHash)) return this.consoleError('state_invalid', provider, pending.intent, pending.returnPath);
-    const fail = (code: string) => this.consoleError(code, provider, pending.intent, pending.returnPath);
+    if (!browserCookie || !safeEqual(sha256(browserCookie), pending.browserHash)) return this.consoleError('state_invalid', provider, pending.intent, pending.returnPath, pending.domain);
+    const fail = (code: string) => this.consoleError(code, provider, pending.intent, pending.returnPath, pending.domain);
     if (q.error) return fail(q.error === 'access_denied' ? 'cancelled' : 'provider_error');
     const s = this.providers.settings(provider);
     if (!s || typeof q.code !== 'string' || !q.code) return fail('provider_error');
 
     let account: ProviderAccount;
     try {
-      ({ account } = await this.providers.redeem(s, q.code, pending.codeVerifier, pending.nonce));
+      ({ account } = await this.providers.redeem(s, q.code, pending.codeVerifier, pending.nonce, pending.domain));
     } catch (err) {
       this.log.warn(`${provider} sign in refused: ${(err as Error).message}`);
       return fail('token_invalid');
@@ -121,19 +129,19 @@ export class OAuthService {
       case 'link':
       case 'already_linked': {
         if (decision.action === 'link') await this.linkIdentity(decision.userId, account, false);
-        return `${this.consoleUrl()}/auth/callback?linked=${provider}&return=${encodeURIComponent(pending.returnPath)}`;
+        return `${this.consoleUrl(pending.domain)}/auth/callback?linked=${provider}&return=${encodeURIComponent(pending.returnPath)}`;
       }
 
       case 'sign_in':
-        return this.codeRedirect({ provider: account.provider, userId: decision.userId, identityId: identity!.id, returnPath: pending.returnPath, created: false, invite: pending.invite });
+        return this.codeRedirect({ provider: account.provider, userId: decision.userId, identityId: identity!.id, returnPath: pending.returnPath, created: false, invite: pending.invite }, pending.domain);
 
       case 'link_and_sign_in':
-        return this.codeRedirect({ provider: account.provider, userId: decision.userId, link: account, returnPath: pending.returnPath, created: false, invite: pending.invite });
+        return this.codeRedirect({ provider: account.provider, userId: decision.userId, link: account, returnPath: pending.returnPath, created: false, invite: pending.invite }, pending.domain);
 
       case 'create': {
         try {
           const c = await this.createUser(account, pending, meta);
-          return this.codeRedirect(c);
+          return this.codeRedirect(c, pending.domain);
         } catch (err) {
           if (err instanceof ApiError) {
             const code = (err.getResponse() as { code?: string }).code;
@@ -231,7 +239,9 @@ export class OAuthService {
       return { ...base, userId: user.id, returnPath: '/team', session: { token: r.session, teamId: r.team.id } };
     }
     const teamName = a.name.length >= 2 ? a.name.slice(0, 60) : `${a.email!.split('@')[0]} team`.slice(0, 60);
-    const { user, team } = await this.iam.createAccount({ email: a.email!, name: a.name, teamName, country: 'SA', locale: p.locale, emailVerified: a.emailVerified });
+    // The billing country from the signup form, else the default of the domain the sign in started on.
+    const country = p.country ?? suggestedCountry(currentRequest()?.ip, p.domain).country;
+    const { user, team } = await this.iam.createAccount({ email: a.email!, name: a.name, teamName, country, locale: p.locale, emailVerified: a.emailVerified });
     await this.linkIdentity(user.id, a, true);
     await this.events.emit('user.oauth_signup', { userId: user.id, provider: a.provider, emailVerified: a.emailVerified }, { teamId: team.id, resource: `user:${user.id}` });
     return { ...base, userId: user.id, returnPath: '/security?welcome=1' };
@@ -306,20 +316,21 @@ export class OAuthService {
 
   // ---- helpers ----
 
-  private async codeRedirect(c: Completion) {
+  private async codeRedirect(c: Completion, domain?: string) {
     const code = await this.store.putCode(c);
-    return `${this.consoleUrl()}/auth/callback?code=${encodeURIComponent(code)}`;
+    return `${this.consoleUrl(domain)}/auth/callback?code=${encodeURIComponent(code)}`;
   }
 
-  private consoleError(code: string | RefuseCode, provider: string, intent?: Intent, returnPath?: string) {
+  private consoleError(code: string | RefuseCode, provider: string, intent?: Intent, returnPath?: string, domain?: string) {
     const q = new URLSearchParams({ error: code, provider: PROVIDERS.includes(provider as ProviderId) ? provider : '' });
     if (intent) q.set('intent', intent);
     if (intent === 'link' && returnPath) q.set('return', returnPath);
-    return `${this.consoleUrl()}/auth/callback?${q.toString()}`;
+    return `${this.consoleUrl(domain)}/auth/callback?${q.toString()}`;
   }
 
-  private consoleUrl() {
-    return loadConfig().CONSOLE_URL.replace(/\/+$/, '');
+  /** The console of the domain the sign in started on (the person's session must land in that origin). */
+  private consoleUrl(domain?: string) {
+    return urlsFor(domain).consoleUrl;
   }
 }
 

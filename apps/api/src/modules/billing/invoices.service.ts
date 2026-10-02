@@ -1,15 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma, type Currency } from '@prisma/client';
+import { Prisma, type BillingEntity, type Currency } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EventsService } from '../events/events.service';
-import { invoiceNumber, startOfMonth, taxRateFor } from './pricing';
+import { startOfMonth } from './pricing';
 import { MailService } from '../../common/mail/mail.service';
-import { loadConfig } from '../../config/config';
+import { entityInvoiceNumber, entityProfile } from '../../common/entities/entities';
 import { linkManagedWorkLogs } from '../managed/billing-hooks/link-worklogs';
+import { billingAt, type TeamBilling } from './entity-change';
 
 /**
- * Monthly invoicing. SAR invoices for Saudi teams (ZATCA Fatoora e-invoicing handed off to a
- * licensed provider — integration point: `EInvoiceProvider`), USD for the rest.
+ * Monthly invoicing, by the company that contracts with the team (common/entities/entities.ts):
+ * Progrid Arabia issues SAR invoices with 15% VAT in the PRGD-SA series and hands them to the
+ * ZATCA (Fatoora) e-invoicing provider; Progrid Technologies LLC issues USD invoices in the
+ * PRGD-US series with the configured tax rate (none by default).
  */
 @Injectable()
 export class InvoicesService {
@@ -35,40 +38,69 @@ export class InvoicesService {
         const invoice = await this.issueForTeam(team, periodStart, periodEnd, now);
         if (!invoice) continue;
         issued++;
-        await this.events.emit('invoice.issued', { invoiceId: invoice.id, number: invoice.number, totalMinor: invoice.totalMinor, currency: team.currency }, { teamId: team.id });
-        this.notify(team.id, invoice.number, invoice.totalMinor, team.currency, invoice.status === 'paid').catch((e) => this.log.warn(`invoice mail failed: ${e.message}`));
+        await this.events.emit('invoice.issued', { invoiceId: invoice.id, number: invoice.number, totalMinor: invoice.totalMinor, currency: invoice.currency, billingEntity: invoice.billingEntity }, { teamId: team.id });
+        this.notify(team.id, invoice.number, invoice.totalMinor, invoice.currency, invoice.status === 'paid', invoice.billingEntity).catch((e) => this.log.warn(`invoice mail failed: ${e.message}`));
       } catch (err) {
         failed++;
         this.log.error(`invoice for team ${team.id} (${periodStart.toISOString().slice(0, 7)}) failed: ${(err as Error).message}`);
       }
     }
     this.log.log(`issued ${issued} invoices for ${periodStart.toISOString().slice(0, 7)}${failed ? `, ${failed} failed` : ''}`);
+    // Entity changes approved for the period that starts now: the old period is invoiced above.
+    await this.applyDueEntityChanges(now);
     return issued;
   }
 
+  /**
+   * Folds staff approved billing country changes whose date has come into the team row: new
+   * country, company and currency, pending columns cleared. Usage was already rated in the new
+   * currency from that date (billingAt), so this only makes the row say so.
+   */
+  async applyDueEntityChanges(now = new Date()) {
+    const due = await this.prisma.team.findMany({ where: { pendingBillingEntity: { not: null }, billingChangeAt: { lte: now } } });
+    for (const t of due) {
+      const next = billingAt(t, now);
+      const r = await this.prisma.team.updateMany({
+        where: { id: t.id, billingChangeAt: t.billingChangeAt },
+        data: { country: next.country, billingEntity: next.entity, currency: next.currency, pendingCountry: null, pendingBillingEntity: null, billingChangeAt: null },
+      });
+      if (r.count) await this.events.emit('team.billing_entity_changed', { from: { country: t.country, billingEntity: t.billingEntity, currency: t.currency }, to: next, effectiveAt: t.billingChangeAt }, { teamId: t.id, resource: `team:${t.id}` });
+    }
+    return due.length;
+  }
+
   /** One team's invoice for one period, or null when there is nothing to bill or it already exists. */
-  private async issueForTeam(team: { id: string; currency: Currency; country: string; projects: { id: string }[] }, periodStart: Date, periodEnd: Date, now: Date) {
+  private async issueForTeam(team: TeamBilling & { id: string; projects: { id: string }[] }, periodStart: Date, periodEnd: Date, now: Date) {
+    // The company and currency in force for this period (a change approved later starts after it).
+    const billing = billingAt(team, periodStart);
+    const entity = entityProfile(billing.entity);
     const existing = await this.prisma.invoice.findUnique({ where: { teamId_periodStart_periodEnd: { teamId: team.id, periodStart, periodEnd } } });
     if (existing) return null;
     try {
       return await this.prisma.$transaction(async (tx) => {
         const records = await tx.usageRecord.findMany({
           where: { projectId: { in: team.projects.map((p) => p.id) }, hourStart: { gte: periodStart, lt: periodEnd }, invoiceId: null },
-          select: { id: true, amountMinor: true },
+          select: { id: true, amountMinor: true, currency: true },
         });
+        // One invoice is one currency. Usage rated in another one means the team's billing changed
+        // without the period boundary rule; a person must look before anything is issued.
+        const foreign = records.find((r) => r.currency !== billing.currency);
+        if (foreign) throw new Error(`usage in ${foreign.currency} for a ${billing.currency} invoice; fix the team's billing currency first`);
         const subtotal = records.reduce((s, r) => s + r.amountMinor, 0);
         if (subtotal <= 0) return null;
 
-        const tax = Math.round(subtotal * taxRateFor(team.currency, team.country));
-        const credit = await this.consumeCredits(tx, team.id, subtotal + tax, now);
+        const tax = Math.round(subtotal * entity.taxRate);
+        const credit = await this.consumeCredits(tx, team.id, billing.currency, subtotal + tax, now);
         const total = subtotal + tax - credit;
-        const [{ seq }] = await tx.$queryRaw<{ seq: bigint }[]>`SELECT nextval('prgd_invoice_number_seq') AS seq`;
+        // The sequence name comes from the fixed entity profile, never from input.
+        const [{ seq }] = await tx.$queryRawUnsafe<{ seq: bigint }[]>(`SELECT nextval('${entity.invoiceSequence}') AS seq`);
 
         const invoice = await tx.invoice.create({
           data: {
             teamId: team.id,
-            number: invoiceNumber(now.getUTCFullYear(), seq),
-            currency: team.currency,
+            number: entityInvoiceNumber(billing.entity, now.getUTCFullYear(), seq),
+            billingEntity: billing.entity,
+            currency: billing.currency,
             periodStart,
             periodEnd,
             subtotalMinor: subtotal,
@@ -76,7 +108,8 @@ export class InvoicesService {
             creditMinor: credit,
             totalMinor: total,
             status: total === 0 ? 'paid' : 'open',
-            eInvoiceType: team.country === 'SA' ? 'zatca' : null,
+            // Only Progrid Arabia hands invoices to the ZATCA (Fatoora) e-invoicing provider.
+            eInvoiceType: entity.eInvoicing,
             dueAt: new Date(periodEnd.getTime() + 14 * 86_400_000),
             paidAt: total === 0 ? now : null,
           },
@@ -96,9 +129,10 @@ export class InvoicesService {
   }
 
   /** Applies promo/prepaid credits oldest-expiry first inside the invoice transaction; returns the amount consumed. */
-  private async consumeCredits(tx: Prisma.TransactionClient, teamId: string, amountMinor: number, now: Date) {
+  private async consumeCredits(tx: Prisma.TransactionClient, teamId: string, currency: Currency, amountMinor: number, now: Date) {
+    // Credit in another currency (from before a billing entity change) is not spent here.
     const credits = await tx.credit.findMany({
-      where: { teamId, remainingMinor: { gt: 0 }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+      where: { teamId, currency, remainingMinor: { gt: 0 }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
       orderBy: [{ expiresAt: 'asc' }, { createdAt: 'asc' }],
     });
     let left = amountMinor;
@@ -126,14 +160,15 @@ export class InvoicesService {
     return this.prisma.invoice.findFirst({ where: { id, teamId }, include: { team: true, records: true } });
   }
 
-  private async notify(teamId: string, number: string, totalMinor: number, currency: string, paid: boolean) {
+  private async notify(teamId: string, number: string, totalMinor: number, currency: string, paid: boolean, billingEntity: BillingEntity) {
     const owners = await this.prisma.teamMember.findMany({ where: { teamId, role: { in: ['owner', 'billing'] } }, include: { user: { select: { email: true, name: true } } } });
     const team = await this.prisma.team.findUnique({ where: { id: teamId }, select: { billingEmail: true } });
     if (team?.billingEmail && !owners.some((m) => m.user.email === team.billingEmail)) owners.push({ user: { email: team.billingEmail, name: 'there' } } as (typeof owners)[number]);
     const amount = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(totalMinor / 100);
-    const url = `${loadConfig().CONSOLE_URL}/billing`;
+    const url = `${entityProfile(billingEntity).consoleUrl}/billing`;
     await Promise.all(owners.map((m) => this.mail.send({
       to: m.user.email,
+      entity: billingEntity,
       subject: paid ? `Invoice ${number}: ${amount}, settled from credit` : `Invoice ${number}: ${amount} due in 14 days`,
       text: `Hi ${m.user.name},\n\nYour invoice ${number} for last month is ready: ${amount}.\n${paid ? 'It was settled from your prepaid credit; nothing to do.' : 'Pay it by card or add credit here:'}\n${url}\n\nThe PDF is available on the same page.`,
     })));

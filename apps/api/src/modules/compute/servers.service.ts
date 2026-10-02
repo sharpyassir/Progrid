@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { requestApiBase } from '../../common/entities/entities';
 import { ActionType, Prisma, ServerStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TemporalService } from '../../common/temporal/temporal.service';
@@ -212,12 +213,12 @@ export class ServersService {
       issues,
       reportedAt: server.managedReportedAt,
       report,
-      installCommand: server.managed && server.managedToken && (!server.managedReportedAt || health === 'stale') ? `curl -fsSL ${loadConfig().PUBLIC_API_URL}/v1/managed/install/${server.managedToken} | sudo sh` : null,
+      installCommand: server.managed && server.managedToken && (!server.managedReportedAt || health === 'stale') ? `curl -fsSL ${requestApiBase()}/v1/managed/install/${server.managedToken} | sudo sh` : null,
     };
   }
 
   private managedScript(token: string) {
-    return renderManagedInstallScript({ apiUrl: loadConfig().PUBLIC_API_URL, token });
+    return renderManagedInstallScript({ apiUrl: requestApiBase(), token });
   }
 
   /**
@@ -408,7 +409,7 @@ export class ManagedCareService {
   async installScript(token: string) {
     const server = await this.prisma.server.findFirst({ where: { managedToken: token, managed: true, deletedAt: null }, select: { id: true } });
     if (!server) throw ApiError.unauthorized('Unknown managed token');
-    return renderManagedInstallScript({ apiUrl: loadConfig().PUBLIC_API_URL, token });
+    return renderManagedInstallScript({ apiUrl: requestApiBase(), token });
   }
 
   /** Store a report from the agent; emits a warning event when health goes bad and a recovery when it clears. */

@@ -20,6 +20,10 @@ export interface PendingLogin {
   locale?: string;
   /** intent link: who is linking. */
   linkUserId?: string;
+  /** Public domain the sign in started on (progrid.co or progrid.sa): its API takes the callback, its console gets the person back. */
+  domain?: string;
+  /** Billing country picked on the signup form, for a new account. */
+  country?: string;
 }
 
 /** The outcome of a callback, redeemed once by the console with the short lived code. */

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { teamEntity } from '../../common/entities/lookup';
 import { Prisma, type Approval } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { MailService } from '../../common/mail/mail.service';
@@ -206,8 +207,10 @@ export class ApprovalsService {
       approval.tokenId ? this.prisma.apiToken.findUnique({ where: { id: approval.tokenId }, select: { name: true } }) : null,
     ]);
     const url = `${loadConfig().CONSOLE_URL}/approvals`;
+    const entity = await teamEntity(this.prisma, approval.teamId);
     await Promise.all(owners.map((m) => this.mail.send({
       to: m.user.email,
+      entity,
       subject: `Approval needed: ${approval.summary}`,
       text: `Hi ${m.user.name},\n\n${token ? `The agent token "${token.name}"` : approval.resourceType === 'connect_run' ? `The Connect agent "${approval.resourceName ?? 'agent'}"` : 'An agent'} wants to do this:\n\n    ${approval.summary}\n\nReview it here:\n${url}\n\nThe request expires in ${TTL_HOURS} hours if nobody decides. Nothing runs until you approve.`,
     })));

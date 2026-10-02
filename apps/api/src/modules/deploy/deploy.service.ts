@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { requestApiBase } from '../../common/entities/entities';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -95,7 +96,7 @@ export class DeployService {
     await this.events.emit('deploy.created', { deploymentId: d.id, repoUrl }, { actor, resource: `deployment:${d.id}` });
     // App based deployments redeploy through the app webhook; URL based ones get a per deployment webhook (secret shown once).
     if (installation) return { ...present(d), webhook: null };
-    return { ...present(d), webhook: { url: `${loadConfig().PUBLIC_API_URL}/v1/deploys/${d.id}/hook`, secret: webhookSecret, contentType: 'application/json', events: ['push'] } };
+    return { ...present(d), webhook: { url: `${requestApiBase()}/v1/deploys/${d.id}/hook`, secret: webhookSecret, contentType: 'application/json', events: ['push'] } };
   }
 
   /** Manual redeploy from the console / CLI. */

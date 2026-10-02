@@ -9,6 +9,7 @@ import { AppModule } from '../../src/app.module';
 import { WorkerModule } from '../../src/worker.module';
 import { createActivities } from '../../src/workflows/activities';
 import { loadConfig } from '../../src/config/config';
+import { configureHttp } from '../../src/common/http/setup';
 import { MailService, type Mail } from '../../src/common/mail/mail.service';
 import { PrismaService } from '../../src/common/prisma/prisma.service';
 import { FakePlatformAgents } from '../../src/drivers/fake-platform-agents';
@@ -49,6 +50,7 @@ async function boot(): Promise<Sut> {
 
   const api = await NestFactory.create(AppModule, { rawBody: true, logger });
   api.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidUnknownValues: false }));
+  configureHttp(api);
   await api.init();
   for (const job of api.get(SchedulerRegistry).getCronJobs().values()) job.stop();
   await api.listen(0, '127.0.0.1');

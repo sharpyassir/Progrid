@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { loadConfig } from '../../config/config';
 import { rateHour, startOfHour, startOfMonth, BOOK_CURRENCY } from './pricing';
 import { FxService } from './fx.service';
+import { billingAt } from './entity-change';
 
 /**
  * Hourly roll-up: UsageEvent (per minute) → UsageRecord (per resource per hour, rated).
@@ -32,8 +33,12 @@ export class RatingService {
     if (!groups.length) return 0;
 
     const projectIds = [...new Set(groups.map((g) => g.projectId))];
-    const projects = await this.prisma.project.findMany({ where: { id: { in: projectIds } }, include: { team: { select: { currency: true } } } });
-    const currencyOf = new Map(projects.map((p) => [p.id, p.team.currency]));
+    const projects = await this.prisma.project.findMany({
+      where: { id: { in: projectIds } },
+      include: { team: { select: { country: true, currency: true, billingEntity: true, pendingCountry: true, pendingBillingEntity: true, billingChangeAt: true } } },
+    });
+    // The currency of the company billing the team in this hour (a staff approved change applies from its date).
+    const currencyOf = new Map(projects.map((p) => [p.id, billingAt(p.team, hourStart).currency]));
 
     const hoursPerMonth = loadConfig().BILLING_HOURS_PER_MONTH;
     let written = 0;

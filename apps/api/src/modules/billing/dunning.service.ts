@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { MailService } from '../../common/mail/mail.service';
 import { loadConfig } from '../../config/config';
+import { entityProfile } from '../../common/entities/entities';
 import { EventsService } from '../events/events.service';
 import { BILLING_SUSPENSION, TrustService } from '../trust/trust.service';
 
@@ -69,15 +70,16 @@ export class DunningService {
   private async remind(teamId: string, number: string, dueMinor: number, currency: string, days: number, suspend: boolean) {
     const people = await this.prisma.teamMember.findMany({ where: { teamId, role: { in: ['owner', 'billing'] } }, include: { user: { select: { email: true, name: true } } } });
     const amount = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(dueMinor / 100);
-    const url = `${loadConfig().CONSOLE_URL}/billing`;
+    const team = await this.prisma.team.findUnique({ where: { id: teamId }, select: { billingEmail: true, billingEntity: true } });
+    const entity = team?.billingEntity;
+    const url = `${entity ? entityProfile(entity).consoleUrl : loadConfig().CONSOLE_URL}/billing`;
     const subject = suspend ? `Account suspended: invoice ${number} is ${days} days overdue` : `Reminder: invoice ${number} (${amount}) is ${days} days overdue`;
     const body = suspend
       ? `Your invoice ${number} for ${amount} is ${days} days past its due date, so your account is now suspended. Your servers have been powered off and your data is kept. API tokens and the console only work for billing until the invoice is paid.\nPay it here and everything powers back on automatically:\n${url}`
       : `Your invoice ${number} for ${amount} is ${days} days past its due date. Please pay it by card here:\n${url}\n\nIf it is still unpaid ${SUSPEND_AT} days after the due date, the account is suspended and its servers are powered off.`;
-    const team = await this.prisma.team.findUnique({ where: { id: teamId }, select: { billingEmail: true } });
     const to = new Set(people.map((m) => m.user.email));
     if (team?.billingEmail) to.add(team.billingEmail);
     const names = new Map(people.map((m) => [m.user.email, m.user.name]));
-    await Promise.all([...to].map((email) => this.mail.send({ to: email, subject, text: `Hi ${names.get(email) ?? 'there'},\n\n${body}\n\nIf you already paid, thank you, and please ignore this message.` })));
+    await Promise.all([...to].map((email) => this.mail.send({ to: email, entity, subject, text: `Hi ${names.get(email) ?? 'there'},\n\n${body}\n\nIf you already paid, thank you, and please ignore this message.` })));
   }
 }

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { requestApiBase } from '../../../common/entities/entities';
 import type { ManagedAsset } from '@prisma/client';
 import { createHash, randomBytes } from 'node:crypto';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -161,7 +162,7 @@ export class AssetsService {
     const token = HEARTBEAT_TOKEN_PREFIX + randomBytes(32).toString('base64url');
     await this.prisma.managedAsset.update({ where: { id: assetId }, data: { heartbeatTokenHash: hashToken(token) } });
     await this.events.emit('managed.asset_token_rotated', { contractId: a.contractId, assetId }, { teamId: await this.teamOf(a.contractId), actor, resource: `managed_asset:${assetId}` });
-    return { assetId, token, heartbeatUrl: `${loadConfig().PUBLIC_API_URL}/internal/agents/heartbeat` };
+    return { assetId, token, heartbeatUrl: `${requestApiBase()}/internal/agents/heartbeat` };
   }
 
   // ---- helpers ----
