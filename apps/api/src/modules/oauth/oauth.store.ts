@@ -26,6 +26,8 @@ export interface PendingLogin {
   country?: string;
   /** Partner code from the signup form, for a new account. */
   promoCode?: string;
+  /** The signup form's "I agree" box was ticked for this version of the legal documents. */
+  legalAccepted?: boolean;
 }
 
 /** The outcome of a callback, redeemed once by the console with the short lived code. */

@@ -8,7 +8,8 @@ export interface SitePageData { slug: string; lang: Lang; title: string; descrip
 
 /** Static company and legal pages. */
 export const PAGE_SLUGS = ['contact', 'careers'] as const;
-export const LEGAL_SLUGS = ['terms', 'acceptable-use', 'privacy', 'refunds', 'sla', 'cookies'] as const;
+/** Order is the order of the legal index page (/legal). */
+export const LEGAL_SLUGS = ['terms', 'acceptable-use', 'privacy', 'dpa', 'subprocessors', 'refunds', 'sla', 'cookies', 'copyright', 'law-enforcement', 'export-sanctions'] as const;
 
 /**
  * Pages live in content/pages/<dir>/<lang>/<slug>.md:

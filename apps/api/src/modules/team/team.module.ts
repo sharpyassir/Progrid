@@ -1,3 +1,4 @@
+import { LegalModule } from '../legal/legal.module';
 import { Module } from '@nestjs/common';
 import { EventsModule } from '../events/events.module';
 import { ComputeModule } from '../compute/compute.module';
@@ -14,7 +15,7 @@ import { InvitationsController, TeamController } from './team.controller';
 import { TeamService } from './team.service';
 
 @Module({
-  imports: [EventsModule, ComputeModule, DatabasesModule, KubernetesModule, AppPlatformModule, LbModule, StorageModule, ObjectsModule, DnsModule, NetworkModule, MonitoringModule],
+  imports: [LegalModule, EventsModule, ComputeModule, DatabasesModule, KubernetesModule, AppPlatformModule, LbModule, StorageModule, ObjectsModule, DnsModule, NetworkModule, MonitoringModule],
   controllers: [TeamController, InvitationsController],
   providers: [TeamService],
   exports: [TeamService],

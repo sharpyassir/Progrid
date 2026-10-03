@@ -11,6 +11,7 @@ import { MailModule } from './common/mail/mail.module';
 import { ApiExceptionFilter } from './common/errors/http-exception.filter';
 import { IdempotencyInterceptor } from './common/idempotency/idempotency.interceptor';
 import { IamModule } from './modules/iam/iam.module';
+import { LegalModule } from './modules/legal/legal.module';
 import { EventsModule } from './modules/events/events.module';
 import { ComputeModule } from './modules/compute/compute.module';
 import { SchedulerModule } from './modules/scheduler/scheduler.module';
@@ -49,6 +50,7 @@ import { GeoController } from './common/geo/geo.controller';
     PrismaModule, NatsModule, RedisModule, TemporalModule, DriversModule, MailModule,
     // domain
     IamModule,
+    LegalModule,
     ApprovalsModule, EventsModule, ComputeModule, SchedulerModule, NetworkModule, StorageModule, MarketplaceModule, BillingModule, TrustModule, AdminModule, DeployModule, GithubModule, MonitoringModule, LbModule, DnsModule, ObjectsModule, DatabasesModule,
     SupportModule, KubernetesModule, AppPlatformModule, TeamModule, OpsSettingsModule, ManagedModule, OpsModule,
     OAuthModule, ConnectModule, AffiliatesModule,

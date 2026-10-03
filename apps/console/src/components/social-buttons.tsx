@@ -1,5 +1,6 @@
 'use client';
 
+import { lt } from '@/lib/i18n-legal';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { runtimeUrls } from '@/lib/urls';
@@ -25,7 +26,7 @@ export function configuredProviders(): Promise<SocialProvider[]> {
  * Sends the browser to the API, which redirects to Google or Microsoft. Linking needs the
  * console session, which a redirect cannot carry, so it first trades it for a one time ticket.
  */
-export async function startSocial(provider: SocialProvider, opts: { intent: SocialIntent; locale: Locale; returnPath?: string; invite?: string; country?: string; promo?: string }) {
+export async function startSocial(provider: SocialProvider, opts: { intent: SocialIntent; locale: Locale; returnPath?: string; invite?: string; country?: string; promo?: string; legal?: string }) {
   const q = new URLSearchParams({ intent: opts.intent, locale: opts.locale });
   // The billing country picked on the signup form; it decides the billing company of a new team.
   if (opts.country) q.set('country', opts.country);
@@ -33,6 +34,8 @@ export async function startSocial(provider: SocialProvider, opts: { intent: Soci
   if (opts.intent === 'signup' && opts.promo) q.set('promo', opts.promo);
   if (opts.returnPath) q.set('return', opts.returnPath);
   if (opts.invite) q.set('invite', opts.invite);
+  // The version of the legal documents the person ticked "I agree" for; a new account records it.
+  if (opts.legal) q.set('legal', opts.legal);
   if (opts.intent === 'link') {
     const { ticket } = await api<{ ticket: string }>('/v1/auth/oauth/link-ticket', { method: 'POST' });
     q.set('ticket', ticket);
@@ -85,7 +88,7 @@ export function SocialButton({ provider, locale, onClick, disabled }: { provider
 }
 
 /** The buttons for every configured provider, then an "or" divider above the email form. */
-export function SocialButtons({ locale, intent, invite, returnPath, country, promo, divider = true }: { locale: Locale; intent: SocialIntent; invite?: string; returnPath?: string; country?: string; promo?: string; divider?: boolean }) {
+export function SocialButtons({ locale, intent, invite, returnPath, country, promo, legal, needsLegal = false, divider = true }: { locale: Locale; intent: SocialIntent; invite?: string; returnPath?: string; country?: string; promo?: string; legal?: string; needsLegal?: boolean; divider?: boolean }) {
   const [providers, setProviders] = useState<SocialProvider[]>([]);
   const [busy, setBusy] = useState(false);
   useEffect(() => { configuredProviders().then(setProviders); }, []);
@@ -93,8 +96,9 @@ export function SocialButtons({ locale, intent, invite, returnPath, country, pro
   return (
     <div className="space-y-3">
       {providers.map((p) => (
-        <SocialButton key={p} provider={p} locale={locale} disabled={busy} onClick={() => { setBusy(true); startSocial(p, { intent, locale, invite, returnPath, country, promo }).catch(() => setBusy(false)); }} />
+        <SocialButton key={p} provider={p} locale={locale} disabled={busy || (needsLegal && !legal)} onClick={() => { setBusy(true); startSocial(p, { intent, locale, invite, returnPath, country, promo, legal }).catch(() => setBusy(false)); }} />
       ))}
+      {needsLegal && !legal && <p className="text-xs text-neutral-500">{lt(locale, 'socialNeedsAgree')}</p>}
       {divider && (
         <div className="flex items-center gap-3 text-xs uppercase text-neutral-500" role="separator">
           <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-800" />

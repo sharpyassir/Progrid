@@ -45,6 +45,8 @@ export async function api<T>(path: string, init: RequestInit & { idempotent?: bo
     const e = body?.error ?? { code: 'error', message: res.statusText };
     // Billing gates get a message in the person's language that points to the billing page.
     const message = e.code === 'payment_required' ? t(getLocale(), 'paymentRequired') : e.code === 'account_suspended' ? t(getLocale(), 'accountSuspended') : e.message;
+    // The person must accept the current legal documents first: the shell shows the acceptance screen.
+    if (e.code === 'legal_acceptance_required' && typeof window !== 'undefined') window.dispatchEvent(new Event('prgd:legal-required'));
     throw new ApiError(res.status, e.code, message, e.details);
   }
   return body as T;

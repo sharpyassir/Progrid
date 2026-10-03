@@ -168,6 +168,7 @@ paths:
         - { name: invite, in: query, description: Invitation token; a new account joins that team instead of creating one, schema: { type: string } }
         - { name: ticket, in: query, description: One time link ticket (intent link), schema: { type: string } }
         - { name: locale, in: query, schema: { type: string, enum: [en, tr, ar] } }
+        - { name: legal, in: query, description: "The legal version (GET /legal) the person agreed to on the signup form. A new account without it must accept before first use.", schema: { type: string } }
       responses:
         "302": { description: "Redirect to the provider, or to the console with an error code" }
   /auth/oauth/{provider}/callback:
@@ -229,6 +230,32 @@ paths:
         "204": { description: Unlinked }
         "409": { description: It is the only way left to sign in (`last_sign_in_method`) }
 
+  /legal:
+    get:
+      tags: [legal]
+      summary: Current version of the legal documents and their links
+      description: |
+        Every user accepts the Terms of service, Acceptable use policy and Privacy policy. When the
+        version changes, every request of a user who has not accepted it (console sessions and API
+        tokens) is refused with 428 `legal_acceptance_required`, except GET /account, /auth/* and
+        /legal, until the person accepts in the console.
+      security: []
+      responses:
+        "200": { description: "Version and document URLs", content: { application/json: { schema: { type: object } } } }
+  /legal/accept:
+    post:
+      tags: [legal]
+      summary: Accept the current version (console sessions only; API tokens get 403)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/LegalAcceptance" } } } }
+      responses:
+        "200": { description: "Accepted", content: { application/json: { schema: { type: object } } } }
+        "400": { description: "Box not ticked or outdated version" }
+  /legal/acceptances:
+    get:
+      tags: [legal]
+      summary: The signed in user's acceptance history
+      responses:
+        "200": { description: "Acceptances", content: { application/json: { schema: { type: object } } } }
   /account:
     get:
       tags: [account]
@@ -1612,7 +1639,7 @@ components:
         code: { type: string, description: "Six digit authenticator code, or a recovery code" }
     Signup:
       type: object
-      required: [email, password, name, teamName]
+      required: [email, password, name, teamName, acceptTerms]
       properties:
         email: { type: string, format: email }
         password: { type: string, minLength: 10 }
@@ -1626,6 +1653,19 @@ components:
             country by Progrid Technologies LLC in USD. Omitted: SA on the progrid.sa domain, else
             the country of the caller's address, else US.
         locale: { type: string, enum: [en, tr, ar] }
+        acceptTerms:
+          type: boolean
+          enum: [true]
+          description: |
+            The person ticked "I agree to the Terms of service, Acceptable use policy and Privacy policy"
+            (GET /legal). Anything else is refused with 400. The acceptance is recorded with the
+            version, time, address and user agent.
+    LegalAcceptance:
+      type: object
+      required: [accept, version]
+      properties:
+        accept: { type: boolean, enum: [true] }
+        version: { type: string, description: The version shown to the person (GET /legal); an outdated one is refused with 400. }
     Session:
       type: object
       properties:

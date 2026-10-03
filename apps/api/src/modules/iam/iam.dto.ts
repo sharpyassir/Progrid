@@ -1,4 +1,4 @@
-import { ArrayNotEmpty, IsArray, IsBoolean, IsEmail, IsIn, IsInt, IsOptional, IsString, Length, Matches, Min, MinLength } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsBoolean, IsEmail, IsIn, IsInt, IsOptional, IsString, Length, Matches, Min, MinLength, Equals } from 'class-validator';
 import { ALL_SCOPES } from '../../common/auth/actor';
 import { COUNTRY_CODES } from '../../common/entities/countries';
 
@@ -16,6 +16,8 @@ export class SignupDto {
   @IsOptional() @IsIn(['en', 'tr', 'ar']) locale?: string;
   /** A partner's code: links the account to the partner (who earns commission) and gives the signup discount. */
   @IsOptional() @IsString() @Length(0, 40) promoCode?: string;
+  /** The "I agree" checkbox: the Terms of service, Acceptable use policy and Privacy policy (modules/legal). */
+  @Equals(true, { message: 'You must accept the Terms of service, Acceptable use policy and Privacy policy to create an account' }) acceptTerms: boolean;
 }
 
 export class LoginDto {

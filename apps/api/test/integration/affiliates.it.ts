@@ -32,7 +32,7 @@ async function rawSignup(body: Record<string, unknown>, opts: { cookie?: string;
   const r = await fetch(`${s.baseUrl}/v1/auth/signup`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-forwarded-for': opts.ip ?? ip(), ...(opts.cookie ? { cookie: opts.cookie } : {}) },
-    body: JSON.stringify({ password: `pw-${randomBytes(9).toString('base64url')}`, name: 'Referred Customer', teamName: 'Referred team', country: 'US', ...body, email }),
+    body: JSON.stringify({ acceptTerms: true, password: `pw-${randomBytes(9).toString('base64url')}`, name: 'Referred Customer', teamName: 'Referred team', country: 'US', ...body, email }),
   });
   return { status: r.status, body: (await r.json()) as any, email };
 }

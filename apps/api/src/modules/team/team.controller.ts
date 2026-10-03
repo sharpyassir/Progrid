@@ -1,6 +1,8 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import type { Request } from 'express';
+import { clientOf } from '../../common/auth/auth.guard';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { IsEmail, IsIn, IsOptional, IsString, Length, MinLength, ValidateIf } from 'class-validator';
+import { IsEmail, IsIn, IsOptional, IsString, Length, MinLength, ValidateIf, Equals } from 'class-validator';
 import type { TeamRole } from '@prisma/client';
 import { CurrentActor, Public, RequireScopes } from '../../common/auth/decorators';
 import type { Actor } from '../../common/auth/actor';
@@ -36,6 +38,8 @@ class TokenDto {
 class AcceptSignupDto extends TokenDto {
   @IsString() @Length(1, 80) name: string;
   @IsString() @MinLength(10) password: string;
+  /** The "I agree" checkbox (modules/legal). */
+  @Equals(true, { message: 'You must accept the Terms of service, Acceptable use policy and Privacy policy to create an account' }) acceptTerms: boolean;
 }
 
 class CloseDto {
@@ -107,7 +111,7 @@ export class InvitationsController {
 
   /** No account yet: create one for the invited address and join. */
   @Public() @Post('accept-signup') @HttpCode(201)
-  acceptSignup(@Body() dto: AcceptSignupDto) {
-    return this.team.acceptWithSignup(dto.token, dto.name, dto.password);
+  acceptSignup(@Body() dto: AcceptSignupDto, @Req() req: Request) {
+    return this.team.acceptWithSignup(dto.token, dto.name, dto.password, clientOf(req));
   }
 }

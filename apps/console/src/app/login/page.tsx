@@ -1,5 +1,6 @@
 'use client';
 
+import { LegalAgree, useLegalVersion } from '@/components/legal';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
@@ -18,6 +19,9 @@ export default function LoginPage() {
   const [needCode, setNeedCode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The "I agree" box: required to create an account, by email or with Google or Microsoft.
+  const [agreed, setAgreed] = useState(false);
+  const legalVersion = useLegalVersion();
   const { www: WWW_URL, domain } = useUrls();
   // Billing country, prefilled from GET /v1/geo (the .sa domain suggests Saudi Arabia, .co the country of your address).
   const [country, setCountry] = useState('');
@@ -60,7 +64,7 @@ export default function LoginPage() {
       const body =
         mode === 'login'
           ? { email: f.get('email'), password: f.get('password'), ...(f.get('totp') ? { totp: f.get('totp') } : {}) }
-          : { email: f.get('email'), password: f.get('password'), name: f.get('name'), teamName: f.get('teamName'), country: f.get('country') || undefined, locale, promoCode: normalizeCode(promo) ?? undefined };
+          : { email: f.get('email'), password: f.get('password'), name: f.get('name'), teamName: f.get('teamName'), country: f.get('country') || undefined, locale, promoCode: normalizeCode(promo) ?? undefined, acceptTerms: agreed };
       const res = await api<{ session: string }>(`/v1/auth/${mode}`, { method: 'POST', body: JSON.stringify(body) });
       setToken(res.session);
       router.replace(mode === 'signup' ? '/security?welcome=1' : '/servers');
@@ -76,7 +80,9 @@ export default function LoginPage() {
     <div className="mx-auto mt-16 max-w-sm">
       <h1 className="mb-6 text-2xl font-semibold">{t(locale, mode === 'login' ? 'login' : 'signup')}</h1>
       <form onSubmit={submit} className="card space-y-3">
-        <SocialButtons locale={locale} intent={mode} country={mode === 'signup' ? country || undefined : undefined} promo={mode === 'signup' && promoInfo !== 'checking' && promoInfo?.valid ? promoInfo.code ?? undefined : undefined} />
+        {mode === 'signup' && <LegalAgree locale={locale} checked={agreed} onChange={setAgreed} />}
+        <SocialButtons locale={locale} intent={mode} country={mode === 'signup' ? country || undefined : undefined} promo={mode === 'signup' && promoInfo !== 'checking' && promoInfo?.valid ? promoInfo.code ?? undefined : undefined}
+          needsLegal={mode === 'signup'} legal={mode === 'signup' && agreed ? legalVersion ?? undefined : undefined} />
         {mode === 'signup' && (
           <>
             <input className="input" name="name" placeholder={t(locale, 'name')} required />
@@ -109,8 +115,7 @@ export default function LoginPage() {
           </div>
         )}
         {error && <p className="text-sm text-red-600">{error}</p>}
-        {mode === 'signup' && <p className="text-xs text-neutral-500">{t(locale, 'agreePrefix')} <a className="underline" href={`${WWW_URL}${locale === 'en' ? '' : `/${locale}`}/legal/terms`} target="_blank" rel="noreferrer">{t(locale, 'termsLink')}</a> {t(locale, 'agreeAnd')} <a className="underline" href={`${WWW_URL}${locale === 'en' ? '' : `/${locale}`}/legal/privacy`} target="_blank" rel="noreferrer">{t(locale, 'privacyLink')}</a>.</p>}
-        <button className="btn-primary w-full justify-center" disabled={busy}>{t(locale, mode === 'login' ? 'login' : 'signup')}</button>
+        <button className="btn-primary w-full justify-center" disabled={busy || (mode === 'signup' && !agreed)}>{t(locale, mode === 'login' ? 'login' : 'signup')}</button>
         <div className="flex items-center justify-between text-sm text-neutral-500">
           <button type="button" onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setNeedCode(false); }}>
             {t(locale, mode === 'login' ? 'signup' : 'login')} →

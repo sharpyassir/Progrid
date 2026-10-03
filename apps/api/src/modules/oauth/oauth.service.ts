@@ -1,3 +1,5 @@
+import { LegalService } from '../legal/legal.service';
+import { LEGAL_VERSION } from '../legal/legal';
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { Prisma } from '@prisma/client';
@@ -40,6 +42,7 @@ export class OAuthService {
     private readonly team: TeamService,
     private readonly events: EventsService,
     private readonly attribution: AttributionService,
+    private readonly legal: LegalService,
   ) {}
 
   listProviders() {
@@ -52,7 +55,7 @@ export class OAuthService {
    * Returns the provider URL to redirect to and the random value for the browser cookie. Any
    * error becomes a redirect back to the console with an error code (the browser navigated here).
    */
-  async start(provider: string, q: { intent?: string; return?: string; invite?: string; ticket?: string; locale?: string; country?: string; promo?: string }) {
+  async start(provider: string, q: { intent?: string; return?: string; invite?: string; ticket?: string; locale?: string; country?: string; promo?: string; legal?: string }) {
     // The API host the browser came to (api.progrid.co or api.progrid.sa) decides the callback and the console to return to.
     const domain = requestDomain();
     const s = this.providers.settings(provider);
@@ -87,6 +90,7 @@ export class OAuthService {
       domain,
       country: isCountryCode(q.country?.toUpperCase()) ? q.country!.toUpperCase() : undefined,
       promoCode: typeof q.promo === 'string' && q.promo.length <= 40 ? q.promo : undefined,
+      legalAccepted: q.legal === LEGAL_VERSION,
     };
     let url: string;
     try {
@@ -239,6 +243,10 @@ export class OAuthService {
       await this.linkIdentity(user.id, { ...a, emailVerified: true }, true);
       await this.events.emit('user.oauth_signup', { userId: user.id, provider: a.provider, invitation: true }, { resource: `user:${user.id}` });
       const r = await this.team.acceptForUser(user.id, p.invite, meta);
+      if (p.legalAccepted) {
+        const team = await this.prisma.team.findUniqueOrThrow({ where: { id: r.team.id }, select: { billingEntity: true } });
+        await this.legal.accept(user.id, { method: 'oauth_signup', entity: team.billingEntity, ...meta });
+      }
       return { ...base, userId: user.id, returnPath: '/team', session: { token: r.session, teamId: r.team.id } };
     }
     const teamName = a.name.length >= 2 ? a.name.slice(0, 60) : `${a.email!.split('@')[0]} team`.slice(0, 60);
@@ -246,7 +254,7 @@ export class OAuthService {
     const country = p.country ?? suggestedCountry(currentRequest()?.ip, p.domain).country;
     // A promo code that stopped being valid between the form and the provider does not stop the signup.
     const promoCode = p.promoCode && (await this.attribution.describe(p.promoCode)).valid ? p.promoCode : undefined;
-    const { user, team } = await this.iam.createAccount({ email: a.email!, name: a.name, teamName, country, locale: p.locale, emailVerified: a.emailVerified, ip: meta.ip, promoCode });
+    const { user, team } = await this.iam.createAccount({ email: a.email!, name: a.name, teamName, country, locale: p.locale, emailVerified: a.emailVerified, ip: meta.ip, userAgent: meta.userAgent, promoCode, legal: p.legalAccepted ? 'oauth_signup' : undefined });
     await this.linkIdentity(user.id, a, true);
     await this.events.emit('user.oauth_signup', { userId: user.id, provider: a.provider, emailVerified: a.emailVerified }, { teamId: team.id, resource: `user:${user.id}` });
     return { ...base, userId: user.id, returnPath: '/security?welcome=1' };

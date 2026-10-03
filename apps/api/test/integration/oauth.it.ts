@@ -1,3 +1,4 @@
+import { LEGAL_VERSION } from '../../src/modules/legal/legal';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
@@ -104,7 +105,10 @@ interface Browser { client: Client; cookie?: string }
 
 /** GET /start as the browser would: returns the provider URL and the cookie that was set. */
 async function begin(b: Browser, provider: 'google' | 'microsoft', query: Record<string, string> = {}) {
-  const r = await fetch(`${s.baseUrl}/v1/auth/oauth/${provider}/start?${new URLSearchParams(query)}`, { redirect: 'manual', headers: { 'x-forwarded-for': b.client.ip } });
+  // The console sends the version the person agreed to; pass legal: '' to leave the box unticked.
+  const q = { legal: LEGAL_VERSION, ...query };
+  if (!q.legal) delete (q as Record<string, string>).legal;
+  const r = await fetch(`${s.baseUrl}/v1/auth/oauth/${provider}/start?${new URLSearchParams(q)}`, { redirect: 'manual', headers: { 'x-forwarded-for': b.client.ip } });
   expect(r.status).toBe(302);
   const location = new URL(r.headers.get('location')!);
   const setCookie = r.headers.get('set-cookie') ?? '';
@@ -154,6 +158,18 @@ describe('social sign in', () => {
     expect(r.providers.map((p: { id: string }) => p.id)).toEqual(['google', 'microsoft']);
   });
 
+  it('asks a social sign up that did not tick the box to accept before using anything', async () => {
+    const b: Browser = { client: new Client(s.baseUrl) };
+    const landing = await socialRound(b, 'google', googleClaims(newEmail()), { intent: 'signup', country: 'US', legal: '' });
+    const res = await b.client.ok('POST', '/v1/auth/oauth/exchange', { code: landing.searchParams.get('code') }, 200);
+    b.client.token = res.session;
+    expect((await b.client.ok('GET', '/v1/account')).legal).toMatchObject({ required: true, accepted: null, entity: 'progrid_llc' });
+    expect((await b.client.req('GET', '/v1/servers')).status).toBe(428);
+    await b.client.ok('POST', '/v1/legal/accept', { accept: true, version: LEGAL_VERSION }, 200);
+    await b.client.ok('GET', '/v1/servers');
+    expect((await s.prisma.legalAcceptance.findMany({ where: { userId: res.user.id } })).map((r) => r.method)).toEqual(['reaccept']);
+  });
+
   it('signs up a new person with a new team and a verified email', async () => {
     const b: Browser = { client: new Client(s.baseUrl) };
     const email = newEmail();
@@ -177,6 +193,8 @@ describe('social sign in', () => {
     const me = await b.client.ok('GET', '/v1/account');
     expect(me.role).toBe('owner');
     expect(me.team.projects[0].slug).toBe('default');
+    expect(me.legal).toMatchObject({ required: false, accepted: LEGAL_VERSION });
+    expect((await s.prisma.legalAcceptance.findFirstOrThrow({ where: { userId: res.user.id } })).method).toBe('oauth_signup');
 
     const ids = await b.client.ok('GET', '/v1/account/identities');
     expect(ids.hasPassword).toBe(false);

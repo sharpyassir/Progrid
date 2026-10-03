@@ -159,7 +159,7 @@ export class TokenService {
   private async resolveApiToken(raw: string): Promise<Actor | null> {
     const token = await this.prisma.apiToken.findUnique({
       where: { hash: hash(raw) },
-      include: { user: { select: { locale: true, isStaff: true, staffRoles: true } }, team: { select: { status: true, members: true } } },
+      include: { user: { select: { locale: true, isStaff: true, staffRoles: true, legalVersion: true } }, team: { select: { status: true, members: true } } },
     });
     if (!token || token.revokedAt) return null;
     if (token.expiresAt && token.expiresAt < new Date()) return null;
@@ -183,6 +183,7 @@ export class TokenService {
       requireApprovalFor: new Set(token.requireApprovalFor),
       locale: token.user.locale,
       teamStatus: token.team.status,
+      legalVersion: token.user.legalVersion,
     };
   }
 
@@ -209,7 +210,7 @@ export class TokenService {
     }
     const membership = await this.prisma.teamMember.findUnique({
       where: { teamId_userId: { teamId: tid, userId: sub } },
-      include: { user: { select: { locale: true, isStaff: true, staffRoles: true } }, team: { select: { status: true } } },
+      include: { user: { select: { locale: true, isStaff: true, staffRoles: true, legalVersion: true } }, team: { select: { status: true } } },
     });
     if (!membership || membership.team.status === 'closed') return null;
     const scopes = scopesForRole(membership.role);
@@ -225,6 +226,7 @@ export class TokenService {
       locale: membership.user.locale,
       teamStatus: membership.team.status,
       audience: 'console',
+      legalVersion: membership.user.legalVersion,
     };
   }
 }

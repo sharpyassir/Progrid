@@ -41,7 +41,7 @@ async function affiliate(country = 'US') {
 
 /** A USD customer referred with the code, last month's usage invoiced and paid by card. */
 async function paidCustomer(code: string, usage: [ResourceType, number][]) {
-  const r = await fetch(`${s.baseUrl}/v1/auth/signup`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': `198.20.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}` }, body: JSON.stringify({ email: `it-${randomBytes(6).toString('hex')}@example.test`, password: `pw-${randomBytes(9).toString('base64url')}`, name: 'Customer', teamName: 'Customer', country: 'US', promoCode: code }) });
+  const r = await fetch(`${s.baseUrl}/v1/auth/signup`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': `198.20.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}` }, body: JSON.stringify({ acceptTerms: true, email: `it-${randomBytes(6).toString('hex')}@example.test`, password: `pw-${randomBytes(9).toString('base64url')}`, name: 'Customer', teamName: 'Customer', country: 'US', promoCode: code }) });
   const body = (await r.json()) as any;
   const client = new Client(s.baseUrl, body.session);
   const teamId: string = body.team.id;

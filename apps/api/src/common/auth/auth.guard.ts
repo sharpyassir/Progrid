@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { CanActivate, ExecutionContext, HttpStatus, Injectable } from '@nestjs/common';
 import { returnConsoleUrl } from '../entities/entities';
 import { clientIpOf } from '../net/client-ip';
 import { Reflector } from '@nestjs/core';
@@ -9,6 +9,7 @@ import { PUBLIC_KEY, SCOPES_KEY, STAFF_AREA_KEY, type StaffArea } from './decora
 import { hasStaffScope, type Actor } from './actor';
 import { loadConfig } from '../../config/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { LEGAL_VERSION, allowedBeforeAcceptance } from '../../modules/legal/legal';
 
 /**
  * Resolves `Authorization: Bearer …` into an Actor and enforces `@RequireScopes`.
@@ -35,9 +36,17 @@ export class AuthGuard implements CanActivate {
     req.actor = actor;
 
     // Owners must have two factor sign in when the policy is on. API tokens are exempt (they are scoped and revocable).
-    if (loadConfig().REQUIRE_TOTP_FOR_OWNERS && !actor.tokenId && actor.role === 'owner' && !/^\/v1\/(auth\/totp|account)/.test(req.path)) {
+    if (loadConfig().REQUIRE_TOTP_FOR_OWNERS && !actor.tokenId && actor.role === 'owner' && !/^\/v1\/(auth\/totp|account|legal)/.test(req.path)) {
       const u = await this.prisma.user.findUnique({ where: { id: actor.userId }, select: { totpEnabled: true } });
       if (!u?.totpEnabled) throw new ApiError(403, 'totp_setup_required', 'Team owners must enable two factor sign in. Go to Security to set it up.');
+    }
+
+    // Clickwrap: nobody uses the platform before accepting the current terms, acceptable use and
+    // privacy policy (modules/legal). The console shows the documents and an "I agree" button.
+    if (actor.legalVersion !== LEGAL_VERSION && !allowedBeforeAcceptance(req.method, req.path)) {
+      throw new ApiError(HttpStatus.PRECONDITION_REQUIRED, 'legal_acceptance_required', actor.tokenId
+        ? `The owner of this token must accept the updated Terms of service, Acceptable use policy and Privacy policy. Sign in at ${returnConsoleUrl()} to review and accept them.`
+        : 'Review and accept the Terms of service, Acceptable use policy and Privacy policy to continue.', { version: LEGAL_VERSION });
     }
 
     let required = this.reflector.getAllAndOverride<string[]>(SCOPES_KEY, [ctx.getHandler(), ctx.getClass()]) ?? [];

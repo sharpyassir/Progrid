@@ -1,3 +1,5 @@
+import { LegalService } from '../legal/legal.service';
+import { LEGAL_VERSION, type LegalMethod } from '../legal/legal';
 import { Injectable, Logger } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { createHash } from 'node:crypto';
@@ -23,10 +25,12 @@ export class IamService {
     private readonly events: EventsService,
     private readonly security: AccountSecurityService,
     private readonly attribution: AttributionService,
+    private readonly legal: LegalService,
   ) {}
 
   async signup(dto: SignupDto, meta: { ip?: string; userAgent?: string } = {}) {
-    const { user, team } = await this.createAccount({ ...dto, ip: meta.ip });
+    const { acceptTerms: _accepted, ...rest } = dto;
+    const { user, team } = await this.createAccount({ ...rest, ip: meta.ip, userAgent: meta.userAgent, legal: 'signup' });
     return { user: publicUser(user), team, session: await this.tokens.issueSession(user.id, team.id, meta) };
   }
 
@@ -34,7 +38,7 @@ export class IamService {
    * A new user with a new team, the way signup makes them. Social sign up passes no password
    * and `emailVerified` when the provider vouches for the address, so no confirmation mail goes out.
    */
-  async createAccount(dto: Omit<SignupDto, 'password'> & { password?: string; emailVerified?: boolean; ip?: string }) {
+  async createAccount(dto: Omit<SignupDto, 'password' | 'acceptTerms'> & { password?: string; emailVerified?: boolean; ip?: string; userAgent?: string; legal?: LegalMethod }) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } });
     if (existing) throw ApiError.conflict('email_taken', 'An account with this email already exists');
     // A mistyped promo code is reported before anything is created.
@@ -72,6 +76,8 @@ export class IamService {
       include: { memberships: { include: { team: true } } },
     });
     const team = user.memberships[0].team;
+    // The clickwrap record; an account made without the checkbox is asked to accept before first use.
+    if (dto.legal) await this.legal.accept(user.id, { method: dto.legal, entity: billingEntity, ip: dto.ip, userAgent: dto.userAgent });
     await this.events.emit('team.created', { teamId: team.id, userId: user.id }, { teamId: team.id });
     await this.attribution.attributeSignup({ teamId: team.id, userId: user.id, email: user.email, ip: dto.ip, promoCode: dto.promoCode });
     this.security.sendVerification(user.id).catch((e) => this.log.warn(`verification mail failed: ${e.message}`));
@@ -106,7 +112,8 @@ export class IamService {
       this.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } }),
       this.prisma.team.findUniqueOrThrow({ where: { id: actor.teamId }, include: { projects: true } }),
     ]);
-    return { user: publicUser(user), team, role: actor.role, scopes: [...actor.scopes], isAgent: actor.isAgent, isStaff: user.isStaff, staffRoles: user.isStaff ? user.staffRoles : [] };
+    const legal = { ...this.legal.summary(team.billingEntity), accepted: user.legalVersion, acceptedAt: user.legalAcceptedAt, required: user.legalVersion !== LEGAL_VERSION };
+    return { user: publicUser(user), team, role: actor.role, scopes: [...actor.scopes], isAgent: actor.isAgent, isStaff: user.isStaff, staffRoles: user.isStaff ? user.staffRoles : [], legal };
   }
 
   // ---- Projects ----

@@ -1,3 +1,4 @@
+import { LegalService } from '../legal/legal.service';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { createHash, randomBytes } from 'node:crypto';
@@ -36,6 +37,7 @@ export class TeamService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly legal: LegalService,
     private readonly temporal: TemporalService,
     private readonly mail: MailService,
     private readonly events: EventsService,
@@ -193,11 +195,13 @@ export class TeamService {
   }
 
   /** Someone without an account accepts by choosing a name and password. The link proves the email. */
-  async acceptWithSignup(token: string, name: string, password: string) {
+  async acceptWithSignup(token: string, name: string, password: string, meta: { ip?: string; userAgent?: string } = {}) {
     const inv = await this.findUsable(token);
     if (await this.prisma.user.findUnique({ where: { email: inv.email } })) throw ApiError.conflict('email_taken', 'An account with this email already exists. Sign in and accept the invitation.');
     const user = await this.prisma.user.create({ data: { email: inv.email, name, passwordHash: await argon2.hash(password), emailVerified: new Date() } });
-    return this.join(inv, user.id);
+    const team = await this.prisma.team.findUniqueOrThrow({ where: { id: inv.teamId }, select: { billingEntity: true } });
+    await this.legal.accept(user.id, { method: 'invite', entity: team.billingEntity, ...meta });
+    return this.join(inv, user.id, meta);
   }
 
   /**

@@ -1,5 +1,6 @@
 'use client';
 
+import { LegalAgree, useLegalVersion } from '@/components/legal';
 import { FormEvent, Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api, ApiError, getToken, setToken } from '@/lib/api';
@@ -20,6 +21,8 @@ function InvitePage() {
   const [needCode, setNeedCode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [agreed, setAgreed] = useState(false);
+  const legalVersion = useLegalVersion();
 
   useEffect(() => {
     if (!token) { setInvalid(true); return; }
@@ -52,7 +55,7 @@ function InvitePage() {
   function signUpAndAccept(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
-    finish(() => post<{ session: string }>('/v1/invitations/accept-signup', { token, name: f.get('name'), password: f.get('password') }));
+    finish(() => post<{ session: string }>('/v1/invitations/accept-signup', { token, name: f.get('name'), password: f.get('password'), acceptTerms: agreed }));
   }
 
   if (invalid) return <div className="mx-auto mt-16 max-w-sm card"><p className="text-sm">{t(locale, 'inviteInvalid')}</p></div>;
@@ -71,7 +74,9 @@ function InvitePage() {
           <button className="btn-primary w-full" disabled={busy} onClick={() => finish(() => post('/v1/invitations/accept', { token }))}>{t(locale, 'acceptInvite')}</button>
         )}
         {signedInAs && signedInAs !== info.email && <p className="text-sm text-amber-700">{tf(locale, 'inviteWrongUser')(info.email)}</p>}
-        {!signedInAs && <SocialButtons locale={locale} intent={info.hasAccount ? 'login' : 'signup'} invite={token} returnPath="/team" />}
+        {!signedInAs && !info.hasAccount && <LegalAgree locale={locale} checked={agreed} onChange={setAgreed} />}
+        {!signedInAs && <SocialButtons locale={locale} intent={info.hasAccount ? 'login' : 'signup'} invite={token} returnPath="/team"
+          needsLegal={!info.hasAccount} legal={!info.hasAccount && agreed ? legalVersion ?? undefined : undefined} />}
         {!signedInAs && info.hasAccount && (
           <form onSubmit={signInAndAccept} className="space-y-3">
             <p className="text-sm">{t(locale, 'signInToAccept')}</p>
@@ -86,7 +91,7 @@ function InvitePage() {
             <p className="text-sm">{t(locale, 'createToAccept')}</p>
             <input className="input" name="name" placeholder={t(locale, 'name')} required maxLength={80} />
             <input className="input" name="password" type="password" placeholder={t(locale, 'newPassword')} required minLength={10} autoComplete="new-password" />
-            <button className="btn-primary w-full" disabled={busy}>{t(locale, 'acceptInvite')}</button>
+            <button className="btn-primary w-full" disabled={busy || !agreed}>{t(locale, 'acceptInvite')}</button>
           </form>
         )}
       </div>

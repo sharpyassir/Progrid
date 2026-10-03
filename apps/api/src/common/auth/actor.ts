@@ -23,6 +23,8 @@ export interface Actor {
   teamStatus?: AccountStatus;
   /** console for console sessions and API tokens, ops for ops console sessions (/ops/v1 only). */
   audience?: 'console' | 'ops';
+  /** Version of the legal documents the user last accepted (null: never); console sessions and API tokens. */
+  legalVersion?: string | null;
   /** Client address and user agent of the request, written to the audit log. */
   ip?: string;
   userAgent?: string;

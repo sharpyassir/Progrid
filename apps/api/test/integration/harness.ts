@@ -171,7 +171,7 @@ export async function signup(s: Sut, opts: { verify?: boolean; country?: string 
   const client = new Client(s.baseUrl);
   const email = `it-${randomBytes(6).toString('hex')}@example.test`;
   const password = `pw-${randomBytes(9).toString('base64url')}`;
-  const r = await client.ok('POST', '/v1/auth/signup', { email, password, name: 'Integration Test', teamName: `it ${email.slice(3, 15)}`, country: opts.country ?? 'SA' }, 201);
+  const r = await client.ok('POST', '/v1/auth/signup', { email, password, acceptTerms: true, name: 'Integration Test', teamName: `it ${email.slice(3, 15)}`, country: opts.country ?? 'SA' }, 201);
   client.token = r.session;
   if (opts.verify !== false) await verifyEmail(s, client, email);
   const me = await client.ok('GET', '/v1/account');

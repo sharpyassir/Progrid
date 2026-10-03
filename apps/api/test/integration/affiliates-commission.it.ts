@@ -32,7 +32,7 @@ beforeAll(async () => {
 /** A customer who signed up with the partner code, with last month's usage already rated. */
 async function customer(country: 'US' | 'SA', usage: [ResourceType, number][], opts: { promoCredit?: number; promo?: boolean } = {}) {
   const email = `it-${randomBytes(6).toString('hex')}@example.test`;
-  const r = await fetch(`${s.baseUrl}/v1/auth/signup`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': `198.19.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}` }, body: JSON.stringify({ email, password: `pw-${randomBytes(9).toString('base64url')}`, name: 'Customer', teamName: 'Customer team', country, ...(opts.promo === false ? {} : { promoCode: code }) }) });
+  const r = await fetch(`${s.baseUrl}/v1/auth/signup`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': `198.19.${Math.floor(Math.random() * 250)}.${1 + Math.floor(Math.random() * 250)}` }, body: JSON.stringify({ email, acceptTerms: true, password: `pw-${randomBytes(9).toString('base64url')}`, name: 'Customer', teamName: 'Customer team', country, ...(opts.promo === false ? {} : { promoCode: code }) }) });
   const body = (await r.json()) as any;
   const client = new Client(s.baseUrl, body.session);
   const teamId: string = body.team.id;

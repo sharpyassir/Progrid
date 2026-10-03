@@ -98,6 +98,10 @@ model User {
   /// Address the account was created from (self referral and signup fraud checks).
   signupIp            String?
   affiliate           Affiliate?
+  /// Version of the legal documents (terms, acceptable use, privacy) last accepted; see modules/legal.
+  legalVersion        String?
+  legalAcceptedAt     DateTime?
+  legalAcceptances    LegalAcceptance[]
 
   @@map("prgd_users")
 }
@@ -3790,4 +3794,25 @@ model AffiliateLedgerEntry {
   @@index([currency, at])
   @@index([affiliateId, at])
   @@map("prgd_affiliate_ledger")
+}
+
+/// Every acceptance of the legal documents (clickwrap record): what was accepted, when, from where, and how.
+model LegalAcceptance {
+  id        String   @id @default(cuid())
+  userId    String
+  /// LEGAL_VERSION at the time (modules/legal/legal.ts).
+  version   String
+  /// Documents the checkbox named, e.g. terms, acceptable-use, privacy.
+  documents String[]
+  /// Contracting company whose documents were shown: progrid_llc (progrid.co) or progrid_arabia (progrid.sa).
+  entity    String
+  /// signup | oauth_signup | invite | reaccept
+  method    String
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("prgd_legal_acceptances")
 }

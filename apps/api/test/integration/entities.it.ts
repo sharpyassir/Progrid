@@ -67,12 +67,12 @@ describe('billing entities', () => {
 
     // A country picked on the .sa domain still wins: a German signup there is billed by the LLC.
     const email = `it-${randomBytes(6).toString('hex')}@example.test`;
-    const viaSa = await raw('POST', '/v1/auth/signup', { 'x-forwarded-host': 'api.progrid.sa' }, { email, password: 'pw-long-enough-1', name: 'Via SA', teamName: 'via sa', country: 'DE' });
+    const viaSa = await raw('POST', '/v1/auth/signup', { 'x-forwarded-host': 'api.progrid.sa' }, { email, acceptTerms: true, password: 'pw-long-enough-1', name: 'Via SA', teamName: 'via sa', country: 'DE' });
     expect(viaSa.status).toBe(201);
     expect(viaSa.body.team).toMatchObject({ country: 'DE', billingEntity: 'progrid_llc', currency: 'USD' });
 
     // Without a country, the .sa domain defaults to Saudi Arabia and the .co domain to the caller's country (US without a database).
-    const noCountrySa = await raw('POST', '/v1/auth/signup', { 'x-forwarded-host': 'api.progrid.sa' }, { email: `it-${randomBytes(6).toString('hex')}@example.test`, password: 'pw-long-enough-1', name: 'Default SA', teamName: 'default sa' });
+    const noCountrySa = await raw('POST', '/v1/auth/signup', { 'x-forwarded-host': 'api.progrid.sa' }, { email: `it-${randomBytes(6).toString('hex')}@example.test`, acceptTerms: true, password: 'pw-long-enough-1', name: 'Default SA', teamName: 'default sa' });
     expect(noCountrySa.body.team).toMatchObject({ country: 'SA', billingEntity: 'progrid_arabia', currency: 'SAR' });
     const geo = await raw('GET', '/v1/geo', { 'x-forwarded-host': 'api.progrid.sa' });
     expect(geo.body).toMatchObject({ country: 'SA', source: 'domain', billingEntity: 'progrid_arabia', currency: 'SAR' });
