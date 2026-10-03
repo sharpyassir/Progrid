@@ -151,15 +151,42 @@ cloud-init address matches the allocation, so servers still on DHCP are not cut 
 
 ## Backups and restore
 
-The backup container dumps Postgres every night at 02:15 UTC to `/var/backups/prgd`, keeps
-`BACKUP_KEEP_DAYS` days, and copies to `BACKUP_S3_URL` when set. Restore on a fresh host:
+The backup container dumps every database on the server (`pg_dumpall`) each night to
+`/var/backups/prgd/all-YYYYMMDD-HHMM.sql.gz`, keeps `BACKUP_KEEP_DAYS` days, and copies each dump
+and the WAL archive off the server when `BACKUP_S3_URL` is set. Every result is reported to the
+DevOps console (docs/platform-maintenance.md).
+
+**Off server copy.** Any S3 compatible storage works (DigitalOcean Spaces, Backblaze B2, Wasabi,
+AWS S3). Create a private bucket in a different provider or region from the server, and a key
+limited to that bucket, then set in `/etc/prgd/prgd.env`:
 
 ```sh
-ansible-playbook -i inventory.ini site.yml --limit management --ask-vault-pass
+BACKUP_S3_URL=s3://<bucket>/prgd
+BACKUP_S3_ENDPOINT=https://fra1.digitaloceanspaces.com   # the provider's S3 endpoint
+BACKUP_S3_REGION=                                        # only if the provider needs one
+BACKUP_S3_KEY=...
+BACKUP_S3_SECRET=...
+```
+
+Then test and take the first copy at once instead of waiting for the night:
+
+```sh
+cd /opt/prgd
+docker compose --env-file /etc/prgd/prgd.env up -d backup
+docker compose --env-file /etc/prgd/prgd.env run --rm backup check   # off server storage OK
+docker compose --env-file /etc/prgd/prgd.env run --rm backup once    # copied off the server: ...
+```
+
+**Restore** (the dump holds every database and role, so it is loaded into `postgres`):
+
+```sh
 cd /opt/prgd && docker compose --env-file /etc/prgd/prgd.env stop api worker
-gunzip -c /var/backups/prgd/prgd-YYYYMMDD-0215.sql.gz | docker compose --env-file /etc/prgd/prgd.env exec -T postgres psql -U prgd prgd
+gunzip -c /var/backups/prgd/all-YYYYMMDD-HHMM.sql.gz | docker compose --env-file /etc/prgd/prgd.env exec -T postgres psql -U prgd -d postgres
 docker compose --env-file /etc/prgd/prgd.env start api worker
 ```
+
+On a fresh host, run the Ansible playbook first (`ansible-playbook -i inventory.ini site.yml --limit
+management --ask-vault-pass`) and fetch the dump from the bucket with any S3 client.
 
 Redis holds only locks, rate limit counters and idempotency keys; losing it is harmless. NATS JetStream
 holds in flight host agent jobs; the worker retries them. Temporal state lives in Postgres.
