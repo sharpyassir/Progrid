@@ -91,7 +91,7 @@ const en: HomeCopy = {
     h1: 'Build, deploy and scale on a simpler cloud',
     lead: 'Servers in 60 seconds, managed databases, Kubernetes and an app platform on one API. Hourly billing that never passes the monthly price, and support from the engineers who run it.',
     email: 'Work email', signUp: 'Sign up', or: 'or', google: 'Sign up with Google',
-    fine: 'Free credit for new teams. No commitment, cancel any hour.',
+    fine: 'No commitment. Pay by the hour and cancel any hour.',
   },
   builtOn: 'Built on proven open source',
   showcase: {
@@ -221,7 +221,7 @@ const ar: HomeCopy = {
     h1: 'ابنِ وانشر وتوسّع على سحابة أبسط',
     lead: 'خوادم جاهزة خلال 60 ثانية، وقواعد بيانات مُدارة، وKubernetes، ومنصة تطبيقات بواجهة برمجية واحدة. فوترة بالساعة لا تتجاوز السعر الشهري، ودعم من المهندسين الذين يشغّلون المنصة.',
     email: 'بريد العمل', signUp: 'سجّل', or: 'أو', google: 'سجّل بحساب Google',
-    fine: 'رصيد مجاني للفرق الجديدة. بلا التزام، ويمكنك الإلغاء في أي ساعة.',
+    fine: 'بلا التزام. ادفع بالساعة ويمكنك الإلغاء في أي ساعة.',
   },
   builtOn: 'مبنية على برمجيات مفتوحة المصدر موثوقة',
   showcase: {
@@ -351,7 +351,7 @@ const tr: HomeCopy = {
     h1: 'Daha sade bir bulutta geliştirin, yayınlayın, büyüyün',
     lead: '60 saniyede sunucular, yönetilen veritabanları, Kubernetes ve uygulama platformu tek API’de. Aylık fiyatı asla aşmayan saatlik faturalama ve platformu işleten mühendislerden destek.',
     email: 'İş e-postası', signUp: 'Kaydol', or: 'veya', google: 'Google ile kaydol',
-    fine: 'Yeni takımlara ücretsiz kredi. Taahhüt yok, istediğiniz saat iptal edin.',
+    fine: 'Taahhüt yok. Saatlik ödeyin, istediğiniz saat iptal edin.',
   },
   builtOn: 'Kanıtlanmış açık kaynak üzerine kurulu',
   showcase: {

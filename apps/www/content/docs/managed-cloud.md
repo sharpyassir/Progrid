@@ -15,7 +15,7 @@ Managed cloud is a contract with a team, not a switch on a server. It covers a s
 
 | | Essential | Business | Enterprise |
 |---|---|---|---|
-| Price per month | $293.33 (1,100 SAR) | $800 (3,000 SAR) | Custom |
+| Price per month | $293.33 | $800 | Custom |
 | Assets | up to 3 | up to 10 | agreed per contract |
 | Coverage | Business hours | 24/7 | 24/7 |
 | Engineer time included | 2 hours | 6 hours | agreed per contract |
@@ -28,9 +28,9 @@ Managed cloud is a contract with a team, not a switch on a server. It covers a s
 | P3 resolution | 5 business days | 3 days | 1 day |
 | P4 resolution | 10 business days | 7 days | 5 days |
 
-Prices are set in riyals; teams billed in dollars pay them converted at 3.75 riyals per dollar. Teams billed by Progrid Arabia also pay 15 percent VAT, which the invoice adds. Engineer time beyond the included hours costs $66.67 (250 SAR) an hour, before any tax. Servers themselves are billed as usual; the managed fee covers the work, not the hardware.
+Prices are in US dollars and exclude any tax that applies where you are. Engineer time beyond the included hours costs $66.67 an hour, before any tax. Servers themselves are billed as usual; the managed fee covers the work, not the hardware.
 
-**Business hours** means 09:00 to 17:00 on the working days of your contract's support calendar, which the contract shows. The default calendar is Sunday to Thursday in Arabia Standard Time (UTC+3), and its public holidays do not count. So on that calendar a P2 ticket opened on Thursday at 16:00 on the Essential plan is due for a first response on Sunday at 16:00. A business day is 8 working hours. On 24/7 plans every hour counts, and a day is 24 hours.
+**Business hours** means 09:00 to 17:00 on the working days of your contract's support calendar, which the contract shows. The calendar's time zone and public holidays are part of the contract, and holidays do not count. So a P2 ticket opened at 16:00 on the last working day of the week on the Essential plan is due for a first response at 16:00 on the next working day. A business day is 8 working hours. On 24/7 plans every hour counts, and a day is 24 hours.
 
 The response target is the time to the first answer from an engineer. The resolution target is the time to fix or to a workaround that restores service. Both start when the ticket is opened.
 

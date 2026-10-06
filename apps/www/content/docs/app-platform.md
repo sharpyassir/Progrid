@@ -5,7 +5,7 @@ section: Start here
 order: 4
 ---
 
-The App Platform takes a repository and gives you a running app at `https://<name>.apps.progrid.sa` with TLS, on hosts we run. Git Deploy does the same on a server of your own; the App Platform is for when you would rather not think about the server at all.
+The App Platform takes a repository and gives you a running app at `https://<name>.<apps domain>` (the console shows the exact address) with TLS, on hosts we run. Git Deploy does the same on a server of your own; the App Platform is for when you would rather not think about the server at all.
 
 ## What your repository needs
 
@@ -30,10 +30,10 @@ The app shows `creating` while a host is chosen, `building` while the image is b
 
 | Size | Memory | CPU | Per instance per month |
 |---|---|---|---|
-| app-xs | 512 MB | 0.5 | $5.07 (19 SAR) |
-| app-s | 1 GB | 1 | $12.00 (45 SAR) |
-| app-m | 2 GB | 2 | $24.00 (90 SAR) |
-| app-l | 4 GB | 4 | $48.00 (180 SAR) |
+| app-xs | 512 MB | 0.5 | $5.07 |
+| app-s | 1 GB | 1 | $12.00 |
+| app-m | 2 GB | 2 | $24.00 |
+| app-l | 4 GB | 4 | $48.00 |
 
 Run up to five instances of an app; requests are spread across them and a deploy starts the new instances beside the old ones before retiring the old ones. Billing is by the hour per instance while the app is live. **Stop** ends the charge and keeps the app; **Start** brings it back.
 

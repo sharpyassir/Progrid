@@ -9,7 +9,7 @@ Progrid is a developer cloud for people and AI agents. You get servers by the ho
 
 ## 1. Create an account
 
-Open the [console](https://console.progrid.co/login), choose **Create account**, and enter your name, a team name, your billing country, your email, and a password of ten characters or more. Your billing country decides which Progrid company bills you: Progrid Arabia in riyals for Saudi Arabia, Progrid Technologies LLC in dollars everywhere else (see [billing](/docs/billing)). Customers in Saudi Arabia can also use [console.progrid.sa](https://console.progrid.sa/login); it is the same account system. New accounts start with credit so you can try things before adding a card.
+Open the [console](https://console.progrid.co/login), choose **Create account**, and enter your name, a team name, your billing country, your email, and a password of ten characters or more. Your billing country decides which Progrid company invoices you and in which currency (see [billing](/docs/billing)).
 
 You can also choose **Continue with Google** or **Continue with Microsoft** and skip the password. See [Account security](/docs/security) for how linking works.
 
@@ -48,4 +48,4 @@ Under **Security, Two Factor Sign In**, scan the code with any authenticator app
 - [Use the command line](/docs/cli) to create and manage servers from your terminal.
 - [Deploy from GitHub](/docs/git-deploy) so a push to your branch deploys your app.
 - [Give an AI agent access](/docs/agents) with a spending cap and approval rules.
-- [Understand billing](/docs/billing): hourly, capped at the monthly price, in USD or SAR.
+- [Understand billing](/docs/billing): hourly, capped at the monthly price.

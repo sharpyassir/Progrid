@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from 'react';
 import { HeroGrid } from './hero-grid';
-import { getCopy, LANGS, SITE_SWITCH, type Copy, type Lang } from '@/lib/copy';
+import { getCopy, LANGS, type Copy, type Lang } from '@/lib/copy';
 import { useSite } from './site-context';
 import { getHomeCopy, type MenuItem } from '@/lib/copy-home';
 
@@ -16,16 +16,6 @@ export function useCopy(): Copy { return getCopy(useContext(LangCtx), useSite().
 export function useLang(): Lang { return useContext(LangCtx); }
 /** The console of this domain (console.progrid.co or console.progrid.sa). */
 export function useConsole(): string { return useSite().urls.console; }
-
-/** Link to the same page on the other storefront. The global site link carries ?site=global so a visitor from Saudi Arabia is not sent back. */
-export function SiteSwitch({ className = '' }: { className?: string }) {
-  const site = useSite();
-  const lang = useLang();
-  const home = LANGS.find((l) => l.code === lang)?.path ?? '/';
-  const sw = SITE_SWITCH[site.site];
-  const href = `${site.other.www}${home === '/' ? '/' : home}${site.other.site === 'global' ? '?site=global' : ''}`;
-  return <a href={href} hrefLang={site.other.site === 'sa' ? 'en-SA' : 'en'} title={sw.title} className={className}><bdi>{sw.en}</bdi> · <bdi lang="ar" dir="rtl">{sw.ar}</bdi></a>;
-}
 
 /* ───────────────────────── Header ───────────────────────── */
 
@@ -124,7 +114,6 @@ export function Header() {
           <a href="/docs" onMouseEnter={() => setOpen(null)} className="rounded-md px-3 py-2 hover:bg-slate-100 hover:text-slate-900">{h.menu.docs}</a>
         </nav>
         <div className="ms-auto hidden items-center gap-3 lg:flex">
-          <SiteSwitch className="hidden whitespace-nowrap text-xs text-slate-500 hover:text-slate-900 2xl:inline" />
           {langs}
           <a href={`${consoleUrl}/login`} className="text-sm font-medium text-slate-700 hover:text-slate-900">{c.nav.signIn}</a>
           <a href={`${consoleUrl}/login?mode=signup`} className="btn-primary py-2">{h.hero.signUp}</a>
@@ -152,7 +141,7 @@ export function Header() {
           ))}
           <a href={href('/pricing')} className="block border-b border-slate-100 py-3 font-semibold">{h.menu.pricing}</a>
           <a href="/docs" className="block border-b border-slate-100 py-3 font-semibold">{h.menu.docs}</a>
-          <div className="flex items-center justify-between py-4">{langs}<SiteSwitch className="text-xs text-slate-500" /></div>
+          <div className="py-4">{langs}</div>
           <div className="grid grid-cols-2 gap-3">
             <a href={`${consoleUrl}/login`} className="rounded-lg border border-slate-300 py-2.5 text-center text-sm font-semibold">{c.nav.signIn}</a>
             <a href={`${consoleUrl}/login?mode=signup`} className="btn-primary justify-center">{h.hero.signUp}</a>
@@ -270,10 +259,10 @@ export function Products() {
 /* ───────────────────────── Agents ───────────────────────── */
 
 export function Agents() {
-  const c = useCopy(); const { site } = useSite();
-  // The same story in each storefront's currency: a cap of $15 or 50 SAR, in minor units.
-  const cap = site === 'sa' ? 5000 : 1500;
-  const added = site === 'sa' ? 6500 : 2700;
+  const c = useCopy();
+  // A $15 monthly cap and a $27 server that would pass it, in cents.
+  const cap = 1500;
+  const added = 2700;
   return (
     <section id="agents" className="bg-slate-950 py-20 text-white">
       <div className="container-x grid items-center gap-12 lg:grid-cols-2">
@@ -330,9 +319,9 @@ const APP_FROM_SAR_MINOR = 1900;
 /** Price tables. `page` renders them as the /pricing page heading (h1) instead of a homepage section. */
 export function Pricing({ page = false }: { page?: boolean } = {}) {
   const c = useCopy(); const lang = useLang(); const site = useSite();
-  // Each storefront prices in its own currency: US dollars on progrid.co, riyals with VAT on progrid.sa.
+  // The website shows US dollar prices on every domain (the price book converts at the pegged rate).
   const currency = site.currency;
-  const showVat = site.site === 'sa';
+  const showVat = false; // US dollar prices; any tax is added at checkout
   const toCurrency = (sarMinor: number) => (currency === 'SAR' ? sarMinor : Math.round(sarMinor / 3.75));
   const fallback = (): PriceList => ({ currency, baseCurrency: 'SAR', fxRate: currency === 'SAR' ? 1 : 1 / 3.75, data: FALLBACK.map((p) => ({ ...p, monthlyMinor: toCurrency(p.monthlyMinor), hourlyMinor: toCurrency(p.hourlyMinor) })) });
   const [list, setList] = useState<PriceList>(fallback);
@@ -344,7 +333,7 @@ export function Pricing({ page = false }: { page?: boolean } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currency, site.urls.api]);
   const cur = list.currency;
-  const fmt = (m: number, digits = 2) => new Intl.NumberFormat(lang === 'ar' ? 'ar-SA' : 'en-US', { style: 'currency', currency: cur, maximumFractionDigits: digits }).format(m / 100);
+  const fmt = (m: number, digits = 2) => new Intl.NumberFormat(lang === 'ar' ? 'ar-u-nu-latn' : 'en-US', { style: 'currency', currency: cur, maximumFractionDigits: digits }).format(m / 100);
   const plans = list.data.filter((p) => p.resourceType === 'server' && p.size);
   const managed = list.data.filter((p) => p.resourceType === 'managed_server' && p.size).map((m) => ({ ...m, base: plans.find((p) => p.sku === m.size!.id) }));
   const snapshot = list.data.find((p) => p.sku === 'snapshot_gb')?.monthlyMinor ?? toCurrency(25);
@@ -490,7 +479,6 @@ export function Footer() {
       </div>
       <div className="container-x mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-6 text-xs text-slate-500">
         <span>© {new Date().getFullYear()} {c.footer.copyright} {c.footer.providedBy}</span>
-        <SiteSwitch className="font-medium text-slate-700 hover:text-slate-900" />
       </div>
       <div className="container-x mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
         <span>{c.footer.builtOn}</span>

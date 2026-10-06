@@ -94,7 +94,7 @@ Save a version with a note, then choose **Deploy**. Connect serves that immutabl
 
 A deployed agent gets:
 
-- an API endpoint: `https://api.progrid.co/v1/connect/agents/{id}/run` (customers in Saudi Arabia may use `https://api.progrid.sa/v1/connect/agents/{id}/run`; both reach the same agent)
+- an API endpoint: `https://api.progrid.co/v1/connect/agents/{id}/run`
 - agent API keys, created on the agent's **Deploy** tab or under **Connect, Keys**. A key starts with `prgd_ca_` and is shown once.
 - webhook URLs that start a run when they are called
 
@@ -175,28 +175,28 @@ Webhook payloads are treated as untrusted data: the agent is told never to follo
 
 ## Pricing
 
-Connect is pay as you go. There is no monthly fee and no monthly minimum. The price book is in Saudi riyals. Teams billed in US dollars by Progrid Technologies LLC pay the same prices converted at the pegged rate of 3.75 riyals per dollar (USD shown in brackets, rounded). Teams billed by Progrid Arabia also pay 15% VAT.
+Connect is pay as you go. There is no monthly fee and no monthly minimum. Prices are in US dollars and exclude any tax that applies where you are.
 
 | What | Price |
 |---|---|
-| Execution (one agent run or one workflow execution) | SAR 0.04 ($0.0107) |
-| Tool call (each API, database, email, notification or Progrid action) | SAR 0.02 ($0.0053) |
+| Execution (one agent run or one workflow execution) | $0.0107 |
+| Tool call (each API, database, email, notification or Progrid action) | $0.0053 |
 
 AI tokens are priced per model, per 1M tokens:
 
 | Model | Input | Output | Cache read | Cache write |
 |---|---|---|---|---|
-| Claude Opus 5.5 | SAR 18.00 ($4.80) | SAR 90.00 ($24) | SAR 0.90 ($0.24) | SAR 22.50 ($6) |
-| Claude Sonnet 5.5 | SAR 9.00 ($2.40) | SAR 45.00 ($12) | SAR 0.90 ($0.24) | SAR 11.25 ($3) |
-| Claude Haiku 4.5 | SAR 4.50 ($1.20) | SAR 22.50 ($6) | SAR 0.45 ($0.12) | SAR 5.625 ($1.50) |
+| Claude Opus 5.5 | $4.80 | $24 | $0.24 | $6 |
+| Claude Sonnet 5.5 | $2.40 | $12 | $0.24 | $3 |
+| Claude Haiku 4.5 | $1.20 | $6 | $0.12 | $1.50 |
 
-If Claude Opus 5.5 declines a request for safety reasons, Connect retries it on Claude Opus 5 or Claude Opus 4.8. Both attempts are billed, each at its own model's prices. For those two models the prices per 1M tokens are SAR 22.50 ($6) input, SAR 112.50 ($30) output, SAR 2.25 ($0.60) cache read and SAR 28.125 ($7.50) cache write. You cannot choose them for an agent.
+If Claude Opus 5.5 declines a request for safety reasons, Connect retries it on Claude Opus 5 or Claude Opus 4.8. Both attempts are billed, each at its own model's prices. For those two models the prices per 1M tokens are $6 input, $30 output, $0.60 cache read and $7.50 cache write. You cannot choose them for an agent.
 
 Connect caches the platform preamble, the agent instructions and the tool list, so calls after the first read them from the cache for a small part of the input price. Writing to the cache costs 1.25 times the input price.
 
 Each run shows its estimated cost in the Test tab, the run view and the logs. `GET /v1/connect/models` returns each model's prices in your currency, and `GET /v1/connect/usage` returns the month's estimate.
 
-**Example.** One Claude Opus 5.5 run with 12,000 input tokens, 1,500 output tokens, 40,000 cache read tokens, 8,000 cache write tokens and 2 tool calls costs SAR 0.04 + 2 × 0.02 + 0.216 + 0.135 + 0.036 + 0.18 = SAR 0.647, which is $0.17 for a team billed in dollars. Teams billed by Progrid Arabia add VAT.
+**Example.** One Claude Opus 5.5 run with 12,000 input tokens, 1,500 output tokens, 40,000 cache read tokens, 8,000 cache write tokens and 2 tool calls costs $0.0107 + 2 × $0.0053 + $0.0576 + $0.036 + $0.0096 + $0.048 = about $0.17, before any tax.
 
 ## Permissions
 

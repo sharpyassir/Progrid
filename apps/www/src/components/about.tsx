@@ -38,7 +38,7 @@ const COPY: Record<Lang, AboutCopy> = {
     howH2: 'How we work',
     how: [
       ['Open source underneath', 'Proxmox VE, Ceph, PostgreSQL, Temporal and NATS. Proven components, no lock in, and you can read how it fits together in our docs.'],
-      ['Local where it matters', 'You pay in your own storefront. US dollars on progrid.co. Saudi riyals with VAT, mada and Apple Pay on progrid.sa. Invoices always come from the local contracting company.'],
+      ['Global from day one', 'One website, one price list in US dollars, and one API for customers everywhere. Invoices come from the Progrid company that contracts with you.'],
       ['Ship, then promise', 'We publish what is live and what is on the roadmap. A feature is not marketed until you can create it from the console.'],
     ],
     companyH2: 'The company',
@@ -65,7 +65,7 @@ const COPY: Record<Lang, AboutCopy> = {
     howH2: 'Nasıl çalışıyoruz',
     how: [
       ['Altta açık kaynak', 'Proxmox VE, Ceph, PostgreSQL, Temporal ve NATS. Kanıtlanmış bileşenler, bağımlılık yok; nasıl birleştiğini dokümanlarda okuyabilirsiniz.'],
-      ['Gereken yerde yerel', 'Kendi mağazanızda ödersiniz. progrid.co’da ABD doları. progrid.sa’da KDV ile Suudi riyali, mada ve Apple Pay. Faturalar her zaman yerel sözleşme şirketinden gelir.'],
+      ['İlk günden küresel', 'Tek web sitesi, ABD doları ile tek fiyat listesi ve her yerdeki müşteriler için tek API. Faturalar sizinle sözleşme yapan Progrid şirketinden gelir.'],
       ['Önce çıkar, sonra söz ver', 'Neyin canlı, neyin yol haritasında olduğunu yayınlarız. Konsoldan oluşturamadığınız bir özelliğin pazarlaması yapılmaz.'],
     ],
     companyH2: 'Şirket',
@@ -92,7 +92,7 @@ const COPY: Record<Lang, AboutCopy> = {
     howH2: 'كيف نعمل',
     how: [
       ['مصادر مفتوحة في الأساس', 'Proxmox VE وCeph وPostgreSQL وTemporal وNATS. مكونات مجرّبة دون احتكار، ويمكنك قراءة كيف تترابط في الوثائق.'],
-      ['محليون حيث يهم ذلك', 'تدفع عبر متجرك المحلي: بالدولار الأمريكي على progrid.co، وبالريال السعودي مع ضريبة القيمة المضافة ومدى وApple Pay على progrid.sa. وتصدر الفواتير دائمًا من الشركة المتعاقدة المحلية.'],
+      ['عالمية منذ اليوم الأول', 'موقع واحد وقائمة أسعار واحدة بالدولار الأمريكي وواجهة برمجية واحدة للعملاء في كل مكان. تصدر الفواتير من شركة Progrid المتعاقدة معك.'],
       ['نطلق أولًا ثم نعد', 'ننشر ما هو متاح وما هو على خارطة الطريق. ولا نسوّق ميزة قبل أن تتمكن من إنشائها من لوحة التحكم.'],
     ],
     companyH2: 'الشركة',
@@ -101,19 +101,14 @@ const COPY: Record<Lang, AboutCopy> = {
 };
 
 /**
- * The contracting company of each storefront. Addresses appear only here, in the company facts,
+ * The contracting company named on the website. Addresses appear only here, in the company facts,
  * never as a marketing claim. Registration numbers are published once they exist.
  */
-const COMPANY: Record<Site, Record<Lang, [string, string][]>> = {
+const COMPANY: Record<'global', Record<Lang, [string, string][]>> = {
   global: {
-    en: [['Contracting company', 'Progrid Technologies LLC'], ['Jurisdiction', 'United States'], ['Registered address', 'Published once registration is complete'], ['Contact', 'support@progrid.co'], ['Customers in Saudi Arabia', 'Contract with Progrid Arabia through progrid.sa']],
-    tr: [['Sözleşme şirketi', 'Progrid Technologies LLC'], ['Yargı yetkisi', 'Amerika Birleşik Devletleri'], ['Kayıtlı adres', 'Kayıt tamamlandığında yayınlanacak'], ['İletişim', 'support@progrid.co'], ['Suudi Arabistan’daki müşteriler', 'progrid.sa üzerinden Progrid Arabia ile sözleşme yapar']],
-    ar: [['الشركة المتعاقدة', 'Progrid Technologies LLC'], ['الولاية القضائية', 'الولايات المتحدة'], ['العنوان المسجل', 'يُنشر بعد اكتمال التسجيل'], ['التواصل', 'support@progrid.co'], ['العملاء في المملكة العربية السعودية', 'يتعاقدون مع Progrid Arabia عبر progrid.sa']],
-  },
-  sa: {
-    en: [['Contracting company in Saudi Arabia', 'Progrid Arabia (بروجريد العربية)'], ['Registered address', 'Riyadh, Kingdom of Saudi Arabia'], ['Commercial registration', 'Published once registration is complete'], ['VAT registration', 'Published once registration is complete'], ['Contact', 'support@progrid.sa']],
-    tr: [['Suudi Arabistan’daki sözleşme şirketi', 'Progrid Arabia (بروجريد العربية)'], ['Kayıtlı adres', 'Riyad, Suudi Arabistan Krallığı'], ['Ticaret sicili', 'Kayıt tamamlandığında yayınlanacak'], ['KDV kaydı', 'Kayıt tamamlandığında yayınlanacak'], ['İletişim', 'support@progrid.sa']],
-    ar: [['الشركة المتعاقدة في المملكة العربية السعودية', 'بروجريد العربية (Progrid Arabia)'], ['العنوان المسجل', 'الرياض، المملكة العربية السعودية'], ['السجل التجاري', 'يُنشر بعد اكتمال التسجيل'], ['الرقم الضريبي', 'يُنشر بعد اكتمال التسجيل'], ['التواصل', 'support@progrid.sa']],
+    en: [['Contracting company', 'Progrid Technologies LLC'], ['Jurisdiction', 'United States'], ['Registered address', 'Published once registration is complete'], ['Contact', 'support@progrid.co']],
+    tr: [['Sözleşme şirketi', 'Progrid Technologies LLC'], ['Yargı yetkisi', 'Amerika Birleşik Devletleri'], ['Kayıtlı adres', 'Kayıt tamamlandığında yayınlanacak'], ['İletişim', 'support@progrid.co']],
+    ar: [['الشركة المتعاقدة', 'Progrid Technologies LLC'], ['الولاية القضائية', 'الولايات المتحدة'], ['العنوان المسجل', 'يُنشر بعد اكتمال التسجيل'], ['التواصل', 'support@progrid.co']],
   },
 };
 
@@ -125,7 +120,7 @@ export async function aboutMetadata(lang: Lang): Promise<Metadata> {
 export async function About({ lang }: { lang: Lang }) {
   const c = COPY[lang];
   const site = await getSite();
-  const company = COMPANY[site.site][lang];
+  const company = COMPANY.global[lang]; // one global website: the global company on every domain
   const prefix = lang === 'en' ? '' : `/${lang}`;
   return (
     <LangProvider lang={lang}>

@@ -70,7 +70,7 @@ describe('resolveSite', () => {
   const cfg = { domain: 'progrid.co', saDomain: 'progrid.sa', fallback: { www: 'http://localhost:3001', console: 'http://localhost:3000', api: 'http://localhost:4000' }, fallbackSite: 'global' as const };
   it('derives every address from the host', () => {
     expect(resolveSite('progrid.co', cfg)).toMatchObject({ site: 'global', currency: 'USD', urls: { www: 'https://progrid.co', console: 'https://console.progrid.co', api: 'https://api.progrid.co' }, other: { site: 'sa', www: 'https://progrid.sa' } });
-    expect(resolveSite('www.progrid.sa:443', cfg)).toMatchObject({ site: 'sa', currency: 'SAR', urls: { console: 'https://console.progrid.sa', api: 'https://api.progrid.sa' }, entity: { legalName: 'Progrid Arabia', supportEmail: 'support@progrid.sa' } });
+    expect(resolveSite('www.progrid.sa:443', cfg)).toMatchObject({ site: 'sa', currency: 'USD', urls: { console: 'https://console.progrid.sa', api: 'https://api.progrid.sa' }, entity: { legalName: 'Progrid Arabia', supportEmail: 'support@progrid.sa' } });
   });
   it('falls back to the build time addresses on other hosts', () => {
     expect(resolveSite('localhost:3001', cfg)).toMatchObject({ site: 'global', domain: null, urls: cfg.fallback, entity: { legalName: 'Progrid Technologies LLC' } });

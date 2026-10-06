@@ -9,7 +9,7 @@ order: 16
 
 | | Free | Developer | Standard | Premium |
 |---|---|---|---|---|
-| Price per month | 0 | $24 (90 SAR) | $100 (375 SAR) | $500 (1,875 SAR) |
+| Price per month | 0 | $24 | $100 | $500 |
 | Urgent | | | 1 hour | 30 minutes |
 | High | | 8 hours | 4 hours | 2 hours |
 | Normal | 2 days | 24 hours | 8 hours | 4 hours |
@@ -38,7 +38,7 @@ Name the server, database, load balancer, domain, bucket or invoice when you can
 
 A ticket is **open** while it waits on us and **answered** while it waits on you. Every answer goes by email to the team owners and to whoever opened the ticket. Replying to an answered or closed ticket reopens it; after 14 days closed, open a new one.
 
-Email works too. Write to **support@progrid.co** (or **support@progrid.sa** if Progrid Arabia bills you; both reach the same team) from the email address on your account and a ticket opens with the subject line as its title; the reply carries the ticket number. Replying to any ticket email, or writing with `[#123]` in the subject, adds to that ticket. There is no phone line: every request goes through tickets so nothing gets lost.
+Email works too. Write to **support@progrid.co** from the email address on your account and a ticket opens with the subject line as its title; the reply carries the ticket number. Replying to any ticket email, or writing with `[#123]` in the subject, adds to that ticket. There is no phone line: every request goes through tickets so nothing gets lost.
 
 Agents can open tickets too. The MCP server has a `support_ticket` tool, and the `support:write` scope on an agent token allows it. A ticket opened by a token shows the token's name, so you know which agent asked.
 

@@ -21,7 +21,7 @@ export interface SiteInfo {
   /** The apex domain of this request (progrid.co), or null on an unknown host. */
   domain: string | null;
   urls: SiteUrls;
-  /** The other storefront, for the "Saudi Arabia site" and "Global site" links and hreflang. */
+  /** The other domain (legal pages and console links). */
   other: { site: Site; www: string };
   /** The global site's address, the x-default of hreflang. */
   globalWww: string;
@@ -80,7 +80,7 @@ export function resolveSite(host: string | null | undefined, cfg: SiteConfig): S
     other: site === 'sa' ? { site: 'global', www: globalWww } : { site: 'sa', www: saWww },
     globalWww,
     saWww,
-    currency: site === 'sa' ? 'SAR' : 'USD',
+    currency: 'USD', // one global website priced in US dollars on every domain
     entity: ENTITY[site](own),
   };
 }

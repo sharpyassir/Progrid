@@ -26,7 +26,7 @@ Turning managed off stops the charge and the reports at once. The agent stays in
 
 ## Pricing
 
-Managed servers are sold as plans that include the hardware, setup, OS updates, security hardening, daily backups and support: Managed Start (2 vCPU, 4 GB, 80 GB) at $53.07 a month (199 SAR), Managed Business (4 vCPU, 8 GB, 160 GB) at $93.07 (349 SAR), and Managed Pro (8 vCPU, 16 GB, 320 GB) at $159.73 (599 SAR). Teams billed by Progrid Arabia also pay 15 percent VAT, shown at checkout. The Starter plan cannot be managed. Turning managed off mid month only charges the hours it was on; backups then cost 20 percent of the plan if you keep them.
+Managed servers are sold as plans that include the hardware, setup, OS updates, security hardening, daily backups and support: Managed Start (2 vCPU, 4 GB, 80 GB) at $53.07 a month, Managed Business (4 vCPU, 8 GB, 160 GB) at $93.07, and Managed Pro (8 vCPU, 16 GB, 320 GB) at $159.73. Any tax that applies is shown at checkout. The Starter plan cannot be managed. Turning managed off mid month only charges the hours it was on; backups then cost 20 percent of the plan if you keep them.
 
 ## Status and reports
 

@@ -35,7 +35,7 @@ once. Point any S3 client at our endpoint:
 ```
 AWS_ACCESS_KEY_ID=...
 AWS_SECRET_ACCESS_KEY=...
-AWS_ENDPOINT_URL=https://s3.<region>.progrid.sa
+AWS_ENDPOINT_URL=https://s3.<region>.progrid.co
 AWS_DEFAULT_REGION=<region>
 
 aws s3 cp backup.tar.gz s3://acme-assets/backups/

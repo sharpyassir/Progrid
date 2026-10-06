@@ -63,7 +63,7 @@ The Service gets a load balancer named after the cluster, namespace and Service,
 
 ## Pricing
 
-Worker nodes cost the same as servers of that size. A single control plane node is included. Three control plane nodes cost a flat $40 a month (150 SAR for teams billed in riyals). Load balancers and volumes made by the cloud controller are billed as usual. Deleting a cluster deletes its nodes, its load balancers and its volumes, and stops every charge.
+Worker nodes cost the same as servers of that size. A single control plane node is included. Three control plane nodes cost a flat $40 a month. Load balancers and volumes made by the cloud controller are billed as usual. Deleting a cluster deletes its nodes, its load balancers and its volumes, and stops every charge.
 
 ## Limits
 

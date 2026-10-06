@@ -105,7 +105,7 @@ const COPY: Record<Lang, AffiliatesCopy> = {
     faq: (f) => [
       ['When do I get paid?', `Commission is pending for ${f.hold} days after the customer pays the invoice, so refunds and chargebacks can settle. Then it becomes payable. Request a payout from your affiliate portal once your payable balance reaches the minimum; we pay by bank transfer, usually within 10 business days.`],
       ['How long does my link count?', `A click on your referral link fills in your code on the signup form for ${f.days}. If someone clicks another partner's link later, the latest link wins. What counts in the end is the code the customer signs up with.`],
-      ['Which currency am I paid in?', 'Commission is earned in the currency of the customer invoice: US dollars for customers of Progrid Technologies LLC, Saudi riyals for customers of Progrid Arabia. Each currency has its own balance and minimum payout (200 SAR or 50 USD).'],
+      ['Which currency am I paid in?', 'Commission is earned in the currency of the customer invoice, which is US dollars for most customers. Each currency has its own balance and minimum payout.'],
       ['What is not allowed?', 'Signing up yourself or your own businesses with your code, bidding on Progrid brand terms in search ads, spam, coupon sites that publish codes without your content, and misleading claims about Progrid. Breaking the rules cancels the commission and can end your participation.'],
       ['Do I need to disclose that I am an affiliate?', 'Yes. Tell your audience clearly, close to the link or code, that you earn a commission. This is required by consumer protection rules in most countries and by our terms.'],
       ['Can existing Progrid customers join?', 'Yes. Apply with your existing account. Your own usage never earns commission.'],
@@ -155,7 +155,7 @@ const COPY: Record<Lang, AffiliatesCopy> = {
     faq: (f) => [
       ['Ne zaman ödeme alırım?', `Komisyon, müşteri faturayı ödedikten sonra iadeler ve ters ibrazlar netleşsin diye ${f.hold} gün bekler, sonra ödenebilir olur. Ödenebilir bakiyeniz asgari tutara ulaşınca ortaklık portalınızdan ödeme talep edin; genellikle 10 iş günü içinde banka havalesiyle öderiz.`],
       ['Bağlantım ne kadar geçerli?', `Yönlendirme bağlantınıza bir tıklama, kayıt formuna ${f.days} boyunca kodunuzu yazar. Biri daha sonra başka bir ortağın bağlantısına tıklarsa son bağlantı geçerlidir. Sonuçta önemli olan müşterinin kaydolurken kullandığı koddur.`],
-      ['Hangi para biriminde ödenirim?', 'Komisyon müşteri faturasının para biriminde kazanılır: Progrid Technologies LLC müşterileri için ABD doları, Progrid Arabia müşterileri için Suudi riyali. Her para biriminin kendi bakiyesi ve asgari ödemesi vardır (200 SAR veya 50 USD).'],
+      ['Hangi para biriminde ödenirim?', 'Komisyon müşteri faturasının para biriminde kazanılır; çoğu müşteri için bu ABD dolarıdır. Her para biriminin kendi bakiyesi ve asgari ödemesi vardır.'],
       ['Neler yasak?', 'Kendinizi veya kendi işletmelerinizi kodunuzla kaydetmek, arama reklamlarında Progrid marka terimlerine teklif vermek, spam, içeriğiniz olmadan kod yayınlayan kupon siteleri ve Progrid hakkında yanıltıcı iddialar. Kurallara uymamak komisyonu iptal eder ve katılımınızı sona erdirebilir.'],
       ['Ortak olduğumu belirtmem gerekir mi?', 'Evet. Bağlantı veya kodun yakınında, komisyon kazandığınızı kitlenize açıkça söyleyin. Bu, çoğu ülkenin tüketici koruma kurallarının ve koşullarımızın gereğidir.'],
       ['Mevcut Progrid müşterileri katılabilir mi?', 'Evet. Mevcut hesabınızla başvurun. Kendi kullanımınız asla komisyon kazandırmaz.'],
@@ -205,7 +205,7 @@ const COPY: Record<Lang, AffiliatesCopy> = {
     faq: (f) => [
       ['متى أستلم أرباحي؟', `تبقى العمولة معلّقة ${f.hold} يومًا بعد دفع العميل للفاتورة، حتى تتضح حالات الاسترداد والاعتراض، ثم تصبح قابلة للصرف. اطلب الصرف من بوابة الشركاء عند بلوغ رصيدك القابل للصرف الحد الأدنى، ونحوّل المبلغ بتحويل بنكي خلال 10 أيام عمل في الغالب.`],
       ['كم يبقى رابطي فعّالًا؟', `النقر على رابط الإحالة يكتب رمزك في نموذج التسجيل لمدة ${f.days}. وإذا نقر الشخص لاحقًا على رابط شريك آخر فالرابط الأحدث هو المعتمد. وفي النهاية يُحتسب الرمز الذي يسجّل به العميل.`],
-      ['بأي عملة أستلم أرباحي؟', 'تُكتسب العمولة بعملة فاتورة العميل: بالدولار الأمريكي لعملاء Progrid Technologies LLC، وبالريال السعودي لعملاء Progrid Arabia. ولكل عملة رصيد مستقل وحد أدنى للصرف (200 ريال أو 50 دولارًا).'],
+      ['بأي عملة أستلم أرباحي؟', 'تُكتسب العمولة بعملة فاتورة العميل، وهي الدولار الأمريكي لمعظم العملاء. ولكل عملة رصيدها وحدها الأدنى للصرف.'],
       ['ما الممنوع؟', 'تسجيل نفسك أو أعمالك الخاصة برمزك، والمزايدة على العلامة التجارية Progrid في إعلانات البحث، والرسائل المزعجة، ومواقع القسائم التي تنشر الرموز دون محتوى منك، والادعاءات المضللة عن Progrid. ومخالفة القواعد تلغي العمولة وقد تنهي مشاركتك.'],
       ['هل يجب أن أفصح أنني شريك؟', 'نعم. أخبر جمهورك بوضوح، بالقرب من الرابط أو الرمز، أنك تحصل على عمولة. وهذا مطلوب في أنظمة حماية المستهلك في أغلب الدول وفي شروطنا.'],
       ['هل يمكن لعملاء Progrid الحاليين الانضمام؟', 'نعم. قدّم بحسابك الحالي. ولا يحقق استخدامك الشخصي أي عمولة.'],
@@ -219,7 +219,7 @@ const COPY: Record<Lang, AffiliatesCopy> = {
 
 function facts(p: Program, lang: Lang, currency: 'USD' | 'SAR'): Facts {
   // Western digits in Arabic too, as on the rest of the site's prices.
-  const locale = lang === 'ar' ? 'ar-SA-u-nu-latn' : lang === 'tr' ? 'tr-TR' : 'en-US';
+  const locale = lang === 'ar' ? 'ar-u-nu-latn' : lang === 'tr' ? 'tr-TR' : 'en-US';
   const minPayout = new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 0 }).format(p.minPayoutMinor[currency] / 100);
   return { maxRate: Math.max(...Object.values(p.rates)), months: p.commissionMonths, discount: p.promoDiscountPercent, discountMonths: p.promoDiscountMonths, days: COPY[lang].days(p.cookieDays), hold: p.holdDays, minPayout };
 }

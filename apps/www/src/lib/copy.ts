@@ -4,11 +4,9 @@ import type { Site } from './site-shared';
  * Every sentence on the marketing site, in the three launch languages, for both storefronts.
  * English is the source; Turkish and Arabic keep the same keys so a missing string is a type error.
  *
- * Progrid is one global brand. progrid.co is the global site (Progrid Technologies LLC, US dollars).
- * progrid.sa is the local storefront for customers in Saudi Arabia (Progrid Arabia, riyals with VAT,
- * mada and Apple Pay, local e-invoices). The storefront overrides change only what is local:
- * currency, tax, payment methods, invoicing and the contracting company. Never claim that servers
- * or data are in a particular country.
+ * Progrid is one global brand with one global website: the same text and US dollar prices on every
+ * domain. Never claim that servers or data are in a particular country, and no country specific
+ * offers on the marketing pages (legal documents stay per contracting company).
  */
 export type Lang = 'en' | 'tr' | 'ar';
 export const LANGS: { code: Lang; label: string; path: string; dir: 'ltr' | 'rtl' }[] = [
@@ -35,12 +33,6 @@ export interface Copy {
   footer: { tagline: string; cols: [string, [string, string][]][]; copyright: string; builtOn: string; providedBy: string; geoCredit: string };
 }
 
-/** The storefront switch, always in English and Arabic so a visitor finds it in either language. */
-export const SITE_SWITCH: Record<Site, { en: string; ar: string; title: string }> = {
-  global: { en: 'Saudi Arabia site', ar: 'الموقع السعودي', title: 'Prices in riyals, local invoices from Progrid Arabia' },
-  sa: { en: 'Global site', ar: 'الموقع العالمي', title: 'Prices in US dollars, services by Progrid Technologies LLC' },
-};
-
 const en: Copy = {
   meta: { title: 'Progrid: the developer cloud for people and AI agents', description: 'Get a server in 60 seconds. Hourly billing with a monthly cap, one click apps, and API tokens your AI agents can use safely.' },
   nav: { products: 'Products', connect: 'Connect', agents: 'For AI agents', pricing: 'Pricing', marketplace: 'Marketplace', docs: 'Docs', signIn: 'Sign in', startFree: 'Start free', menu: 'Menu' },
@@ -48,7 +40,7 @@ const en: Copy = {
     badge: 'Launching 2027',
     h1a: 'The developer cloud for people ', h1b: 'and AI agents',
     lead: 'Get a server in 60 seconds. Pay by the hour and never more than the monthly price. Your AI agents get API tokens with a spending cap and a human in the loop.',
-    ctaPrimary: 'Start with $100 in credit', ctaSecondary: 'See how agents deploy',
+    ctaPrimary: 'Get started', ctaSecondary: 'See how agents deploy',
     stats: [['60 s', 'to a running server'], ['$7.73 / mo', 'Starter server, billed hourly'], ['0 contracts', 'no commitment, cancel any hour']],
   },
   terminal: { ready: 'WordPress is ready at https://185.0.113.42 and billing at $0.01 per hour', orAgent: '# or let your agent do it, with a cap', capNote: '# $15 per month cap, delete needs approval' },
@@ -104,7 +96,7 @@ const en: Copy = {
       ['Support from the engineers who run it', 'Yes', 'Paid plans', 'Varies'],
     ],
   },
-  cta: { h2: 'Start building today.', lead: '$100 in free credit for new teams. No card needed until you spend it. Cancel any hour.', create: 'Create account', docs: 'Read the API docs' },
+  cta: { h2: 'Start building today.', lead: 'Pay by the hour, never more than the monthly price. No commitment, cancel any hour.', create: 'Create account', docs: 'Read the API docs' },
   footer: {
     tagline: 'The developer cloud for people and AI agents.',
     cols: [
@@ -126,7 +118,7 @@ const tr: Copy = {
     badge: '2027’de açılıyor',
     h1a: 'İnsanlar ', h1b: 've yapay zeka ajanları için geliştirici bulutu',
     lead: '60 saniyede sunucunuz hazır. Saatlik ödeyin, aylık fiyatı asla aşmayın. Yapay zeka ajanlarınız harcama limitli ve insan onaylı API tokenları kullanır.',
-    ctaPrimary: '100 $ kredi ile başla', ctaSecondary: 'Ajanlar nasıl kurulum yapıyor',
+    ctaPrimary: 'Hemen başlayın', ctaSecondary: 'Ajanlar nasıl kurulum yapıyor',
     stats: [['60 sn', 'çalışan bir sunucuya'], ['7,73 $ / ay', 'Starter sunucu, saatlik faturalanır'], ['0 sözleşme', 'taahhüt yok, istediğiniz saat iptal']],
   },
   terminal: { ready: 'WordPress https://185.0.113.42 adresinde hazır, saatlik ücret 0,01 $', orAgent: '# ya da limitli bir tokenla ajanınıza bırakın', capNote: '# aylık 15 $ limit, silme onay ister' },
@@ -182,7 +174,7 @@ const tr: Copy = {
       ['Platformu işleten mühendislerden destek', 'Evet', 'Ücretli planlarda', 'Değişir'],
     ],
   },
-  cta: { h2: 'Bugün geliştirmeye başlayın.', lead: 'Yeni takımlara 100 $ ücretsiz kredi. Harcayana kadar kart gerekmez. İstediğiniz saat iptal edin.', create: 'Hesap oluştur', docs: 'API belgelerini oku' },
+  cta: { h2: 'Bugün geliştirmeye başlayın.', lead: 'Saatlik ödeyin, aylık fiyatı asla aşmaz. Taahhüt yok, istediğiniz saat iptal edin.', create: 'Hesap oluştur', docs: 'API belgelerini oku' },
   footer: {
     tagline: 'İnsanlar ve yapay zeka ajanları için geliştirici bulutu.',
     cols: [
@@ -204,7 +196,7 @@ const ar: Copy = {
     badge: 'الإطلاق في 2027',
     h1a: 'سحابة المطورين للأفراد ', h1b: 'ولوكلاء الذكاء الاصطناعي',
     lead: 'خادمك جاهز خلال 60 ثانية. تدفع بالساعة ولا تتجاوز السعر الشهري أبدًا. ويعمل وكلاء الذكاء الاصطناعي لديك برموز API لها حد إنفاق، ولا تُنفَّذ الإجراءات الحساسة إلا بموافقتك.',
-    ctaPrimary: 'ابدأ برصيد 100 دولار', ctaSecondary: 'كيف ينشر الوكلاء',
+    ctaPrimary: 'ابدأ الآن', ctaSecondary: 'كيف ينشر الوكلاء',
     stats: [['60 ثانية', 'حتى يعمل الخادم'], ['7.73 دولار شهريًا', 'خادم Starter بفوترة بالساعة'], ['بلا عقود', 'لا التزام، ويمكنك الإلغاء في أي ساعة']],
   },
   terminal: { ready: 'WordPress جاهز على https://185.0.113.42 بتكلفة 0.01 دولار في الساعة', orAgent: '# أو دع وكيلك ينفذ ذلك بحد إنفاق', capNote: '# حد 15 دولارًا شهريًا، والحذف يتطلب موافقة' },
@@ -260,7 +252,7 @@ const ar: Copy = {
       ['دعم من المهندسين الذين يشغّلون المنصة', 'نعم', 'في الباقات المدفوعة', 'يختلف'],
     ],
   },
-  cta: { h2: 'ابدأ البناء اليوم.', lead: 'رصيد مجاني بقيمة 100 دولار للفرق الجديدة. لا تحتاج إلى بطاقة حتى تستهلكه. ويمكنك الإلغاء في أي ساعة.', create: 'أنشئ حسابك', docs: 'اقرأ وثائق API' },
+  cta: { h2: 'ابدأ البناء اليوم.', lead: 'ادفع بالساعة دون تجاوز السعر الشهري. بلا التزام، ويمكنك الإلغاء في أي ساعة.', create: 'أنشئ حسابك', docs: 'اقرأ وثائق API' },
   footer: {
     tagline: 'سحابة المطورين للأفراد ولوكلاء الذكاء الاصطناعي.',
     cols: [
@@ -275,77 +267,11 @@ const ar: Copy = {
   },
 };
 
-/**
- * The progrid.sa storefront: the same brand and product, with what is local to customers in
- * Saudi Arabia. Riyal prices with VAT, mada and Apple Pay, e-invoices, and Progrid Arabia as the
- * contracting company. Nothing here says where Progrid is from or where servers are.
- */
-function saStorefront(lang: Lang, base: Copy): Copy {
-  const c = cloneCopy(base);
-  if (lang === 'en') {
-    c.meta = { title: 'Progrid: the developer cloud for people and AI agents. Prices in riyals.', description: 'Get a server in 60 seconds. Hourly billing in Saudi riyals with VAT shown before you pay, e-invoices, mada and Apple Pay, and API tokens your AI agents can use safely.' };
-    c.hero.ctaPrimary = 'Start with free credit';
-    c.hero.stats[1] = ['29 SAR / mo', 'Starter server, billed hourly'];
-    c.terminal.ready = 'WordPress is ready at https://185.0.113.42 and billing at 0.04 SAR per hour';
-    c.terminal.capNote = '# 50 SAR per month cap, delete needs approval';
-    c.trust[0] = ['﷼', 'Prices in Saudi riyals', 'VAT shown before you pay. Local invoices from Progrid Arabia'];
-    c.trust[1] = ['💳', 'Pay with mada, cards or Apple Pay', 'An e-invoice for every invoice, as ZATCA requires'];
-    c.agents.points[0] = ['Spending cap per token', 'A 50 SAR monthly cap means the agent cannot create a 65 SAR server. Ever.'];
-    c.agents.codeCap = '// 50 SAR per month';
-    c.pricing.h2 = 'Simple and predictable. Priced in riyals, with VAT shown before you pay.';
-    c.pricing.note = 'Prices are in Saudi riyals and exclude VAT. The total with 15% VAT is shown at checkout. ';
-    c.compare.rows.splice(1, 0, ['E-invoices that meet ZATCA rules', 'Built in', 'Rarely', 'Varies'], ['Prices in riyals, VAT shown up front', 'Yes', 'Rarely', 'Yes']);
-    c.cta.lead = 'Free credit for new teams. No card needed until you spend it. Cancel any hour.';
-    c.footer.cols[3][1][2] = ['Privacy (PDPL)', '/legal/privacy'];
-    c.footer.providedBy = 'In Saudi Arabia, Progrid services are provided and invoiced by Progrid Arabia.';
-  } else if (lang === 'ar') {
-    c.meta = { title: 'Progrid: سحابة المطورين للأفراد ووكلاء الذكاء الاصطناعي، بالريال السعودي', description: 'خادم جاهز خلال 60 ثانية. فوترة بالساعة بالريال السعودي مع إظهار ضريبة القيمة المضافة قبل الدفع، وفواتير إلكترونية، والدفع بمدى وApple Pay، ورموز API يستخدمها وكلاء الذكاء الاصطناعي بأمان.' };
-    c.hero.ctaPrimary = 'ابدأ برصيد مجاني';
-    c.hero.stats[1] = ['29 ريالًا شهريًا', 'خادم Starter بفوترة بالساعة'];
-    c.terminal.ready = 'WordPress جاهز على https://185.0.113.42 بتكلفة 0.04 ريال في الساعة';
-    c.terminal.capNote = '# حد 50 ريالًا شهريًا، والحذف يتطلب موافقة';
-    c.trust[0] = ['﷼', 'الأسعار بالريال السعودي', 'تظهر ضريبة القيمة المضافة قبل الدفع، والفواتير محلية من Progrid Arabia'];
-    c.trust[1] = ['💳', 'ادفع بمدى أو البطاقة أو Apple Pay', 'فاتورة إلكترونية لكل فاتورة وفق متطلبات هيئة الزكاة والضريبة والجمارك'];
-    c.agents.points[0] = ['حد إنفاق لكل رمز', 'حد شهري قدره 50 ريالًا يعني أن الوكيل لا يستطيع إنشاء خادم بسعر 65 ريالًا. أبدًا.'];
-    c.agents.codeCap = '// 50 ريالًا شهريًا';
-    c.pricing.h2 = 'أسعار واضحة بالريال، وتظهر الضريبة قبل الدفع.';
-    c.pricing.note = 'الأسعار بالريال السعودي ولا تشمل ضريبة القيمة المضافة. ويظهر الإجمالي شاملًا الضريبة 15% عند الدفع. ';
-    c.compare.rows.splice(1, 0, ['فواتير إلكترونية وفق متطلبات الهيئة', 'مدمجة', 'نادرًا', 'يختلف'], ['الأسعار بالريال والضريبة واضحة مسبقًا', 'نعم', 'نادرًا', 'نعم']);
-    c.cta.lead = 'رصيد مجاني للفرق الجديدة. لا تحتاج إلى بطاقة حتى تستهلكه. ويمكنك الإلغاء في أي ساعة.';
-    c.footer.cols[3][1][2] = ['الخصوصية (نظام حماية البيانات الشخصية)', '/legal/privacy'];
-    c.footer.providedBy = 'تقدّم Progrid Arabia خدمات Progrid وتصدر فواتيرها للعملاء في المملكة العربية السعودية.';
-  } else {
-    c.meta = { title: 'Progrid: insanlar ve yapay zeka ajanları için geliştirici bulutu. Riyal fiyatlar.', description: '60 saniyede sunucu. Suudi riyali ile saatlik faturalama, ödemeden önce gösterilen KDV, e-fatura, mada ve Apple Pay.' };
-    c.hero.ctaPrimary = 'Ücretsiz kredi ile başla';
-    c.hero.stats[1] = ['29 SAR / ay', 'Starter sunucu, saatlik faturalanır'];
-    c.terminal.ready = 'WordPress https://185.0.113.42 adresinde hazır, saatlik ücret 0,04 SAR';
-    c.terminal.capNote = '# aylık 50 SAR limit, silme onay ister';
-    c.trust[0] = ['﷼', 'Suudi riyali ile fiyatlar', 'KDV ödemeden önce gösterilir. Faturalar Progrid Arabia’dan'];
-    c.trust[1] = ['💳', 'mada, kart veya Apple Pay ile ödeyin', 'Her fatura için ZATCA kurallarına uygun e-fatura'];
-    c.agents.points[0] = ['Token başına harcama limiti', 'Aylık 50 SAR limit, ajanın 65 SAR’lık sunucu oluşturamayacağı anlamına gelir. Asla.'];
-    c.agents.codeCap = '// aylık 50 SAR';
-    c.pricing.h2 = 'Basit ve öngörülebilir. Riyal fiyatlar, KDV ödemeden önce gösterilir.';
-    c.pricing.note = 'Fiyatlar Suudi riyali cinsindendir ve KDV hariçtir. %15 KDV dahil toplam ödeme sırasında gösterilir. ';
-    c.compare.rows.splice(1, 0, ['ZATCA kurallarına uygun e-fatura', 'Yerleşik', 'Nadiren', 'Değişir'], ['Riyal fiyat, KDV baştan görünür', 'Evet', 'Nadiren', 'Evet']);
-    c.cta.lead = 'Yeni takımlara ücretsiz kredi. Harcayana kadar kart gerekmez. İstediğiniz saat iptal edin.';
-    c.footer.cols[3][1][2] = ['Gizlilik (PDPL)', '/legal/privacy'];
-    c.footer.providedBy = 'Suudi Arabistan’da Progrid hizmetleri Progrid Arabia tarafından sunulur ve faturalanır.';
-  }
-  return c;
-}
-
-/** Deep copy that keeps the noteTail function. */
-function cloneCopy(c: Copy): Copy {
-  const out = JSON.parse(JSON.stringify(c)) as Copy;
-  out.pricing.noteTail = c.pricing.noteTail;
-  return out;
-}
-
 const BASE: Record<Lang, Copy> = { en, tr, ar };
-const SA: Record<Lang, Copy> = { en: saStorefront('en', en), tr: saStorefront('tr', tr), ar: saStorefront('ar', ar) };
 
-export function getCopy(lang: Lang, site: Site): Copy {
-  return site === 'sa' ? SA[lang] : BASE[lang];
+/** The site text. Every domain shows the same global site; `site` is kept for callers. */
+export function getCopy(lang: Lang, _site?: Site): Copy {
+  return BASE[lang];
 }
 
 /** The global copy, for callers without a storefront. */
