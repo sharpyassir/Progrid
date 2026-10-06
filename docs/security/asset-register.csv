@@ -1,0 +1,61 @@
+ID,Asset,Type,Description,Owner,Classification,Location,Backup / recovery,Criticality
+AS-01,Management host,Host,DigitalOcean droplet running the control plane compose stack (phase 0),[Operations lead],Restricted,"DigitalOcean FRA1, Frankfurt",Rebuilt from Ansible; data via database backups; droplet snapshots [to enable],Critical
+AS-02,Proxmox VE node(s),Host,Hetzner dedicated servers (Falkenstein) running Proxmox VE and the host agent,[Operations lead],Restricted,"Hetzner, Falkenstein, Germany",Rebuilt from docs/first-proxmox-node.md and Ansible pve_node; VM data see AS-21,Critical
+AS-03,App Platform hosts,Host (VM),Shared Docker hosts running customer apps,[Engineering lead],Restricted,Proxmox nodes,Rebuilt by the platform; app images rebuilt from source,High
+AS-04,"Platform VMs (managed databases, Kubernetes, load balancers)",Host (VM),Per-tenant VMs with platform agents on port 9009,[Engineering lead],Restricted,Proxmox nodes,"Per-product backups (pgBackRest, XtraBackup, etcd) [partly built]",High
+AS-05,WireGuard management network,Network,wg0 10.9.0.0/24 between management host and nodes,[Operations lead],Restricted,Management host and nodes,Configuration in Ansible role wireguard; keys regenerated,Critical
+AS-06,Tenant private networks,Network,Per-project /24 from 10.96.0.0/12 (shared_bridge or sdn_vnet),[Engineering lead],Confidential,Proxmox nodes,Configuration in the control plane database,High
+AS-07,Public IP blocks,Network,Routed public addresses for customer servers,[Operations lead],Internal,Hetzner,Recorded in the database (admin/v1/ip-blocks),High
+AS-08,Control plane database (prgd),Data store,"Postgres 16 with TimescaleDB: accounts, teams, resources, billing, audit, ops, Connect",[Engineering lead],Restricted,"Management host, volume pgdata",Nightly pg_dumpall + WAL archive to /var/backups/prgd; off-site copy with age [to configure],Critical
+AS-09,Temporal database and service,Data store / service,Workflow state on the same Postgres,[Engineering lead],Confidential,Management host,Included in pg_dumpall,High
+AS-10,PowerDNS database and service,Data store / service,Customer DNS zones (profile dns),[Operations lead],Confidential,Management host,Included in pg_dumpall; zones re-pushed by the API,High
+AS-11,Redis,Data store,"Locks, rate-limit counters, idempotency keys",[Engineering lead],Internal,Management host,None needed (rebuildable),Medium
+AS-12,NATS JetStream,Data store / service,In-flight host agent jobs; gateway kill subject,[Engineering lead],Confidential,"Management host, bound to WireGuard address",None (worker retries),High
+AS-13,Backups,Data store,/var/backups/prgd dumps and WAL; future off-site bucket,[Operations lead],Restricted,Management host; off-site [to configure],Is the backup; second copy off-site [to configure],Critical
+AS-14,Session recordings bucket,Data store,"Engineer terminal recordings (asciicast), 12 months",[Support lead],Restricted,PRGD_RECORDINGS_BUCKET (S3_ENDPOINT),Not backed up (retention-limited evidence) [decide],High
+AS-15,Audit log,Information,"prgd_audit_logs, append-only with hash chain",[Security owner],Confidential,Control plane database,With AS-08; chain heads exported [to set up],High
+AS-16,Customer account data,Information,"Names, emails, phone, addresses, roles, sign-in methods",[Privacy lead],Confidential,Control plane database,With AS-08,Critical
+AS-17,Billing and payment records,Information,"Invoices, credit notes, payments, payouts (no card numbers)",[Finance lead],Confidential,Control plane database; invoice PDFs,With AS-08,Critical
+AS-18,Verification and fraud data,Information,"KYC documents and results, risk signals, bans",[Privacy lead],Restricted,Control plane database / storage [confirm location of documents],With AS-08,High
+AS-19,Legal acceptance records,Information,"prgd_legal_acceptances (version, IP, user agent)",[Privacy lead],Confidential,Control plane database,With AS-08,High
+AS-20,Support tickets and inbound mail,Information,"Tickets, messages, attachments",[Support lead],Confidential,Control plane database,With AS-08,Medium
+AS-21,"Customer content: VM disks, volumes, snapshots",Information (processor),Customer data on Proxmox storage,[Engineering lead],Restricted,Hetzner nodes (LVM thin / Ceph),Customer-controlled snapshots on the same cluster; off-host backup not built,Critical
+AS-22,Customer content: object storage buckets,Information (processor),Ceph RGW buckets,[Engineering lead],Restricted,Hetzner nodes,Ceph replication [when deployed],High
+AS-23,"Customer content: managed databases, Kubernetes, apps",Information (processor),Data in platform VMs and app containers,[Engineering lead],Restricted,Proxmox nodes,Per product [partly built],High
+AS-24,Customer secrets held by the platform,Information,"App env vars, git tokens, DB passwords, S3 secret keys, k8s tokens, Connect credentials (sealed)",[Engineering lead],Restricted,Control plane database (sealed with SECRETS_KEY),With AS-08,Critical
+AS-25,Managed-asset credentials,Information,sudo passwords and keys injected by the gateway,[Support lead],Restricted,Vault KV (prgd mount) or Infisical or local sealed table,Per secret store [document],High
+AS-26,Source code repository,Software,"github.com/sharpyassir/... monorepo (apps, agents, services, infra, docs)",[Engineering lead],Confidential,GitHub,GitHub; local clones; mirror [to set up],Critical
+AS-27,Container images,Software,"prgd-api, prgd-console, prgd-www, prgd-ops, prgd-gateway",[Engineering lead],Internal,ghcr.io/sharpyassir,Rebuildable from source; provenance attestations,High
+AS-28,Host agent and platform agents,Software,"agents/host-agent (Go), Python platform agents",[Engineering lead],Confidential,Repository; nodes and platform VMs,Rebuildable from source,High
+AS-29,"CLI, SDKs, Terraform provider, MCP server",Software,Public clients distributed through GitHub releases and npm,[Engineering lead],Public,"GitHub releases, npm",Rebuildable from source,Medium
+AS-30,GitHub Actions workflows and secrets,Service / secret,"ci.yml, deploy.yml, release.yml, security.yml; DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY",[Engineering lead],Restricted,GitHub,Workflows in git; secrets re-issued,Critical
+AS-31,"Ansible inventory, vars and vault",Configuration / secret,"group_vars/all/vars.yml and vault.yml (vault_* secrets), inventory.ini",[Operations lead],Restricted,Operator machine / management host (/opt/progrid-src),[Owner to define encrypted off-host copy],Critical
+AS-32,Production settings file,Configuration / secret,/etc/prgd/prgd.env rendered by Ansible,[Operations lead],Restricted,Management host,Re-rendered from AS-31,Critical
+AS-33,"Caddy data (certificates, ACME account)",Configuration / secret,caddy-data volume,[Operations lead],Confidential,Management host,Re-issued by Let's Encrypt,Medium
+AS-34,Key: SECRETS_KEY (keyring),Key,Seals secrets at rest; HKDF sub-keys (key-management.md),[Security owner],Restricted,prgd.env from Ansible vault,Ansible vault; escrow copy [to define],Critical
+AS-35,Key: JWT_SECRET,Key,"Signs console, staff and ops session tokens",[Security owner],Restricted,prgd.env,Ansible vault,Critical
+AS-36,Key: backup age recipient / identity,Key,Public recipient on the host; private identity offline,[Security owner],Restricted,Recipient on host; identity offline [location to record],Two offline copies [to define],Critical
+AS-37,"Credentials: POSTGRES_PASSWORD, REDIS password, NATS_TOKEN, PDNS_API_KEY",Secret,Internal service credentials,[Operations lead],Restricted,prgd.env,Ansible vault,High
+AS-38,Credentials: Proxmox API token (agent),Secret,prgd@pve!agent token; secret on each node in /etc/prgd/pve-token-secret,[Operations lead],Restricted,Proxmox nodes,Re-issued by Ansible,High
+AS-39,"Credentials: PRGD_GATEWAY_SECRET, ALERTMANAGER_WEBHOOK_SECRET, SUPPORT_INBOUND_SECRET, RESEND_WEBHOOK_SECRET",Secret,Shared secrets for internal and inbound webhook endpoints,[Operations lead],Restricted,prgd.env,Ansible vault,High
+AS-40,Credentials: step-ca provisioner JWK and password; SSH user CA,Key,Signs engineer SSH certificates,[Security owner],Restricted,step-ca; prgd.env,step-ca backup [to define],Critical
+AS-41,"Credentials: payment providers (STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, MOYASAR_SECRET_KEY, MOYASAR_WEBHOOK_SECRET)",Secret,Payment API and webhook secrets per entity,[Finance lead],Restricted,prgd.env,Ansible vault; re-issued at provider,Critical
+AS-42,Credentials: MAIL_API_KEY (Resend or Postmark),Secret,Outbound mail,[Operations lead],Restricted,prgd.env,Ansible vault,High
+AS-43,Credentials: ANTHROPIC_API_KEY,Secret,Connect model provider,[Engineering lead],Restricted,prgd.env,Ansible vault,High
+AS-44,Credentials: TWILIO_AUTH_TOKEN,Secret,Paging SMS/WhatsApp,[Operations lead],Restricted,prgd.env,Ansible vault,Medium
+AS-45,"Credentials: GOOGLE_CLIENT_SECRET, MICROSOFT_CLIENT_SECRET",Secret,Social sign in,[Engineering lead],Restricted,prgd.env,Ansible vault; Microsoft secret expires (rotate),High
+AS-46,"Credentials: GITHUB_APP_PRIVATE_KEY, GITHUB_APP_WEBHOOK_SECRET",Key,Git Deploy GitHub App,[Engineering lead],Restricted,prgd.env,Re-issued in GitHub,High
+AS-47,"Credentials: RGW admin keys, BACKUP_S3_KEY/SECRET, PRGD_VAULT_TOKEN, PRGD_INFISICAL_TOKEN, ghcr token",Secret,"Storage, backup and secret-store access",[Operations lead],Restricted,prgd.env,Ansible vault,High
+AS-48,Credentials: WireGuard private keys,Key,"One per host, generated on the host",[Operations lead],Restricted,Each host,Not backed up (regenerated),High
+AS-49,Provider account: DigitalOcean,SaaS / IaaS account,Team account hosting the management host,[Operations lead],Restricted,DigitalOcean,n/a,Critical
+AS-50,Provider account: Hetzner (Robot / Cloud console),IaaS account,"Dedicated servers, IPs, rescue system",[Operations lead],Restricted,Hetzner,n/a,Critical
+AS-51,Provider account: GitHub organisation/user,SaaS account,"Repository, Actions, packages, GitHub App",[Engineering lead],Restricted,GitHub,n/a,Critical
+AS-52,Domain registrar and DNS for progrid.co and progrid.sa,Service,"Apex, console, api, ops, gateway, www records; CAA",[Operations lead],Restricted,[Registrar(s) — to be recorded],Zone export [to file],Critical
+AS-53,Mail provider accounts (Resend; Postmark if enabled),SaaS account,Sending and receiving for both domains,[Operations lead],Confidential,Resend / Postmark,n/a,High
+AS-54,"Payment provider accounts (Stripe for the LLC, Moyasar for Progrid Arabia)",SaaS account,Merchant accounts,[Finance lead],Restricted,Stripe / Moyasar,n/a,Critical
+AS-55,"Anthropic, Twilio, Google Cloud (OAuth), Microsoft Entra (OAuth), Infisical (if used) accounts",SaaS account,Supporting services,[Engineering lead],Confidential,Providers,n/a,Medium
+AS-56,Website and legal documents,Information,"apps/www content; privacy, DPA, subprocessors, terms per entity",[Privacy lead],Public,Repository; website,Git,Medium
+AS-57,ISMS documents and evidence,Information,docs/security and evidence locations,[Security owner],Confidential,Repository; evidence stores,Git,High
+AS-58,Administrator and engineer endpoints,Device,Laptops used for production access (company or personal) [inventory to complete],[People owner],Restricted,Staff and contractor locations,Not applicable,High
+AS-59,Staff and contractors,People,"Owner, employees, external engineers",[People owner],Internal,Various countries,Deputies [to name],Critical
+AS-60,DB-IP country database,Information (third-party),IP to Country Lite (CC BY 4.0) in www and api images,[Engineering lead],Public,Images,Downloaded at build,Low

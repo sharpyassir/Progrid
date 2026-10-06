@@ -1,0 +1,94 @@
+Control,Title,Applicable (Y/N),Justification,Implementation status,Where implemented,Checklist controls
+A.5.1,Policies for information security,Y,Required by clause 5.2 and by customers' due diligence,Partial,docs/security/information-security-policy.md and topic policies (approval pending),2
+A.5.2,Information security roles and responsibilities,Y,Small team with contractors needs explicit roles,Partial,docs/security/roles-and-responsibilities.md (people not yet named),6
+A.5.3,Segregation of duties,Y,Owner holds most privileges; contractors operate customer assets,Partial,docs/security/roles-and-responsibilities.md §4; approvals never by the requester (apps/api/src/modules/ops),6
+A.5.4,Management responsibilities,Y,Management must direct and resource the ISMS,Planned,docs/security/information-security-policy.md §6; internal-audit-and-management-review.md,—
+A.5.5,Contact with authorities,Y,"Breach notification to GDPR authorities, SDAIA and NCA where applicable",Planned,docs/security/incident-response-plan.md §8 (contacts to be confirmed by legal),110
+A.5.6,Contact with special interest groups,Y,"Advisories for the open-source stack (Proxmox, Ceph, Caddy, NATS, Temporal)",Planned,docs/security/vulnerability-and-patch-management.md §3,—
+A.5.7,Threat intelligence,Y,"Public cloud attracts abuse, credential stuffing and crypto-mining",Partial,Dependabot and advisories; docs/security/vulnerability-and-patch-management.md §3,96
+A.5.8,Information security in project management,Y,"New products (App Platform, Connect, managed services) change risk",Partial,docs/security/change-management.md; threat-model.md,39 159
+A.5.9,Inventory of information and other associated assets,Y,Required to know what to protect,Partial,docs/security/asset-register.csv (owners not named),4 90
+A.5.10,Acceptable use of information and other associated assets,Y,Staff and contractors handle customer data,Partial,docs/security/people-security.md §6; customer AUP apps/www/content/pages/*/acceptable-use.md,150
+A.5.11,Return of assets,Y,Contractors may hold company credentials and devices,Partial,docs/security/people-security.md §4 (offboarding checklist),—
+A.5.12,Classification of information,Y,"Customer content, credentials and billing data need different handling",Partial,docs/security/data-classification-and-handling.md,4 60
+A.5.13,Labelling of information,Y,Exports and documents leave the platform,Planned,docs/security/data-classification-and-handling.md §4,60
+A.5.14,Information transfer,Y,"Data moves to suppliers, customers and engineers",Partial,TLS at the edge; WireGuard; docs/security/data-classification-and-handling.md §5,55 132 136
+A.5.15,Access control,Y,Multi-tenant platform with staff and contractors,Partial,docs/security/access-control-policy.md; apps/api/src/common/auth/auth.guard.ts,10 68
+A.5.16,Identity management,Y,Every person must be uniquely identified,Partial,Personal accounts; docs/security/access-control-policy.md §3,11 12 13 14
+A.5.17,Authentication information,Y,"Passwords, tokens, keys and TOTP seeds",Partial,"argon2id hashing, hashed tokens, sealed TOTP seeds; key-management.md",9 16 23 63 64 66 67 86
+A.5.18,Access rights,Y,"Grant, review and removal of access",Partial,docs/security/access-control-policy.md §6-7; ops access grants,10 14 15 22 151
+A.5.19,Information security in supplier relationships,Y,"Platform depends on DigitalOcean, Hetzner, GitHub and SaaS",Partial,docs/security/supplier-security-policy.md; supplier-register.csv,123 124 125 126 140
+A.5.20,Addressing information security within supplier agreements,Y,Suppliers process personal data,Partial,Provider DPAs to file; docs/security/supplier-security-policy.md §5,127
+A.5.21,Managing information security in the ICT supply chain,Y,"Open-source dependencies, base images and GitHub Actions",Partial,"Dependabot, dependency review, SBOM and provenance (.github/workflows)",73 81 87 125
+A.5.22,"Monitoring, review and change management of supplier services",Y,Supplier changes affect customers,Planned,docs/security/supplier-security-policy.md §6,126 128 129 140
+A.5.23,Information security for use of cloud services,Y,Control plane on DigitalOcean; servers on Hetzner,Partial,docs/security/physical-and-shared-responsibility.md §2; supplier-security-policy.md,130 139 142
+A.5.24,Information security incident management planning and preparation,Y,"Required for customers, DPA and regulators",Partial,docs/security/incident-response-plan.md (not yet exercised),106 107 108 110 111 113
+A.5.25,Assessment and decision on information security events,Y,Triage of events into incidents,Partial,docs/security/incident-response-plan.md §3,107
+A.5.26,Response to information security incidents,Y,Containment and recovery,Partial,docs/security/incident-response-plan.md §6,37 109 110
+A.5.27,Learning from information security incidents,Y,Postmortems,Partial,Managed P1 postmortems (docs/devops-console.md); docs/security/incident-response-plan.md §9,111 112
+A.5.28,Collection of evidence,Y,Possible legal action against abusers and fraud,Partial,docs/security/incident-response-plan.md §7; hash-chained audit table,109 113
+A.5.29,Information security during disruption,Y,Security controls must hold during outages,Planned,docs/security/business-continuity-and-dr.md §9,23 122
+A.5.30,ICT readiness for business continuity,Y,Customers depend on control plane availability,Partial,"docs/security/business-continuity-and-dr.md (targets defined, not yet tested)",33 114 119 120 121 122 130
+A.5.31,"Legal, statutory, regulatory and contractual requirements",Y,"GDPR, PDPL, ZATCA, US state privacy laws, customer contracts",Partial,docs/legal.md; docs/security/isms-scope.md §4,131
+A.5.32,Intellectual property rights,Y,Open-source licences and customer content,Partial,Copyright policy pages; licence review in dependency review,—
+A.5.33,Protection of records,Y,"Invoices, audit logs and acceptance records must be kept",Partial,Append-only audit table (feat/security-iso); docs/security/data-retention-and-deletion.md,8 103 135
+A.5.34,Privacy and protection of PII,Y,"Controller for account data, processor for customer content",Partial,Privacy policies and DPAs (apps/www/content/pages); docs/security/data-retention-and-deletion.md,61 128 131 132
+A.5.35,Independent review of information security,Y,Customers and certification require independent assurance,Planned,docs/security/internal-audit-and-management-review.md; pen test plan,45 157
+A.5.36,"Compliance with policies, rules and standards for information security",Y,Policies must be checked in operation,Planned,docs/security/internal-audit-and-management-review.md; control-register.csv,5 153
+A.5.37,Documented operating procedures,Y,Operations by contractors need written procedures,Partial,"docs/hosting.md, docs/devops-console.md, runbooks in the ops module",8 120
+A.6.1,Screening,Y,Staff and contractors access customer systems,Planned,docs/security/people-security.md §2,145
+A.6.2,Terms and conditions of employment,Y,Security duties must be contractual,Planned,docs/security/people-security.md §3,146 150
+A.6.3,"Information security awareness, education and training",Y,Required for all personnel,Planned,docs/security/people-security.md §5,147 148 149
+A.6.4,Disciplinary process,Y,Breach of policy by personnel,Planned,docs/security/people-security.md §8,—
+A.6.5,Responsibilities after termination or change of employment,Y,Confidentiality continues after exit,Partial,docs/security/people-security.md §4; engineer offboarding in the ops module,14 151
+A.6.6,Confidentiality or non-disclosure agreements,Y,Access to customer data,Planned,docs/security/people-security.md §3,146
+A.6.7,Remote working,Y,"All work is remote, including contractors abroad",Partial,docs/security/people-security.md §6; ops IP allowlists and recorded sessions,—
+A.6.8,Information security event reporting,Y,"Staff, contractors and researchers must be able to report",Partial,"SECURITY.md, /.well-known/security.txt (feat/security-iso); docs/security/people-security.md §7",108 152
+A.7.1,Physical security perimeters,Y,Information processed in provider data centres; no Progrid-run facility [owner to confirm no office],Partial,Inherited from DigitalOcean and Hetzner; docs/security/physical-and-shared-responsibility.md (evidence to file),139
+A.7.2,Physical entry,Y,As 7.1,Partial,Inherited from providers; evidence to file,139
+A.7.3,"Securing offices, rooms and facilities",Y,As 7.1; home offices covered by remote working rules,Partial,Inherited from providers; docs/security/people-security.md §6,139
+A.7.4,Physical security monitoring,Y,As 7.1,Partial,Inherited from providers; evidence to file,139
+A.7.5,Protecting against physical and environmental threats,Y,As 7.1,Partial,Inherited from providers; evidence to file,139 141
+A.7.6,Working in secure areas,Y,As 7.1,Partial,Inherited from providers; evidence to file,—
+A.7.7,Clear desk and clear screen,Y,Remote staff see customer data on screen,Planned,docs/security/people-security.md §6,143
+A.7.8,Equipment siting and protection,Y,Servers sited by providers,Partial,Inherited from providers,—
+A.7.9,Security of assets off-premises,Y,Laptops used to administer production,Planned,docs/security/physical-and-shared-responsibility.md §5,143
+A.7.10,Storage media,Y,Rented servers have disks that leave our control,Planned,docs/security/physical-and-shared-responsibility.md §4,144
+A.7.11,Supporting utilities,Y,Power and cooling at providers,Partial,Inherited from providers; evidence to file,141
+A.7.12,Cabling security,Y,Provider cabling,Partial,Inherited from providers,—
+A.7.13,Equipment maintenance,Y,Hetzner replaces failed disks,Partial,Inherited from providers; docs/security/physical-and-shared-responsibility.md §4 (disk swap),—
+A.7.14,Secure disposal or re-use of equipment,Y,Auction servers and cancelled servers are re-used by the provider,Planned,docs/security/physical-and-shared-responsibility.md §4,62 144
+A.8.1,User endpoint devices,Y,Admin and contractor laptops reach production,Planned,docs/security/people-security.md §6 (endpoint baseline),143
+A.8.2,Privileged access rights,Y,"Root on hosts, staff, full_admin, support leads",Partial,docs/security/access-control-policy.md §4; ops access grants,10 11 12 15 19 20 21 22 23 78 86 148
+A.8.3,Information access restriction,Y,Tenant isolation and contractor scoping,Partial,"Project/team scoping, AssignmentGuard and masking (apps/api/src/modules/ops)",51 68 133 134 136 137 138
+A.8.4,Access to source code,Y,Source code includes infrastructure and deploy pipeline,Partial,.github/CODEOWNERS (feat/security-iso); branch protection to enable,79 86
+A.8.5,Secure authentication,Y,"Customer, staff and engineer sign in",Partial,"argon2id, TOTP, WebAuthn, lockout (feat/security-iso)",9 13 16 20 34 40 42 67
+A.8.6,Capacity management,Y,Shared hosts and quotas,Partial,Scheduler capacity checks; resource limits (feat/security-iso),34 48 77
+A.8.7,Protection against malware,Y,Customer workloads may be malicious; staff endpoints,Planned,Abuse detection roadmap; docs/security/people-security.md §6 (endpoint protection),—
+A.8.8,Management of technical vulnerabilities,Y,Large open-source stack,Partial,docs/security/vulnerability-and-patch-management.md; security.yml,52 72 74 81 84 89 91 92 93 94 95 96 157
+A.8.9,Configuration management,Y,"Hosts built by Ansible, services by compose",Partial,infra/ansible; infra/prod; infra-hardening.md,20 30 70 71 75 76 83 99
+A.8.10,Information deletion,Y,DPA promises deletion within 30 days of closure,Partial,docs/security/data-retention-and-deletion.md; purge jobs (feat/security-iso),61 62 135 144
+A.8.11,Data masking,Y,Contractors must not see customer contact details,Implemented,"apps/api/src/modules/ops/serializers/ops-dto.ts (masking, integration-tested)",137
+A.8.12,Data leakage prevention,Y,Secrets in code and logs,Partial,gitleaks; secret redaction in Connect and build logs,65 82
+A.8.13,Information backup,Y,Control plane database is the system of record,Partial,infra/prod/backup.sh; docs/security/business-continuity-and-dr.md,56 115 116 117 118 119
+A.8.14,Redundancy of information processing facilities,Y,Single management host today,Planned,docs/security/business-continuity-and-dr.md §4 (phase 1 hosting),—
+A.8.15,Logging,Y,Audit trail of customer and staff actions,Partial,Audit table and interceptor (feat/security-iso); docs/security/logging-and-monitoring-policy.md,21 54 69 97 98 99 100 102 103 137
+A.8.16,Monitoring activities,Y,Detect attacks and abuse,Planned,docs/security/logging-and-monitoring-policy.md §6-7,28 35 36 69 104 105
+A.8.17,Clock synchronization,Y,Log correlation and TOTP,Partial,chrony in the baseline role (feat/security-iso),101
+A.8.18,Use of privileged utility programs,Y,"Root shells, psql, pvesh, docker",Partial,docs/security/access-control-policy.md §4; auditd (feat/security-iso),—
+A.8.19,Installation of software on operational systems,Y,Hosts and images,Partial,Ansible-managed packages; images built in CI only,71 72
+A.8.20,Networks security,Y,"Public edge, management network, tenant networks",Partial,"ufw, Proxmox firewall, WireGuard (infra/ansible)",18 19 24 26 28 29 30 31 32 33 36 37
+A.8.21,Security of network services,Y,"DNS, TLS, email and provider networks",Partial,Caddy TLS; PowerDNS API restricted (feat/security-iso),31 73
+A.8.22,Segregation of networks,Y,"Tenants, management and backups",Partial,WireGuard 10.9.0.0/24; tenant pool rules; sdn_vnet mode (docs/hosting.md),17 18 24 25 27 29 47 49 50 51 78 133
+A.8.23,Web filtering,N,"No corporate network or managed browsing; staff work from personal or contractor networks. Risk of malicious sites handled by endpoint protection (8.1, 8.7) and awareness (6.3). Revisit if an office network is set up",Not applicable,—,—
+A.8.24,Use of cryptography,Y,"TLS, sealed secrets, backups, tokens",Partial,docs/security/cryptography-policy.md; key-management.md,55 56 57 58 59 63 116
+A.8.25,Secure development life cycle,Y,Progrid builds its own platform,Partial,docs/security/secure-development-lifecycle.md,38 46 87
+A.8.26,Application security requirements,Y,Public API and console,Partial,docs/security/secure-development-lifecycle.md §3; threat-model.md,32 35 38 40 41 42 43 44 134
+A.8.27,Secure system architecture and engineering principles,Y,"Control plane / data plane separation, tenant isolation",Partial,docs/architecture.md; docs/security/threat-model.md,17 39 47
+A.8.28,Secure coding,Y,"TypeScript, Go, Python code base",Partial,"CodeQL, validation pipes, code review (feat/security-iso)",38 41 44 64 65 80 82
+A.8.29,Security testing in development and acceptance,Y,Integration suite and tenant isolation tests,Partial,apps/api/test/integration; tenant isolation tests (feat/security-iso),45 46 52 80 83 84 94 138
+A.8.30,Outsourced development,Y,Contractors or agencies may contribute code,Planned,docs/security/secure-development-lifecycle.md §8,—
+A.8.31,"Separation of development, test and production environments",Y,Production data must not be used in development,Partial,Separate local/CI and production; no staging yet,53 85
+A.8.32,Change management,Y,Every push to main deploys to production,Partial,docs/security/change-management.md; deploy.yml,53 79 88
+A.8.33,Test information,Y,Tests must not use production customer data,Partial,Fake drivers and seed data (apps/api/prisma/seed.ts); docs/security/secure-development-lifecycle.md §6,—
+A.8.34,Protection of information systems during audit testing,Y,Pen tests and audits against production,Planned,docs/security/vulnerability-and-patch-management.md §6 (rules of engagement),—

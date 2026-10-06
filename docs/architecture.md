@@ -175,16 +175,46 @@ Customers pay hourly, capped at the monthly plan price. Billing is built in-hous
 
 ## Security, isolation and compliance
 
-- **Tenant isolation**: one KVM VM per server; one overlay per VPC; host-enforced firewalls.
-- **Access**: RBAC per team and project, mandatory 2FA for owners, short-lived tokens,
-  full audit log of every API call.
-- **Secrets**: HashiCorp Vault / OpenBao; no passwords in code or images.
-- **Data protection**: disks encrypted at rest, encrypted off-site backups, Saudi
-  customer data kept in Saudi Arabia (PDPL).
-- **Abuse prevention**: phone/ID verification, payment checks, outbound limits for new
-  accounts, mining/spam detection.
-- **Platform hardening**: separate management network, admin via VPN only, pen tests.
-- **Target**: ISO 27001 in year 2.
+Current state as of October 2026, including the security hardening added that month. The
+security programme, its policies and the control register are in `docs/security/`. Progrid is
+not certified to ISO/IEC 27001 and does not claim compliance with it or with NCA controls; the
+documents there record readiness and gaps.
+
+**In place**
+
+- **Tenant isolation**: one KVM VM per server; per-VM firewall and IP filter enforced on the
+  hypervisor; traffic between different tenants' private networks dropped on the shared bridge.
+  Per-project VXLAN VNets (`PRIVATE_NETWORK_MODE=sdn_vnet`) exist but are not yet the default.
+  App Platform apps get their own Docker network with dropped capabilities, no-new-privileges and
+  resource limits, and cannot reach private ranges or 169.254.0.0/16.
+- **Access**: RBAC per team and project with scoped API tokens (optional expiry of up to 365 days);
+  two-factor sign in required for team owners in production and for all staff; staff and
+  admin-scope tokens restricted further (24 hour admin tokens, idle timeouts, optional IP
+  allowlists). The audit log records every state-changing API call and every back-office read,
+  append-only with a hash chain.
+- **Engineers**: contracted engineers reach customer servers only through time-limited access
+  grants, short-lived SSH certificates and a recording gateway (`docs/devops-console.md`).
+- **Secrets**: sealed at rest with AES-256-GCM under a keyring separate from the session signing
+  key (`docs/security/key-management.md`); production refuses default secrets; secrets are
+  rendered from the Ansible vault into one settings file on the host; gitleaks in CI.
+- **Data protection**: TLS at the edge; WireGuard between the control plane and the nodes;
+  nightly database backups encrypted with age before they leave the host.
+- **Supply chain**: CodeQL, dependency review, Dependabot, Trivy image and configuration scans,
+  build provenance attestations in CI.
+- **Abuse prevention**: prepaid requirement before postpaid use, KYC and fraud scoring, payment
+  checks, outbound SMTP blocked by default.
+
+**Planned** (tracked in `docs/security/control-register.md`)
+
+- Full disk encryption of hypervisor and control plane storage; off-site, immutable backup copies
+  and monthly restore tests; a KMS or Vault Transit for master keys (secrets currently live in the
+  Ansible vault and the host settings file, not in Vault/OpenBao).
+- TLS on the platform agent channel; `sdn_vnet` as the default tenant network mode; gVisor by
+  default on App Platform hosts.
+- WAF and DDoS protection at the edge; central logging and alerting.
+- Saudi hosting: all data is hosted in Germany today, including region `sa1`.
+- Independent penetration test before general availability, then yearly.
+- **Target**: ISO 27001 certification readiness in year 2.
 
 ## Tech stack
 
