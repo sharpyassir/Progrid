@@ -25,7 +25,7 @@ describe('back office staff', () => {
   it('limits a finance staff member to finance and requires two factor sign in', async () => {
     // Full staff is granted out of band (there is no API for the first one), then signs in with two factor.
     const admin = await signup(s);
-    await s.prisma.user.update({ where: { id: admin.userId }, data: { isStaff: true, staffRoles: [] } });
+    await s.prisma.user.update({ where: { id: admin.userId }, data: { isStaff: true, staffRoles: ['full_admin'] } });
     const adminSecret = await enableTotp(admin);
     const adminLogin = await login(admin, totp(adminSecret));
     expect(adminLogin.r.status).toBe(200);

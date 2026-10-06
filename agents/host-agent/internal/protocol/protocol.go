@@ -109,6 +109,7 @@ type FirewallRule struct {
 	Protocol  string   `json:"protocol"`  // tcp | udp | icmp | any
 	Ports     string   `json:"ports,omitempty"`
 	Cidrs     []string `json:"cidrs"`
+	Iface     string   `json:"iface,omitempty"` // net0, net1, ...; empty for every NIC
 }
 
 type Heartbeat struct {

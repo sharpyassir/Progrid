@@ -106,11 +106,11 @@ ${agentNetPy(6)}
       class H(http.server.BaseHTTPRequestHandler):
           def log_message(self, *a): pass
           def do_GET(self):
-              if self.headers.get('X-Prgd-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
+              if not secret_ok(self.headers.get('X-Prgd-Secret')): return self._send(401, {'error': 'unauthorized'})
               if self.path != '/status': return self._send(404, {})
               self._send(200, {'version': state().get('version', 0), 'backends': stats()})
           def do_POST(self):
-              if self.headers.get('X-Prgd-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
+              if not secret_ok(self.headers.get('X-Prgd-Secret')): return self._send(401, {'error': 'unauthorized'})
               if self.path != '/config': return self._send(404, {})
               n = int(self.headers.get('Content-Length') or 0)
               code, body = apply(json.loads(self.rfile.read(n)))

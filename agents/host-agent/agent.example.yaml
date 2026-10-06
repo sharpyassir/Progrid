@@ -13,4 +13,8 @@ proxmox:
   ceph_pool: "vm-disks"                # rbd only: Ceph pool behind that storage; rbd resize of detached volumes runs on it
   bridge: "customers"                  # shared private bridge; per project VNets come from the control plane
   public_bridge: "vmbr0"               # carries our public IP blocks
-  insecure: true                       # local self-signed PVE cert
+  # TLS to the PVE API: verify against the cluster CA, or pin the node certificate's SHA-256
+  # fingerprint (`pvenode cert info`); either keeps verification on with the self-signed PVE cert.
+  ca_file: "/etc/pve/pve-root-ca.pem"
+  # fingerprint: "AB:CD:...:EF"
+  # insecure: true                     # lab only: skips verification; ignored when ca_file or fingerprint is set

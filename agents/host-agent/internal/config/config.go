@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -24,7 +25,24 @@ type Proxmox struct {
 	CephPool     string `yaml:"ceph_pool"`     // Ceph pool behind that storage, used by rbd resize for detached volumes (rbd only)
 	Bridge       string `yaml:"bridge"`        // shared private bridge for net0 when the control plane names no project VNet, e.g. "customers"
 	PublicBridge string `yaml:"public_bridge"` // bridge carrying our public IP blocks, e.g. "vmbr0"
-	Insecure     bool   `yaml:"insecure"`      // skip TLS verify for the local PVE cert
+	Insecure     bool   `yaml:"insecure"`      // skip TLS verify entirely (lab only); ignored when ca_file or fingerprint is set
+	// CAFile verifies the PVE API certificate against this CA bundle (PEM), e.g. the cluster CA
+	// /etc/pve/pve-root-ca.pem, including the host name or IP of url.
+	CAFile string `yaml:"ca_file"`
+	// Fingerprint pins the SHA-256 fingerprint of the PVE API leaf certificate (hex, colons
+	// optional, as `pvenode cert info` prints it). Works with self-signed certificates: the chain
+	// and host name are not checked, the exact certificate is. With ca_file, both must hold.
+	Fingerprint string `yaml:"fingerprint"`
+}
+
+// NormalizeFingerprint turns "AB:CD:..." or "abcd..." into 64 lowercase hex characters, or
+// returns an error when it is not a SHA-256 fingerprint.
+func NormalizeFingerprint(fp string) (string, error) {
+	s := strings.ToLower(strings.NewReplacer(":", "", " ", "", "-", "").Replace(strings.TrimSpace(fp)))
+	if len(s) != 64 || strings.Trim(s, "0123456789abcdef") != "" {
+		return "", fmt.Errorf("proxmox.fingerprint must be a SHA-256 fingerprint (64 hex characters, colons optional), got %q", fp)
+	}
+	return s, nil
 }
 
 type Config struct {
@@ -69,6 +87,18 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Proxmox.Bridge == "" {
 		cfg.Proxmox.Bridge = "customers"
+	}
+	if cfg.Proxmox.Fingerprint != "" {
+		fp, err := NormalizeFingerprint(cfg.Proxmox.Fingerprint)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Proxmox.Fingerprint = fp
+	}
+	if cfg.Proxmox.CAFile != "" {
+		if _, err := os.ReadFile(cfg.Proxmox.CAFile); err != nil {
+			return nil, fmt.Errorf("proxmox.ca_file: %w", err)
+		}
 	}
 	if cfg.Proxmox.PublicBridge == "" {
 		cfg.Proxmox.PublicBridge = "vmbr0"

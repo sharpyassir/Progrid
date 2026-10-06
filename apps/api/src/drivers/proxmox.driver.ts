@@ -107,7 +107,10 @@ export class ProxmoxDriver implements HypervisorDriver {
     await this.job(hostRef, 'net.detach_ip', { vmRef, address });
   }
   async applyFirewall(hostRef: string, vmRef: string, rules: FirewallRuleSpec[], addresses?: NicAddresses) {
-    await this.job(hostRef, 'net.apply_firewall', { vmRef, rules, ...(addresses ? { addresses } : {}) });
+    // Drop rules go in "deny": agents that do not know the field ignore it rather than accept the traffic.
+    const accept = rules.filter((r) => r.action !== 'drop').map(({ action: _a, ...r }) => r);
+    const deny = rules.filter((r) => r.action === 'drop').map(({ action: _a, ...r }) => r);
+    await this.job(hostRef, 'net.apply_firewall', { vmRef, rules: accept, ...(deny.length ? { deny } : {}), ...(addresses ? { addresses } : {}) });
   }
   /** Applying the SDN config reloads the network on every node, so it gets a few minutes. */
   async ensurePrivateNetwork(hostRef: string, net: PrivateNetworkSpec) {

@@ -57,6 +57,14 @@ export interface FirewallRuleSpec {
   protocol: 'tcp' | 'udp' | 'icmp' | 'vrrp' | 'any';
   ports?: string;
   cidrs: string[];
+  /**
+   * accept (default) or drop. Drop rules are platform guard rails (tenant isolation, SMTP): they
+   * are evaluated before every accept rule and travel to the host agent in a separate list, so
+   * an agent that predates them ignores them instead of turning them into accept rules.
+   */
+  action?: 'accept' | 'drop';
+  /** Limits the rule to one NIC of the VM, e.g. "net0" (the private NIC). */
+  iface?: string;
 }
 
 /** A project's VNet in the Proxmox SDN VXLAN zone. */

@@ -36,14 +36,24 @@ ${indent(envFile || '# no env vars', 6)}
       set -euo pipefail
       REPO='${d.repoUrl}'
       TOKEN=$(cat /opt/prgd/git.token 2>/dev/null || true)
-      if [ -n "$TOKEN" ]; then REPO="https://x-access-token:$TOKEN@${'${REPO#https://}'}"; fi
+      # The token goes to git as an HTTP header through the environment: never in the clone URL,
+      # .git/config, the process list or the log.
+      export GIT_TERMINAL_PROMPT=0
+      if [ -n "$TOKEN" ]; then
+        export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader
+        GIT_CONFIG_VALUE_0="Authorization: Basic $(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+        export GIT_CONFIG_VALUE_0
+      fi
+      unset TOKEN
       BRANCH='${d.branch}'
       PORT='${d.port}'
       DIR=/srv/app
       LOG=/var/log/prgd-deploy.log
-      exec >>"$LOG" 2>&1
+      # Everything below is logged; credentials in URLs are masked on the way in.
+      exec > >(sed -u -E 's#://[^/@[:space:]]+:[^/@[:space:]]+@#://***@#g' >>"$LOG") 2>&1
       echo "=== deploy $(date -Is) ==="
       if [ -d "$DIR/.git" ]; then
+        # Also removes a token an older deploy.sh left in the remote URL.
         git -C "$DIR" remote set-url origin "$REPO"
         git -C "$DIR" fetch --depth 1 origin "$BRANCH" && git -C "$DIR" reset --hard "origin/$BRANCH"
       else
@@ -71,14 +81,14 @@ ${indent(envFile || '# no env vars', 6)}
     content: |
       #!/usr/bin/env python3
       # Redeploy hook on the private address. The control plane POSTs /redeploy after a GitHub push; every request carries X-Prgd-Secret.
-      import http.server, subprocess, os, json, time
+      import http.server, subprocess, os, json, re, time
       SECRET = open('/opt/prgd/vm.secret').read().strip()
 ${agentNetPy(6)}
 
       class H(http.server.BaseHTTPRequestHandler):
           def log_message(self, *a): pass
           def do_GET(self):
-              if self.headers.get('X-Prgd-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
+              if not secret_ok(self.headers.get('X-Prgd-Secret')): return self._send(401, {'error': 'unauthorized'})
               st = open('/opt/prgd/status').read().strip() if os.path.exists('/opt/prgd/status') else 'deploying'
               commit = open('/opt/prgd/last-commit').read().strip() if os.path.exists('/opt/prgd/last-commit') else None
               if self.path == '/status': return self._send(200, {'status': st, 'commit': commit})
@@ -87,10 +97,12 @@ ${agentNetPy(6)}
                   if os.path.exists('/var/log/prgd-deploy.log'):
                       with open('/var/log/prgd-deploy.log', 'rb') as f:
                           f.seek(0, 2); size = f.tell(); f.seek(max(0, size - 65536)); log = f.read().decode('utf-8', 'replace')
+                      # Logs from older deploy scripts may hold clone URLs with a token.
+                      log = re.sub(r'://[^/@\\s]+:[^/@\\s]+@', '://***@', log)
                   return self._send(200, {'status': st, 'commit': commit, 'log': log})
               self._send(404, {})
           def do_POST(self):
-              if self.headers.get('X-Prgd-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
+              if not secret_ok(self.headers.get('X-Prgd-Secret')): return self._send(401, {'error': 'unauthorized'})
               if self.path != '/redeploy': return self._send(404, {})
               n = int(self.headers.get('Content-Length') or 0)
               body = json.loads(self.rfile.read(n) or b'{}') if n else {}

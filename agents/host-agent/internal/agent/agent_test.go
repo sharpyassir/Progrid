@@ -932,3 +932,42 @@ func TestIPFilter(t *testing.T) {
 		t.Fatalf("dhcp nic filtered: opts %v sets %v", d.FWOpts, d.IPSets)
 	}
 }
+
+// Drop rules arrive in "deny" and land above every accept rule, with their NIC.
+func TestFirewallDenyRulesGoFirst(t *testing.T) {
+	h := newHarness(t)
+	r := h.mustOK(h.job(protocol.JobCreate, map[string]interface{}{"spec": spec("srv_deny")}))
+	vmid, ref := vmidOf(t, r)
+	rules := []protocol.FirewallRule{
+		{Direction: "inbound", Protocol: "tcp", Ports: "22", Cidrs: []string{"0.0.0.0/0"}},
+		{Direction: "outbound", Protocol: "any", Cidrs: []string{"0.0.0.0/0"}},
+	}
+	deny := []protocol.FirewallRule{
+		{Direction: "inbound", Protocol: "any", Cidrs: []string{"10.96.0.0/14", "10.100.0.0/16"}, Iface: "net0"},
+		{Direction: "outbound", Protocol: "tcp", Ports: "25", Cidrs: []string{"0.0.0.0/0"}},
+	}
+	h.mustOK(h.job(protocol.JobApplyFirewall, map[string]interface{}{"vmRef": ref, "rules": rules, "deny": deny}))
+	got := h.sim.VM(vmid).FWRules
+	if len(got) != 5 {
+		t.Fatalf("want 5 rules (3 drop, 2 accept), got %v", got)
+	}
+	for i, want := range []struct{ action, typ, src, dst, iface, dport string }{
+		{"DROP", "in", "10.96.0.0/14", "", "net0", ""},
+		{"DROP", "in", "10.100.0.0/16", "", "net0", ""},
+		{"DROP", "out", "", "0.0.0.0/0", "", "25"},
+		{"ACCEPT", "in", "0.0.0.0/0", "", "", "22"},
+		{"ACCEPT", "out", "", "0.0.0.0/0", "", ""},
+	} {
+		g := got[i]
+		if g["action"] != want.action || g["type"] != want.typ || g["source"] != want.src || g["dest"] != want.dst || g["iface"] != want.iface || g["dport"] != want.dport {
+			t.Fatalf("rule %d = %v, want %+v", i, g, want)
+		}
+	}
+	// A control plane that sends no deny list gets accept rules only (as before).
+	h.mustOK(h.job(protocol.JobApplyFirewall, map[string]interface{}{"vmRef": ref, "rules": rules}))
+	for _, g := range h.sim.VM(vmid).FWRules {
+		if g["action"] != "ACCEPT" {
+			t.Fatalf("unexpected drop rule without deny: %v", g)
+		}
+	}
+}

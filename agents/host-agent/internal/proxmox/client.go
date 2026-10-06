@@ -4,7 +4,11 @@ package proxmox
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,7 +16,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
+	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/prgd/host-agent/internal/config"
@@ -22,11 +29,66 @@ type Client struct {
 	cfg  config.Proxmox
 	http *http.Client
 	log  *slog.Logger
+	// fwPrepend records that POST /firewall/rules inserts at the top (as Proxmox does), so
+	// SetFirewall posts in reverse to end up with the rules in order. Learned on first use.
+	fwPrepend atomic.Int32 // 0 unknown, 1 prepend, 2 append
 }
 
 func New(cfg config.Proxmox, log *slog.Logger) *Client {
-	tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: cfg.Insecure}} //nolint:gosec // local PVE self-signed cert
+	tlsCfg, err := TLSConfig(cfg)
+	if err != nil {
+		// Fail closed: every handshake errors, so a broken ca_file never turns into "no verification".
+		log.Error("proxmox TLS config", "err", err)
+		tlsCfg = &tls.Config{MinVersion: tls.VersionTLS12, VerifyConnection: func(tls.ConnectionState) error { return fmt.Errorf("proxmox TLS config: %w", err) }}
+	} else if tlsCfg.InsecureSkipVerify && cfg.Fingerprint == "" {
+		log.Warn("proxmox TLS verification is off (insecure: true); set proxmox.ca_file or proxmox.fingerprint")
+	}
+	tr := &http.Transport{TLSClientConfig: tlsCfg}
 	return &Client{cfg: cfg, http: &http.Client{Transport: tr, Timeout: 60 * time.Second}, log: log}
+}
+
+// TLSConfig builds the TLS settings for the PVE API from ca_file, fingerprint and insecure:
+//   - fingerprint: the leaf certificate's SHA-256 must match (chain and name not checked unless
+//     ca_file is also set);
+//   - ca_file: normal verification against that CA bundle instead of the system roots;
+//   - insecure (only when neither is set): no verification.
+func TLSConfig(cfg config.Proxmox) (*tls.Config, error) {
+	t := &tls.Config{MinVersion: tls.VersionTLS12}
+	if cfg.CAFile != "" {
+		pem, err := os.ReadFile(cfg.CAFile)
+		if err != nil {
+			return nil, fmt.Errorf("read ca_file: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("ca_file %s holds no PEM certificate", cfg.CAFile)
+		}
+		t.RootCAs = pool
+	}
+	if cfg.Fingerprint != "" {
+		want, err := config.NormalizeFingerprint(cfg.Fingerprint)
+		if err != nil {
+			return nil, err
+		}
+		wantBytes, _ := hex.DecodeString(want)
+		// Without a CA the chain cannot be verified (self-signed PVE cert); the pin replaces it.
+		t.InsecureSkipVerify = cfg.CAFile == "" //nolint:gosec // verified by the pin below
+		t.VerifyPeerCertificate = func(raw [][]byte, _ [][]*x509.Certificate) error {
+			if len(raw) == 0 {
+				return errors.New("proxmox: no server certificate")
+			}
+			got := sha256.Sum256(raw[0])
+			if subtle.ConstantTimeCompare(got[:], wantBytes) != 1 {
+				return fmt.Errorf("proxmox: certificate fingerprint %X does not match the pinned one", got)
+			}
+			return nil
+		}
+		return t, nil
+	}
+	if cfg.CAFile == "" && cfg.Insecure {
+		t.InsecureSkipVerify = true //nolint:gosec // explicit lab setting
+	}
+	return t, nil
 }
 
 func (c *Client) Node() string { return c.cfg.Node }
@@ -349,6 +411,7 @@ type FWRule struct {
 	Dport  string
 	Source string
 	Dest   string
+	Iface  string // net0, net1, ...: only traffic on that NIC; empty for every NIC
 }
 
 // SetFirewall replaces the VM's rule set and enables the firewall with default DROP in / ACCEPT out.
@@ -362,12 +425,84 @@ func (c *Client) SetFirewall(ctx context.Context, vmid int, rules []FWRule, ipfi
 	if err := c.do(ctx, http.MethodPut, c.vmPath(vmid, "/firewall/options"), opts, nil); err != nil {
 		return err
 	}
+	if err := c.deleteRules(ctx, vmid); err != nil {
+		return err
+	}
+	if err := c.postRules(ctx, vmid, rules); err != nil {
+		return err
+	}
+	// Rules are evaluated top down and drop rules must come first, so check the order Proxmox
+	// stored them in. Proxmox inserts each new rule at the top; post in the other direction when
+	// the stored order comes out reversed (learned once per client).
+	ok, reversed, err := c.rulesInOrder(ctx, vmid, rules)
+	if err != nil || ok {
+		return err
+	}
+	if !reversed {
+		return fmt.Errorf("proxmox: firewall rules of VM %d were not stored in the order sent", vmid)
+	}
+	if c.fwPrepend.Load() == 1 {
+		c.fwPrepend.Store(2)
+	} else {
+		c.fwPrepend.Store(1)
+	}
+	c.log.Info("proxmox firewall rule order learned", "prepend", c.fwPrepend.Load() == 1)
+	if err := c.deleteRules(ctx, vmid); err != nil {
+		return err
+	}
+	if err := c.postRules(ctx, vmid, rules); err != nil {
+		return err
+	}
+	if ok, _, err := c.rulesInOrder(ctx, vmid, rules); err != nil || ok {
+		return err
+	}
+	return fmt.Errorf("proxmox: firewall rules of VM %d were not stored in the order sent", vmid)
+}
+
+func ruleKey(typ, action, source, dest, iface string) string {
+	return strings.Join([]string{typ, strings.ToUpper(action), source, dest, iface}, "|")
+}
+
+// rulesInOrder reports whether the VM's stored rules are `rules` in order, or exactly reversed.
+func (c *Client) rulesInOrder(ctx context.Context, vmid int, rules []FWRule) (inOrder, reversed bool, err error) {
+	var stored []struct {
+		Pos    int    `json:"pos"`
+		Type   string `json:"type"`
+		Action string `json:"action"`
+		Source string `json:"source"`
+		Dest   string `json:"dest"`
+		Iface  string `json:"iface"`
+	}
+	if err := c.do(ctx, http.MethodGet, c.vmPath(vmid, "/firewall/rules"), nil, &stored); err != nil {
+		return false, false, err
+	}
+	if len(stored) != len(rules) {
+		return false, false, fmt.Errorf("proxmox: VM %d has %d firewall rules after applying %d", vmid, len(stored), len(rules))
+	}
+	sort.Slice(stored, func(i, j int) bool { return stored[i].Pos < stored[j].Pos })
+	inOrder, reversed = true, true
+	for i, r := range rules {
+		want := ruleKey(r.Type, r.Action, r.Source, r.Dest, r.Iface)
+		if ruleKey(stored[i].Type, stored[i].Action, stored[i].Source, stored[i].Dest, stored[i].Iface) != want {
+			inOrder = false
+		}
+		j := len(stored) - 1 - i
+		if ruleKey(stored[j].Type, stored[j].Action, stored[j].Source, stored[j].Dest, stored[j].Iface) != want {
+			reversed = false
+		}
+	}
+	return inOrder, reversed, nil
+}
+
+func (c *Client) deleteRules(ctx context.Context, vmid int) error {
 	var existing []struct {
 		Pos int `json:"pos"`
 	}
 	if err := c.do(ctx, http.MethodGet, c.vmPath(vmid, "/firewall/rules"), nil, &existing); err != nil {
 		return err
 	}
+	// Highest position first, so the positions still to delete do not shift.
+	sort.Slice(existing, func(i, j int) bool { return existing[i].Pos < existing[j].Pos })
 	for i := len(existing) - 1; i >= 0; i-- {
 		req, _ := http.NewRequestWithContext(ctx, http.MethodDelete, c.cfg.URL+"/api2/json"+c.vmPath(vmid, fmt.Sprintf("/firewall/rules/%d", existing[i].Pos)), nil)
 		req.Header.Set("Authorization", "PVEAPIToken="+c.cfg.TokenID+"="+c.cfg.TokenSecret)
@@ -377,8 +512,24 @@ func (c *Client) SetFirewall(ctx context.Context, vmid int, rules []FWRule, ipfi
 		}
 		res.Body.Close()
 	}
-	for _, r := range rules {
+	return nil
+}
+
+// postRules creates the rules; when Proxmox prepends (fwPrepend == 1) they go in reverse so the
+// stored order is the order given.
+func (c *Client) postRules(ctx context.Context, vmid int, rules []FWRule) error {
+	order := make([]FWRule, len(rules))
+	copy(order, rules)
+	if c.fwPrepend.Load() == 1 {
+		for i, j := 0, len(order)-1; i < j; i, j = i+1, j-1 {
+			order[i], order[j] = order[j], order[i]
+		}
+	}
+	for _, r := range order {
 		f := url.Values{"type": {r.Type}, "action": {r.Action}, "enable": {"1"}}
+		if r.Iface != "" {
+			f.Set("iface", r.Iface)
+		}
 		if r.Proto != "" && r.Proto != "any" {
 			f.Set("proto", r.Proto)
 		}

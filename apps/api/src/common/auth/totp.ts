@@ -56,14 +56,21 @@ export function totpCode(secret: string, step = Math.floor(Date.now() / 30_000))
 
 /** Accepts the current step and one step either side to absorb clock drift. */
 export function verifyTotp(secret: string, code: string): boolean {
+  return totpStep(secret, code) !== null;
+}
+
+/**
+ * The time step a code belongs to (current step or one either side), or null. Callers that sign
+ * someone in store the step and refuse codes at or before it, so a seen code cannot be replayed.
+ */
+export function totpStep(secret: string, code: string, now = Math.floor(Date.now() / 30_000)): number | null {
   const clean = code.replace(/\s+/g, '');
-  if (!/^\d{6}$/.test(clean)) return false;
-  const now = Math.floor(Date.now() / 30_000);
+  if (!/^\d{6}$/.test(clean)) return null;
   for (const step of [now - 1, now, now + 1]) {
     const expected = Buffer.from(totpCode(secret, step));
-    if (timingSafeEqual(expected, Buffer.from(clean))) return true;
+    if (timingSafeEqual(expected, Buffer.from(clean))) return step;
   }
-  return false;
+  return null;
 }
 
 /** Ten one time recovery codes, shown once; the caller stores hashes. */

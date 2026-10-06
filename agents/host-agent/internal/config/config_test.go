@@ -42,3 +42,26 @@ func TestStorageTypeUnknownIsRejected(t *testing.T) {
 		t.Fatal("an unknown storage_type must be rejected")
 	}
 }
+
+func TestFingerprintIsNormalized(t *testing.T) {
+	fp := "AB:" + "CD:" + "EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89"
+	cfg, err := Load(write(t, base+"  fingerprint: \""+fp+"\"\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Proxmox.Fingerprint != "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789" {
+		t.Fatalf("fingerprint not normalized: %q", cfg.Proxmox.Fingerprint)
+	}
+}
+
+func TestBadFingerprintIsRejected(t *testing.T) {
+	if _, err := Load(write(t, base+"  fingerprint: \"AB:CD\"\n")); err == nil {
+		t.Fatal("a short fingerprint must be rejected")
+	}
+}
+
+func TestMissingCAFileIsRejected(t *testing.T) {
+	if _, err := Load(write(t, base+"  ca_file: /nonexistent/pve-root-ca.pem\n")); err == nil {
+		t.Fatal("an unreadable ca_file must be rejected at load")
+	}
+}

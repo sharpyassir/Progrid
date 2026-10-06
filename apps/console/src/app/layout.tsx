@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import './globals.css';
 import { Shell } from '@/components/shell';
 
@@ -8,7 +9,10 @@ export const metadata: Metadata = {
   description: 'The developer cloud for people and AI agents',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Reading the request headers renders every page per request, so Next.js can put the CSP nonce
+  // (middleware.ts) on its scripts.
+  await headers();
   return (
     <html lang="en" suppressHydrationWarning>
       <head>

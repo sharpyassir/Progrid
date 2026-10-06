@@ -83,6 +83,9 @@ type Sim struct {
 	Bridges map[string]bool
 	// SDNApplies counts PUT /cluster/sdn calls.
 	SDNApplies int
+	// FWAppend makes POST /firewall/rules append at the bottom instead of inserting at the top
+	// (Proxmox inserts at the top); the client must end up with the same order either way.
+	FWAppend bool
 
 	mu     sync.Mutex
 	vms    map[int]*VM
@@ -747,7 +750,12 @@ func (s *Sim) handle(w http.ResponseWriter, r *http.Request) {
 		for k, v := range r.Form {
 			rule[k] = v[0]
 		}
-		vm.FWRules = append(vm.FWRules, rule)
+		// Like Proxmox, a new rule goes to the top (position 0), unless FWAppend.
+		if s.FWAppend {
+			vm.FWRules = append(vm.FWRules, rule)
+		} else {
+			vm.FWRules = append([]map[string]string{rule}, vm.FWRules...)
+		}
 		ok(nil)
 		return
 	case strings.HasPrefix(sub, "/firewall/rules/") && r.Method == http.MethodDelete:

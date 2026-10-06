@@ -40,6 +40,8 @@ export const ALL_SCOPES = [
   'managed:read', 'managed:write',
   'connect:read', 'connect:write',
   'iam:read', 'iam:write',
+  /** Deciding approvals with an API token (console sessions always may, as owner or admin). Never usable by agent tokens. */
+  'approvals:write',
   'admin',
 ] as const;
 
@@ -62,18 +64,23 @@ export function scopesForRole(role: TeamRole): Set<string> {
 }
 
 /**
- * Limited staff roles. `engineer` works managed cloud tickets, logs time, runs maintenance and
- * edits runbooks; `support_lead` can do all of that plus assign tickets, manage on call,
- * contracts, assets and the responsibility matrix. Full staff (no roles) can do everything.
+ * Staff roles. `full_admin` is the whole back office (the `admin` scope). The others are
+ * limited: `engineer` works managed cloud tickets, logs time, runs maintenance and edits
+ * runbooks; `support_lead` can do all of that plus assign tickets, manage on call, contracts,
+ * assets and the responsibility matrix. A staff user with no role has no back office access
+ * (least privilege: full access is always an explicit grant).
  */
-export const STAFF_ROLES = ['support', 'finance', 'ops', 'engineer', 'support_lead'] as const;
-export type StaffRole = (typeof STAFF_ROLES)[number];
+export const STAFF_ROLES = ['full_admin', 'support', 'finance', 'ops', 'engineer', 'support_lead'] as const;
+export type StaffRole = Exclude<(typeof STAFF_ROLES)[number], 'full_admin'>;
+export const FULL_ADMIN = 'full_admin';
 
-/** Back office scopes for a staff user: `admin` for full staff, `admin:<area>` for limited staff. */
+export const isFullStaff = (user: { isStaff: boolean; staffRoles: string[] }) => user.isStaff && user.staffRoles.includes(FULL_ADMIN);
+
+/** Back office scopes for a staff user: `admin` for full_admin, `admin:<area>` for limited roles, none without a role. */
 export function staffScopes(user: { isStaff: boolean; staffRoles: string[] }): string[] {
   if (!user.isStaff) return [];
-  const roles = user.staffRoles.filter((r) => (STAFF_ROLES as readonly string[]).includes(r));
-  return roles.length ? roles.map((r) => `admin:${r}`) : ['admin'];
+  if (isFullStaff(user)) return ['admin'];
+  return user.staffRoles.filter((r) => r !== FULL_ADMIN && (STAFF_ROLES as readonly string[]).includes(r)).map((r) => `admin:${r}`);
 }
 
 export const hasStaffScope = (scopes: Set<string>) => [...scopes].some((s) => s === 'admin' || s.startsWith('admin:'));

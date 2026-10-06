@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHmac } from 'node:crypto';
-import { assertSafeUrl } from '../../common/net/safe-url';
 import { open } from '../../common/crypto/secretbox';
+import { makePolicy, safeFetch } from '../connect/net/guard';
+import { appendAudit, type AuditRowInput } from './audit-chain';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { NatsService, Subjects } from '../../common/nats/nats.service';
@@ -35,6 +36,8 @@ interface EmitContext {
   resource?: string;
   /** Client address; defaults to the actor's. */
   ip?: string;
+  /** HTTP like outcome recorded with the audit row (200 unless a failure is being recorded). */
+  status?: number;
 }
 
 /**
@@ -47,6 +50,9 @@ interface EmitContext {
 export class EventsService {
   private readonly log = new Logger(EventsService.name);
 
+  /** Customer webhooks never reach private addresses (no allowlist, unlike Connect tools). */
+  private readonly webhookPolicy = makePolicy('');
+
   constructor(private readonly prisma: PrismaService, private readonly nats: NatsService) {}
 
   async emit(name: EventName, payload: Record<string, unknown>, ctx: EmitContext = {}) {
@@ -54,19 +60,17 @@ export class EventsService {
     const teamId = ctx.teamId || ctx.actor?.teamId || undefined;
     this.log.debug(`${name} ${JSON.stringify(payload)}`);
 
-    await this.prisma.auditLog.create({
-      data: {
-        teamId,
-        // Platform actors (app hosts, the Kubernetes cloud controller without an owner) act as "system", which is no user row.
-        userId: ctx.actor?.userId === 'system' ? undefined : ctx.actor?.userId,
-        tokenId: ctx.actor?.tokenId,
-        action: name,
-        resource: ctx.resource,
-        ip: (ctx.ip ?? ctx.actor?.ip)?.slice(0, 64),
-        userAgent: ctx.actor?.userAgent?.slice(0, 300),
-        request: payload as Prisma.InputJsonValue,
-        status: 200,
-      },
+    await this.audit({
+      teamId,
+      // Platform actors (app hosts, the Kubernetes cloud controller without an owner) act as "system", which is no user row.
+      userId: ctx.actor?.userId === 'system' ? undefined : ctx.actor?.userId,
+      tokenId: ctx.actor?.tokenId,
+      action: name,
+      resource: ctx.resource,
+      ip: (ctx.ip ?? ctx.actor?.ip)?.slice(0, 64),
+      userAgent: ctx.actor?.userAgent?.slice(0, 300),
+      request: payload,
+      status: ctx.status ?? 200,
     });
 
     this.nats.publish(Subjects.event(name), { name, teamId, payload, at: new Date().toISOString() });
@@ -79,6 +83,14 @@ export class EventsService {
         });
       }
     }
+  }
+
+  /**
+   * One audit log row without the NATS fan out or webhooks: request level records (AuditMiddleware)
+   * and reads of customer secrets. Rows are hash chained (audit-chain.ts).
+   */
+  audit(row: AuditRowInput) {
+    return appendAudit(this.prisma, row);
   }
 
   /** Delivers queued webhooks. Called by the scheduler every 10s; retries with backoff. */
@@ -95,15 +107,14 @@ export class EventsService {
       const signature = createHmac('sha256', open(d.webhook.secret)).update(`${timestamp}.${body}`).digest('hex');
       let status: number | undefined;
       try {
-        // Re-check the destination on every delivery; DNS can change after registration.
-        await assertSafeUrl(d.webhook.url);
-        const res = await fetch(d.webhook.url, {
+        // The destination is checked inside the socket's DNS lookup (no rebinding window between
+        // the check and the connection): public addresses only, https only, no redirects.
+        if (!d.webhook.url.startsWith('https://')) throw new Error('only https webhooks are delivered');
+        const res = await safeFetch(d.webhook.url, {
           method: 'POST',
-          redirect: 'manual',
           headers: { 'content-type': 'application/json', 'x-prgd-signature': `t=${timestamp},v1=${signature}`, 'x-prgd-timestamp': timestamp, 'x-prgd-event': d.event },
           body,
-          signal: AbortSignal.timeout(10_000),
-        });
+        }, { policy: this.webhookPolicy, timeoutMs: 10_000, maxRedirects: 0, maxBytes: 64 * 1024 });
         status = res.status;
       } catch {
         status = 0;

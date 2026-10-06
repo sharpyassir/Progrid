@@ -181,7 +181,7 @@ export class OAuthService {
     const c = await this.store.getTotpTicket(ticket);
     if (!c) throw new ApiError(400, 'ticket_invalid', 'This sign in has expired. Start again.');
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: c.userId } });
-    if (!this.security.checkSecondFactor(user, code)) {
+    if (!(await this.security.checkSecondFactor(user, code))) {
       await this.store.failTotpTicket(ticket, c);
       throw new ApiError(401, 'totp_invalid', 'That code is not valid');
     }

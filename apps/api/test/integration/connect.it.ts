@@ -111,9 +111,9 @@ describe('Connect agents and connections', () => {
     const listed = await c.ok('GET', '/v1/connect/connections');
     expect(JSON.stringify(listed)).not.toContain(secret);
     const row = await s.prisma.connectConnection.findUniqueOrThrow({ where: { id: conn.id } });
-    expect(row.secret).toMatch(/^enc:v1:/);
+    expect(row.secret).toMatch(/^enc:v[12]:/);
     expect(row.secret).not.toContain(secret);
-    const audit = await s.prisma.auditLog.findMany({ where: { teamId: owner.teamId, action: { startsWith: 'connect.connection' } } });
+    const audit = await s.prisma.auditLog.findMany({ where: { teamId: owner.teamId, action: { startsWith: 'connect.connection' } }, omit: { seq: true } });
     expect(audit.length).toBeGreaterThan(0);
     expect(JSON.stringify(audit)).not.toContain(secret);
 

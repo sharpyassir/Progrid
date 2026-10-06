@@ -10,6 +10,7 @@ import { hasStaffScope, type Actor } from './actor';
 import { loadConfig } from '../../config/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { LEGAL_VERSION, allowedBeforeAcceptance } from '../../modules/legal/legal';
+import { ipAllowed } from '../../modules/ops/guards/ip-allowlist';
 
 /**
  * Resolves `Authorization: Bearer …` into an Actor and enforces `@RequireScopes`.
@@ -51,6 +52,11 @@ export class AuthGuard implements CanActivate {
 
     let required = this.reflector.getAllAndOverride<string[]>(SCOPES_KEY, [ctx.getHandler(), ctx.getClass()]) ?? [];
     const staffRoute = required.includes('admin');
+    // The back office only from the office or VPN addresses, when STAFF_IP_ALLOWLIST is set.
+    if (staffRoute || req.path.startsWith('/admin/')) {
+      const allowlist = staffIpAllowlist();
+      if (allowlist.length && !ipAllowed(actor.ip ?? '', allowlist)) throw new ApiError(403, 'ip_not_allowed', 'The back office is not allowed from this address');
+    }
     if (staffRoute) {
       // Full staff hold `admin`. Limited staff pass when the route is tagged with one of their areas.
       if (!actor.scopes.has('admin')) {
@@ -99,6 +105,10 @@ export class AuthGuard implements CanActivate {
 }
 
 export const OPS_SESSION_COOKIE = 'prgd_ops_session';
+
+function staffIpAllowlist(): string[] {
+  return loadConfig().STAFF_IP_ALLOWLIST.split(',').map((e) => e.trim()).filter(Boolean);
+}
 
 /** Client address (Caddy sets X-Forwarded-For) and user agent of a request. */
 export function clientOf(req: Request) {

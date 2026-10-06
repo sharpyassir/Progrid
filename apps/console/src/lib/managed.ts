@@ -119,8 +119,8 @@ export interface ManagedSummary {
 /** GET /admin/managed/teams: a team for the create contract picker (no billing data). */
 export interface TeamHit { id: string; name: string; slug: string; country: string; ownerName: string | null }
 
-/** Full staff: empty roles. Engineers and support leads only read plans. */
-export const isFullStaffRoles = (roles: string[]) => roles.length === 0;
+/** Full staff: the explicit full_admin role (no role means no back office). Engineers and support leads only read plans. */
+export const isFullStaffRoles = (roles: string[]) => roles.includes('full_admin');
 
 export interface Runbook { id: string; slug: string; title: string; tags: string[]; body?: string; excerpt?: string; updatedBy?: { id: string; name: string }; updatedAt: string }
 
@@ -217,5 +217,5 @@ export async function downloadPdf(path: string, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-/** Staff areas that see the managed back office; empty roles mean full staff. */
-export const isLeadRoles = (roles: string[]) => roles.length === 0 || roles.includes('support_lead');
+/** Support leads and full staff (full_admin). */
+export const isLeadRoles = (roles: string[]) => roles.includes('full_admin') || roles.includes('support_lead');

@@ -1,7 +1,7 @@
 ---
 title: Data processing addendum
 description: How Progrid Arabia processes personal data on behalf of customers who store or process personal data on Progrid services.
-updated: 3 October 2026
+updated: 6 October 2026
 ---
 
 > **Draft for legal review.** This document is a draft. Counsel will review it against the laws of the Kingdom of Saudi Arabia, including the Personal Data Protection Law and its regulations, before launch, and the reviewed version will replace it.
@@ -109,24 +109,24 @@ If we receive a request from an authority for customer personal data, we handle 
 
 ## Annex 2. Technical and organizational measures
 
-**Encryption.** Data is encrypted in transit between users and the platform and between platform components, using current TLS or equivalent protocols. Passwords are stored as hashes.
+**Encryption.** Data is encrypted in transit between users and the platform using current TLS. Traffic between our control plane and our hypervisor servers runs through an encrypted WireGuard tunnel; some traffic between our components on the same private network is not yet encrypted, and we are adding encryption to it. Passwords are stored as hashes. Credentials and other secrets that the Services keep for you are encrypted at rest with AES-256-GCM, under keys kept separately from the database. Backups of the control plane are encrypted with age before they leave our servers. Full disk encryption of our servers' storage is planned and not yet in place; you can encrypt your own volumes and databases.
 
-**Access control.** Access to production systems is limited to named engineers who need it. Engineers sign in with two step authentication and reach servers with short lived certificates issued per session, not with shared or long lived keys.
+**Access control.** Access to production systems is limited to named personnel who need it, and is reviewed every quarter. Administrative access requires two step authentication. Engineers reach servers covered by a managed service only through time limited, approved access, with short lived certificates issued per session through a gateway, not with shared or long lived keys. Access to our own servers uses personal keys over restricted network paths, and password login to servers is disabled.
 
-**Recorded sessions.** Engineer sessions on production systems and on customer servers covered by a managed service are recorded and can be reviewed.
+**Recorded sessions.** Engineer sessions on servers covered by a managed service are recorded, kept for 12 months and can be reviewed.
 
-**Audit logs.** Administrative actions in the console, the API and our internal tools are written to audit logs, which are kept for 1 year. Customers can see the audit log of their own account.
+**Audit logs.** Every change made through the console and the API, and every read by our staff in our administrative tools, is written to audit logs that cannot be changed without detection and are kept for 1 year. Customers can see the audit log of their own account.
 
-**Network security.** Host firewalls restrict access to production systems. Customer networks are isolated from each other. We monitor for network abuse and attacks.
+**Network security.** Host firewalls deny inbound traffic by default. Management interfaces of our servers are reachable only over a private, encrypted network. Each customer server runs in its own virtual machine, and firewall rules on the hypervisor, outside your control, restrict traffic between different customers' networks.
 
-**Backups.** Platform data is backed up regularly, and backups are protected and tested. Customer backups and snapshots are available as features of the Services.
+**Backups.** Platform data is backed up every night and the backups are encrypted. Off site copies and monthly restore tests are being introduced. Snapshots and backups of your resources are available as features of the Services; snapshots are stored on the same infrastructure as the resource.
 
-**Infrastructure.** Our hosting providers operate data centers with physical access control, power and cooling redundancy and environmental protection.
+**Infrastructure.** Our hosting providers, DigitalOcean in Frankfurt and Hetzner Online in Germany, operate data centers with physical access control, power and cooling redundancy and environmental protection. Storage devices that leave our control are erased before they are returned to the provider.
 
-**Vulnerability management.** Systems are updated regularly, and security reports are acknowledged within one business day.
+**Vulnerability management.** Operating system security updates are installed automatically on our servers. Our code, dependencies and container images are scanned automatically before release, and vulnerabilities are fixed within defined periods according to their severity. Security reports are acknowledged within two business days.
 
-**Incident response.** We have a process to detect, contain, investigate and notify personal data breaches, as described in section 8.
+**Incident response.** We have a documented plan to detect, contain, investigate and notify personal data breaches, as described in section 8.
 
-**Staff.** Staff with access to personal data are bound by confidentiality and trained on security and data protection.
+**Staff.** We require staff with access to personal data to be bound by confidentiality, to be screened before they receive access as the law permits, and to be trained on security and data protection when they join and every year.
 
-**Subprocessors.** Subprocessors are selected for their security and bound by written data protection obligations.
+**Subprocessors.** We assess the security of our subprocessors, bind them by written data protection obligations, and review them every year.

@@ -17,6 +17,7 @@ import { IpsService } from '../network/ips.service';
 import { PrivateNetworksService } from '../network/private-networks.service';
 import { OBJECT_STORAGE_PROVIDER, ObjectStorageProvider, emptyAndDeleteBucket } from '../storage/objects/objects.provider';
 import { renderDbCloudInit } from './cloud-init';
+import { open, openOpt, seal } from '../../common/crypto/secretbox';
 import { recordDiskUsage } from '../monitoring/metrics.service';
 import { agentFetch, agentHost, vipNetworkFor, vrrpPass } from '../../common/platform-agent';
 import { CreateDatabaseDto, DbNameDto, ENGINE_PORTS, ENGINE_VERSIONS, RestoreDatabaseDto, UpdateDatabaseDto } from './db.dto';
@@ -82,8 +83,11 @@ export class DatabasesService {
     return { data: rows.map((c) => this.present(c, false)) };
   }
 
+  /** One database with its connection details and passwords; every call is audited as a credentials view. */
   async get(actor: Actor, id: string, project?: string) {
-    return this.present(await this.own(actor, id, project), true);
+    const c = await this.own(actor, id, project);
+    await this.events.emit('database.credentials_viewed', { databaseId: c.id, name: c.name }, { actor, resource: `database:${c.id}` });
+    return this.present(c, true);
   }
 
   async create(actor: Actor, dto: CreateDatabaseDto) {
@@ -113,9 +117,9 @@ export class DatabasesService {
     const cluster = await this.prisma.dbCluster.create({
       data: {
         projectId: project.id, regionId: region.id, name: dto.name, engine: dto.engine, version, nodes, sizeId: size.id, port,
-        adminUser: 'prgd_admin', adminPassword: password(), trustedSources: trusted, publicIpId: vip.id, firewallId: fw.id, vmSecret, backupHourUtc: dto.backupHourUtc ?? 2,
+        adminUser: 'prgd_admin', adminPassword: seal(password()), trustedSources: trusted, publicIpId: vip.id, firewallId: fw.id, vmSecret: seal(vmSecret), backupHourUtc: dto.backupHourUtc ?? 2,
         databases: dto.engine === 'valkey' ? undefined : { create: { name: 'defaultdb' } },
-        users: { create: { name: 'app', password: password() } },
+        users: { create: { name: 'app', password: seal(password()) } },
       },
     });
     // Backups go to a platform owned bucket with a key of their own.
@@ -124,12 +128,12 @@ export class DatabasesService {
       const bucket = `prgd-db-${cluster.id.toLowerCase()}`;
       await this.storage.createBucket(PLATFORM_PROJECT, bucket);
       const key = await this.storage.createKey(PLATFORM_PROJECT);
-      await this.prisma.dbCluster.update({ where: { id: cluster.id }, data: { backupBucket: bucket, backupAccessKey: key.accessKey, backupSecretKey: key.secretKey } });
+      await this.prisma.dbCluster.update({ where: { id: cluster.id }, data: { backupBucket: bucket, backupAccessKey: key.accessKey, backupSecretKey: seal(key.secretKey) } });
     } catch (err) {
       this.log.warn(`backup bucket for ${cluster.id} not ready: ${(err as Error).message}`);
     }
     for (let i = 0; i < nodes; i++) {
-      const s = await this.servers.create(actor, { name: `db-${dto.name}-${i}`, size: size.id, image: NODE_IMAGE, project: project.id, region: region.id, firewalls: [fw.id], tags: ['managed-database'], userData: renderDbCloudInit({ engine: dto.engine, vmSecret, vipNetwork: vipNetworkFor(vip.address) }) }, { spreadGroup: `db:${cluster.id}` });
+      const s = await this.servers.create(actor, { name: `db-${dto.name}-${i}`, size: size.id, image: NODE_IMAGE, project: project.id, region: region.id, firewalls: [fw.id], tags: ['managed-database'], userData: renderDbCloudInit({ engine: dto.engine, vmSecret, vipNetwork: vipNetworkFor(vip.address) }) }, { spreadGroup: `db:${cluster.id}`, platformImage: true });
       await this.prisma.server.update({ where: { id: s.id }, data: { managedBy: `db:${cluster.id}` } });
       await this.prisma.dbNode.create({ data: { clusterId: cluster.id, serverId: s.id, index: i } });
     }
@@ -164,18 +168,20 @@ export class DatabasesService {
     if (['postgres', 'prgd_admin', 'replicator', 'root', 'mysql', 'default'].includes(dto.name)) throw ApiError.invalid('That user name is reserved');
     if (c.users.some((u) => u.name === dto.name)) throw ApiError.conflict('name_taken', `User ${dto.name} already exists`);
     if (c.users.length >= 50) throw ApiError.quota('User limit (50) reached');
-    const u = await this.prisma.dbUser.create({ data: { clusterId: id, name: dto.name, password: password() } });
+    const pw = password();
+    const u = await this.prisma.dbUser.create({ data: { clusterId: id, name: dto.name, password: seal(pw) } });
     await this.bump(id, actor);
-    return { id: u.id, name: u.name, password: u.password, createdAt: u.createdAt };
+    return { id: u.id, name: u.name, password: pw, createdAt: u.createdAt };
   }
 
   async resetUserPassword(actor: Actor, id: string, userId: string, project?: string) {
     const c = await this.own(actor, id, project);
     const u = c.users.find((x) => x.id === userId);
     if (!u) throw ApiError.notFound('user', userId);
-    const updated = await this.prisma.dbUser.update({ where: { id: userId }, data: { password: password() } });
+    const pw = password();
+    const updated = await this.prisma.dbUser.update({ where: { id: userId }, data: { password: seal(pw) } });
     await this.bump(id, actor);
-    return { id: updated.id, name: updated.name, password: updated.password };
+    return { id: updated.id, name: updated.name, password: pw };
   }
 
   async deleteUser(actor: Actor, id: string, userId: string, project?: string) {
@@ -223,7 +229,7 @@ export class DatabasesService {
     const ip = primary ? agentHost(primary.server) : null;
     if (!ip) return { id: b.id, status: 'running' };
     try {
-      const r = await agentFetch(ip, { method: 'POST', path: '/backup', secret: c.vmSecret, body: { id: b.id }, timeoutMs: 8000 });
+      const r = await agentFetch(ip, { method: 'POST', path: '/backup', secret: open(c.vmSecret), body: { id: b.id }, timeoutMs: 8000 });
       if (!r.ok) throw new Error(`node answered ${r.status}`);
     } catch (err) {
       // Nodes unreachable (or fake): the minute job will not find a result and marks it failed after six hours.
@@ -267,13 +273,13 @@ export class DatabasesService {
       const ip = agentHost(n.server);
       if (!ip) throw new Error(`node ${n.index} has no address`);
       const rid = `${backupId}-${n.index}-${Date.now()}`;
-      const post = await agentFetch(ip, { method: 'POST', path: '/restore', secret: c.vmSecret, body: { id: rid, backupId, ref: b.ref, primary: n.id === primary.id, primaryIp }, timeoutMs: 10_000 });
+      const post = await agentFetch(ip, { method: 'POST', path: '/restore', secret: open(c.vmSecret), body: { id: rid, backupId, ref: b.ref, primary: n.id === primary.id, primaryIp }, timeoutMs: 10_000 });
       if (!post.ok) throw new Error(`node ${n.index} refused the restore: ${post.status} ${(await post.text().catch(() => '')).slice(0, 200)}`);
       const deadline = Date.now() + 3 * 3600_000;
       for (;;) {
         heartbeat();
         await new Promise((r) => setTimeout(r, 10_000));
-        const st = await this.nodeStatus(c.vmSecret, ip).catch(() => null);
+        const st = await this.nodeStatus(open(c.vmSecret), ip).catch(() => null);
         const r = st?.restore;
         if (r?.id === rid && r.status === 'completed') break;
         if (r?.id === rid && r.status === 'failed') throw new Error(`node ${n.index}: ${r.error ?? 'restore failed'}`);
@@ -340,17 +346,17 @@ export class DatabasesService {
       const body = {
         version: c.configVersion,
         engine: c.engine,
-        cluster: { name: `db-${c.name}-${c.id.slice(-6)}`, vrid: (hash(c.id) % 254) + 1, vrrpPass: vrrpPass(c.vmSecret), vip: c.publicIp?.address, prefix: c.publicIp ? IpsService.prefixOf(c.publicIp.block.cidr) : 24, nodes: nodes.map((x) => ({ ...x, isSelf: x.index === n.index })) },
-        admin: { user: c.adminUser, password: c.adminPassword },
-        replicationPassword: c.vmSecret,
-        users: c.users.map((u) => ({ name: u.name, password: u.password })),
+        cluster: { name: `db-${c.name}-${c.id.slice(-6)}`, vrid: (hash(c.id) % 254) + 1, vrrpPass: vrrpPass(open(c.vmSecret)), vip: c.publicIp?.address, prefix: c.publicIp ? IpsService.prefixOf(c.publicIp.block.cidr) : 24, nodes: nodes.map((x) => ({ ...x, isSelf: x.index === n.index })) },
+        admin: { user: c.adminUser, password: open(c.adminPassword) },
+        replicationPassword: open(c.vmSecret),
+        users: c.users.map((u) => ({ name: u.name, password: open(u.password) })),
         databases: c.databases.map((d) => d.name),
         trustedSources: c.trustedSources.length ? c.trustedSources : undefined,
-        backup: c.backupBucket ? { endpoint: cfg.S3_ENDPOINT, region: cfg.S3_REGION, bucket: c.backupBucket, accessKey: c.backupAccessKey, secretKey: c.backupSecretKey } : null,
+        backup: c.backupBucket ? { endpoint: cfg.S3_ENDPOINT, region: cfg.S3_REGION, bucket: c.backupBucket, accessKey: c.backupAccessKey, secretKey: openOpt(c.backupSecretKey) } : null,
         params: {},
       };
       try {
-        const r = await agentFetch(ip, { method: 'POST', path: '/config', secret: c.vmSecret, body, timeoutMs: 120_000 });
+        const r = await agentFetch(ip, { method: 'POST', path: '/config', secret: open(c.vmSecret), body, timeoutMs: 120_000 });
         if (r.ok) {
           applied++;
           await this.prisma.dbNode.update({ where: { id: n.id }, data: { appliedVersion: c.configVersion, lastSeenAt: new Date() } });
@@ -396,7 +402,7 @@ export class DatabasesService {
         const ip = agentHost(n.server);
         if (!ip || n.server.status !== 'active') continue;
         try {
-          const r = await agentFetch(ip, { path: '/status', secret: c.vmSecret, timeoutMs: 4000 }).then((x) => {
+          const r = await agentFetch(ip, { path: '/status', secret: open(c.vmSecret), timeoutMs: 4000 }).then((x) => {
             if (!x.ok) throw new Error(`status answered ${x.status}`);
             return x.json() as Promise<NodeReport>;
           });
@@ -476,6 +482,7 @@ export class DatabasesService {
     const privateHost = primary?.server.privateIp ?? null;
     const app = c.users[0];
     const db = c.databases[0]?.name ?? 'defaultdb';
+    const adminPw = withSecrets ? open(c.adminPassword) : '';
     const uri = (h: string | null, user: string, pw: string) => {
       if (!h) return null;
       if (c.engine === 'valkey') return `rediss://${user}:${pw}@${h}:6380`;
@@ -486,8 +493,8 @@ export class DatabasesService {
       id: c.id, name: c.name, engine: c.engine, version: c.version, status: c.status, statusMessage: c.statusMessage, regionId: c.regionId, projectId: c.projectId,
       nodes: c.nodes, size: { id: c.size.id, vcpu: c.size.vcpu, memoryMb: c.size.memoryMb, diskGb: c.size.diskGb }, port: c.port, poolerPort: c.engine === 'postgres' ? 6432 : null, tlsPort: c.engine === 'valkey' ? 6380 : null,
       trustedSources: c.trustedSources, backupHourUtc: c.backupHourUtc, configVersion: c.configVersion,
-      connection: withSecrets ? { host, privateHost, port: c.port, database: c.engine === 'valkey' ? null : db, user: c.engine === 'valkey' ? 'default' : c.adminUser, password: c.adminPassword, ssl: true, uri: uri(host, c.engine === 'valkey' ? 'default' : c.adminUser, c.adminPassword), privateUri: uri(privateHost, c.engine === 'valkey' ? 'default' : c.adminUser, c.adminPassword), appUri: app ? uri(host, app.name, app.password) : null } : { host, privateHost, port: c.port, database: db },
-      users: c.users.map((u) => ({ id: u.id, name: u.name, ...(withSecrets ? { password: u.password } : {}), createdAt: u.createdAt })),
+      connection: withSecrets ? { host, privateHost, port: c.port, database: c.engine === 'valkey' ? null : db, user: c.engine === 'valkey' ? 'default' : c.adminUser, password: adminPw, ssl: true, uri: uri(host, c.engine === 'valkey' ? 'default' : c.adminUser, adminPw), privateUri: uri(privateHost, c.engine === 'valkey' ? 'default' : c.adminUser, adminPw), appUri: app ? uri(host, app.name, open(app.password)) : null } : { host, privateHost, port: c.port, database: db },
+      users: c.users.map((u) => ({ id: u.id, name: u.name, ...(withSecrets ? { password: open(u.password) } : {}), createdAt: u.createdAt })),
       databases: c.databases.map((d) => ({ id: d.id, name: d.name, createdAt: d.createdAt })),
       nodeStatus: c.nodeServers.map((n) => ({ index: n.index, status: n.server.status, role: n.role, appliedVersion: n.appliedVersion, lagBytes: n.lagBytes == null ? null : Number(n.lagBytes), lastSeenAt: n.lastSeenAt })),
       createdAt: c.createdAt,

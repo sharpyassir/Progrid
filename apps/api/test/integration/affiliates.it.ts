@@ -199,7 +199,7 @@ describe('affiliate portal', () => {
     const det = await t.client.ok('PUT', '/v1/affiliates/me/payout-details', { method: 'bank_transfer', holderName: 'Lina A', bankName: 'Example Bank', bankCountry: 'SA', iban: 'SA03 8000 0000 6080 1016 7519', swift: 'EXMPSARI' });
     expect(det.details).toMatchObject({ ibanLast4: '7519', holderName: 'Lina A' });
     expect(JSON.stringify(det)).not.toContain('6080');
-    expect((await s.prisma.affiliate.findUniqueOrThrow({ where: { id: a.id } })).payoutDetails).toMatch(/^enc:v1:/);
+    expect((await s.prisma.affiliate.findUniqueOrThrow({ where: { id: a.id } })).payoutDetails).toMatch(/^enc:v[12]:/);
     expect((await t.client.post('/v1/affiliates/me/payouts', { currency: 'SAR' })).body.error.code).toBe('below_minimum');
 
     // Enough approved commission: one payout takes all of it.

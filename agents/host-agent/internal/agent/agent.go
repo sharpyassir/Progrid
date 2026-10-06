@@ -440,6 +440,10 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 		var p struct {
 			VmRef string                  `json:"vmRef"`
 			Rules []protocol.FirewallRule `json:"rules"`
+			// Deny are drop rules (platform guard rails: tenant isolation, SMTP), placed above
+			// every accept rule. A separate list so control planes and agents that predate it
+			// never mistake a drop for an accept.
+			Deny []protocol.FirewallRule `json:"deny"`
 			// Addresses each NIC may send from ("net0": private, "net1": public and VIPs).
 			// Absent from older control planes: the IP filter then stays off.
 			Addresses map[string][]string `json:"addresses"`
@@ -449,7 +453,7 @@ func (a *Agent) dispatch(ctx context.Context, job protocol.Job, log *slog.Logger
 		if err != nil {
 			return nil, err
 		}
-		return nil, a.applyFirewall(ctx, ref.VMID, toPVERules(p.Rules), p.Addresses, log)
+		return nil, a.applyFirewall(ctx, ref.VMID, append(toPVERules(p.Deny, "DROP"), toPVERules(p.Rules, "ACCEPT")...), p.Addresses, log)
 
 	case protocol.JobEnsureVNet:
 		var p protocol.VNetSpec
@@ -1041,7 +1045,7 @@ func splitTags(tags string) []string {
 	return strings.FieldsFunc(tags, func(r rune) bool { return r == ';' || r == ',' || r == ' ' })
 }
 
-func toPVERules(rules []protocol.FirewallRule) []proxmox.FWRule {
+func toPVERules(rules []protocol.FirewallRule, action string) []proxmox.FWRule {
 	out := make([]proxmox.FWRule, 0, len(rules)*2)
 	for _, r := range rules {
 		typ := "in"
@@ -1049,7 +1053,7 @@ func toPVERules(rules []protocol.FirewallRule) []proxmox.FWRule {
 			typ = "out"
 		}
 		for _, cidr := range r.Cidrs {
-			fr := proxmox.FWRule{Type: typ, Action: "ACCEPT", Proto: r.Protocol, Dport: r.Ports}
+			fr := proxmox.FWRule{Type: typ, Action: action, Proto: r.Protocol, Dport: r.Ports, Iface: r.Iface}
 			if typ == "in" {
 				fr.Source = cidr
 			} else {

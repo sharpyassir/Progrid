@@ -261,7 +261,7 @@ export class SupportService {
   /** The resource named on a ticket must belong to the team. */
   private async checkResource(actor: Actor, ref: string) {
     const [kind, id] = ref.split(':', 2);
-    const teamScope = { project: { teamId: actor.teamId } };
+    const teamScope = { project: { teamId: actor.teamId, ...(actor.projectId ? { id: actor.projectId } : {}) } };
     const found = await (async () => {
       switch (kind) {
         case 'server': return this.prisma.server.count({ where: { id, ...teamScope } });

@@ -128,9 +128,7 @@ export class TokenService {
     if (!sub || !jti) return null;
     const session = await this.prisma.session.findUnique({ where: { id: jti } });
     if (!session || session.audience !== 'ops' || session.revokedAt || session.expiresAt < new Date() || session.userId !== sub) return null;
-    if (Date.now() - session.lastSeenAt.getTime() > 60_000) {
-      void this.prisma.session.update({ where: { id: jti }, data: { lastSeenAt: new Date() } }).catch(() => undefined);
-    }
+    if (await this.idleExpired(session, loadConfig().OPS_SESSION_IDLE_MINUTES)) return null;
     return { userId: sub, sessionId: jti, expiresAt: session.expiresAt };
   }
 
@@ -148,6 +146,20 @@ export class TokenService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Idle timeout (ISO 27001 A.8.5): a session unused for `minutes` ends and is revoked.
+   * Otherwise lastSeenAt is refreshed at most once a minute, which bounds the timeout's error.
+   */
+  private async idleExpired(session: { id: string; lastSeenAt: Date }, minutes: number): Promise<boolean> {
+    const idleMs = Date.now() - session.lastSeenAt.getTime();
+    if (idleMs > minutes * 60_000) {
+      await this.prisma.session.updateMany({ where: { id: session.id, revokedAt: null }, data: { revokedAt: new Date() } });
+      return true;
+    }
+    if (idleMs > 60_000) void this.prisma.session.update({ where: { id: session.id }, data: { lastSeenAt: new Date() } }).catch(() => undefined);
+    return false;
   }
 
   // ---- Resolution ----
@@ -172,6 +184,8 @@ export class TokenService {
     // A token can never exceed what its owner is allowed to do; `admin` needs a staff user.
     const roleScopes = scopesForRole(membership.role);
     for (const sc of staffScopes(token.user)) roleScopes.add(sc);
+    // Back office tokens live at most a day; older ones (made before that rule) lose `admin`.
+    if (!token.expiresAt || token.expiresAt.getTime() - token.createdAt.getTime() > ADMIN_TOKEN_MAX_MS + 60_000) roleScopes.delete('admin');
     return {
       userId: token.userId,
       teamId: token.teamId,
@@ -205,16 +219,17 @@ export class TokenService {
     // The row is the source of truth: a revoked or expired row ends the session even if the JWT is valid.
     const session = await this.prisma.session.findUnique({ where: { id: jti } });
     if (!session || session.audience !== 'console' || session.revokedAt || session.expiresAt < new Date() || session.userId !== sub) return null;
-    if (Date.now() - session.lastSeenAt.getTime() > 5 * 60_000) {
-      void this.prisma.session.update({ where: { id: jti }, data: { lastSeenAt: new Date() } }).catch(() => undefined);
-    }
     const membership = await this.prisma.teamMember.findUnique({
       where: { teamId_userId: { teamId: tid, userId: sub } },
       include: { user: { select: { locale: true, isStaff: true, staffRoles: true, legalVersion: true } }, team: { select: { status: true } } },
     });
     if (!membership || membership.team.status === 'closed') return null;
+    const staff = staffScopes(membership.user);
+    // Sessions that can open the back office time out sooner.
+    const c = loadConfig();
+    if (await this.idleExpired(session, staff.length ? c.STAFF_SESSION_IDLE_MINUTES : c.SESSION_IDLE_MINUTES)) return null;
     const scopes = scopesForRole(membership.role);
-    for (const sc of staffScopes(membership.user)) scopes.add(sc); // back office pages in the console
+    for (const sc of staff) scopes.add(sc); // back office pages in the console
     return {
       userId: sub,
       teamId: tid,
@@ -230,6 +245,9 @@ export class TokenService {
     };
   }
 }
+
+/** Longest life of an API token carrying the full staff `admin` scope. */
+export const ADMIN_TOKEN_MAX_MS = 86_400_000;
 
 function hash(raw: string) {
   return createHash('sha256').update(raw).digest('hex');

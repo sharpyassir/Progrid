@@ -75,6 +75,7 @@ export class AlertsService {
   }
 
   async create(actor: Actor, dto: CreateAlertDto) {
+    this.checkProjectScope(actor, dto.serverIds ?? [], dto.tags ?? []);
     await this.checkServers(actor, dto.serverIds ?? []);
     const p = await this.prisma.alertPolicy.create({ data: { teamId: actor.teamId, name: dto.name, metric: dto.metric, comparator: dto.comparator ?? 'above', threshold: dto.threshold, windowMinutes: dto.windowMinutes ?? 5, serverIds: dto.serverIds ?? [], tags: dto.tags ?? [], emails: dto.emails ?? [], enabled: dto.enabled ?? true } });
     await this.events.emit('alert.created', { alertId: p.id, metric: p.metric, threshold: p.threshold }, { actor, resource: `alert:${p.id}` });
@@ -82,7 +83,9 @@ export class AlertsService {
   }
 
   async update(actor: Actor, id: string, dto: UpdateAlertDto) {
-    await this.get(actor, id);
+    const current = await this.get(actor, id);
+    await this.checkPolicyInProject(actor, current);
+    this.checkProjectScope(actor, dto.serverIds ?? current.serverIds, dto.tags ?? current.tags);
     if (dto.serverIds) await this.checkServers(actor, dto.serverIds);
     const p = await this.prisma.alertPolicy.update({ where: { id }, data: { ...dto } });
     await this.events.emit('alert.updated', { alertId: id }, { actor, resource: `alert:${id}` });
@@ -90,7 +93,7 @@ export class AlertsService {
   }
 
   async remove(actor: Actor, id: string) {
-    await this.get(actor, id);
+    await this.checkPolicyInProject(actor, await this.get(actor, id));
     await this.prisma.alertPolicy.delete({ where: { id } });
     await this.events.emit('alert.deleted', { alertId: id }, { actor, resource: `alert:${id}` });
   }
@@ -155,8 +158,23 @@ export class AlertsService {
 
   private async checkServers(actor: Actor, ids: string[]) {
     if (!ids.length) return;
-    const n = await this.prisma.server.count({ where: { id: { in: ids }, deletedAt: null, project: { teamId: actor.teamId } } });
-    if (n !== ids.length) throw ApiError.invalid('One or more serverIds do not belong to this team');
+    const n = await this.prisma.server.count({ where: { id: { in: ids }, deletedAt: null, project: { teamId: actor.teamId }, ...(actor.projectId ? { projectId: actor.projectId } : {}) } });
+    if (n !== ids.length) throw ApiError.invalid(actor.projectId ? 'One or more serverIds do not belong to this project' : 'One or more serverIds do not belong to this team');
+  }
+
+  /**
+   * Policies belong to the team, so an actor limited to one project may only write policies
+   * that name its own servers: no team wide (empty) and no tag based targets, which span projects.
+   */
+  private checkProjectScope(actor: Actor, serverIds: string[], tags: string[]) {
+    if (actor.projectId && (!serverIds.length || tags.length)) throw ApiError.forbidden('This token is scoped to a single project: alert policies must list serverIds and no tags');
+  }
+
+  private async checkPolicyInProject(actor: Actor, policy: AlertPolicy) {
+    if (!actor.projectId) return;
+    if (policy.tags.length || !policy.serverIds.length) throw ApiError.forbidden('This alert policy covers servers outside the project this token is scoped to');
+    const n = await this.prisma.server.count({ where: { id: { in: policy.serverIds }, projectId: actor.projectId } });
+    if (n !== new Set(policy.serverIds).size) throw ApiError.forbidden('This alert policy covers servers outside the project this token is scoped to');
   }
 
   private async notify(policy: AlertPolicy, server: { id: string; name: string }, value: number, edge: 'triggered' | 'resolved', incidentId: string, text?: { summary: string; url: string }) {

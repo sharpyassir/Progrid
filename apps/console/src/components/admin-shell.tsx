@@ -37,7 +37,7 @@ export function AdminShell({ title, children, actions }: { title: string; childr
   useEffect(() => {
     api<{ isStaff: boolean; staffRoles?: string[] }>('/v1/account').then((m) => { if (m.isStaff) { setRoles(m.staffRoles ?? []); setOk(true); } else router.replace('/servers'); }).catch(() => router.replace('/login'));
   }, [router]);
-  const tabs = TABS.filter((tab) => tab.areas.includes('any') || roles.length === 0 || tab.areas.some((a) => roles.includes(a)));
+  const tabs = TABS.filter((tab) => tab.areas.includes('any') || roles.includes('full_admin') || tab.areas.some((a) => roles.includes(a)));
   if (!ok) return <p className="text-sm text-neutral-500">Checking access…</p>;
   return (
     <div className="space-y-5">

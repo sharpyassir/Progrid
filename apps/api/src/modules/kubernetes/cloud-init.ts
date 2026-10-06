@@ -315,10 +315,10 @@ ${indentBlock(AGENT_S3_PY, 6)}
           def log_message(self, *a): pass
           def do_GET(self):
               if self.path != '/status': return self._send(404, {})
-              if self.headers.get('X-Prgd-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
+              if not secret_ok(self.headers.get('X-Prgd-Secret')): return self._send(401, {'error': 'unauthorized'})
               self._send(200, status())
           def do_POST(self):
-              if self.headers.get('X-Prgd-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
+              if not secret_ok(self.headers.get('X-Prgd-Secret')): return self._send(401, {'error': 'unauthorized'})
               n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
               if self.path == '/join-token':
                   # A fresh bootstrap token for nodes joining later, valid 24 hours.

@@ -110,7 +110,7 @@ export class TeamService {
     return this.get(actor);
   }
 
-  /** Removes a member (or lets a member leave) and revokes the API tokens they issued for this team. */
+  /** Removes a member (or lets a member leave) and revokes their API tokens and console sessions for this team. */
   async removeMember(actor: Actor, userId: string) {
     this.human(actor);
     const self = userId === actor.userId;
@@ -125,8 +125,10 @@ export class TeamService {
       }
       await tx.teamMember.delete({ where: { teamId_userId: { teamId: actor.teamId, userId } } });
       await tx.apiToken.updateMany({ where: { teamId: actor.teamId, userId, revokedAt: null }, data: { revokedAt: new Date() } });
+      // Leaver: console sessions in this team end at once too (resolution would refuse them anyway; this makes it explicit and auditable).
+      await tx.session.updateMany({ where: { teamId: actor.teamId, userId, revokedAt: null }, data: { revokedAt: new Date() } });
     });
-    await this.events.emit('team.member_removed', { userId }, { actor, resource: `user:${userId}` });
+    await this.events.emit('team.member_removed', { userId, tokensRevoked: true, sessionsRevoked: true }, { actor, resource: `user:${userId}` });
   }
 
   // ---- invitations ----

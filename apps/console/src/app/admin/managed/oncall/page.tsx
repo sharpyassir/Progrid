@@ -180,7 +180,7 @@ export default function AdminOnCall() {
                 <Cell className="font-medium">{s.name}<div className="text-xs text-neutral-500">{s.email}</div></Cell>
                 <Cell className="text-xs" dir="ltr">{s.phone ?? <span className="text-amber-700 dark:text-amber-400">{t(locale, 'admMcNoPhone')}</span>}</Cell>
                 <Cell className="text-xs">{s.pagingChannel ? tk(locale, `admMcChannel_${s.pagingChannel}`, s.pagingChannel) : '—'}</Cell>
-                <Cell className="text-xs text-neutral-500">{s.staffRoles.length ? s.staffRoles.map((r) => tk(locale, `admMcRole_${r}`, r)).join(', ') : t(locale, 'admMcFullStaff')}</Cell>
+                <Cell className="text-xs text-neutral-500">{s.staffRoles.includes('full_admin') ? t(locale, 'admMcFullStaff') : s.staffRoles.map((r) => tk(locale, `admMcRole_${r}`, r)).join(', ')}</Cell>
               </Row>
             ))}
           </Table>

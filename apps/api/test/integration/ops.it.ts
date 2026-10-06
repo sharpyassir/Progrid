@@ -18,7 +18,7 @@ let lead: Team & { totpSecret: string };
 
 beforeAll(async () => {
   s = await sut();
-  admin = await staff([]);
+  admin = await staff(['full_admin']);
   lead = await staff(['support_lead']);
 });
 
@@ -31,7 +31,7 @@ afterAll(async () => {
 
 // ---- helpers ----
 
-/** A staff user with the given roles (none: full staff) and two factor sign in on. */
+/** A staff user with the given roles (full_admin: full staff) and two factor sign in on. */
 async function staff(roles: string[]) {
   const t = await signup(s);
   await s.prisma.user.update({ where: { id: t.userId }, data: { isStaff: true, staffRoles: roles } });
@@ -237,7 +237,7 @@ describe('ops console assignments, residency and masking', () => {
 
     // External engineers are not staff and never reach the back office, even with a console session.
     expect((await s.prisma.user.findUniqueOrThrow({ where: { id: eng.userId } })).isStaff).toBe(false);
-    expect((await admin.client.post(`/admin/v1/staff/${eng.userId}`, { isStaff: true })).status).toBe(422);
+    expect((await admin.client.post(`/admin/v1/staff/${eng.userId}`, { isStaff: true, staffRoles: ['engineer'] })).status).toBe(422);
 
     // Work the assigned ticket: reply, internal note, take it, close only with a root cause.
     await eng.client.ok('POST', `/ops/v1/tickets/${ta.id}/messages`, { body: 'Looking into it now.' }, 201);

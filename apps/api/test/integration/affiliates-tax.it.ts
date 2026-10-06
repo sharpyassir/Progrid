@@ -87,7 +87,7 @@ describe('US tax forms and payouts', () => {
     expect(r).toMatchObject({ state: 'active', form: { formType: 'W9', revision: 'Form W-9 (Rev. March 2024)', tinMasked: '•••••6789', backupWithholding: false, expiresAt: null } });
     expect(JSON.stringify(r)).not.toContain('123-45');
     const row = await s.prisma.affiliateTaxForm.findFirstOrThrow({ where: { affiliateId: a.id } });
-    expect(row.tin).toMatch(/^enc:v1:/);
+    expect(row.tin).toMatch(/^enc:v[12]:/);
     expect(row.certificationText).toContain('Under penalties of perjury');
     expect(JSON.stringify(await finance.ok('GET', `/admin/v1/affiliates/${a.id}`))).not.toContain('123456789');
 

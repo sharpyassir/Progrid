@@ -17,6 +17,7 @@ import { PrivateNetworksService } from '../network/private-networks.service';
 import { renderHaproxyConfig, renderKeepalivedConfig } from './haproxy';
 import { renderLbCloudInit } from './cloud-init';
 import { agentFetch, agentHost, vrrpPass } from '../../common/platform-agent';
+import { open, seal } from '../../common/crypto/secretbox';
 import { CreateCertificateDto, CreateLoadBalancerDto, TargetsDto, UpdateLoadBalancerDto } from './lb.dto';
 import { DEFAULT_HEALTH_CHECK, ForwardingRule, HealthCheck, StickySessions } from './lb.types';
 
@@ -90,7 +91,7 @@ export class LoadBalancersService {
         projectId: project.id, regionId: region.id, name: dto.name, nodes, algorithm: dto.algorithm ?? 'round_robin',
         forwardingRules: rules as unknown as Prisma.InputJsonValue, healthCheck: healthCheck as unknown as Prisma.InputJsonValue, stickySessions: (sticky ?? undefined) as Prisma.InputJsonValue | undefined,
         redirectHttpToHttps: !!dto.redirectHttpToHttps, proxyProtocol: !!dto.proxyProtocol, tag: dto.tag || null,
-        publicIpId: vip.id, firewallId: fw.id, vmSecret: randomBytes(24).toString('base64url'),
+        publicIpId: vip.id, firewallId: fw.id, vmSecret: seal(randomBytes(24).toString('base64url')),
         targets: { create: targets.map((s) => ({ serverId: s.id })) },
       },
       include: { publicIp: { include: { block: true } } },
@@ -100,8 +101,8 @@ export class LoadBalancersService {
     for (let i = 0; i < nodes; i++) {
       const s = await this.servers.create(actor, {
         name: `lb-${dto.name}-${i}`, size: NODE_SIZE, image: NODE_IMAGE, project: project.id, region: region.id, firewalls: [fw.id], tags: ['load-balancer'],
-        userData: renderLbCloudInit({ vmSecret: lb.vmSecret, vipNetwork: 'public' }),
-      }, { spreadGroup: `lb:${lb.id}` });
+        userData: renderLbCloudInit({ vmSecret: open(lb.vmSecret), vipNetwork: 'public' }),
+      }, { spreadGroup: `lb:${lb.id}`, platformImage: true });
       await this.prisma.server.update({ where: { id: s.id }, data: { managedBy: `lb:${lb.id}` } });
       await this.prisma.loadBalancerNode.create({ data: { loadBalancerId: lb.id, serverId: s.id, index: i } });
     }
@@ -224,9 +225,9 @@ export class LoadBalancersService {
       if (!ip || n.server.status !== 'active') continue;
       // keepalived per node: its priority and the other nodes' private addresses for unicast VRRP.
       const peers = lb.nodeServers.filter((o) => o.id !== n.id && o.server.privateIp).map((o) => o.server.privateIp!);
-      const keepalived = lb.publicIp ? renderKeepalivedConfig({ lbId: lb.id, index: n.index, vip: lb.publicIp.address, prefix: IpsService.prefixOf(lb.publicIp.block.cidr), authPass: vrrpPass(lb.vmSecret), peers }) : undefined;
+      const keepalived = lb.publicIp ? renderKeepalivedConfig({ lbId: lb.id, index: n.index, vip: lb.publicIp.address, prefix: IpsService.prefixOf(lb.publicIp.block.cidr), authPass: vrrpPass(open(lb.vmSecret)), peers }) : undefined;
       try {
-        const r = await agentFetch(ip, { method: 'POST', path: '/config', secret: lb.vmSecret, body: { ...body, keepalived }, timeoutMs: 8000 });
+        const r = await agentFetch(ip, { method: 'POST', path: '/config', secret: open(lb.vmSecret), body: { ...body, keepalived }, timeoutMs: 8000 });
         if (r.ok) {
           applied++;
           await this.prisma.loadBalancerNode.update({ where: { id: n.id }, data: { appliedVersion: lb.configVersion, lastSeenAt: new Date() } });
@@ -255,7 +256,7 @@ export class LoadBalancersService {
         const ip = agentHost(n.server);
         if (!ip || n.server.status !== 'active') continue;
         try {
-          const r = await agentFetch(ip, { path: '/status', secret: lb.vmSecret, timeoutMs: 4000 }).then((x) => x.json() as Promise<{ version: number; backends: Record<string, Record<string, string>> }>);
+          const r = await agentFetch(ip, { path: '/status', secret: open(lb.vmSecret), timeoutMs: 4000 }).then((x) => x.json() as Promise<{ version: number; backends: Record<string, Record<string, string>> }>);
           await this.prisma.loadBalancerNode.update({ where: { id: n.id }, data: { lastSeenAt: new Date(), appliedVersion: r.version } });
           for (const servers of Object.values(r.backends ?? {})) for (const [name, status] of Object.entries(servers)) {
             const sid = name.replace(/^srv_/, '');

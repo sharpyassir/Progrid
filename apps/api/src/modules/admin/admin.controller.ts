@@ -1,9 +1,9 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, Length, Min } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, Length, Min, ValidateIf } from 'class-validator';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CurrentActor, RequireScopes, StaffAreas } from '../../common/auth/decorators';
-import { STAFF_ROLES, type Actor } from '../../common/auth/actor';
+import { FULL_ADMIN, STAFF_ROLES, type Actor } from '../../common/auth/actor';
 import { TrustService } from '../trust/trust.service';
 import { EventsService } from '../events/events.service';
 import { BOOK_CURRENCY } from '../billing/pricing';
@@ -95,7 +95,9 @@ class ResolveDto {
 @ApiBearerAuth()
 class SetStaffDto {
   @IsBoolean() isStaff: boolean;
-  @IsOptional() @IsArray() @IsIn(STAFF_ROLES as unknown as string[], { each: true }) staffRoles?: string[];
+  /** Required when granting: full_admin for the whole back office, or limited roles. There is no implicit full access. */
+  @ValidateIf((o: SetStaffDto) => o.isStaff || o.staffRoles !== undefined)
+  @IsArray() @ArrayNotEmpty({ message: 'staffRoles needs at least one role (full_admin for the whole back office)' }) @IsIn(STAFF_ROLES as unknown as string[], { each: true }) staffRoles?: string[];
 }
 
 @Controller('admin/v1')
@@ -295,7 +297,9 @@ export class AdminController {
   @StaffAreas('support')
   @Get('audit')
   async audit(@Query('limit') limit = '100') {
-    return { data: await this.prisma.auditLog.findMany({ orderBy: { at: 'desc' }, take: Math.min(Number(limit) || 100, 500), include: { user: { select: { email: true } } } }) };
+    const rows = await this.prisma.auditLog.findMany({ orderBy: { seq: 'desc' }, take: Math.min(Number(limit) || 100, 500), include: { user: { select: { email: true } } } });
+    // seq is a BigInt (hash chain order); JSON has no BigInt.
+    return { data: rows.map((r) => ({ ...r, seq: r.seq.toString() })) };
   }
 
   // ---- capacity ----
@@ -473,7 +477,7 @@ export class AdminController {
 
   // ---- staff ----
 
-  /** Grants or removes back office access. Full staff only; an empty role list means full access. */
+  /** Grants or removes back office access. Full staff only; the roles are explicit (full_admin for everything). */
   @Post('staff/:userId')
   async setStaff(@CurrentActor() actor: Actor, @Param('userId') userId: string, @Body() body: SetStaffDto) {
     if (userId === actor.userId && !body.isStaff) throw ApiError.invalid('You cannot remove your own staff access');
@@ -481,10 +485,15 @@ export class AdminController {
     if (body.isStaff && (await this.prisma.engineerProfile.findUnique({ where: { userId }, select: { kind: true } }))?.kind === 'EXTERNAL') {
       throw ApiError.invalid('This user is an external engineer; external engineers cannot be staff');
     }
-    const user = await this.prisma.user.update({ where: { id: userId }, data: { isStaff: body.isStaff, staffRoles: body.isStaff ? body.staffRoles ?? [] : [] } });
+    const user = await this.prisma.user.update({ where: { id: userId }, data: { isStaff: body.isStaff, staffRoles: body.isStaff ? [...new Set(body.staffRoles)] : [] } });
     await this.events.emit('staff.updated', { userId, isStaff: user.isStaff, staffRoles: user.staffRoles }, { actor });
     // Access changes take effect on the next request; end old sessions so nothing lingers.
     await this.prisma.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
+    // Leaver / role change: tokens carrying the back office scope go too when full access ended.
+    if (!user.staffRoles.includes(FULL_ADMIN)) {
+      const revoked = await this.prisma.apiToken.updateMany({ where: { userId, revokedAt: null, scopes: { has: 'admin' } }, data: { revokedAt: new Date() } });
+      if (revoked.count) await this.events.emit('token.revoked', { userId, count: revoked.count, reason: 'staff_access_removed' }, { actor, resource: `user:${userId}` });
+    }
     return { id: user.id, email: user.email, isStaff: user.isStaff, staffRoles: user.staffRoles };
   }
 }

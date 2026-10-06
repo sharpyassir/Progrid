@@ -1,6 +1,7 @@
 'use client';
 
 import { useSearchParams } from 'next/navigation';
+import QRCode from 'qrcode';
 import { FormEvent, Suspense, useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { t } from '@/lib/i18n';
@@ -20,6 +21,12 @@ function SecurityPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
+  // Drawn in the browser: the otpauth URL holds the TOTP secret and must never go to a third party.
+  const [qr, setQr] = useState<string | null>(null);
+  useEffect(() => {
+    if (!setup) { setQr(null); return; }
+    QRCode.toDataURL(setup.otpauthUrl, { margin: 1, width: 180 }).then(setQr).catch(() => setQr(null));
+  }, [setup]);
   const load = useCallback(() => {
     api<Me>('/v1/account').then(setMe);
     api<{ data: SessionRow[] }>('/v1/account/sessions').then((r) => setSessions(r.data)).catch(() => setSessions([]));
@@ -45,7 +52,6 @@ function SecurityPage() {
   }
 
   if (!me) return <p className="text-sm text-neutral-500">{t(locale, 'loading')}</p>;
-  const qr = setup ? `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(setup.otpauthUrl)}` : null;
 
   return (
     <div className="max-w-2xl space-y-6">

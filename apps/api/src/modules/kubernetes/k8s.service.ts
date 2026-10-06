@@ -19,6 +19,7 @@ import { OBJECT_STORAGE_PROVIDER, ObjectStorageProvider, emptyAndDeleteBucket } 
 import { renderKubeCloudInit } from './cloud-init';
 import { loadConfig } from '../../config/config';
 import { agentFetch, agentHost, vipNetworkFor, vrrpPass } from '../../common/platform-agent';
+import { open, openOpt, seal } from '../../common/crypto/secretbox';
 import { CreateClusterDto, DEFAULT_CONTROL_SIZE, KUBE_VERSIONS, MAX_POOLS, NodePoolDto, ScalePoolDto, UpdateClusterDto } from './k8s.dto';
 
 const NODE_IMAGE = 'ubuntu-24-04';
@@ -105,7 +106,8 @@ export class KubernetesService {
   async kubeconfig(actor: Actor, id: string, project?: string) {
     const c = await this.own(actor, id, project);
     if (!c.kubeconfig) throw ApiError.invalidState('The cluster has not finished bootstrapping; try again in a minute');
-    return c.kubeconfig;
+    await this.events.emit('kubernetes.kubeconfig_viewed', { clusterId: c.id, name: c.name }, { actor, resource: `kubernetes:${c.id}` });
+    return open(c.kubeconfig);
   }
 
   async create(actor: Actor, dto: CreateClusterDto) {
@@ -139,7 +141,7 @@ export class KubernetesService {
     const cluster = await this.prisma.kubeCluster.create({
       data: {
         projectId: project.id, regionId: region.id, name: dto.name, version, ha: !!dto.ha, controlSizeId: controlSize.id,
-        publicIpId: vip.id, firewallId: fw.id, vmSecret: randomBytes(24).toString('base64url'), joinToken: kubeadmToken(), certKey: randomBytes(32).toString('hex'),
+        publicIpId: vip.id, firewallId: fw.id, vmSecret: seal(randomBytes(24).toString('base64url')), joinToken: seal(kubeadmToken()), certKey: seal(randomBytes(32).toString('hex')),
         pools: { create: dto.pools.map((p) => ({ name: p.name, sizeId: p.size, count: p.count, labels: p.labels ?? {}, taints: (p.taints ?? []) as object[] })) },
       },
       include: { pools: true },
@@ -150,13 +152,13 @@ export class KubernetesService {
       const bucket = `prgd-k8s-${cluster.id.toLowerCase()}`;
       await this.storage.createBucket(PLATFORM_PROJECT, bucket);
       const key = await this.storage.createKey(PLATFORM_PROJECT);
-      await this.prisma.kubeCluster.update({ where: { id: cluster.id }, data: { backupBucket: bucket, backupAccessKey: key.accessKey, backupSecretKey: key.secretKey } });
+      await this.prisma.kubeCluster.update({ where: { id: cluster.id }, data: { backupBucket: bucket, backupAccessKey: key.accessKey, backupSecretKey: seal(key.secretKey) } });
     } catch (err) {
       this.log.warn(`etcd snapshot bucket for ${cluster.id} not ready: ${(err as Error).message}`);
     }
     try {
-      for (let i = 0; i < control; i++) await this.addNode(actor, cluster.id, { name: `k8s-${dto.name}-cp-${i}`, role: 'control', index: i, sizeId: controlSize.id, projectId: project.id, regionId: region.id, firewallId: fw.id, version, vmSecret: cluster.vmSecret });
-      for (const pool of cluster.pools) for (let i = 0; i < pool.count; i++) await this.addNode(actor, cluster.id, { name: `k8s-${dto.name}-${pool.name}-${i}`, role: 'worker', index: i, poolId: pool.id, sizeId: pool.sizeId, projectId: project.id, regionId: region.id, firewallId: fw.id, version, vmSecret: cluster.vmSecret });
+      for (let i = 0; i < control; i++) await this.addNode(actor, cluster.id, { name: `k8s-${dto.name}-cp-${i}`, role: 'control', index: i, sizeId: controlSize.id, projectId: project.id, regionId: region.id, firewallId: fw.id, version, vmSecret: open(cluster.vmSecret) });
+      for (const pool of cluster.pools) for (let i = 0; i < pool.count; i++) await this.addNode(actor, cluster.id, { name: `k8s-${dto.name}-${pool.name}-${i}`, role: 'worker', index: i, poolId: pool.id, sizeId: pool.sizeId, projectId: project.id, regionId: region.id, firewallId: fw.id, version, vmSecret: open(cluster.vmSecret) });
     } catch (err) {
       await this.prisma.kubeCluster.update({ where: { id: cluster.id }, data: { status: 'failed', statusMessage: `node creation failed: ${(err as Error).message}` } });
       throw err;
@@ -195,7 +197,7 @@ export class KubernetesService {
     await this.spend.assertCanSpend(actor, c.projectId, (await this.spend.monthlyPriceMinor('server', dto.size, team.currency)) * dto.count);
     await this.freshJoinToken(c);
     const pool = await this.prisma.kubeNodePool.create({ data: { clusterId: id, name: dto.name, sizeId: dto.size, count: dto.count, labels: dto.labels ?? {}, taints: (dto.taints ?? []) as object[] } });
-    for (let i = 0; i < dto.count; i++) await this.addNode(actor, id, { name: `k8s-${c.name}-${pool.name}-${i}`, role: 'worker', index: i, poolId: pool.id, sizeId: pool.sizeId, projectId: c.projectId, regionId: c.regionId, firewallId: c.firewallId!, version: c.version, vmSecret: c.vmSecret });
+    for (let i = 0; i < dto.count; i++) await this.addNode(actor, id, { name: `k8s-${c.name}-${pool.name}-${i}`, role: 'worker', index: i, poolId: pool.id, sizeId: pool.sizeId, projectId: c.projectId, regionId: c.regionId, firewallId: c.firewallId!, version: c.version, vmSecret: open(c.vmSecret) });
     await this.bump(id, actor, 'kubernetes.pool_added', { pool: dto.name, count: dto.count });
     return this.present(await this.own(actor, id, project));
   }
@@ -217,7 +219,7 @@ export class KubernetesService {
       for (let k = 0; k < extra; k++) {
         while (used.has(index)) index++;
         used.add(index);
-        await this.addNode(actor, id, { name: `k8s-${c.name}-${pool.name}-${index}`, role: 'worker', index, poolId: pool.id, sizeId: pool.sizeId, projectId: c.projectId, regionId: c.regionId, firewallId: c.firewallId!, version: c.version, vmSecret: c.vmSecret });
+        await this.addNode(actor, id, { name: `k8s-${c.name}-${pool.name}-${index}`, role: 'worker', index, poolId: pool.id, sizeId: pool.sizeId, projectId: c.projectId, regionId: c.regionId, firewallId: c.firewallId!, version: c.version, vmSecret: open(c.vmSecret) });
       }
     } else if (dto.count < current.length) {
       const victims = [...current].sort((a, b) => b.index - a.index).slice(0, current.length - dto.count);
@@ -254,12 +256,12 @@ export class KubernetesService {
       if (!c.caHash && !(n.role === 'control' && n.index === 0)) {
         // Learn the CA hash from node 0 before asking anyone to join.
         const st: NodeStatus | null = await this.fetchStatus(c, ordered[0]).catch(() => null);
-        if (st?.caHash) c = await this.prisma.kubeCluster.update({ where: { id }, data: { caHash: st.caHash, kubeconfig: st.kubeconfig ? Buffer.from(st.kubeconfig, 'base64').toString('utf8') : undefined }, include: { ...kubeInclude, publicIp: { include: { block: true } } } });
+        if (st?.caHash) c = await this.prisma.kubeCluster.update({ where: { id }, data: { caHash: st.caHash, kubeconfig: st.kubeconfig ? seal(Buffer.from(st.kubeconfig, 'base64').toString('utf8')) : undefined }, include: { ...kubeInclude, publicIp: { include: { block: true } } } });
         else continue;
       }
       const body = this.configFor(c, n);
       try {
-        const r = await agentFetch(ip, { method: 'POST', path: '/config', secret: c.vmSecret, body, timeoutMs: 20 * 60_000 });
+        const r = await agentFetch(ip, { method: 'POST', path: '/config', secret: open(c.vmSecret), body, timeoutMs: 20 * 60_000 });
         if (r.ok) {
           applied++;
           await this.prisma.kubeNode.update({ where: { id: n.id }, data: { appliedVersion: c.configVersion, lastSeenAt: new Date() } });
@@ -300,7 +302,7 @@ export class KubernetesService {
     if (st.caHash && st.caHash !== c.caHash) data.caHash = st.caHash;
     if (st.kubeconfig) {
       const kc = Buffer.from(st.kubeconfig, 'base64').toString('utf8');
-      if (kc !== c.kubeconfig) data.kubeconfig = kc;
+      if (kc !== openOpt(c.kubeconfig)) data.kubeconfig = seal(kc);
     }
     if (Object.keys(data).length) await this.prisma.kubeCluster.update({ where: { id }, data });
     // Node readiness and versions, by node name.
@@ -436,21 +438,21 @@ export class KubernetesService {
     return {
       version: c.configVersion,
       kubeVersion: c.version,
-      cluster: { name: `k8s-${c.name}-${c.id.slice(-6)}`, vip, vrrpPass: vrrpPass(c.vmSecret), prefix: c.publicIp ? IpsService.prefixOf(c.publicIp.block.cidr) : 24, vrid: (hash(c.id) % 254) + 1, endpoint: `${vip}:${API_PORT}`, nodes },
-      joinToken: c.joinToken, certKey: c.certKey, caHash: c.caHash, podCidr: c.podCidr, serviceCidr: c.serviceCidr,
+      cluster: { name: `k8s-${c.name}-${c.id.slice(-6)}`, vip, vrrpPass: vrrpPass(open(c.vmSecret)), prefix: c.publicIp ? IpsService.prefixOf(c.publicIp.block.cidr) : 24, vrid: (hash(c.id) % 254) + 1, endpoint: `${vip}:${API_PORT}`, nodes },
+      joinToken: open(c.joinToken), certKey: open(c.certKey), caHash: c.caHash, podCidr: c.podCidr, serviceCidr: c.serviceCidr,
       services: Object.fromEntries(Object.entries(state.services ?? {}).map(([k, v]) => [k, { ip: v.ip ?? null }])),
       volumes: volumesHere,
       pvs: Object.entries(state.volumes ?? {}).filter(([, v]) => v.mounted).map(([key, v]) => ({ name: v.pvName, volumeId: v.volumeId, pvcNamespace: key.split('/')[0], pvcName: key.split('/')[1], node: v.node, sizeGb: v.sizeGb, path: `/var/lib/prgd/volumes/${v.volumeId}` })),
       deletePvs: state.deletePvs ?? [],
       removeNodes: state.removeNodes ?? [],
-      backup: c.backupBucket ? { endpoint: cfg.S3_ENDPOINT, region: cfg.S3_REGION, bucket: c.backupBucket, accessKey: c.backupAccessKey, secretKey: c.backupSecretKey } : null,
+      backup: c.backupBucket ? { endpoint: cfg.S3_ENDPOINT, region: cfg.S3_REGION, bucket: c.backupBucket, accessKey: c.backupAccessKey, secretKey: openOpt(c.backupSecretKey) } : null,
     };
   }
 
   private async fetchStatus(c: { vmSecret: string }, n: { server: { id: string; name: string; privateIp: string | null; publicIps: { address: string }[]; status: string } }): Promise<NodeStatus | null> {
     const ip = agentHost(n.server);
     if (!ip || n.server.status !== 'active') return null;
-    const r = await agentFetch(ip, { path: '/status', secret: c.vmSecret, timeoutMs: 8000 });
+    const r = await agentFetch(ip, { path: '/status', secret: open(c.vmSecret), timeoutMs: 8000 });
     if (!r.ok) return null;
     return (await r.json()) as NodeStatus;
   }
@@ -461,10 +463,10 @@ export class KubernetesService {
     const node0 = c.nodes.find((n) => n.role === 'control' && n.index === 0);
     const ip = node0 && node0.server.status === 'active' ? agentHost(node0.server) : null;
     if (!ip) throw ApiError.invalidState('The first control plane node is not reachable; try again in a minute');
-    const r = await agentFetch(ip, { method: 'POST', path: '/join-token', secret: c.vmSecret, timeoutMs: 30_000 }).catch(() => null);
+    const r = await agentFetch(ip, { method: 'POST', path: '/join-token', secret: open(c.vmSecret), timeoutMs: 30_000 }).catch(() => null);
     const token = r?.ok ? ((await r.json()) as { token?: string }).token : undefined;
     if (!token || !/^[a-z0-9]{6}\.[a-z0-9]{16}$/.test(token)) throw ApiError.invalidState('The control plane could not issue a join token; try again in a minute');
-    await this.prisma.kubeCluster.update({ where: { id: c.id }, data: { joinToken: token } });
+    await this.prisma.kubeCluster.update({ where: { id: c.id }, data: { joinToken: seal(token) } });
   }
 
   /** On delete: remove the etcd snapshot bucket and its key. */
@@ -483,7 +485,7 @@ export class KubernetesService {
     const vip = await this.prisma.kubeCluster.findUnique({ where: { id: clusterId }, select: { publicIp: { select: { address: true } } } });
     // Control plane nodes spread across hosts, and so do the workers of each pool.
     const spreadGroup = n.role === 'control' ? `k8s:${clusterId}:control` : `k8s:${clusterId}:pool:${n.poolId}`;
-    const s = await this.servers.create(actor, { name: n.name, size: n.sizeId, image: NODE_IMAGE, project: n.projectId, region: n.regionId, firewalls: [n.firewallId], tags: ['managed-kubernetes', n.role === 'control' ? 'control-plane' : 'worker', `k8s-${clusterId}`], userData: renderKubeCloudInit({ version: n.version, vmSecret: n.vmSecret, vipNetwork: vipNetworkFor(vip?.publicIp?.address) }) }, { spreadGroup });
+    const s = await this.servers.create(actor, { name: n.name, size: n.sizeId, image: NODE_IMAGE, project: n.projectId, region: n.regionId, firewalls: [n.firewallId], tags: ['managed-kubernetes', n.role === 'control' ? 'control-plane' : 'worker', `k8s-${clusterId}`], userData: renderKubeCloudInit({ version: n.version, vmSecret: n.vmSecret, vipNetwork: vipNetworkFor(vip?.publicIp?.address) }) }, { spreadGroup, platformImage: true });
     await this.prisma.server.update({ where: { id: s.id }, data: { managedBy: `k8s:${clusterId}` } });
     await this.prisma.kubeNode.create({ data: { clusterId, poolId: n.poolId, serverId: s.id, index: n.index, role: n.role } });
     // A node that reuses the name of one removed earlier must not be drained by node 0 as that one.

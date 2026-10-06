@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { nextDocumentNumber } from './sequences';
 import { Prisma, type BillingEntity, type CreditKind, type Currency } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { EventsService } from '../events/events.service';
@@ -101,7 +102,7 @@ export class InvoicesService {
         const credit = uses.reduce((s, u) => s + u.amountMinor, 0);
         const total = subtotal + tax - credit;
         // The sequence name comes from the fixed entity profile, never from input.
-        const [{ seq }] = await tx.$queryRawUnsafe<{ seq: bigint }[]>(`SELECT nextval('${entity.invoiceSequence}') AS seq`);
+        const seq = await nextDocumentNumber(tx, entity.invoiceSequence);
 
         const invoice = await tx.invoice.create({
           data: {

@@ -27,12 +27,12 @@ export function residencyAllows(policy: ContractAccessPolicy | string, country: 
 /** Staff areas that make a staff member an internal engineer in the ops console. */
 export function isInternalEngineerStaff(user: { isStaff: boolean; staffRoles: string[] }) {
   if (!user.isStaff) return false;
-  return user.staffRoles.length === 0 || user.staffRoles.includes('engineer') || user.staffRoles.includes('support_lead');
+  return ['full_admin', 'engineer', 'support_lead'].some((r) => user.staffRoles.includes(r));
 }
 
-/** Support leads and full staff approve grants and timesheets. */
+/** Support leads and full staff (full_admin) approve grants and timesheets. */
 export function isLeadStaff(user: { isStaff: boolean; staffRoles: string[] }) {
-  return user.isStaff && (user.staffRoles.length === 0 || user.staffRoles.includes('support_lead'));
+  return user.isStaff && (user.staffRoles.includes('full_admin') || user.staffRoles.includes('support_lead'));
 }
 
 export interface EngineerFacts {

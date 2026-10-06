@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { open } from '../../src/common/crypto/secretbox';
 import { KubernetesService } from '../../src/modules/kubernetes/k8s.service';
 import { readyTeam, sut, waitFor, waitStatus, type Sut } from './harness';
 
@@ -49,8 +50,9 @@ describe('managed Kubernetes', () => {
     const scaled = await c.ok('PATCH', `/v1/kubernetes/clusters/${created.id}/pools/${cluster.pools[0].id}`, { count: 2 }, 202);
     expect(scaled.pools[0].nodes).toHaveLength(2);
     const after = await s.prisma.kubeCluster.findUniqueOrThrow({ where: { id: created.id } });
-    expect(after.joinToken).toMatch(/^[a-z0-9]{6}\.[a-z0-9]{16}$/);
-    expect(after.joinToken).not.toBe(before.joinToken);
+    // Join tokens are sealed at rest.
+    expect(open(after.joinToken)).toMatch(/^[a-z0-9]{6}\.[a-z0-9]{16}$/);
+    expect(open(after.joinToken)).not.toBe(open(before.joinToken));
 
     await waitFor(async () => {
       const r = await c.ok('GET', `/v1/kubernetes/clusters/${created.id}`);
@@ -61,7 +63,7 @@ describe('managed Kubernetes', () => {
       const a = await s.agents.inspect(newNode.serverId);
       return a?.st.initialized ? a : null;
     }, { what: 'the new worker to join', timeoutMs: 60_000 });
-    expect(nAgent.last!.joinToken).toBe(after.joinToken);
+    expect(nAgent.last!.joinToken).toBe(open(after.joinToken));
     await k8s.refreshAll();
     expect((await c.ok('GET', `/v1/kubernetes/clusters/${created.id}`)).readyNodes).toBe(3);
 

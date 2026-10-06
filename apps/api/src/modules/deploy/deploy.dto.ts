@@ -1,4 +1,5 @@
 import { IsArray, IsInt, IsObject, IsOptional, IsString, IsUrl, Matches, Max, Min } from 'class-validator';
+import { IsEnvMap } from '../../common/http/env-map.validator';
 
 export class CreateDeployDto {
   /** Either repoUrl (any public repo, or private with gitToken) or installationId + repo (GitHub App). */
@@ -11,7 +12,7 @@ export class CreateDeployDto {
   @IsOptional() @IsString() size?: string;
   @IsOptional() @IsString() project?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) sshKeys?: string[];
-  @IsOptional() @IsObject() env?: Record<string, string>;
+  @IsOptional() @IsEnvMap() env?: Record<string, string>;
   /** Token for private repos; stored only inside the server's cloud-init, never in our DB. */
   @IsOptional() @IsString() gitToken?: string;
 }

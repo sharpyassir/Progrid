@@ -31,12 +31,16 @@ Your address must be confirmed before the team can create servers. If the first 
 
 ## API tokens
 
-Tokens are shown once and stored hashed. Revoke one under **Managed Agents, Agent Access** and it stops working at once. Tokens cannot have scopes their creator does not have, and agent tokens cannot create other tokens.
+Tokens are shown once and stored hashed. You can give a token an expiry of up to one year when you create it; a token without one works until you revoke it, so review your tokens from time to time. Revoke one under **Managed Agents, Agent Access** and it stops working at once. Tokens cannot have scopes their creator does not have, and agent tokens cannot create other tokens. When someone is removed from a team, the sessions and tokens they created for it stop working.
 
 ## Sessions and limits
 
-Console sessions last 24 hours. Sign in is limited to 10 attempts per minute per address. Every API call, by people and by agents, is written to the audit log under **Security, Audit Log** with who, what and when.
+Console sessions last up to 24 hours and end after two hours without activity. Sign in is limited to 10 attempts per minute per address, and repeated wrong passwords lock the account for a short time. Every change made through the console or the API, by people and by agents, is written to the audit log under **Security, Audit Log** with who, what and when. Audit entries cannot be edited afterwards and are kept for one year.
 
 ## What an agent can never do
 
 Decide an approval, create tokens, spend past its cap, or reach a project its token was not scoped to. Those checks run in the API, not in the agent, so they hold whatever the agent is told.
+
+## Reporting a security problem
+
+If you find a vulnerability in Progrid, email **security@progrid.co** with the steps to reproduce. Please do not access data that is not yours or test in ways that degrade the service. We acknowledge reports within two business days.

@@ -9,6 +9,7 @@ import { TrustService } from '../../trust/trust.service';
 import { EventsService } from '../../events/events.service';
 import { OBJECT_STORAGE_PROVIDER, ObjectStorageProvider } from './objects.provider';
 import { CreateBucketDto, CreateStorageKeyDto, PresignDto, UpdateBucketDto } from './objects.dto';
+import { seal } from '../../../common/crypto/secretbox';
 
 const RESERVED = /^(xn--|sthree-|amzn-)|-s3alias$|--ol-s3$|^\d+\.\d+\.\d+\.\d+$/;
 
@@ -135,7 +136,7 @@ export class ObjectsService {
     if ((await this.prisma.storageKey.count({ where: { projectId: p.id, revokedAt: null } })) >= 20) throw ApiError.quota('Project access key limit (20) reached');
     await this.provider.ensureUser(p.id);
     const k = await this.provider.createKey(p.id);
-    const row = await this.prisma.storageKey.create({ data: { projectId: p.id, name: dto.name, accessKey: k.accessKey, secretKey: k.secretKey, createdBy: actor.tokenId ?? actor.userId } });
+    const row = await this.prisma.storageKey.create({ data: { projectId: p.id, name: dto.name, accessKey: k.accessKey, secretKey: seal(k.secretKey), createdBy: actor.tokenId ?? actor.userId } });
     await this.events.emit('storage_key.created', { keyId: row.id, name: dto.name, accessKey: k.accessKey }, { actor, resource: `storage_key:${row.id}` });
     // The secret is returned once. It stays stored so revocation can find it, never listed.
     return { id: row.id, name: row.name, accessKey: k.accessKey, secretKey: k.secretKey, endpoint: this.endpoint, region: this.region, createdAt: row.createdAt };

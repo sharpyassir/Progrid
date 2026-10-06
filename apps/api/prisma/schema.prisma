@@ -61,8 +61,16 @@ model User {
   totpRecoveryHashes String[]     @default([])
   /// Staff members may hold the `admin` scope (back-office). Never settable via the API.
   isStaff            Boolean      @default(false)
-  /// Empty means full back office access. Otherwise a subset of support, finance, ops, engineer, support_lead.
+  /// Back office roles: full_admin (everything) or a subset of support, finance, ops, engineer, support_lead. Empty means no back office access.
   staffRoles         String[]     @default([])
+  /// Consecutive failed password or second factor attempts since the last success or lockout.
+  failedLoginCount   Int          @default(0)
+  /// Sign in is refused until then (15 minutes, doubling per repeated lockout up to 24 hours).
+  lockedUntil        DateTime?
+  /// Lockouts since the last successful sign in; sets the next lockout's length.
+  lockoutCount       Int          @default(0)
+  /// Last accepted TOTP time step (30 second counter); a code for this step or an earlier one is a replay.
+  lastTotpStep       Int?
   /// Staff paging contact for managed cloud on call (E.164, e.g. +9665...). Never shown to customers.
   phone              String?
   /// Preferred channel for urgent pages; null means SMS when a phone is set, email otherwise.
@@ -1115,9 +1123,15 @@ model AuditLog {
   userAgent String?
   request   Json?
   status    Int
+  /// Hash chain (tamper evidence): hash = sha256(prevHash | canonical row), in seq order.
+  /// Rows cannot be updated or deleted except by the retention job (trigger, migration 20261010200000).
+  seq       BigInt   @unique @default(autoincrement())
+  prevHash  String?
+  hash      String?
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([teamId, at])
+  @@index([at])
   @@map("prgd_audit_logs")
 }
 
@@ -2748,6 +2762,8 @@ model EngineerProfile {
   nightMultiplier Float          @default(1.5)
   /// CIDRs the engineer may use the ops console from; empty allows any address.
   ipAllowlist     String[]       @default([])
+  /// When the engineer enrolled a first second factor from a password only sign in challenge (allowed once, within ENROLL_WINDOW_HOURS of creation).
+  enrolledAt      DateTime?
   statusReason    String?
   suspendedAt     DateTime?
   offboardedAt    DateTime?

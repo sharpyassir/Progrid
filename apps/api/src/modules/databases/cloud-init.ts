@@ -563,14 +563,14 @@ def run_restore(req):
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_GET(self):
-        if self.headers.get('X-Prgd-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
+        if not secret_ok(self.headers.get('X-Prgd-Secret')): return self._send(401, {'error': 'unauthorized'})
         if self.path != '/status': return self._send(404, {})
         st = state()
         try: engine = STATUS[ENGINE]()
         except Exception as e: engine = {'role': 'unknown', 'error': str(e)[-300:]}
         self._send(200, {'version': st.get('version', 0), 'engine': ENGINE, 'backups': st.get('backups', []), 'restore': st.get('restore'), **engine})
     def do_POST(self):
-        if self.headers.get('X-Prgd-Secret') != SECRET: return self._send(401, {'error': 'unauthorized'})
+        if not secret_ok(self.headers.get('X-Prgd-Secret')): return self._send(401, {'error': 'unauthorized'})
         n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
         if self.path == '/config':
             if restoring(): return self._send(409, {'error': 'not_ready', 'detail': 'a restore is running'})

@@ -47,12 +47,14 @@ describe('engineer eligibility for a contract', () => {
   });
 
   it('knows which staff are engineers and which are leads', () => {
-    expect(isInternalEngineerStaff({ isStaff: true, staffRoles: [] })).toBe(true);
+    expect(isInternalEngineerStaff({ isStaff: true, staffRoles: ['full_admin'] })).toBe(true);
+    expect(isInternalEngineerStaff({ isStaff: true, staffRoles: [] })).toBe(false);
     expect(isInternalEngineerStaff({ isStaff: true, staffRoles: ['support_lead'] })).toBe(true);
     expect(isInternalEngineerStaff({ isStaff: true, staffRoles: ['finance'] })).toBe(false);
     expect(isInternalEngineerStaff({ isStaff: false, staffRoles: ['engineer'] })).toBe(false);
     expect(isLeadStaff({ isStaff: true, staffRoles: ['engineer'] })).toBe(false);
     expect(isLeadStaff({ isStaff: true, staffRoles: ['engineer', 'support_lead'] })).toBe(true);
-    expect(isLeadStaff({ isStaff: true, staffRoles: [] })).toBe(true);
+    expect(isLeadStaff({ isStaff: true, staffRoles: ['full_admin'] })).toBe(true);
+    expect(isLeadStaff({ isStaff: true, staffRoles: [] })).toBe(false);
   });
 });

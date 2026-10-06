@@ -19,6 +19,7 @@ import { ApiError } from '../common/errors/api-error';
 import { createManagedActivities, type ManagedActivities } from './managed/activities';
 import { createOpsActivities, type OpsActivities } from './ops/activities';
 import { createConnectActivities, type ConnectActivities } from './connect/activities';
+import { openOpt } from '../common/crypto/secretbox';
 
 /**
  * Activities are the only place workflows touch the database or the hypervisor.
@@ -197,7 +198,7 @@ export function createActivities(app: INestApplicationContext): Activities {
           diskGb: s.diskGb,
           imageRef: s.sourceSnapshotId ? (await sourceSnapshot(s.sourceSnapshotId)).driverRef! : s.image.driverRef ?? s.image.id,
           sshKeys: keys.map((k) => k.publicKey),
-          userData: s.userData ?? undefined,
+          userData: openOpt(s.userData) ?? undefined,
           networkRef: `vpc-${s.projectId}`,
           publicIp: ip ? { address: ip.address, gateway: ip.block.gateway, prefix: IpsService.prefixOf(ip.block.cidr) } : undefined,
           privateIp: { address: priv.address, prefix: priv.prefix },

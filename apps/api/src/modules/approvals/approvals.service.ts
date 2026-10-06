@@ -118,7 +118,7 @@ export class ApprovalsService {
 
   list(actor: Actor, status?: string) {
     return this.prisma.approval.findMany({
-      where: { teamId: actor.teamId, ...(status ? { status: status as Approval['status'] } : {}), ...(actor.isAgent ? { tokenId: actor.tokenId } : {}) },
+      where: { teamId: actor.teamId, ...(status ? { status: status as Approval['status'] } : {}), ...(actor.isAgent ? { tokenId: actor.tokenId } : {}), ...(actor.projectId ? { projectId: actor.projectId } : {}) },
       include: { token: { select: { name: true, prefix: true } }, decidedBy: { select: { name: true, email: true } } },
       orderBy: { createdAt: 'desc' },
       take: 100,
@@ -127,7 +127,7 @@ export class ApprovalsService {
 
   async get(actor: Actor, id: string) {
     const a = await this.prisma.approval.findFirst({
-      where: { id, teamId: actor.teamId, ...(actor.isAgent ? { tokenId: actor.tokenId } : {}) },
+      where: { id, teamId: actor.teamId, ...(actor.isAgent ? { tokenId: actor.tokenId } : {}), ...(actor.projectId ? { projectId: actor.projectId } : {}) },
       include: { token: { select: { name: true, prefix: true } }, decidedBy: { select: { name: true, email: true } } },
     });
     if (!a) throw ApiError.notFound('approval', id);
@@ -139,6 +139,17 @@ export class ApprovalsService {
     const run = this.executors.get(approval.kind);
     if (!run) throw ApiError.invalidState(`No executor registered for ${approval.kind}`);
 
+    // The action runs with no more than both sides hold: the approver's own scopes (a token's,
+    // not the whole role), the approver's role, and what the requesting token may still do.
+    const roleScopes = scopesForRole(actor.role);
+    let scopes = new Set([...actor.scopes].filter((s) => roleScopes.has(s)));
+    if (approval.tokenId) {
+      const requester = await this.requestingTokenScopes(approval.tokenId, approval.teamId);
+      scopes = new Set([...scopes].filter((s) => requester.has(s)));
+    }
+    const needed = requiredScope(approval.kind);
+    if (!scopes.has(needed)) throw ApiError.forbidden(`Approving this needs the ${needed} scope, held by both you and the requesting token`);
+
     // Run as the approver, but keep the token's identity so its spend cap and project scope still apply
     // and the audit log shows both the human and the agent.
     const asToken: Actor = {
@@ -146,7 +157,7 @@ export class ApprovalsService {
       teamId: actor.teamId,
       role: actor.role,
       projectId: approval.projectId,
-      scopes: scopesForRole(actor.role),
+      scopes,
       tokenId: approval.tokenId ?? undefined,
       isAgent: true,
       requireApprovalFor: new Set(),
@@ -191,7 +202,9 @@ export class ApprovalsService {
   private async takeDecision(actor: Actor, id: string) {
     if (actor.isAgent) throw ApiError.forbidden('Agents cannot decide approvals. A person must do this in the console or CLI.');
     if (!['owner', 'admin'].includes(actor.role)) throw ApiError.forbidden('Only team owners and admins can decide approvals');
-    const approval = await this.prisma.approval.findFirst({ where: { id, teamId: actor.teamId } });
+    // A console session decides; an API token only with the explicit approvals:write scope.
+    if (actor.tokenId && !actor.scopes.has('approvals:write')) throw ApiError.forbidden('Token is missing required scope(s): approvals:write. Decide approvals in the console, or use a token with that scope.');
+    const approval = await this.prisma.approval.findFirst({ where: { id, teamId: actor.teamId, ...(actor.projectId ? { projectId: actor.projectId } : {}) } });
     if (!approval) throw ApiError.notFound('approval', id);
     if (approval.status !== 'pending') throw ApiError.invalidState(`This request is already ${approval.status}`);
     if (approval.expiresAt < new Date()) {
@@ -199,6 +212,16 @@ export class ApprovalsService {
       throw ApiError.invalidState('This request has expired. Ask the agent to try again.');
     }
     return approval;
+  }
+
+  /** What the token that asked may do now: its scopes within its owner's current role; none once revoked or expired. */
+  private async requestingTokenScopes(tokenId: string, teamId: string): Promise<Set<string>> {
+    const token = await this.prisma.apiToken.findUnique({ where: { id: tokenId }, select: { scopes: true, userId: true, teamId: true, revokedAt: true, expiresAt: true } });
+    if (!token || token.teamId !== teamId || token.revokedAt || (token.expiresAt && token.expiresAt < new Date())) return new Set();
+    const member = await this.prisma.teamMember.findUnique({ where: { teamId_userId: { teamId, userId: token.userId } }, select: { role: true } });
+    if (!member) return new Set();
+    const roleScopes = scopesForRole(member.role);
+    return new Set(token.scopes.filter((s) => roleScopes.has(s)));
   }
 
   private async notifyOwners(approval: Approval) {
@@ -215,4 +238,10 @@ export class ApprovalsService {
       text: `Hi ${m.user.name},\n\n${token ? `The agent token "${token.name}"` : approval.resourceType === 'connect_run' ? `The Connect agent "${approval.resourceName ?? 'agent'}"` : 'An agent'} wants to do this:\n\n    ${approval.summary}\n\nReview it here:\n${url}\n\nThe request expires in ${TTL_HOURS} hours if nobody decides. Nothing runs until you approve.`,
     })));
   }
+}
+
+/** The scope an approved action of this kind needs ("servers:delete" itself, other kinds the area's :write). */
+export function requiredScope(kind: string) {
+  if (kind === 'servers:delete') return 'servers:delete';
+  return `${kind.split(':')[0]}:write`;
 }

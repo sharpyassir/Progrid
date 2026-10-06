@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query, Req, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query, Req, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { CurrentActor, Public, RequireScopes } from '../../common/auth/decorators';
@@ -7,6 +7,8 @@ import { readCookie } from '../../common/auth/auth.guard';
 import { ApiError } from '../../common/errors/api-error';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { TokenService } from '../iam/token.service';
+import { loadConfig } from '../../config/config';
+import { LEGAL_VERSION } from '../legal/legal';
 import { AgentsService } from './agents.service';
 import { AgentPartsService } from './parts.service';
 import { ConnectionsService } from './connections.service';
@@ -264,6 +266,14 @@ export class ConnectController {
     const credential = (scheme?.toLowerCase() === 'bearer' ? bearer : undefined) ?? readCookie(req.headers.cookie, 'prgd_session');
     const actor = credential ? await this.tokens.resolveBearer(credential) : null;
     if (!actor) throw ApiError.unauthorized();
+    // @Public skips AuthGuard, so its account checks are repeated here (keep in step with
+    // common/auth/auth.guard.ts): owner two factor, legal acceptance and suspension.
+    if (loadConfig().REQUIRE_TOTP_FOR_OWNERS && !actor.tokenId && actor.role === 'owner') {
+      const u = await this.prisma.user.findUnique({ where: { id: actor.userId }, select: { totpEnabled: true } });
+      if (!u?.totpEnabled) throw new ApiError(403, 'totp_setup_required', 'Team owners must enable two factor sign in. Go to Security to set it up.');
+    }
+    if (actor.legalVersion !== LEGAL_VERSION) throw new ApiError(HttpStatus.PRECONDITION_REQUIRED, 'legal_acceptance_required', 'Review and accept the Terms of service, Acceptable use policy and Privacy policy to continue.', { version: LEGAL_VERSION });
+    if (actor.teamStatus === 'suspended') throw new ApiError(403, 'account_suspended', 'This account is suspended. Only billing is available.');
     if (!actor.scopes.has('connect:read')) throw ApiError.forbidden('Token is missing required scope(s): connect:read');
     const run = await this.prisma.connectRun.findFirst({ where: { id: runId, teamId: actor.teamId }, include: { agent: { select: { name: true } } } });
     if (!run) throw ApiError.notFound('run', runId);

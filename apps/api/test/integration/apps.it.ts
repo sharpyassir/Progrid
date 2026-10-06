@@ -55,7 +55,7 @@ describe('App Platform', () => {
     expect(row.host!.readyAt).not.toBeNull();
     const host = await s.agents.inspect(row.host!.serverId);
     expect(host!.kind).toBe('app');
-    expect(host!.last!.apps[0].env).toEqual({ GREETING: 'hi' });
+    expect(host!.last!.apps.find((x: { id: string }) => x.id === app.id).env).toEqual({ GREETING: 'hi' });
     expect(host!.st.caddySites).toEqual([{ app: app.id, hostnames: [`${name}.apps.progrid.sa`] }]);
 
     const logs = await c.ok('GET', `/v1/app-platform/apps/${app.id}/logs?type=build`);

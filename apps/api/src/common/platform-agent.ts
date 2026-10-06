@@ -13,7 +13,11 @@ import { isIP } from 'node:net';
  * on the private address only and the control plane calls them there.
  */
 
-/** Python helpers pasted into every agent. Needs `os`, `subprocess` and `time` imported. */
+/**
+ * Python helpers pasted into every agent. Needs `os`, `subprocess` and `time` imported, and a
+ * global `SECRET` (the shared secret) for `secret_ok`, which every request handler uses to check
+ * X-Prgd-Secret in constant time.
+ */
 export const AGENT_NET_PY = String.raw`# ---- network: the default route marks the public interface, the other one is private ----
 def _out(cmd):
     try: return subprocess.run(cmd, capture_output=True, text=True, timeout=10).stdout
@@ -41,8 +45,14 @@ def bind_address():
         a = private_ipv4()
         if a: return a
         time.sleep(2)
-    open('/var/log/prgd-agent.log', 'a').write('no private address after five minutes; listening on all addresses\n')
-    return '0.0.0.0'`;
+    # Never fall back to 0.0.0.0: the agent must not answer on the public interface. Exit and let
+    # systemd (Restart=always) start the agent again, which waits for the address once more.
+    open('/var/log/prgd-agent.log', 'a').write('no private address after five minutes; not listening, exiting so systemd retries\n')
+    raise SystemExit(1)
+def secret_ok(value):
+    # Constant time comparison of the X-Prgd-Secret header with the agent's shared secret (SECRET).
+    import hmac
+    return isinstance(value, str) and bool(SECRET) and hmac.compare_digest(value.encode('utf-8'), SECRET.encode('utf-8'))`;
 
 /**
  * SigV4 GET and PUT against a platform owned bucket (path style), standard library only.

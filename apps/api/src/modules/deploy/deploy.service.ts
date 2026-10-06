@@ -11,6 +11,7 @@ import { ServersService } from '../compute/servers.service';
 import { FirewallsService } from '../network/firewalls.service';
 import { renderDeployCloudInit } from './cloud-init';
 import { agentFetch, agentHost } from '../../common/platform-agent';
+import { open, seal, sealJson } from '../../common/crypto/secretbox';
 import { CreateDeployDto } from './deploy.dto';
 import { loadConfig } from '../../config/config';
 import { GithubService } from '../github/github.service';
@@ -40,7 +41,7 @@ export class DeployService {
   }
 
   async get(actor: Actor, id: string) {
-    const d = await this.prisma.deployment.findFirst({ where: { id, project: { teamId: actor.teamId } }, include: { server: { include: { publicIps: true } } } });
+    const d = await this.prisma.deployment.findFirst({ where: { id, project: { teamId: actor.teamId }, ...(actor.projectId ? { projectId: actor.projectId } : {}) }, include: { server: { include: { publicIps: true } } } });
     if (!d) throw ApiError.notFound('deployment', id);
     return present(d);
   }
@@ -90,7 +91,7 @@ export class DeployService {
     });
 
     const d = await this.prisma.deployment.create({
-      data: { projectId: project.id, serverId: server.id, name, repoUrl, branch: dto.branch ?? 'main', port: dto.port ?? 3000, webhookSecret, vmSecret, envVars: (dto.env ?? {}) as Prisma.InputJsonValue, installationId: installation?.id, repoFullName: installation ? dto.repo : repoUrl.replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '') },
+      data: { projectId: project.id, serverId: server.id, name, repoUrl, branch: dto.branch ?? 'main', port: dto.port ?? 3000, webhookSecret: seal(webhookSecret), vmSecret: seal(vmSecret), envVars: sealJson(dto.env), installationId: installation?.id, repoFullName: installation ? dto.repo : repoUrl.replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '') },
       include: { server: { include: { publicIps: true } } },
     });
     await this.events.emit('deploy.created', { deploymentId: d.id, repoUrl }, { actor, resource: `deployment:${d.id}` });
@@ -101,7 +102,7 @@ export class DeployService {
 
   /** Manual redeploy from the console / CLI. */
   async redeploy(actor: Actor, id: string) {
-    const d = await this.prisma.deployment.findFirst({ where: { id, project: { teamId: actor.teamId } }, include: { server: { include: { publicIps: true } } } });
+    const d = await this.prisma.deployment.findFirst({ where: { id, project: { teamId: actor.teamId }, ...(actor.projectId ? { projectId: actor.projectId } : {}) }, include: { server: { include: { publicIps: true } } } });
     if (!d) throw ApiError.notFound('deployment', id);
     await this.trigger(d);
     await this.events.emit('deploy.triggered', { deploymentId: id, source: 'manual' }, { actor, resource: `deployment:${id}` });
@@ -112,7 +113,7 @@ export class DeployService {
   async githubHook(id: string, rawBody: Buffer, signature: string | undefined, event: string | undefined) {
     const d = await this.prisma.deployment.findUnique({ where: { id }, include: { server: { include: { publicIps: true } } } });
     if (!d) throw ApiError.notFound('deployment', id);
-    const expected = 'sha256=' + createHmac('sha256', d.webhookSecret).update(rawBody).digest('hex');
+    const expected = 'sha256=' + createHmac('sha256', open(d.webhookSecret)).update(rawBody).digest('hex');
     if (!signature || signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
       throw ApiError.unauthorized('Invalid webhook signature');
     }
@@ -146,12 +147,12 @@ export class DeployService {
 
   /** Last build log from the server (tail of /var/log/prgd-deploy.log), cached on the row. */
   async logs(actor: Actor, id: string) {
-    const d = await this.prisma.deployment.findFirst({ where: { id, project: { teamId: actor.teamId } }, include: { server: { include: { publicIps: true } } } });
+    const d = await this.prisma.deployment.findFirst({ where: { id, project: { teamId: actor.teamId }, ...(actor.projectId ? { projectId: actor.projectId } : {}) }, include: { server: { include: { publicIps: true } } } });
     if (!d) throw ApiError.notFound('deployment', id);
     const ip = agentHost(d.server);
     if (ip && d.server.status === 'active') {
       try {
-        const r = await agentFetch(ip, { path: '/logs', secret: d.vmSecret, timeoutMs: 5000 }).then((r) => r.json() as Promise<{ status: string; commit: string | null; log: string }>);
+        const r = await agentFetch(ip, { path: '/logs', secret: open(d.vmSecret), timeoutMs: 5000 }).then((r) => r.json() as Promise<{ status: string; commit: string | null; log: string }>);
         const status = r.status === 'live' ? 'live' : r.status === 'failed' ? 'failed' : 'deploying';
         const log = r.log.slice(-32_000);
         await this.prisma.deployment.update({ where: { id }, data: { status, lastCommit: r.commit ?? undefined, buildLog: log, logUpdatedAt: new Date() } });
@@ -170,7 +171,7 @@ export class DeployService {
     const ip = agentHost(d.server);
     if (!ip || d.server.status !== 'active') return;
     try {
-      const r = await agentFetch(ip, { path: '/status', secret: d.vmSecret, timeoutMs: 4000 }).then((r) => r.json() as Promise<{ status: string; commit: string | null }>);
+      const r = await agentFetch(ip, { path: '/status', secret: open(d.vmSecret), timeoutMs: 4000 }).then((r) => r.json() as Promise<{ status: string; commit: string | null }>);
       const status = r.status === 'live' ? 'live' : r.status === 'failed' ? 'failed' : 'deploying';
       await this.prisma.deployment.update({ where: { id }, data: { status, lastCommit: r.commit ?? undefined, ...(status === 'live' ? { lastDeployAt: new Date() } : {}) } });
     } catch {
@@ -189,7 +190,7 @@ export class DeployService {
       if (inst && !inst.suspendedAt) token = await this.github.installationToken(inst.installationId).catch(() => undefined);
     }
     try {
-      await agentFetch(ip, { method: 'POST', path: '/redeploy', secret: d.vmSecret, body: token ? { token, commit } : { commit }, timeoutMs: 5000 });
+      await agentFetch(ip, { method: 'POST', path: '/redeploy', secret: open(d.vmSecret), body: token ? { token, commit } : { commit }, timeoutMs: 5000 });
     } catch (err) {
       // With the fake driver there is no VM to call; the status poller will keep it 'deploying'.
       this.log.warn(`redeploy hook unreachable for ${d.id}: ${(err as Error).message}`);

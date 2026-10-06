@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { nextDocumentNumber } from './sequences';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ApiError } from '../../common/errors/api-error';
@@ -91,7 +92,7 @@ export class BillingAdminService {
         ? await tx.credit.create({ data: { teamId: inv.teamId, kind: 'refund', currency: inv.currency, amountMinor: toCredit, remainingMinor: toCredit, reason: `Credit note on invoice ${inv.number}: ${reason}` } })
         : null;
       // A credit note is issued by the company that issued the invoice, in its own series.
-      const [{ seq }] = await tx.$queryRawUnsafe<{ seq: bigint }[]>(`SELECT nextval('${entityProfile(inv.billingEntity).creditNoteSequence}') AS seq`);
+      const seq = await nextDocumentNumber(tx, entityProfile(inv.billingEntity).creditNoteSequence);
       const note = await tx.creditNote.create({
         data: { number: entityCreditNoteNumber(inv.billingEntity, new Date().getUTCFullYear(), seq), billingEntity: inv.billingEntity, teamId: inv.teamId, invoiceId: inv.id, currency: inv.currency, amountMinor, appliedToDueMinor: toDue, creditId: credit?.id, reason, createdBy: actor.userId },
       });

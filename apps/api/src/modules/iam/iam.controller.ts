@@ -117,17 +117,17 @@ export class AccountController {
     return this.iam.revokeToken(actor, id);
   }
 
-  @Get('ssh-keys')
+  @Get('ssh-keys') @RequireScopes('servers:read')
   async sshKeys(@CurrentActor() actor: Actor) {
     return { data: await this.iam.listSshKeys(actor) };
   }
 
-  @Post('ssh-keys')
+  @Post('ssh-keys') @RequireScopes('servers:write')
   createSshKey(@CurrentActor() actor: Actor, @Body() dto: CreateSshKeyDto) {
     return this.iam.createSshKey(actor, dto);
   }
 
-  @Delete('ssh-keys/:id') @HttpCode(204)
+  @Delete('ssh-keys/:id') @RequireScopes('servers:write') @HttpCode(204)
   deleteSshKey(@CurrentActor() actor: Actor, @Param('id') id: string) {
     return this.iam.deleteSshKey(actor, id);
   }

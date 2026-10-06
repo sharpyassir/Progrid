@@ -43,10 +43,44 @@ const schema = z.object({
     .refine((v) => v.split(',').every((p) => ['shared_bridge', 'sdn_vnet'].includes(p.split('=').pop()!.trim())), 'PRIVATE_NETWORK_MODE takes shared_bridge or sdn_vnet, optionally per region as region=mode'),
   /** VXLAN tag (VNI) of the first pool network; a network's tag is this plus its index in the pool. */
   PRIVATE_NETWORK_VXLAN_BASE: z.coerce.number().int().min(1).max(16_000_000).default(100_000),
+  /**
+   * Outbound SMTP (tcp/25) from customer VMs: "block" (default) adds a host enforced DROP for
+   * every server whose team is not trusted (KYC level SMTP_EGRESS_MIN_KYC or above, or listed in
+   * SMTP_EGRESS_ALLOW_TEAMS); "allow" leaves port 25 open for everyone (the old behaviour).
+   */
+  SMTP_EGRESS_DEFAULT: z.enum(['block', 'allow']).default('block'),
+  SMTP_EGRESS_MIN_KYC: z.coerce.number().int().min(0).max(3).default(2),
+  /** Comma separated team ids allowed to send on tcp/25 regardless of KYC level (support exceptions). */
+  SMTP_EGRESS_ALLOW_TEAMS: z.string().default(''),
+  /**
+   * Container runtime on NEW App Platform hosts: "runc" (Docker default) or "runsc", which
+   * installs gVisor from its apt repository in cloud-init. The host agent uses runsc whenever
+   * Docker lists it, unless the host was provisioned with runc.
+   */
+  APP_PLATFORM_RUNTIME: z.enum(['runc', 'runsc']).default('runc'),
+  /** userns-remap ("default") in /etc/docker/daemon.json on NEW App Platform hosts; existing hosts are unaffected. */
+  APP_PLATFORM_USERNS: z.enum(['true', 'false', '1', '0']).default('true').transform((v) => v === 'true' || v === '1'),
   JWT_SECRET: z.string().min(16).default('dev-only-secret-change-me'),
   /** Key for secrets encrypted at rest (TOTP seeds, webhook secrets). Falls back to JWT_SECRET when unset. */
   SECRETS_KEY: z.string().min(16).optional(),
+  /**
+   * Keyring for secrets at rest: "kid1:key,kid2:key", the first is the active key new values are
+   * sealed with; the others are only read (rotation). Keys: `openssl rand -base64 32`.
+   * Overrides SECRETS_KEY as the keyring (docs/security/key-management.md).
+   */
+  SECRETS_KEYS: optionalString(),
+  /** Pins the key of legacy enc:v1 values and keyed hashes; empty uses SECRETS_KEY, then JWT_SECRET (as before). */
+  SECRETS_LEGACY_KEY: optionalString(),
   SESSION_TTL_SECONDS: z.coerce.number().default(86400),
+  /** A console session unused for this long ends (ISO 27001 A.8.5); staff sessions use STAFF_SESSION_IDLE_MINUTES. */
+  SESSION_IDLE_MINUTES: z.coerce.number().int().min(1).default(120),
+  STAFF_SESSION_IDLE_MINUTES: z.coerce.number().int().min(1).default(30),
+  /** Idle timeout of ops console sessions. */
+  OPS_SESSION_IDLE_MINUTES: z.coerce.number().int().min(1).default(30),
+  /** CIDRs or addresses the back office (/admin, staff routes) may be used from, comma separated. Empty: no restriction. */
+  STAFF_IP_ALLOWLIST: z.string().default(''),
+  /** Hours after an engineer profile is created during which a password only sign in may enroll the first second factor (once). */
+  ENROLL_WINDOW_HOURS: z.coerce.number().int().min(1).default(72),
   BILLING_HOURS_PER_MONTH: z.coerce.number().default(672),
   DEFAULT_CURRENCY: z.enum(['USD', 'SAR']).default('USD'),
   DEFAULT_REGION: z.string().default('sa1'),
@@ -147,7 +181,8 @@ const schema = z.object({
   /** When true, team owners must enable two factor sign in before using the console. */
   /** Staff must have two factor sign in before any back office call. */
   REQUIRE_TOTP_FOR_STAFF: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
-  REQUIRE_TOTP_FOR_OWNERS: z.coerce.boolean().default(false),
+  // An enum like REQUIRE_TOTP_FOR_STAFF: z.coerce.boolean would read the string "false" as true.
+  REQUIRE_TOTP_FOR_OWNERS: z.enum(['true', 'false', '1', '0']).default('false').transform((v) => v === 'true' || v === '1'),
   OBJECT_STORAGE_PROVIDER: z.enum(['fake', 'rgw']).default('fake'),
   /** Public S3 endpoint customers use, e.g. https://s3.sa1.progrid.sa */
   S3_ENDPOINT: z.string().url().default('http://localhost:4000/_fake-s3'),
@@ -294,6 +329,16 @@ const schema = z.object({
   CONNECT_NETWORK_ALLOWLIST: z.string().default(''),
   /** Seconds a synchronous public run waits before answering 202 with the run id. */
   CONNECT_SYNC_TIMEOUT_SECONDS: z.coerce.number().int().min(1).max(300).default(60),
+
+  // ---- audit log and data retention (docs/security/key-management.md, ISO 27001 A.8.15) ----
+  /** Audit rows older than this are archived (AUDIT_ARCHIVE_BUCKET) and then deleted. */
+  AUDIT_RETENTION_DAYS: z.coerce.number().int().min(30).default(400),
+  /** Platform bucket the audit archive (gzip JSONL) is written to. Empty: no archive, and old rows are kept. */
+  AUDIT_ARCHIVE_BUCKET: optionalString(),
+  /** Delete audit rows past retention even when no archive bucket is set. */
+  AUDIT_PURGE_WITHOUT_ARCHIVE: z.enum(['true', 'false', '1', '0']).default('false').transform((v) => v === 'true' || v === '1'),
+  /** Serve the Swagger UI on /docs in production too. */
+  ENABLE_API_DOCS: z.enum(['true', 'false', '1', '0']).default('false').transform((v) => v === 'true' || v === '1'),
 });
 
 export type AppConfig = z.infer<typeof schema>;
@@ -307,6 +352,42 @@ export function loadConfig(): AppConfig {
     if (cached.NODE_ENV === 'production' && cached.JWT_SECRET === 'dev-only-secret-change-me') {
       throw new Error('JWT_SECRET still has the development default; set a real secret before running in production');
     }
+    if (cached.NODE_ENV === 'production') assertProductionSecrets(cached);
+    if (cached.NODE_ENV === 'production') warnSharedBridge(cached);
   }
   return cached;
+}
+
+/**
+ * Production refuses weak shared secrets: a "change-me" placeholder or fewer than 32 characters,
+ * and the same value as both JWT_SECRET and the at rest encryption key.
+ */
+export function assertProductionSecrets(c: AppConfig, env: NodeJS.ProcessEnv = process.env) {
+  const named: Record<string, string | undefined> = {
+    JWT_SECRET: c.JWT_SECRET,
+    SECRETS_KEY: c.SECRETS_KEY,
+    NATS_TOKEN: c.NATS_TOKEN || undefined,
+    PRGD_GATEWAY_SECRET: c.PRGD_GATEWAY_SECRET || undefined,
+    PRGD_PLATFORM_HEARTBEAT_SECRET: ((c as Record<string, unknown>).PRGD_PLATFORM_HEARTBEAT_SECRET as string | undefined) ?? (env.PRGD_PLATFORM_HEARTBEAT_SECRET || undefined),
+  };
+  const keyList = (c.SECRETS_KEYS ?? '').split(',').map((p) => p.trim()).filter(Boolean);
+  keyList.forEach((p, i) => (named[`SECRETS_KEYS[${i}]`] = p.slice(p.indexOf(':') + 1).trim()));
+  const bad = Object.entries(named).filter(([, v]) => v !== undefined && (/change-?me/i.test(v) || v.length < 32)).map(([k]) => k);
+  if (bad.length) throw new Error(`Weak secrets in production (a placeholder or shorter than 32 characters): ${bad.join(', ')}`);
+  const keys = [c.SECRETS_KEY, ...keyList.map((p) => p.slice(p.indexOf(':') + 1).trim())].filter(Boolean);
+  if (keys.includes(c.JWT_SECRET)) throw new Error('JWT_SECRET must differ from SECRETS_KEY / SECRETS_KEYS');
+}
+
+/**
+ * shared_bridge puts the private NIC of every tenant on one L2 segment; the per VM firewall then
+ * drops other projects' addresses (FirewallsService), but per project VNets (sdn_vnet) are the
+ * real isolation. Only a warning: production keeps running on shared_bridge until SDN is set up.
+ */
+function warnSharedBridge(cfg: AppConfig) {
+  const parts = cfg.PRIVATE_NETWORK_MODE.split(',').map((p) => p.trim()).filter(Boolean);
+  // A region=mode list leaves unlisted regions on shared_bridge.
+  const shared = parts.some((p) => p.split('=').pop()!.trim() === 'shared_bridge') || parts.every((p) => p.includes('='));
+  if (shared) {
+    console.warn('[config] PRIVATE_NETWORK_MODE uses shared_bridge in production: all tenants share one L2 private network; east-west isolation relies on per VM firewall rules only. Configure Proxmox SDN and set PRIVATE_NETWORK_MODE=sdn_vnet.');
+  }
 }

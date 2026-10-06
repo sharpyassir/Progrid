@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { opsRelyingParty } from '../../../common/entities/entities';
-import * as argon2 from 'argon2';
+import { verifyPassword } from '../../../common/auth/password';
 import { createHash } from 'node:crypto';
 import {
   generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse,
@@ -34,13 +34,15 @@ export interface ClientMeta {
 type SignInUser = {
   id: string; email: string; name: string; locale: string; passwordHash: string | null; isStaff: boolean; staffRoles: string[];
   totpEnabled: boolean; totpSecret: string | null; totpRecoveryHashes: string[];
-  engineerProfile: { id: string; kind: string; status: string; country: string; timezone: string; ipAllowlist: string[] } | null;
+  failedLoginCount: number; lockoutCount: number; lockedUntil: Date | null;
+  engineerProfile: { id: string; kind: string; status: string; country: string; timezone: string; ipAllowlist: string[]; createdAt: Date; enrolledAt: Date | null } | null;
   webAuthnCredentials: { id: string; credentialId: string; transports: string[] }[];
 };
 
 const userSelect = {
   id: true, email: true, name: true, locale: true, passwordHash: true, isStaff: true, staffRoles: true, totpEnabled: true, totpSecret: true, totpRecoveryHashes: true,
-  engineerProfile: { select: { id: true, kind: true, status: true, country: true, timezone: true, ipAllowlist: true } },
+  failedLoginCount: true, lockoutCount: true, lockedUntil: true,
+  engineerProfile: { select: { id: true, kind: true, status: true, country: true, timezone: true, ipAllowlist: true, createdAt: true, enrolledAt: true } },
   webAuthnCredentials: { select: { id: true, credentialId: true, transports: true } },
 } as const;
 
@@ -71,7 +73,15 @@ export class OpsAuthService {
   async login(email: string, password: string, meta: ClientMeta) {
     const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() }, select: userSelect });
     // The ops console always needs a password plus a second factor; social sign in is for the customer console only.
-    if (!user || !user.passwordHash || !(await argon2.verify(user.passwordHash, password))) throw ApiError.unauthorized('Wrong email or password');
+    // The argon2 verify runs for unknown emails too, so timing does not reveal accounts.
+    const passwordOk = await verifyPassword(user?.passwordHash, password);
+    const reason = !user ? 'unknown_user' : this.security.isLocked(user) ? 'locked' : !passwordOk ? 'bad_password' : null;
+    if (reason) {
+      await this.audit.emit('ops.signin_failed', user ? signInActor(user.id, meta) : null, { reason, ...(user ? {} : { clientIp: meta.ip }) }, user ? `user:${user.id}` : undefined);
+      if (user && reason === 'bad_password') await this.security.recordSigninFailure(user.id, meta);
+      throw ApiError.unauthorized('Wrong email or password');
+    }
+    if (!user) throw ApiError.unauthorized('Wrong email or password'); // narrows the type; unreachable
     this.assertEngineer(user, meta);
     const challenge = await this.tokens.issueOpsChallenge(user.id);
     const methods = [...(user.totpEnabled ? ['totp'] : []), ...(user.webAuthnCredentials.length ? ['webauthn'] : [])];
@@ -84,7 +94,10 @@ export class OpsAuthService {
   async loginTotp(challenge: string, code: string, meta: ClientMeta) {
     const { user, jti } = await this.challengeUser(challenge, meta);
     if (!user.totpEnabled || !user.totpSecret) throw ApiError.invalid('TOTP is not set up for this account');
-    if (!this.security.checkSecondFactor(user, code)) throw new ApiError(401, 'totp_invalid', 'That code is not valid');
+    if (!(await this.security.checkSecondFactor(user, code))) {
+      await this.secondFactorFailed(user.id, 'totp_invalid', meta);
+      throw new ApiError(401, 'totp_invalid', 'That code is not valid');
+    }
     await this.consume(jti);
     return this.openSession(user, 'totp', meta);
   }
@@ -107,6 +120,7 @@ export class OpsAuthService {
     await this.prisma.user.update({ where: { id: user.id }, data: { totpEnabled: true, totpRecoveryHashes: recoveryCodes.map(hash) } });
     await this.audit.emit('ops.totp_enabled', signInActor(user.id, meta), {}, `user:${user.id}`);
     if (!who.challenge) return { enabled: true, recoveryCodes };
+    await this.markEnrolled(user, 'totp', meta);
     await this.consume((await this.tokens.verifyOpsChallenge(who.challenge))!.jti);
     return { enabled: true, recoveryCodes, ...(await this.openSession(user, 'totp', meta)) };
   }
@@ -125,7 +139,8 @@ export class OpsAuthService {
       userDisplayName: user.name,
       attestationType: 'none',
       excludeCredentials: user.webAuthnCredentials.map((w) => ({ id: w.credentialId, transports: w.transports as AuthenticatorTransportFuture[] })),
-      authenticatorSelection: { residentKey: 'preferred', userVerification: 'preferred' },
+      // User verification (PIN or biometric) makes the key a second factor that is itself two factor.
+      authenticatorSelection: { residentKey: 'preferred', userVerification: 'required' },
     });
     await this.remember(`ops:webauthn:reg:${user.id}`, options.challenge);
     return options;
@@ -138,7 +153,7 @@ export class OpsAuthService {
     const rp = opsRelyingParty(meta.origin);
     let result;
     try {
-      result = await verifyRegistrationResponse({ response, expectedChallenge: expected, expectedOrigin: rp.origin, expectedRPID: rp.rpId, requireUserVerification: false });
+      result = await verifyRegistrationResponse({ response, expectedChallenge: expected, expectedOrigin: rp.origin, expectedRPID: rp.rpId, requireUserVerification: true });
     } catch (e) {
       throw new ApiError(401, 'webauthn_invalid', `The security key response was not accepted: ${(e as Error).message}`);
     }
@@ -150,6 +165,7 @@ export class OpsAuthService {
     await this.audit.emit('ops.webauthn_registered', signInActor(user.id, meta), { credentialId: cred.id }, `user:${user.id}`);
     const out = { credential: presentCredential(cred) };
     if (!who.challenge) return out;
+    await this.markEnrolled(user, 'webauthn', meta);
     await this.consume((await this.tokens.verifyOpsChallenge(who.challenge))!.jti);
     return { ...out, ...(await this.openSession(user, 'webauthn', meta)) };
   }
@@ -160,7 +176,7 @@ export class OpsAuthService {
     const options = await generateAuthenticationOptions({
       rpID: opsRelyingParty(meta.origin).rpId,
       allowCredentials: user.webAuthnCredentials.map((w) => ({ id: w.credentialId, transports: w.transports as AuthenticatorTransportFuture[] })),
-      userVerification: 'preferred',
+      userVerification: 'required',
     });
     await this.remember(`ops:webauthn:auth:${jti}`, options.challenge);
     return options;
@@ -171,18 +187,25 @@ export class OpsAuthService {
     const expected = await this.recall(`ops:webauthn:auth:${jti}`);
     if (!expected) throw ApiError.invalid('Sign in expired; start again');
     const cred = await this.prisma.webAuthnCredential.findUnique({ where: { credentialId: response.id } });
-    if (!cred || cred.userId !== user.id) throw new ApiError(401, 'webauthn_invalid', 'Unknown security key');
+    if (!cred || cred.userId !== user.id) {
+      await this.secondFactorFailed(user.id, 'webauthn_unknown_key', meta);
+      throw new ApiError(401, 'webauthn_invalid', 'Unknown security key');
+    }
     const rp = opsRelyingParty(meta.origin);
     let result;
     try {
       result = await verifyAuthenticationResponse({
-        response, expectedChallenge: expected, expectedOrigin: rp.origin, expectedRPID: rp.rpId, requireUserVerification: false,
+        response, expectedChallenge: expected, expectedOrigin: rp.origin, expectedRPID: rp.rpId, requireUserVerification: true,
         credential: { id: cred.credentialId, publicKey: new Uint8Array(cred.publicKey), counter: cred.counter, transports: cred.transports as AuthenticatorTransportFuture[] },
       });
     } catch (e) {
+      await this.secondFactorFailed(user.id, 'webauthn_invalid', meta);
       throw new ApiError(401, 'webauthn_invalid', `The security key response was not accepted: ${(e as Error).message}`);
     }
-    if (!result.verified) throw new ApiError(401, 'webauthn_invalid', 'The security key response was not accepted');
+    if (!result.verified) {
+      await this.secondFactorFailed(user.id, 'webauthn_invalid', meta);
+      throw new ApiError(401, 'webauthn_invalid', 'The security key response was not accepted');
+    }
     await this.prisma.webAuthnCredential.update({ where: { id: cred.id }, data: { counter: result.authenticationInfo.newCounter, lastUsedAt: new Date() } });
     await this.consume(jti);
     return this.openSession(user, 'webauthn', meta);
@@ -235,11 +258,19 @@ export class OpsAuthService {
     if (await this.used(claims.jti)) throw new ApiError(401, 'challenge_invalid', 'Sign in again: this sign in step was already used');
     const user = await this.prisma.user.findUnique({ where: { id: claims.userId }, select: userSelect });
     if (!user) throw ApiError.unauthorized();
+    // A lockout that started after the password step (failed second factors) ends the challenge too.
+    if (this.security.isLocked(user)) throw new ApiError(401, 'challenge_invalid', 'Sign in again: the sign in step expired');
     this.assertEngineer(user, meta);
     return { user, jti: claims.jti };
   }
 
-  /** Enrollment runs from an ops session, or from a sign in challenge while the account has no second factor at all. */
+  /**
+   * Enrollment runs from an ops session, or from a sign in challenge while the account has no
+   * second factor at all. A challenge proves only the password, so that path is limited: once
+   * per engineer profile, within ENROLL_WINDOW_HOURS of the profile being created (the welcome
+   * mail's password link is the real proof of identity there). Later, or for internal staff
+   * without a profile, a lead resets the account or the person enrolls from the console.
+   */
   private async enrollUser(who: { challenge?: string; userId?: string }, meta: ClientMeta) {
     if (who.userId) {
       const user = await this.prisma.user.findUnique({ where: { id: who.userId }, select: userSelect });
@@ -249,12 +280,34 @@ export class OpsAuthService {
     if (!who.challenge) throw ApiError.unauthorized();
     const { user } = await this.challengeUser(who.challenge, meta);
     if (user.totpEnabled || user.webAuthnCredentials.length) throw ApiError.forbidden('This account already has a second factor; sign in with it and add more from the ops console');
+    const p = user.engineerProfile;
+    if (!p) throw new ApiError(403, 'enrollment_closed', 'Set up two factor sign in in the console under Security first, then sign in to the ops console with it');
+    const windowMs = loadConfig().ENROLL_WINDOW_HOURS * 3_600_000;
+    if (p.enrolledAt || Date.now() - p.createdAt.getTime() > windowMs) {
+      await this.audit.emit('ops.enrollment_refused', signInActor(user.id, meta), { reason: p.enrolledAt ? 'already_enrolled' : 'window_expired' }, `user:${user.id}`);
+      throw new ApiError(403, 'enrollment_closed', 'Second factor enrollment from a password sign in is closed for this account. Ask your support lead to reset your sign in.');
+    }
     return user;
+  }
+
+  /** Closes the password only enrollment path for good and leaves an alert in the audit trail. */
+  private async markEnrolled(user: SignInUser, method: 'totp' | 'webauthn', meta: ClientMeta) {
+    if (!user.engineerProfile) return;
+    const { count } = await this.prisma.engineerProfile.updateMany({ where: { id: user.engineerProfile.id, enrolledAt: null }, data: { enrolledAt: new Date() } });
+    if (!count) throw new ApiError(403, 'enrollment_closed', 'Second factor enrollment from a password sign in is closed for this account');
+    await this.audit.emit('ops.second_factor_enrolled_from_password', signInActor(user.id, meta), { method, alert: true }, `user:${user.id}`);
+  }
+
+  /** A failed second factor counts toward the account lockout like a wrong password. */
+  private async secondFactorFailed(userId: string, reason: string, meta: ClientMeta) {
+    await this.audit.emit('ops.second_factor_failed', signInActor(userId, meta), { reason }, `user:${userId}`);
+    await this.security.recordSigninFailure(userId, meta);
   }
 
   private async openSession(user: SignInUser, secondFactor: 'totp' | 'webauthn', meta: ClientMeta) {
     const ttlSeconds = loadConfig().PRGD_OPS_SESSION_TTL_SECONDS;
     const known = await this.prisma.session.count({ where: { userId: user.id, audience: 'ops', ip: meta.ip.slice(0, 64), userAgent: meta.userAgent.slice(0, 300) } });
+    await this.security.clearSigninFailures(user);
     const s = await this.tokens.issueOpsSession(user.id, { ip: meta.ip, userAgent: meta.userAgent, secondFactor, ttlSeconds });
     await this.audit.emit('ops.signed_in', signInActor(user.id, meta, s.sessionId), { secondFactor, newDevice: known === 0 }, `user:${user.id}`);
     if (known === 0) await this.newDeviceAlert(user, meta).catch((e) => this.log.warn(`new device alert for ${user.id} failed: ${(e as Error).message}`));

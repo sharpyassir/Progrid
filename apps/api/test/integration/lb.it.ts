@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { open } from '../../src/common/crypto/secretbox';
 import { LoadBalancersService } from '../../src/modules/lb/lb.service';
 import { agentFetch } from '../../src/common/platform-agent';
 import { readyTeam, sut, waitFor, waitStatus, type Sut } from './harness';
@@ -33,6 +34,8 @@ describe('load balancers', () => {
     expect((await agentFetch(ip, { path: '/status', secret: 'wrong', timeoutMs: 2000 })).status).toBe(401);
     expect((await agentFetch(ip, { path: '/status', secret: nodes[0].server.id, timeoutMs: 2000 })).status).toBe(401);
     const lbRow = await s.prisma.loadBalancer.findUniqueOrThrow({ where: { id: lb.id } });
+    // The agent secret is sealed at rest; the control plane opens it for every call.
+    lbRow.vmSecret = open(lbRow.vmSecret);
     expect((await agentFetch(ip, { path: '/nope', secret: lbRow.vmSecret, timeoutMs: 2000 })).status).toBe(404);
     expect(((await (await agentFetch(ip, { path: '/status', secret: lbRow.vmSecret, timeoutMs: 2000 })).json()) as { version: number }).version).toBe(lb.configVersion);
     // Nothing listens on the public address.

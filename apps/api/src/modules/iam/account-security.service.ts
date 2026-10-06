@@ -9,11 +9,17 @@ import { EventsService } from '../events/events.service';
 import { loadConfig } from '../../config/config';
 import { returnConsoleUrl } from '../../common/entities/entities';
 import { userEntity } from '../../common/entities/lookup';
-import { generateRecoveryCodes, generateSecret, otpauthUrl, verifyTotp } from '../../common/auth/totp';
+import { generateRecoveryCodes, generateSecret, otpauthUrl, totpStep, verifyTotp } from '../../common/auth/totp';
 import type { Actor } from '../../common/auth/actor';
 import { dropUnprovenIdentities } from '../oauth/unproven-identities';
 
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
+
+/** Consecutive failed sign in attempts (password or second factor) that lock an account. */
+export const MAX_SIGNIN_FAILURES = 5;
+/** First lockout; each further one (without a success in between) doubles, up to a day. */
+const LOCKOUT_MINUTES = 15;
+const MAX_LOCKOUT_MINUTES = 24 * 60;
 
 /** Email verification, password reset and two factor sign in. */
 @Injectable()
@@ -121,22 +127,66 @@ export class AccountSecurityService {
   async totpDisable(actor: Actor, code: string) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } });
     if (!user.totpEnabled || !user.totpSecret) return { enabled: false };
-    if (!this.checkSecondFactor(user, code)) throw new ApiError(401, 'totp_invalid', 'That code is not valid.');
+    if (!(await this.checkSecondFactor(user, code))) throw new ApiError(401, 'totp_invalid', 'That code is not valid.');
     await this.prisma.user.update({ where: { id: user.id }, data: { totpEnabled: false, totpSecret: null, totpRecoveryHashes: [] } });
     await this.events.emit('user.totp_disabled', { userId: user.id }, { actor });
     return { enabled: false };
   }
 
-  /** TOTP code or an unused recovery code. Recovery codes burn on use. */
-  checkSecondFactor(user: { id: string; totpSecret: string | null; totpRecoveryHashes: string[] }, code: string): boolean {
-    if (user.totpSecret && verifyTotp(open(user.totpSecret), code)) return true;
-    const h = hash(code.trim().toLowerCase());
-    if (user.totpRecoveryHashes.includes(h)) {
-      void this.prisma.user.update({ where: { id: user.id }, data: { totpRecoveryHashes: user.totpRecoveryHashes.filter((x) => x !== h) } }).catch(() => undefined);
-      this.log.warn(`recovery code used by user ${user.id}`);
-      return true;
+  /**
+   * TOTP code or an unused recovery code. A TOTP code is accepted once: its time step must be
+   * after the last accepted one (RFC 6238 section 5.2), checked and stored in one conditional
+   * update so two parallel requests cannot both use it. A recovery code burns the same way.
+   */
+  async checkSecondFactor(user: { id: string; totpSecret: string | null; totpRecoveryHashes: string[] }, code: string): Promise<boolean> {
+    const step = user.totpSecret ? totpStep(open(user.totpSecret), code) : null;
+    if (step !== null) {
+      const { count } = await this.prisma.user.updateMany({ where: { id: user.id, OR: [{ lastTotpStep: null }, { lastTotpStep: { lt: step } }] }, data: { lastTotpStep: step } });
+      if (!count) this.log.warn(`replayed TOTP code refused for user ${user.id}`);
+      return count === 1;
     }
-    return false;
+    const h = hash(code.trim().toLowerCase());
+    if (!user.totpRecoveryHashes.includes(h)) return false;
+    const burned = await this.prisma.$executeRaw`UPDATE "prgd_users" SET "totpRecoveryHashes" = array_remove("totpRecoveryHashes", ${h}) WHERE "id" = ${user.id} AND ${h} = ANY("totpRecoveryHashes")`;
+    if (burned !== 1) return false;
+    this.log.warn(`recovery code used by user ${user.id}`);
+    return true;
+  }
+
+  // ---- sign in lockout ----
+
+  isLocked(user: { lockedUntil: Date | null }) {
+    return !!user.lockedUntil && user.lockedUntil > new Date();
+  }
+
+  /**
+   * Counts a failed password or second factor. The fifth in a row locks the account for 15
+   * minutes, doubling per repeated lockout up to 24 hours, and mails the owner. Returns true
+   * when this failure locked the account.
+   */
+  async recordSigninFailure(userId: string, meta: { ip?: string; userAgent?: string; teamId?: string } = {}): Promise<boolean> {
+    const row = await this.prisma.user.update({ where: { id: userId }, data: { failedLoginCount: { increment: 1 } }, select: { failedLoginCount: true, lockoutCount: true, email: true, name: true } });
+    if (row.failedLoginCount < MAX_SIGNIN_FAILURES) return false;
+    const minutes = Math.min(LOCKOUT_MINUTES * 2 ** row.lockoutCount, MAX_LOCKOUT_MINUTES);
+    const lockedUntil = new Date(Date.now() + minutes * 60_000);
+    // Only the request that crosses the threshold locks and mails, even when several fail at once.
+    const { count } = await this.prisma.user.updateMany({ where: { id: userId, failedLoginCount: { gte: MAX_SIGNIN_FAILURES } }, data: { failedLoginCount: 0, lockoutCount: { increment: 1 }, lockedUntil } });
+    if (!count) return false;
+    await this.events.emit('user.locked', { userId, minutes, lockedUntil: lockedUntil.toISOString() }, { teamId: meta.teamId, actor: userActor(userId, meta), resource: `user:${userId}` });
+    const entity = await userEntity(this.prisma, userId).catch(() => undefined);
+    this.mail.send({
+      to: row.email,
+      entity,
+      subject: 'Sign in to your prgd account was paused',
+      text: `Hi ${row.name},\n\nThere were ${MAX_SIGNIN_FAILURES} failed sign in attempts on your account in a row, so sign in is paused for ${minutes} minutes (last attempt from ${meta.ip || 'an unknown address'}).\n\nIf this was not you, someone may know or be guessing your password: reset it at ${returnConsoleUrl(entity)}/forgot-password and turn on two factor sign in.`,
+    }).catch((e) => this.log.warn(`lockout mail for ${userId} failed: ${(e as Error).message}`));
+    return true;
+  }
+
+  /** A successful sign in clears the failure count and the lockout history. */
+  async clearSigninFailures(user: { id: string; failedLoginCount: number; lockoutCount: number; lockedUntil: Date | null }) {
+    if (!user.failedLoginCount && !user.lockoutCount && !user.lockedUntil) return;
+    await this.prisma.user.update({ where: { id: user.id }, data: { failedLoginCount: 0, lockoutCount: 0, lockedUntil: null } });
   }
 
   // ---- helpers ----
@@ -153,4 +203,9 @@ export class AccountSecurityService {
     await this.prisma.emailToken.update({ where: { id: row.id }, data: { usedAt: new Date() } });
     return row;
   }
+}
+
+/** Audit actor for sign in events, before a session exists. */
+export function userActor(userId: string, meta: { ip?: string; userAgent?: string; teamId?: string } = {}): Actor {
+  return { userId, teamId: meta.teamId ?? '', role: 'member', scopes: new Set(), isAgent: false, requireApprovalFor: new Set(), locale: 'en', ip: meta.ip, userAgent: meta.userAgent };
 }

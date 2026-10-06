@@ -1,7 +1,7 @@
 ---
 title: Data processing addendum
 description: How Progrid Technologies LLC processes personal data on behalf of customers, including security measures, subprocessors, breach notice and international transfers.
-updated: 3 October 2026
+updated: 6 October 2026
 ---
 
 > **Draft for legal review.** This addendum will be reviewed by counsel before launch. Placeholders marked "[to be confirmed]" or "[to be appointed]" will be completed once confirmed.
@@ -118,22 +118,24 @@ Each party's liability arising out of or relating to this DPA, including under t
 
 ## Annex 2: Technical and organizational measures
 
-**Encryption.** Data in transit between users and the Services, and within the control plane, is encrypted with TLS. Passwords are stored as salted hashes. Secrets and tokens are stored encrypted or hashed. Customers can encrypt their own volumes and databases at rest.
+**Encryption.** Data in transit between users and the Services is encrypted with TLS. Traffic between the control plane and the hypervisor hosts runs through an encrypted WireGuard tunnel. Some traffic between Progrid components on the same private network is not yet encrypted, and Progrid is adding encryption to it. Passwords are stored as salted hashes (argon2id) and API tokens as hashes. Credentials and other secrets that the Services store for Customer are encrypted at rest with AES-256-GCM, under keys kept separately from the database. Control plane backups are encrypted with age before they leave Progrid's servers. Full disk encryption of the storage of the hypervisor hosts and of the control plane is planned and not yet in place. Customers can encrypt their own volumes and databases at rest.
 
-**Access control.** Access to production systems is limited to named engineers who need it for their role, under least privilege. Every engineer uses two factor authentication. Server access uses short lived certificates rather than permanent keys. Access is reviewed and removed promptly when no longer needed.
+**Access control.** Access to production systems is limited to named personnel who need it for their role, under least privilege, is reviewed every quarter, and is removed promptly when no longer needed. Administrative access to the Services requires two factor authentication. Engineers reach servers covered by managed services only through time limited, approved access grants, with short lived certificates issued per session through a gateway, never with permanent keys. Access to Progrid's own servers uses personal keys over restricted network paths, and password login to servers is disabled.
 
-**Session recording and audit logs.** Engineer sessions on production systems are recorded. Administrative and customer actions on the console and API are written to audit logs, which are kept for 1 year and protected against change.
+**Session recording and audit logs.** Engineer sessions on servers covered by managed services are recorded and the recordings are kept for 12 months. Every action that changes data through the console and the API, and every read by Progrid staff in its administrative tools, is written to an audit log that is append only, protected by a hash chain so that changes can be detected, and kept for 1 year.
 
-**Network security.** Host firewalls restrict traffic to what each service needs. Administrative interfaces are not exposed to the public internet. Customer networks are isolated from one another.
+**Network security.** Host firewalls deny inbound traffic by default and open only what each service needs. Hypervisor management interfaces and internal services are reachable only over a private, encrypted management network, and Progrid's administrative functions require two factor authentication. Each customer server runs in its own virtual machine, and firewall rules enforced on the hypervisor, outside the customer's control, restrict traffic between different customers' networks. Applications of different customers on the application platform run in separate container networks with restricted privileges and cannot reach Progrid's internal networks.
 
-**Availability and backups.** The control plane is backed up regularly and backups are tested. Customers can enable snapshots and backups of their resources. Infrastructure is monitored around the clock with alerting to the on call engineer.
+**Availability and backups.** The control plane databases are backed up every night and the backups are encrypted. Off site backup copies and monthly restore tests are being introduced. Services are health checked; centralized monitoring and alerting are being introduced. Customers can take snapshots of their resources; snapshots are stored on the same infrastructure as the resource and are not an off site backup.
 
-**Personnel.** Staff are vetted before receiving production access, are bound by confidentiality obligations, and receive security and privacy training.
+**Physical security.** The Services run in data centers operated by DigitalOcean (Frankfurt, Germany) and Hetzner Online (Germany), which provide physical access control, power and cooling redundancy and environmental protection. Storage devices that leave Progrid's control are erased before they are returned to the provider.
 
-**Vulnerability management.** Systems are patched on a regular schedule, with urgent fixes applied quickly. Security reports from researchers are accepted at support@progrid.co.
+**Personnel.** Progrid requires personnel with access to production systems or Customer Personal Data to be bound by confidentiality obligations, to be screened before receiving that access as permitted by applicable law, and to receive security and privacy training when they join and every year.
 
-**Incident response.** A documented process covers detection, containment, investigation, notification under section 8, and follow up.
+**Vulnerability management.** Operating system security updates are installed automatically on Progrid's servers. Code, dependencies and container images are scanned automatically for vulnerabilities and leaked secrets before release. Vulnerabilities are fixed within defined periods according to their severity. Security reports from researchers are accepted at security@progrid.co.
 
-**Subprocessor management.** Subprocessors are selected for their security practices and bound by written data protection terms.
+**Incident response.** A documented incident response plan covers detection, containment, investigation, notification under section 8, and follow up.
 
-**Data minimization and deletion.** Progrid does not read or index Customer Content. Deleted resources are removed from active systems, and backups expire on their schedule.
+**Subprocessor management.** Progrid assesses the security of its Subprocessors, binds them by written data protection terms, and reviews them every year.
+
+**Data minimization and deletion.** Progrid does not read or index Customer Content, except where needed to provide support or managed services that Customer requests, or where the law requires it. Deleted resources are removed from active systems, and backups expire on their schedule.

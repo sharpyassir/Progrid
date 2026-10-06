@@ -15,6 +15,7 @@ import { FirewallsService } from '../network/firewalls.service';
 import { GithubService } from '../github/github.service';
 import { renderAppHostCloudInit } from './cloud-init';
 import { agentFetch, agentHost } from '../../common/platform-agent';
+import { open, openJson, openOpt, seal, sealJson, sealOpt } from '../../common/crypto/secretbox';
 import { APP_SIZES, AppSizeId, CreateAppDto, DomainDto, MAX_DOMAINS, UpdateAppDto } from './app.dto';
 
 const HOST_MANAGED = 'apps:host';
@@ -79,11 +80,16 @@ export class AppPlatformService {
   async list(actor: Actor, project?: string) {
     const p = await this.iam.resolveProject(actor, project);
     const rows = await this.prisma.platformApp.findMany({ where: { projectId: p.id, deletedAt: null }, include: appInclude, orderBy: { createdAt: 'desc' } });
+    const withEnv = rows.filter((a) => Object.keys(openJson(a.envVars)).length);
+    if (withEnv.length) await this.events.emit('app.env_viewed', { appIds: withEnv.map((a) => a.id).slice(0, 100), via: 'list' }, { actor, resource: `project:${p.id}` });
     return { data: rows.map((a) => this.present(a)) };
   }
 
+  /** One app, with its environment variables (audited as app.env_viewed). */
   async get(actor: Actor, id: string, project?: string) {
-    return this.present(await this.own(actor, id, project));
+    const a = await this.own(actor, id, project);
+    if (Object.keys(openJson(a.envVars)).length) await this.events.emit('app.env_viewed', { appId: a.id, name: a.slug }, { actor, resource: `app:${a.id}` });
+    return this.present(a);
   }
 
   async create(actor: Actor, dto: CreateAppDto) {
@@ -108,7 +114,7 @@ export class AppPlatformService {
       data: {
         projectId: project.id, regionId: region.id, slug: dto.name, name: dto.name, repoUrl, branch: dto.branch ?? 'main',
         repoFullName: repoUrl.replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/^https:\/\/[^/]+\//, ''),
-        installationId: installation?.id, gitToken: dto.gitToken, port: dto.port ?? 3000, envVars: (dto.env ?? {}) as Prisma.InputJsonValue,
+        installationId: installation?.id, gitToken: sealOpt(dto.gitToken), port: dto.port ?? 3000, envVars: sealJson(dto.env),
         size, instances, healthPath: dto.healthPath,
         deploys: { create: { trigger: 'create', status: 'queued' } },
       },
@@ -132,7 +138,7 @@ export class AppPlatformService {
       await this.spend.assertCanSpend(actor, app.projectId, Math.max(0, after - before));
       if (app.hostId) await this.checkHostRoom(app.hostId, APP_SIZES[size].memoryMb * instances - APP_SIZES[app.size as AppSizeId].memoryMb * app.instances);
     }
-    await this.prisma.platformApp.update({ where: { id }, data: { branch: dto.branch, port: dto.port, size, instances, envVars: dto.env === undefined ? undefined : (dto.env as Prisma.InputJsonValue), healthPath: dto.healthPath, gitToken: dto.gitToken } });
+    await this.prisma.platformApp.update({ where: { id }, data: { branch: dto.branch, port: dto.port, size, instances, envVars: dto.env === undefined ? undefined : sealJson(dto.env), healthPath: dto.healthPath, gitToken: sealOpt(dto.gitToken) } });
     return this.redeploy(actor, id, 'config', project);
   }
 
@@ -188,7 +194,7 @@ export class AppPlatformService {
     const ip = app.host ? agentHost(app.host.server) : null;
     if (ip && app.host?.server.status === 'active') {
       try {
-        const r = await agentFetch(ip, { path: `/logs?app=${app.id}&type=${type}`, secret: app.host.vmSecret, timeoutMs: 6000 }).then((x) => x.json() as Promise<{ log: string }>);
+        const r = await agentFetch(ip, { path: `/logs?app=${app.id}&type=${type}`, secret: open(app.host.vmSecret), timeoutMs: 6000 }).then((x) => x.json() as Promise<{ log: string }>);
         const log = (r.log ?? '').slice(-32_000);
         if (type === 'build') await this.prisma.platformApp.update({ where: { id }, data: { buildLog: log } });
         return { id, type, log, live: true, updatedAt: new Date() };
@@ -307,7 +313,7 @@ export class AppPlatformService {
       },
       include: { actions: true },
     });
-    const host = await this.prisma.appHost.create({ data: { regionId: region.id, serverId: server.id, capacityMb: Math.max(512, size.memoryMb - HOST_RESERVE_MB), vmSecret } });
+    const host = await this.prisma.appHost.create({ data: { regionId: region.id, serverId: server.id, capacityMb: Math.max(512, size.memoryMb - HOST_RESERVE_MB), vmSecret: seal(vmSecret) } });
     await this.temporal.start('createServer', [{ serverId: server.id, actionId: server.actions[0].id, avoid: [] }], `createServer-${server.actions[0].id}`);
     await this.prisma.serverAction.update({ where: { id: server.actions[0].id }, data: { status: 'running', workflowId: `createServer-${server.actions[0].id}` } });
     this.log.log(`provisioning app host ${host.id} (${server.name})`);
@@ -348,16 +354,16 @@ export class AppPlatformService {
     const apps = [] as Record<string, unknown>[];
     for (const a of host.apps) {
       if (a.status === 'deleting') continue;
-      let token: string | undefined = a.gitToken ?? undefined;
+      let token: string | undefined = openOpt(a.gitToken) ?? undefined;
       if (a.installation && !a.installation.suspendedAt) token = await this.github.installationToken(a.installation.installationId).catch(() => undefined);
       const size = APP_SIZES[a.size as AppSizeId];
       apps.push({
         id: a.id, slug: a.slug, hostnames: [`${a.slug}.${cfg.APPS_DOMAIN}`, ...verifiedDomains(a)], repo: a.repoUrl, branch: a.branch, token, commit: a.deploys[0]?.commit ?? null,
-        port: a.port, env: a.envVars, memoryMb: size.memoryMb, cpus: size.cpus, instances: a.instances, deployId: a.deploys[0]?.id ?? 'none', healthPath: a.healthPath, stopped: a.status === 'stopped',
+        port: a.port, env: openJson(a.envVars), memoryMb: size.memoryMb, cpus: size.cpus, instances: a.instances, deployId: a.deploys[0]?.id ?? 'none', healthPath: a.healthPath, stopped: a.status === 'stopped',
       });
     }
     const version = (await this.prisma.appHost.update({ where: { id: hostId }, data: { configVersion: { increment: 1 } } })).configVersion;
-    const r = await agentFetch(ip, { method: 'POST', path: '/config', secret: host.vmSecret, body: { version, apps }, timeoutMs: 60_000 });
+    const r = await agentFetch(ip, { method: 'POST', path: '/config', secret: open(host.vmSecret), body: { version, apps }, timeoutMs: 60_000 });
     if (!r.ok) throw ApiError.invalid(`App host rejected the configuration: ${r.status} ${(await r.text().catch(() => '')).slice(0, 300)}`);
     return { ok: true, version };
   }
@@ -405,7 +411,7 @@ export class AppPlatformService {
   async hostStatus(h: { vmSecret: string; server: { id: string; name: string; status: string; privateIp: string | null; publicIps: { address: string }[] } }): Promise<HostStatus | null> {
     const ip = agentHost(h.server);
     if (!ip || h.server.status !== 'active') return null;
-    const r = await agentFetch(ip, { path: '/status', secret: h.vmSecret, timeoutMs: 8000 });
+    const r = await agentFetch(ip, { path: '/status', secret: open(h.vmSecret), timeoutMs: 8000 });
     if (!r.ok) return null;
     return (await r.json()) as HostStatus;
   }
@@ -422,6 +428,8 @@ export class AppPlatformService {
           : { status: a.status === 'creating' ? 'failed' : (a.status as 'live' | 'failed' | 'building'), statusMessage: `deploy failed: ${rep.error ?? 'see the build log'}` };
         if (rep.state === 'failed' && a.status !== 'creating' && a.status !== 'building') data.status = a.status as 'live';
         if (rep.state === 'failed' && a.status === 'building') data.status = 'failed';
+        // A failed first build reads the same whether this report or the create workflow records it first.
+        if (rep.state === 'failed' && (a.status === 'creating' || a.status === 'building')) data.statusMessage = 'first build failed; see the build log';
         await this.prisma.platformApp.update({ where: { id: a.id }, data });
         await this.emit(rep.state === 'live' ? 'app.deployed' : 'app.deploy_failed', a.id, { deployId: deploy.id, commit: rep.commit ?? null, error: rep.error ?? null });
       }
@@ -497,7 +505,7 @@ export class AppPlatformService {
         return { domain: d, verified: !!check?.verifiedAt, verifiedAt: check?.verifiedAt ?? null, verification: check && !check.verifiedAt ? { txt: { name: `_progrid-verify.${d}`, value: check.token }, cname: { name: d, value: `${a.slug}.${cfg.APPS_DOMAIN}` } } : null };
       }),
       region: a.region, repoUrl: a.repoUrl, repo: a.repoFullName, source: a.installationId ? 'github_app' : 'url', branch: a.branch, port: a.port,
-      size: { id: a.size, memoryMb: size.memoryMb, cpus: size.cpus }, instances: a.instances, healthPath: a.healthPath, env: a.envVars as Record<string, string>,
+      size: { id: a.size, memoryMb: size.memoryMb, cpus: size.cpus }, instances: a.instances, healthPath: a.healthPath, env: openJson(a.envVars),
       hostIp: a.host?.server.publicIps[0]?.address ?? null, lastCommit: a.lastCommit, lastDeployAt: a.lastDeployAt,
       deploys: a.deploys, projectId: a.projectId, createdAt: a.createdAt,
     };

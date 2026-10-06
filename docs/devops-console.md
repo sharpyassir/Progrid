@@ -108,6 +108,19 @@ A password alone never opens a session. All bodies are JSON; errors are
    later. `GET /ops/v1/auth/credentials` lists them, `DELETE /ops/v1/auth/webauthn/credentials/{id}`
    removes a key (never the last factor).
 
+   A challenge proves only the password, so enrolling from it is limited: it works once per
+   engineer profile (`enrolledAt` is set and audited as `ops.second_factor_enrolled_from_password`,
+   an alert for the support lead to review) and only within `ENROLL_WINDOW_HOURS` (72) of the
+   profile being created, i.e. while the welcome mail's password link is the proof of identity.
+   Later, or for internal staff without an engineer profile (who enroll TOTP in the console under
+   Security), the setup calls answer `403 enrollment_closed`. Security keys must verify the user
+   (PIN or biometric, `userVerification: required`).
+
+   Five failed passwords or second factors in a row lock the account (console and ops console
+   share it) for 15 minutes, doubling per repeated lockout up to 24 hours; a successful sign in
+   resets it. Failures are audited as `ops.signin_failed` and `ops.second_factor_failed`. Ops
+   sessions end after `OPS_SESSION_IDLE_MINUTES` (30) without a request.
+
 Every successful second factor answers the session:
 
 ```json

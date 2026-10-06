@@ -25,6 +25,7 @@ export class DeployController {
 
   @Get(':id') @RequireScopes('servers:read')
   async get(@CurrentActor() actor: Actor, @Param('id') id: string) {
+    await this.deploys.get(actor, id); // ownership first: refreshing polls the deployment's VM
     await this.deploys.refreshStatus(id);
     return this.deploys.get(actor, id);
   }

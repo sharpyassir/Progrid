@@ -39,6 +39,7 @@ import { OpsModule } from './modules/ops/ops.module';
 import { OAuthModule } from './modules/oauth/oauth.module';
 import { ConnectModule } from './modules/connect/connect.module';
 import { AffiliatesModule } from './modules/affiliates/affiliates.module';
+import { PrivacyModule } from './modules/privacy/privacy.module';
 import { JobsModule } from './jobs/jobs.module';
 import { HealthController } from './health.controller';
 import { GeoController } from './common/geo/geo.controller';
@@ -53,7 +54,7 @@ import { GeoController } from './common/geo/geo.controller';
     LegalModule,
     ApprovalsModule, EventsModule, ComputeModule, SchedulerModule, NetworkModule, StorageModule, MarketplaceModule, BillingModule, TrustModule, AdminModule, DeployModule, GithubModule, MonitoringModule, LbModule, DnsModule, ObjectsModule, DatabasesModule,
     SupportModule, KubernetesModule, AppPlatformModule, TeamModule, OpsSettingsModule, ManagedModule, OpsModule,
-    OAuthModule, ConnectModule, AffiliatesModule,
+    OAuthModule, ConnectModule, AffiliatesModule, PrivacyModule,
     // background
     JobsModule,
   ],

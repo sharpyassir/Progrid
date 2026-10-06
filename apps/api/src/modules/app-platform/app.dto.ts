@@ -1,4 +1,5 @@
 import { IsArray, IsIn, IsInt, IsObject, IsOptional, IsString, IsUrl, Length, Matches, Max, Min } from 'class-validator';
+import { IsEnvMap } from '../../common/http/env-map.validator';
 
 /** Container sizes. Prices live in the price book as `app-<size>`; memory and CPU are enforced by Docker on the host. */
 export const APP_SIZES = {
@@ -27,7 +28,7 @@ export class CreateAppDto {
   @IsOptional() @IsInt() @Min(1) @Max(65535) port?: number;
   @IsOptional() @IsIn(APP_SIZE_IDS) size?: AppSizeId;
   @IsOptional() @IsInt() @Min(1) @Max(MAX_INSTANCES) instances?: number;
-  @IsOptional() @IsObject() env?: Record<string, string>;
+  @IsOptional() @IsEnvMap() env?: Record<string, string>;
   @IsOptional() @IsString() @Matches(/^\/[\w./-]{0,200}$/) healthPath?: string;
   @IsOptional() @IsString() region?: string;
   @IsOptional() @IsString() project?: string;
@@ -39,7 +40,7 @@ export class UpdateAppDto {
   @IsOptional() @IsIn(APP_SIZE_IDS) size?: AppSizeId;
   @IsOptional() @IsInt() @Min(1) @Max(MAX_INSTANCES) instances?: number;
   /** Replaces the whole set of variables. */
-  @IsOptional() @IsObject() env?: Record<string, string>;
+  @IsOptional() @IsEnvMap() env?: Record<string, string>;
   @IsOptional() @IsString() @Matches(/^\/[\w./-]{0,200}$/) healthPath?: string;
   @IsOptional() @IsString() gitToken?: string;
 }

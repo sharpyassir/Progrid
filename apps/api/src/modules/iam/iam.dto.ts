@@ -1,4 +1,4 @@
-import { ArrayNotEmpty, IsArray, IsBoolean, IsEmail, IsIn, IsInt, IsOptional, IsString, Length, Matches, Min, MinLength, Equals } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsBoolean, IsEmail, IsIn, IsInt, IsOptional, IsString, Length, Matches, Max, Min, MinLength, Equals } from 'class-validator';
 import { ALL_SCOPES } from '../../common/auth/actor';
 import { COUNTRY_CODES } from '../../common/entities/countries';
 
@@ -40,7 +40,8 @@ export class CreateTokenDto {
   @IsOptional() @IsBoolean() isAgent?: boolean;
   @IsOptional() @IsInt() @Min(0) spendCapMinor?: number;
   @IsOptional() @IsArray() @IsString({ each: true }) requireApprovalFor?: string[];
-  @IsOptional() @IsInt() @Min(1) expiresInDays?: number;
+  /** 1 to 365. Omitted: no expiry, except tokens with the staff `admin` scope, which always expire within a day. */
+  @IsOptional() @IsInt() @Min(1) @Max(365) expiresInDays?: number;
 }
 
 export class CreateSshKeyDto {

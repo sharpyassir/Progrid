@@ -24,6 +24,8 @@ export interface ObjectStorageProvider {
   setPublic(projectId: string, name: string, isPublic: boolean): Promise<void>;
   listObjects(projectId: string, name: string, prefix: string, continuationToken?: string): Promise<{ objects: ObjectInfo[]; prefixes: string[]; nextToken?: string }>;
   deleteObject(projectId: string, name: string, key: string): Promise<void>;
+  /** Writes one object (platform buckets: audit archives). */
+  putObject(projectId: string, name: string, key: string, body: Buffer, contentType: string): Promise<void>;
   presign(projectId: string, name: string, key: string, method: 'GET' | 'PUT' | 'DELETE', expiresSeconds: number, contentType?: string): Promise<string>;
   usage(projectId: string, name: string): Promise<{ sizeBytes: bigint; objectCount: number }>;
   /** True when the bucket still has objects (delete is refused). */
@@ -94,6 +96,11 @@ export class FakeObjectStorage implements ObjectStorageProvider {
   }
   async deleteObject(_p: string, name: string, key: string) {
     this.buckets.get(name)?.objects.delete(key);
+  }
+  async putObject(_p: string, name: string, key: string, body: Buffer, contentType: string) {
+    const b = this.buckets.get(name);
+    if (!b) throw new Error(`no bucket ${name}`);
+    b.objects.set(key, { body, contentType, lastModified: new Date() });
   }
   async presign(_p: string, name: string, key: string, method: 'GET' | 'PUT' | 'DELETE', expiresSeconds: number) {
     const exp = Math.floor(Date.now() / 1000) + expiresSeconds;
@@ -198,6 +205,10 @@ export class RgwObjectStorage implements ObjectStorageProvider {
   }
   async deleteObject(_p: string, name: string, key: string) {
     await this.s3('DELETE', name, key);
+  }
+  async putObject(_p: string, name: string, key: string, body: Buffer, contentType: string) {
+    const r = await this.s3('PUT', name, key, {}, body, { 'content-type': contentType });
+    if (r.status === 404) throw new Error(`S3 PUT ${name}/${key}: no such bucket`);
   }
   async presign(_p: string, name: string, key: string, method: 'GET' | 'PUT' | 'DELETE', expiresSeconds: number) {
     const url = new URL(`${this.s3Url.replace(/\/$/, '')}/${name}/${key.split('/').map(encodeURIComponent).join('/')}`);

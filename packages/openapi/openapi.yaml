@@ -262,6 +262,32 @@ paths:
       summary: Current user, team, role and scopes
       responses:
         "200": { description: OK }
+    delete:
+      tags: [account]
+      summary: Delete (anonymise) the signed in user's account
+      description: >-
+        Console sessions only (API tokens get 403). Removes everything that identifies the person:
+        the email becomes deleted+<id>@invalid, the name, phone and second factor are cleared, sessions
+        and API tokens are revoked, SSH keys, linked Google / Microsoft accounts and passkeys are
+        deleted. Invoices and audit records keep the opaque user id. Needs the current password (an
+        account without one signs in again first: the session must be under 15 minutes old) and the
+        TOTP or a recovery code when two factor sign in is on. Refused with 409 `sole_owner` while the
+        user is the only owner of a team that has other members or resources; an empty team the user
+        owns alone is closed with the account. Recorded as `user.deleted`.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                password: { type: string, maxLength: 256 }
+                totp: { type: string, maxLength: 64, description: TOTP code or a recovery code }
+      responses:
+        "200": { description: "Deleted", content: { application/json: { schema: { type: object, properties: { deleted: { type: boolean }, closedTeams: { type: array, items: { type: string } } } } } } }
+        "401": { description: "`password_invalid`, `reauthentication_required`, `totp_required` or `totp_invalid`" }
+        "403": { description: Called with an API token }
+        "409": { description: "`sole_owner` or `staff_account`" }
   /projects:
     get: { tags: [account], summary: List projects, responses: { "200": { description: OK } } }
     post:
@@ -507,7 +533,7 @@ paths:
         secret (shown once) to add to the repository; `installationId` + `repo` ("owner/name") uses the team's GitHub App installation,
         needs no token, and redeploys on every push through the app webhook (`webhook` is null).
       parameters: [{ $ref: "#/components/parameters/idempotencyKey" }]
-      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { repoUrl: { type: string, format: uri }, installationId: { type: string }, repo: { type: string, example: acme/app }, branch: { type: string, default: main }, name: { type: string }, port: { type: integer, default: 3000 }, size: { type: string }, project: { type: string }, sshKeys: { type: array, items: { type: string } }, env: { type: object, additionalProperties: { type: string } }, gitToken: { type: string, description: For private repos; stored only in the server's cloud-init } } } } } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { repoUrl: { type: string, format: uri }, installationId: { type: string }, repo: { type: string, example: acme/app }, branch: { type: string, default: main }, name: { type: string }, port: { type: integer, default: 3000 }, size: { type: string }, project: { type: string }, sshKeys: { type: array, items: { type: string } }, env: { type: object, maxProperties: 200, propertyNames: { pattern: "^[A-Z_][A-Z0-9_]{0,63}$" }, additionalProperties: { type: string, maxLength: 32768 }, description: "Stored encrypted at rest" }, gitToken: { type: string, description: For private repos; stored only in the server's cloud-init } } } } } }
       responses: { "202": { description: "Accepted; includes `webhook` (url and secret) for URL based deployments, null for app based ones" } }
   /deploys/{id}:
     get: { tags: [deploys], summary: Get a deployment (refreshes status from the server), parameters: [{ $ref: "#/components/parameters/id" }], responses: { "200": { description: OK } } }
@@ -764,7 +790,7 @@ paths:
         and serves them at `https://<name>.<apps domain>` with TLS. Name the repository with `repoUrl` (and `gitToken` for a private one)
         or with `installationId` and `repo` from the GitHub App, which also redeploys on every push. Poll until `live`; on `failed`, read the build log.
       parameters: [{ $ref: "#/components/parameters/idempotencyKey" }]
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string, description: "Hostname label, unique across the platform" }, repoUrl: { type: string, format: uri }, installationId: { type: string }, repo: { type: string, example: acme/app }, gitToken: { type: string }, branch: { type: string, default: main }, port: { type: integer, default: 3000 }, size: { type: string, enum: [app-xs, app-s, app-m, app-l], default: app-xs }, instances: { type: integer, minimum: 1, maximum: 5, default: 1 }, env: { type: object, additionalProperties: { type: string } }, healthPath: { type: string }, region: { type: string }, project: { type: string } } } } } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string, description: "Hostname label, unique across the platform" }, repoUrl: { type: string, format: uri }, installationId: { type: string }, repo: { type: string, example: acme/app }, gitToken: { type: string }, branch: { type: string, default: main }, port: { type: integer, default: 3000 }, size: { type: string, enum: [app-xs, app-s, app-m, app-l], default: app-xs }, instances: { type: integer, minimum: 1, maximum: 5, default: 1 }, env: { type: object, maxProperties: 200, propertyNames: { pattern: "^[A-Z_][A-Z0-9_]{0,63}$" }, additionalProperties: { type: string, maxLength: 32768 }, description: "Stored encrypted at rest" }, healthPath: { type: string }, region: { type: string }, project: { type: string } } } } } }
       responses: { "202": { description: Accepted, content: { application/json: { schema: { $ref: "#/components/schemas/PlatformApp" } } } }, "409": { description: Name taken (`name_taken`) } }
   /app-platform/apps/{id}:
     get: { tags: [app-platform], summary: Get an app, parameters: [{ $ref: "#/components/parameters/id" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PlatformApp" } } } }, "404": { $ref: "#/components/responses/NotFound" } } }
@@ -773,7 +799,7 @@ paths:
       summary: Change configuration and deploy again
       description: "`env` replaces the whole set. A bigger size or more instances checks the spend limit and the host's room."
       parameters: [{ $ref: "#/components/parameters/id" }]
-      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { branch: { type: string }, port: { type: integer }, size: { type: string, enum: [app-xs, app-s, app-m, app-l] }, instances: { type: integer, minimum: 1, maximum: 5 }, env: { type: object, additionalProperties: { type: string } }, healthPath: { type: string }, gitToken: { type: string } } } } } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { branch: { type: string }, port: { type: integer }, size: { type: string, enum: [app-xs, app-s, app-m, app-l] }, instances: { type: integer, minimum: 1, maximum: 5 }, env: { type: object, maxProperties: 200, propertyNames: { pattern: "^[A-Z_][A-Z0-9_]{0,63}$" }, additionalProperties: { type: string, maxLength: 32768 }, description: "Stored encrypted at rest" }, healthPath: { type: string }, gitToken: { type: string } } } } } }
       responses: { "202": { description: Accepted, content: { application/json: { schema: { $ref: "#/components/schemas/PlatformApp" } } } } }
     delete: { tags: [app-platform], summary: Delete an app, parameters: [{ $ref: "#/components/parameters/id" }], responses: { "202": { description: Accepted } } }
   /app-platform/apps/{id}/deploy:
@@ -1685,7 +1711,7 @@ components:
         isAgent: { type: boolean }
         spendCapMinor: { type: integer }
         requireApprovalFor: { type: array, items: { type: string }, example: ["servers:delete", "servers:resize-down"] }
-        expiresInDays: { type: integer }
+        expiresInDays: { type: integer, minimum: 1, maximum: 365, description: "Tokens with staff admin scopes last at most 1 day" }
     Scope:
       type: string
       enum: [servers:read, servers:write, servers:delete, images:read, snapshots:read, snapshots:write, volumes:read, volumes:write, dns:read, dns:write, storage:read, storage:write, databases:read, databases:write, network:read, network:write, apps:read, billing:read, billing:write, managed:read, managed:write, iam:read, iam:write]

@@ -18,6 +18,7 @@ import { CreateServerDto, ListServersQuery, RestoreServerDto, ServerActionDto, U
 import { randomBytes } from 'node:crypto';
 import { recordDiskUsage } from '../monitoring/metrics.service';
 import { hasManagedAgent, healthOf, renderManagedInstallScript, withManagedAgent, type ManagedReport } from './managed-agent';
+import { openOpt, seal, sealOpt } from '../../common/crypto/secretbox';
 
 /** Transitions allowed from each state. Everything else is `invalid_state`. */
 const ALLOWED: Record<ActionType, ServerStatus[]> = {
@@ -93,8 +94,11 @@ export class ServersService {
     return present(server);
   }
 
-  /** `opts.spreadGroup` (platform callers only): nodes of one cluster, placed on different hosts where the region allows. */
-  async create(actor: Actor, dto: CreateServerDto, opts: { spreadGroup?: string } = {}) {
+  /**
+   * `opts.spreadGroup` (platform callers only): nodes of one cluster, placed on different hosts where the region allows.
+   * `opts.platformImage` (platform callers only, never set from a request): allows images that are not `public`.
+   */
+  async create(actor: Actor, dto: CreateServerDto, opts: { spreadGroup?: string; platformImage?: boolean } = {}) {
     const cfg = loadConfig();
     const project = await this.iam.resolveProject(actor, dto.project);
     await this.trust.assertCanProvision(actor.teamId);
@@ -105,7 +109,7 @@ export class ServersService {
 
     // From a snapshot: the new VM is a full clone of the snapshot, on the host and in the region of its source server.
     const snapshot = dto.snapshotId
-      ? await this.prisma.snapshot.findFirst({ where: { id: dto.snapshotId, status: 'available', project: { teamId: actor.teamId } }, include: { server: true } })
+      ? await this.prisma.snapshot.findFirst({ where: { id: dto.snapshotId, status: 'available', projectId: project.id, project: { teamId: actor.teamId } }, include: { server: true } })
       : null;
     if (dto.snapshotId && !snapshot) throw ApiError.notFound('snapshot', dto.snapshotId);
     const source = snapshot?.server;
@@ -122,6 +126,8 @@ export class ServersService {
     if (!region?.available) throw ApiError.invalid(`Unknown or unavailable region "${dto.region}"`);
     if (!size?.available) throw ApiError.invalid(`Unknown size "${dto.size}"`);
     if (!image) throw ApiError.invalid(`Unknown image "${dto.image}"`);
+    // Private images are for platform built nodes and staff; a clone keeps its source's image.
+    if (!source && !image.public && !opts.platformImage && !actor.scopes.has('admin')) throw ApiError.invalid(`Unknown image "${dto.image}"`);
     if (source && size.diskGb < source.diskGb) throw ApiError.invalid(`The snapshot holds a ${source.diskGb} GB disk; choose a size with at least that much disk`);
     if (image.regionId && image.regionId !== region.id) throw ApiError.invalid('Image is not available in this region');
     if (size.diskGb < image.minDiskGb || size.memoryMb < image.minMemoryMb) {
@@ -182,7 +188,8 @@ export class ServersService {
         vcpu: size.vcpu,
         memoryMb: size.memoryMb,
         diskGb: size.diskGb,
-        userData,
+        // Rendered cloud-init carries secrets (agent secrets, app variables): sealed at rest, opened for the hypervisor.
+        userData: sealOpt(userData),
         sshKeyIds,
         tags: dto.tags ?? [],
         backupsEnabled: !!dto.backups || !!dto.managed,
@@ -252,7 +259,7 @@ export class ServersService {
         managed: dto.managed,
         managedToken,
         managedHealth: turningManagedOn ? (server.managedReportedAt ? server.managedHealth : 'pending') : dto.managed === false ? null : undefined,
-        userData: managedToken && !hasManagedAgent(server.userData) ? withManagedAgent(server.userData, this.managedScript(managedToken)) : undefined,
+        userData: managedToken && !hasManagedAgent(openOpt(server.userData)) ? seal(withManagedAgent(openOpt(server.userData), this.managedScript(managedToken))) : undefined,
       },
       include: serverInclude,
     });
@@ -301,6 +308,8 @@ export class ServersService {
       case 'rebuild': {
         const image = await this.prisma.image.findFirst({ where: { id: dto.image ?? server.imageId, deprecated: false } });
         if (!image) throw ApiError.invalid(`Unknown image "${dto.image}"`);
+        // Rebuilding onto the server's own image is always allowed; switching needs a public image (or staff).
+        if (image.id !== server.imageId && !image.public && !actor.scopes.has('admin')) throw ApiError.invalid(`Unknown image "${dto.image}"`);
         params.imageId = image.id;
         nextStatus = 'rebuilding';
         break;

@@ -28,6 +28,7 @@ import { ReportsService } from '../modules/managed/reports/reports.service';
 import { SessionsService } from '../modules/ops/sessions/sessions.service';
 import { PayoutsService } from '../modules/ops/payouts/payouts.service';
 import { CommissionService } from '../modules/affiliates/commission.service';
+import { RetentionService } from './retention.service';
 
 /**
  * Periodic jobs. Each takes a Redis lock so only one API replica runs it.
@@ -66,6 +67,7 @@ export class JobsService {
     private readonly opsSessions: SessionsService,
     private readonly opsPayouts: PayoutsService,
     private readonly commissions: CommissionService,
+    private readonly retention: RetentionService,
   ) {}
 
   @Cron('50 * * * * *') // every minute at :50: database roles, lag, backup results, config retries
@@ -229,6 +231,13 @@ export class JobsService {
   @Cron('0 0 5 3 * *') // 05:00 UTC on the 3rd: contractor payouts for the previous month (opsPayoutRun)
   opsPayoutRun() {
     return this.locked('ops-payouts', 10 * 60_000, () => this.opsPayouts.startMonthly());
+  }
+
+  // ---- data retention ----
+
+  @Cron('0 50 3 * * *') // 03:50 UTC daily: archive and purge old audit rows, webhook deliveries, Connect payloads, expired sessions
+  dataRetention() {
+    return this.locked('data-retention', 60 * 60_000, () => this.retention.runDaily());
   }
 
   private async locked(name: string, ttlMs: number, fn: () => Promise<unknown>) {

@@ -1,7 +1,7 @@
 ---
 title: Subprocessors
 description: The third parties that process personal data for Progrid Technologies LLC, what they do, where, and when they apply.
-updated: 3 October 2026
+updated: 6 October 2026
 ---
 
 > **Draft for legal review.** This list will be reviewed by counsel before launch and kept current from then on.
@@ -15,12 +15,14 @@ Progrid Technologies LLC uses the subprocessors below to provide the Services. E
 | DigitalOcean, LLC | Hosting of the control plane: website, console, API and their databases | Frankfurt, Germany | Always |
 | Hetzner Online GmbH | Customer compute, storage and networking | Falkenstein, Germany | Always, for resources you create |
 | Resend | Transactional email, such as sign in, verification, invoices and alerts | Ireland (EU region); US company | Always |
+| Postmark (ActiveCampaign, LLC) | Backup provider for transactional email | United States | Only if we switch email delivery from Resend to Postmark, for example during an outage of Resend. We will update this page when it is in use |
 | Stripe | Card payments and payment fraud screening | United States and other Stripe locations | When you pay by card on progrid.co |
 | Anthropic | AI model provider for Progrid Connect | United States | Only when you run Progrid Connect agents; the prompts and data you send to an agent are processed by the model |
 | Twilio | SMS and WhatsApp alerts | United States | Only for managed cloud services with on call alerts, for the phone numbers you give us |
 | Google | Sign in with Google | United States and other Google locations | Only when you choose to sign in with Google |
 | Microsoft | Sign in with Microsoft | United States and other Microsoft locations | Only when you choose to sign in with Microsoft |
 | GitHub | Git deploy integration | United States | Only when you connect a GitHub account or repository |
+| Infisical | Secrets management for the credentials our engineers use on servers covered by a managed cloud service | United States [region to be confirmed] | Only for managed cloud services, and only if we keep those credentials in Infisical's hosted service rather than in our own secrets store |
 
 The country of your IP address is looked up in a local database on our own servers. No data is sent to a third party for this.
 

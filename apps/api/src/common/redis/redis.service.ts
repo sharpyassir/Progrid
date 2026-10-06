@@ -40,15 +40,24 @@ export class RedisService implements OnModuleDestroy {
     };
   }
 
-  /** Fixed-window rate limit. Returns true when the call is allowed. */
+  /** Fixed-window rate limit. Returns true when the call is allowed; degrades open without Redis. */
   async allow(key: string, limit: number, windowSec: number): Promise<boolean> {
     try {
-      const k = `rl:${key}:${Math.floor(Date.now() / 1000 / windowSec)}`;
-      const n = await this.client.incr(k);
-      if (n === 1) await this.client.expire(k, windowSec);
-      return n <= limit;
+      return await this.allowStrict(key, limit, windowSec);
     } catch {
       return true;
     }
+  }
+
+  /**
+   * Like allow, but throws when Redis cannot be reached, so the caller can fail closed. It does
+   * not wait for a reconnect: a sign in endpoint answers 503 at once rather than hanging.
+   */
+  async allowStrict(key: string, limit: number, windowSec: number): Promise<boolean> {
+    if (this.client.status !== 'ready') throw new Error(`redis is ${this.client.status}`);
+    const k = `rl:${key}:${Math.floor(Date.now() / 1000 / windowSec)}`;
+    const n = await this.client.incr(k);
+    if (n === 1) await this.client.expire(k, windowSec);
+    return n <= limit;
   }
 }
