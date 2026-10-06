@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { HeroGrid } from './hero-grid';
 import { getCopy, LANGS, SITE_SWITCH, type Copy, type Lang } from '@/lib/copy';
 import { useSite } from './site-context';
+import { getHomeCopy, type MenuItem } from '@/lib/copy-home';
 
 const LangCtx = createContext<Lang>('en');
 export function LangProvider({ lang, children }: { lang: Lang; children: React.ReactNode }) {
@@ -11,10 +12,10 @@ export function LangProvider({ lang, children }: { lang: Lang; children: React.R
   useEffect(() => { document.documentElement.lang = lang; document.documentElement.dir = dir; }, [lang, dir]);
   return <LangCtx.Provider value={lang}><div dir={dir}>{children}</div></LangCtx.Provider>;
 }
-function useCopy(): Copy { return getCopy(useContext(LangCtx), useSite().site); }
-function useLang(): Lang { return useContext(LangCtx); }
+export function useCopy(): Copy { return getCopy(useContext(LangCtx), useSite().site); }
+export function useLang(): Lang { return useContext(LangCtx); }
 /** The console of this domain (console.progrid.co or console.progrid.sa). */
-function useConsole(): string { return useSite().urls.console; }
+export function useConsole(): string { return useSite().urls.console; }
 
 /** Link to the same page on the other storefront. The global site link carries ?site=global so a visitor from Saudi Arabia is not sent back. */
 export function SiteSwitch({ className = '' }: { className?: string }) {
@@ -28,35 +29,134 @@ export function SiteSwitch({ className = '' }: { className?: string }) {
 
 /* ───────────────────────── Header ───────────────────────── */
 
-export function Header() {
-  const [open, setOpen] = useState(false);
-  const c = useCopy(); const lang = useLang(); const consoleUrl = useConsole();
-  const home = LANGS.find((l) => l.code === lang)?.path ?? '/';
-  const links = [
-    [`${home}#products`, c.nav.products], [`${home === '/' ? '' : home}/connect`, c.nav.connect], [`${home}#agents`, c.nav.agents], [`${home}#pricing`, c.nav.pricing], [`${home}#marketplace`, c.nav.marketplace], ['/docs', c.nav.docs],
-  ];
-  const langs = <span className="flex gap-1 text-xs">{LANGS.map((l) => <a key={l.code} href={l.path} className={`rounded px-1.5 py-0.5 ${l.code === lang ? 'bg-white/15 text-white' : 'text-slate-400 hover:text-white'}`}>{l.label}</a>)}</span>;
+/** Site relative link in the current language: docs are English only, `/#x` points at a homepage section. */
+export function useHref() {
+  const lang = useLang();
+  const prefix = lang === 'en' ? '' : `/${lang}`;
+  return (h: string) => (h.startsWith('http') || h.startsWith('/docs') ? h : h.startsWith('/#') ? `${prefix || ''}/${h.slice(1)}`.replace('//#', '/#') : `${prefix}${h}`);
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return <svg aria-hidden viewBox="0 0 12 12" className={`h-3 w-3 transition ${open ? 'rotate-180' : ''}`}><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+
+function MenuLink({ item, soon }: { item: MenuItem; soon: string }) {
+  const href = useHref();
   return (
-    <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0b1220]/80 text-white backdrop-blur">
-      <div className="container-x flex h-16 items-center gap-8">
-        <a href="/" className="flex items-center gap-2.5 text-lg font-bold tracking-tight"><Logo white size={30} /> Progrid</a>
-        <nav className="hidden items-center gap-7 text-sm text-slate-300 md:flex">
-          {links.map(([h, l]) => <a key={h} href={h} className="hover:text-white">{l}</a>)}
-        </nav>
-        <div className="ms-auto hidden items-center gap-3 md:flex">
-          <SiteSwitch className="hidden whitespace-nowrap text-xs text-slate-400 hover:text-white 2xl:inline" />
-          {langs}
-          <a href={`${consoleUrl}/login`} className="text-sm text-slate-300 hover:text-white">{c.nav.signIn}</a>
-          <a href={`${consoleUrl}/login`} className="btn-primary py-2">{c.nav.startFree}</a>
+    <a href={href(item.href)} className="group block rounded-lg px-3 py-2 hover:bg-slate-50">
+      <span className="flex items-center gap-2 text-sm font-semibold text-slate-900 group-hover:text-blue-700">{item.name}{item.soon && <span className="rounded-full bg-slate-100 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-slate-500">{soon}</span>}</span>
+      <span className="mt-0.5 block text-xs leading-snug text-slate-500">{item.desc}</span>
+    </a>
+  );
+}
+
+/** Thin bar above the header with one announcement. */
+export function AnnounceBar() {
+  const h = getHomeCopy(useLang()); const href = useHref();
+  return (
+    <div className="bg-[#0b1220] text-xs text-slate-200">
+      <div className="container-x flex min-h-9 flex-wrap items-center justify-center gap-x-2 py-2 text-center">
+        <span>{h.announce.text}</span>
+        <a href={href(h.announce.href)} className="font-semibold text-cyan-300 hover:text-white">{h.announce.link} <span aria-hidden className="inline-block rtl:rotate-180">→</span></a>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Site header: Products, Solutions, Developers and Company open full width panels on hover or
+ * click (Escape or leaving the panel closes them); Pricing and Docs are plain links.
+ */
+export function Header() {
+  const c = useCopy(); const lang = useLang(); const consoleUrl = useConsole(); const href = useHref();
+  const h = getHomeCopy(lang);
+  const [open, setOpen] = useState<string | null>(null);
+  const [mobile, setMobile] = useState(false);
+  const [mobileSection, setMobileSection] = useState<string | null>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  const menus: { key: string; label: string }[] = [
+    { key: 'products', label: h.menu.products }, { key: 'solutions', label: h.menu.solutions }, { key: 'developers', label: h.menu.developers }, { key: 'company', label: h.menu.company },
+  ];
+  const lists: Record<string, MenuItem[]> = { solutions: h.solutions, developers: h.developers, company: h.company };
+  const langs = <span className="flex gap-1 text-xs">{LANGS.map((l) => <a key={l.code} href={l.path} className={`rounded px-1.5 py-0.5 ${l.code === lang ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-900'}`}>{l.label}</a>)}</span>;
+
+  const panel = (key: string) => key === 'products' ? (
+    <div className="grid gap-8 lg:grid-cols-[1fr_280px]">
+      <div className="grid gap-x-6 gap-y-5 sm:grid-cols-2 lg:grid-cols-3">
+        {h.productGroups.map((g) => (
+          <div key={g.name}>
+            <div className="px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{g.name}</div>
+            <div className="mt-1">{g.items.map((i) => <MenuLink key={i.name} item={i} soon={h.menu.soon} />)}</div>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-col justify-between rounded-xl bg-gradient-to-br from-blue-600 to-[#0f2f78] p-5 text-white">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-cyan-200">{h.featured.title}</div>
+          <p className="mt-2 text-sm text-blue-50">{h.featured.desc}</p>
         </div>
-        <button className="ms-auto md:hidden" aria-label={c.nav.menu} onClick={() => setOpen(!open)}>☰</button>
+        <div className="mt-6 space-y-2 text-sm">
+          <a href={href(h.featured.href)} className="block font-semibold hover:underline">{h.featured.cta} <span aria-hidden className="inline-block rtl:rotate-180">→</span></a>
+          <a href={href('/#products')} className="block text-blue-100 hover:underline">{h.menu.allProducts} <span aria-hidden className="inline-block rtl:rotate-180">→</span></a>
+        </div>
+      </div>
+    </div>
+  ) : (
+    <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">{lists[key].map((i) => <MenuLink key={i.name} item={i} soon={h.menu.soon} />)}</div>
+  );
+
+  return (
+    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 text-slate-900 backdrop-blur" onMouseLeave={() => setOpen(null)}>
+      <div className="container-x flex h-16 items-center gap-6">
+        <a href={LANGS.find((l) => l.code === lang)?.path ?? '/'} className="flex items-center gap-2.5 text-lg font-bold tracking-tight text-[#0b47c9]"><Logo size={30} /> Progrid</a>
+        <nav className="hidden items-center gap-1 text-sm font-medium text-slate-700 lg:flex" aria-label={c.nav.menu}>
+          {menus.map((m) => (
+            <button key={m.key} type="button" aria-expanded={open === m.key} onMouseEnter={() => setOpen(m.key)} onClick={() => setOpen(open === m.key ? null : m.key)}
+              className={`flex items-center gap-1 rounded-md px-3 py-2 hover:bg-slate-100 hover:text-slate-900 ${open === m.key ? 'bg-slate-100 text-slate-900' : ''}`}>
+              {m.label} <Chevron open={open === m.key} />
+            </button>
+          ))}
+          <a href={href('/pricing')} onMouseEnter={() => setOpen(null)} className="rounded-md px-3 py-2 hover:bg-slate-100 hover:text-slate-900">{h.menu.pricing}</a>
+          <a href="/docs" onMouseEnter={() => setOpen(null)} className="rounded-md px-3 py-2 hover:bg-slate-100 hover:text-slate-900">{h.menu.docs}</a>
+        </nav>
+        <div className="ms-auto hidden items-center gap-3 lg:flex">
+          <SiteSwitch className="hidden whitespace-nowrap text-xs text-slate-500 hover:text-slate-900 2xl:inline" />
+          {langs}
+          <a href={`${consoleUrl}/login`} className="text-sm font-medium text-slate-700 hover:text-slate-900">{c.nav.signIn}</a>
+          <a href={`${consoleUrl}/login?mode=signup`} className="btn-primary py-2">{h.hero.signUp}</a>
+        </div>
+        <button className="ms-auto rounded-md p-2 text-slate-700 lg:hidden" aria-label={c.nav.menu} aria-expanded={mobile} onClick={() => setMobile(!mobile)}>
+          <svg aria-hidden viewBox="0 0 20 20" className="h-5 w-5"><path d={mobile ? 'M5 5l10 10M15 5L5 15' : 'M3 6h14M3 10h14M3 14h14'} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
+        </button>
       </div>
       {open && (
-        <div className="border-t border-white/10 px-5 py-4 md:hidden">
-          {links.map(([h, l]) => <a key={h} href={h} className="block py-2 text-slate-200" onClick={() => setOpen(false)}>{l}</a>)}
-          <div className="py-2">{langs}</div>
-          <SiteSwitch className="block py-2 text-sm text-slate-300" />
-          <a href={`${consoleUrl}/login`} className="btn-primary mt-3 w-full">{c.nav.startFree}</a>
+        <div className="absolute inset-x-0 top-full hidden border-b border-slate-200 bg-white shadow-xl shadow-slate-900/5 lg:block">
+          <div className="container-x py-6">{panel(open)}</div>
+        </div>
+      )}
+      {mobile && (
+        <div className="max-h-[calc(100vh-4rem)] overflow-y-auto border-t border-slate-200 bg-white px-5 pb-6 lg:hidden">
+          {menus.map((m) => (
+            <div key={m.key} className="border-b border-slate-100">
+              <button className="flex w-full items-center justify-between py-3 text-start font-semibold" aria-expanded={mobileSection === m.key} onClick={() => setMobileSection(mobileSection === m.key ? null : m.key)}>{m.label} <Chevron open={mobileSection === m.key} /></button>
+              {mobileSection === m.key && (
+                <div className="pb-3">{m.key === 'products'
+                  ? h.productGroups.map((g) => <div key={g.name} className="mt-2"><div className="px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{g.name}</div>{g.items.map((i) => <MenuLink key={i.name} item={i} soon={h.menu.soon} />)}</div>)
+                  : lists[m.key].map((i) => <MenuLink key={i.name} item={i} soon={h.menu.soon} />)}</div>
+              )}
+            </div>
+          ))}
+          <a href={href('/pricing')} className="block border-b border-slate-100 py-3 font-semibold">{h.menu.pricing}</a>
+          <a href="/docs" className="block border-b border-slate-100 py-3 font-semibold">{h.menu.docs}</a>
+          <div className="flex items-center justify-between py-4">{langs}<SiteSwitch className="text-xs text-slate-500" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <a href={`${consoleUrl}/login`} className="rounded-lg border border-slate-300 py-2.5 text-center text-sm font-semibold">{c.nav.signIn}</a>
+            <a href={`${consoleUrl}/login?mode=signup`} className="btn-primary justify-center">{h.hero.signUp}</a>
+          </div>
         </div>
       )}
     </header>
@@ -227,7 +327,8 @@ const MANAGED_NAMES: Record<string, string> = { 's-2vcpu-4gb': 'Managed Start', 
 const SUPPORT_FROM_SAR_MINOR = 9000;
 const APP_FROM_SAR_MINOR = 1900;
 
-export function Pricing() {
+/** Price tables. `page` renders them as the /pricing page heading (h1) instead of a homepage section. */
+export function Pricing({ page = false }: { page?: boolean } = {}) {
   const c = useCopy(); const lang = useLang(); const site = useSite();
   // Each storefront prices in its own currency: US dollars on progrid.co, riyals with VAT on progrid.sa.
   const currency = site.currency;
@@ -252,12 +353,12 @@ export function Pricing() {
   const cols = showVat ? [...c.pricing.cols, c.pricing.vatCol] : c.pricing.cols;
   const ram = (mb: number) => (mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`);
   return (
-    <section id="pricing" className="py-20">
+    <section id="pricing" className={page ? 'bg-gradient-to-b from-[#f3f7fd] to-white pb-20 pt-16' : 'py-20'}>
       <div className="container-x">
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div>
             <span className="eyebrow">{c.pricing.eyebrow}</span>
-            <h2 className="h2">{c.pricing.h2}</h2>
+            {page ? <h1 className="h2 sm:text-5xl">{c.pricing.h2}</h1> : <h2 className="h2">{c.pricing.h2}</h2>}
             <p className="lead">{c.pricing.lead}<code className="rounded bg-slate-100 px-1.5 py-0.5 text-sm" dir="ltr">{c.pricing.leadCode}</code>.</p>
           </div>
           <span className="rounded-lg border border-slate-300 px-4 py-1.5 text-sm font-medium text-slate-700">{currency}</span>
@@ -361,13 +462,16 @@ export function Compare() {
 export function Cta() {
   const c = useCopy(); const consoleUrl = useConsole();
   return (
-    <section className="hero-bg py-20 text-white">
-      <div className="container-x text-center">
-        <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{c.cta.h2}</h2>
-        <p className="mx-auto mt-4 max-w-xl text-slate-300">{c.cta.lead}</p>
-        <div className="mt-8 flex justify-center gap-3">
-          <a href={`${consoleUrl}/login`} className="btn-primary">{c.cta.create}</a>
-          <a href="/docs/api" className="btn-light">{c.cta.docs}</a>
+    <section className="relative overflow-hidden bg-[#0b47c9] py-20 text-white">
+      <div aria-hidden className="pointer-events-none absolute -bottom-32 -start-32 h-96 w-96 rounded-full bg-cyan-400/30 blur-3xl" />
+      <div className="container-x relative flex flex-col items-start justify-between gap-8 lg:flex-row lg:items-center">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">{c.cta.h2}</h2>
+          <p className="mt-3 max-w-xl text-blue-100">{c.cta.lead}</p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <a href={`${consoleUrl}/login?mode=signup`} className="inline-flex items-center rounded-lg bg-white px-5 py-3 text-sm font-semibold text-[#0b47c9] hover:bg-blue-50">{c.cta.create}</a>
+          <a href="/docs/api" className="inline-flex items-center rounded-lg border border-white/40 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10">{c.cta.docs}</a>
         </div>
       </div>
     </section>
@@ -379,7 +483,7 @@ export function Footer() {
   const cols = c.footer.cols;
   const prefix = lang === 'en' ? '' : `/${lang}`;
   return (
-    <footer className="border-t border-slate-200 bg-white py-14 text-sm">
+    <footer className="border-t border-slate-200 bg-[#f6f9fe] py-16 text-sm">
       <div className="container-x grid gap-10 sm:grid-cols-2 lg:grid-cols-5">
         <div className="lg:col-span-1"><div className="flex items-center gap-2.5 font-bold text-[#0b47c9]"><Logo size={30} /> Progrid</div><p className="mt-3 text-slate-500">{c.footer.tagline}</p><p className="mt-3 flex gap-2 text-slate-500">{LANGS.map((l) => <a key={l.code} href={l.path} className="hover:text-slate-900">{l.label}</a>)}</p></div>
         {cols.map(([h, ls]) => <div key={h}><div className="font-semibold">{h}</div><ul className="mt-3 space-y-2 text-slate-600">{ls.map(([l, href]) => <li key={l}><a href={href.startsWith('/docs') || href.startsWith('http') || href === '#' ? href : `${prefix}${href}`} className="hover:text-slate-900">{l}</a></li>)}</ul></div>)}

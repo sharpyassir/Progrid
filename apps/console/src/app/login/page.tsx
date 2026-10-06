@@ -21,6 +21,8 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   // The "I agree" box: required to create an account, by email or with Google or Microsoft.
   const [agreed, setAgreed] = useState(false);
+  // The website's signup box passes the address it collected (?email=).
+  const [email, setEmail] = useState('');
   const legalVersion = useLegalVersion();
   const { www: WWW_URL, domain } = useUrls();
   // Billing country, prefilled from GET /v1/geo (the .sa domain suggests Saudi Arabia, .co the country of your address).
@@ -41,6 +43,8 @@ export default function LoginPage() {
       if (ref) api<PromoInfo>(`/v1/affiliates/codes/${encodeURIComponent(ref)}`).then((p) => { if (p.valid && p.code) { setPromo(p.code); setPromoInfo(p); } }).catch(() => undefined);
     }
     if (q.get('mode') === 'signup' || q.get('ref') || fromUrl) setMode('signup');
+    const fromSite = q.get('email');
+    if (fromSite && fromSite.length <= 200) setEmail(fromSite);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domain]);
   function checkPromo(raw: string) {
@@ -106,7 +110,7 @@ export default function LoginPage() {
             </label>
           </>
         )}
-        <input className="input" name="email" type="email" placeholder={t(locale, 'email')} required autoComplete="email" />
+        <input className="input" name="email" type="email" placeholder={t(locale, 'email')} required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         <input className="input" name="password" type="password" placeholder={t(locale, 'password')} required minLength={10} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
         {needCode && (
           <div className="space-y-1">

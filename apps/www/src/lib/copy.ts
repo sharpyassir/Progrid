@@ -108,7 +108,7 @@ const en: Copy = {
   footer: {
     tagline: 'The developer cloud for people and AI agents.',
     cols: [
-      ['Products', [['Progrid Connect', '/connect'], ['Servers', '/#products'], ['Marketplace', '/#marketplace'], ['AI tools', '/#agents'], ['Pricing', '/#pricing'], ['Security', '/docs/security']]],
+      ['Products', [['Progrid Connect', '/connect'], ['Servers', '/#products'], ['Marketplace', '/#marketplace'], ['AI tools', '/#agents'], ['Pricing', '/pricing'], ['Security', '/docs/security']]],
       ['Developers', [['API reference', '/docs/api-reference'], ['CLI', '/docs/cli'], ['Terraform', '/docs/api'], ['SDKs', '/docs/api'], ['Status', '#']]],
       ['Company', [['About us', '/about'], ['Contact', '/contact'], ['Careers', '/careers'], ['Affiliate Program', '/affiliates'], ['Vendor program', '/contact']]],
       ['Legal', [['Terms of service', '/legal/terms'], ['Acceptable use', '/legal/acceptable-use'], ['Privacy', '/legal/privacy'], ['Refunds', '/legal/refunds'], ['SLA', '/legal/sla'], ['Cookies', '/legal/cookies'], ['All legal documents', '/legal']]],
@@ -186,7 +186,7 @@ const tr: Copy = {
   footer: {
     tagline: 'İnsanlar ve yapay zeka ajanları için geliştirici bulutu.',
     cols: [
-      ['Ürünler', [['Progrid Connect', '/connect'], ['Sunucular', '/#products'], ['Uygulama Mağazası', '/#marketplace'], ['Yapay zeka araçları', '/#agents'], ['Fiyatlar', '/#pricing'], ['Güvenlik', '/docs/security']]],
+      ['Ürünler', [['Progrid Connect', '/connect'], ['Sunucular', '/#products'], ['Uygulama Mağazası', '/#marketplace'], ['Yapay zeka araçları', '/#agents'], ['Fiyatlar', '/pricing'], ['Güvenlik', '/docs/security']]],
       ['Geliştiriciler', [['API referansı', '/docs/api-reference'], ['CLI', '/docs/cli'], ['Terraform', '/docs/api'], ['SDK’lar', '/docs/api'], ['Durum', '#']]],
       ['Şirket', [['Hakkımızda', '/about'], ['İletişim', '/contact'], ['Kariyer', '/careers'], ['Ortaklık programı', '/affiliates'], ['Satıcı programı', '/contact']]],
       ['Hukuki', [['Hizmet koşulları', '/legal/terms'], ['Kabul edilebilir kullanım', '/legal/acceptable-use'], ['Gizlilik', '/legal/privacy'], ['İadeler', '/legal/refunds'], ['SLA', '/legal/sla'], ['Çerezler', '/legal/cookies'], ['Tüm hukuki belgeler', '/legal']]],
@@ -264,7 +264,7 @@ const ar: Copy = {
   footer: {
     tagline: 'سحابة المطورين للأفراد ولوكلاء الذكاء الاصطناعي.',
     cols: [
-      ['المنتجات', [['Progrid Connect', '/connect'], ['الخوادم', '/#products'], ['المتجر', '/#marketplace'], ['أدوات الذكاء الاصطناعي', '/#agents'], ['الأسعار', '/#pricing'], ['الأمان', '/docs/security']]],
+      ['المنتجات', [['Progrid Connect', '/connect'], ['الخوادم', '/#products'], ['المتجر', '/#marketplace'], ['أدوات الذكاء الاصطناعي', '/#agents'], ['الأسعار', '/pricing'], ['الأمان', '/docs/security']]],
       ['المطورون', [['مرجع API', '/docs/api-reference'], ['سطر الأوامر', '/docs/cli'], ['Terraform', '/docs/api'], ['حزم SDK', '/docs/api'], ['حالة الخدمة', '#']]],
       ['الشركة', [['من نحن', '/about'], ['تواصل معنا', '/contact'], ['الوظائف', '/careers'], ['برنامج الشركاء', '/affiliates'], ['برنامج الموردين', '/contact']]],
       ['قانوني', [['شروط الخدمة', '/legal/terms'], ['سياسة الاستخدام المقبول', '/legal/acceptable-use'], ['الخصوصية', '/legal/privacy'], ['الاسترداد والإلغاء', '/legal/refunds'], ['اتفاقية مستوى الخدمة', '/legal/sla'], ['ملفات تعريف الارتباط', '/legal/cookies'], ['جميع المستندات القانونية', '/legal']]],
