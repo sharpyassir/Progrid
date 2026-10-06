@@ -67,6 +67,8 @@ describe('billing', () => {
     expect(detail.records).toHaveLength(10);
     const bal = await t.client.ok('GET', '/v1/billing/balance');
     expect(bal.creditMinor).toBe(50_000 - 414);
+    // The console home compares the month's projection with last month.
+    expect(bal.lastMonthMinor).toBe(360);
     const pdf = await t.client.get(`/v1/billing/invoices/${inv.id}/pdf`);
     expect(pdf.status).toBe(200);
     expect(pdf.headers.get('content-type')).toBe('application/pdf');
@@ -74,6 +76,20 @@ describe('billing', () => {
     // A second run for the same month issues nothing new.
     await s.get(InvoicesService).issueForPreviousMonth(new Date());
     expect((await t.client.ok('GET', '/v1/billing/invoices')).data).toHaveLength(1);
+  });
+
+  it('reports spend today and projects the month from the last 24 hours', async () => {
+    const t = await signup(s);
+    const team = await s.prisma.team.findUniqueOrThrow({ where: { id: t.teamId } });
+    const thisHour = new Date(Math.floor(Date.now() / HOUR) * HOUR);
+    await s.prisma.usageRecord.create({ data: { projectId: t.projectId, resourceType: 'server', resourceId: 'srv-home', hourStart: thisHour, quantity: 60, unit: 'minute', amountMinor: 240, currency: team.currency } });
+    const bal = await t.client.ok('GET', '/v1/billing/balance');
+    expect(bal.todayMinor).toBe(240);
+    expect(bal.monthToDateMinor).toBe(240);
+    // 240 in the last 24 hours is 10 an hour for every hour left in the month.
+    const hoursLeft = (Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1) - Date.now()) / HOUR;
+    expect(Math.abs(bal.projectedMonthMinor - (240 + Math.round(10 * hoursLeft)))).toBeLessThanOrEqual(1);
+    expect(bal.lastMonthMinor).toBe(0);
   });
 
   it('suspends a team 14 days after the due date, powers its servers off, and reinstates it once paid', async () => {

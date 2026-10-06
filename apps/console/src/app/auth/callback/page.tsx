@@ -36,7 +36,7 @@ function CallbackPage() {
 
   function done(r: SignIn) {
     setToken(r.session);
-    router.replace(safePath(r.returnTo, '/servers'));
+    router.replace(safePath(r.returnTo, '/'));
   }
 
   useEffect(() => {

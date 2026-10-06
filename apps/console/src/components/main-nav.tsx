@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Locale, t } from '@/lib/i18n';
 import { activeGroup, itemActive, NAV, NavGroup, NavItem } from '@/lib/nav';
 import { useUrls } from '@/lib/urls';
+import { ht } from '@/lib/i18n-home';
 import { useShell } from '@/components/shell';
 
 const itemCls = 'flex items-center justify-between gap-3 rounded px-2 text-sm hover:bg-neutral-100 focus-visible:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:hover:bg-neutral-800 dark:focus-visible:bg-neutral-800';
@@ -148,13 +149,14 @@ export function TopLinks({ isStaff, stacked }: { isStaff: boolean; stacked?: boo
   const { locale } = useShell();
   const pathname = usePathname();
   const links: { href: string; label: string; staff?: boolean }[] = [
+    { href: '/', label: ht(locale, 'home') },
     { href: '/support', label: t(locale, 'support') },
     ...(isStaff ? [{ href: '/admin', label: t(locale, 'backOffice'), staff: true }] : []),
   ];
   return (
     <>
       {links.map((l) => {
-        const active = pathname.startsWith(l.href);
+        const active = l.href === '/' ? pathname === '/' : pathname.startsWith(l.href);
         const tone = l.staff
           ? active ? 'font-medium text-amber-800 dark:text-amber-300' : 'text-amber-700 hover:text-amber-900 dark:text-amber-400'
           : active ? 'font-medium text-neutral-900 dark:text-neutral-100' : 'text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100';

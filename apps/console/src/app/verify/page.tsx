@@ -24,7 +24,7 @@ function Verify() {
   if (state === 'ok') return (
     <div className="card space-y-3 text-sm">
       <p>{t(locale, 'verified')}</p>
-      <Link href={getToken() ? '/servers' : '/login'} className="btn-primary inline-flex">{t(locale, 'continue')}</Link>
+      <Link href={getToken() ? '/' : '/login'} className="btn-primary inline-flex">{t(locale, 'continue')}</Link>
     </div>
   );
   return (

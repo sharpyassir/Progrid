@@ -12,6 +12,8 @@ import { BOOK_CURRENCY, VAT_RATE, displayPrice, startOfMonth, taxRateFor } from 
 import { loadConfig } from '../../config/config';
 import { publicEntity } from '../../common/entities/entities';
 
+const HOUR = 3_600_000;
+
 @ApiTags('billing')
 @ApiBearerAuth()
 @Controller('v1/billing')
@@ -23,11 +25,27 @@ export class BillingController {
   async balance(@CurrentActor() actor: Actor) {
     const team = await this.prisma.team.findUniqueOrThrow({ where: { id: actor.teamId }, include: { credits: true, projects: { select: { id: true } } } });
     const credit = team.credits.reduce((s, c) => s + (c.currency === team.currency && (!c.expiresAt || c.expiresAt > new Date()) ? c.remainingMinor : 0), 0);
-    const mtd = await this.prisma.usageRecord.aggregate({ where: { projectId: { in: team.projects.map((p) => p.id) }, hourStart: { gte: startOfMonth(new Date()) }, currency: team.currency }, _sum: { amountMinor: true } });
+    const now = new Date();
+    const month = startOfMonth(now);
+    const projects = team.projects.map((p) => p.id);
+    const spent = async (from: Date, to?: Date) => (await this.prisma.usageRecord.aggregate({
+      where: { projectId: { in: projects }, hourStart: { gte: from, ...(to ? { lt: to } : {}) }, currency: team.currency }, _sum: { amountMinor: true },
+    }))._sum.amountMinor ?? 0;
+    const [mtd, today, lastDay, lastMonth] = await Promise.all([
+      spent(month),
+      spent(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))),
+      spent(new Date(now.getTime() - 24 * HOUR)),
+      spent(startOfMonth(new Date(month.getTime() - 1)), month),
+    ]);
+    // The projection assumes the last 24 hours keep their pace until the month ends.
+    const hoursLeft = (Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1) - now.getTime()) / HOUR;
     return {
       currency: team.currency,
       creditMinor: credit,
-      monthToDateMinor: mtd._sum.amountMinor ?? 0,
+      monthToDateMinor: mtd,
+      todayMinor: today,
+      projectedMonthMinor: mtd + Math.round((lastDay / 24) * hoursLeft),
+      lastMonthMinor: lastMonth,
       status: team.status,
       billingCountry: team.country,
       // The company that invoices this team, shown on the billing page and in the console footer.

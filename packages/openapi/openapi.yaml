@@ -1030,6 +1030,9 @@ paths:
                   currency: { type: string, enum: [USD, SAR] }
                   creditMinor: { type: integer }
                   monthToDateMinor: { type: integer }
+                  todayMinor: { type: integer, description: Spent since midnight UTC }
+                  projectedMonthMinor: { type: integer, description: "Month to date plus the pace of the last 24 hours until the month ends" }
+                  lastMonthMinor: { type: integer }
                   status: { type: string }
                   billingCountry: { type: string, example: US }
                   billingEntity: { $ref: "#/components/schemas/BillingEntity" }

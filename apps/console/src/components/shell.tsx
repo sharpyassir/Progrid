@@ -66,7 +66,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     const has = !!getToken();
     const isPublic = PUBLIC_PATHS.includes(pathname);
     if (!has && !isPublic) router.replace('/login');
-    if (has && pathname === '/login') router.replace('/servers');
+    if (has && pathname === '/login') router.replace('/');
   }, [ready, pathname, router]);
 
   const setLocale = (l: Locale) => {
@@ -85,7 +85,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <ShellCtx.Provider value={{ locale, setLocale, authed, signOut }}>
       <header className="border-b border-neutral-200 dark:border-neutral-800">
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-2.5">
-          <Link href="/servers" className="me-2 flex shrink-0 items-center gap-2 font-semibold tracking-tight"><img src="/brand/progrid-mark.svg" width="19" height="24" alt="" aria-hidden className="dark:hidden" /><img src="/brand/progrid-mark-white.svg" width="19" height="24" alt="" aria-hidden className="hidden dark:block" /> Progrid</Link>
+          <Link href="/" className="me-2 flex shrink-0 items-center gap-2 font-semibold tracking-tight"><img src="/brand/progrid-mark.svg" width="19" height="24" alt="" aria-hidden className="dark:hidden" /><img src="/brand/progrid-mark-white.svg" width="19" height="24" alt="" aria-hidden className="hidden dark:block" /> Progrid</Link>
           {authed && (
             <nav className="hidden min-w-0 items-center gap-0.5 lg:flex" aria-label={t(locale, 'mainNavigation')}>
               <GroupMenus />

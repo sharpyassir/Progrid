@@ -71,7 +71,7 @@ export default function LoginPage() {
           : { email: f.get('email'), password: f.get('password'), name: f.get('name'), teamName: f.get('teamName'), country: f.get('country') || undefined, locale, promoCode: normalizeCode(promo) ?? undefined, acceptTerms: agreed };
       const res = await api<{ session: string }>(`/v1/auth/${mode}`, { method: 'POST', body: JSON.stringify(body) });
       setToken(res.session);
-      router.replace(mode === 'signup' ? '/security?welcome=1' : '/servers');
+      router.replace(mode === 'signup' ? '/security?welcome=1' : '/');
     } catch (err) {
       if (err instanceof ApiError && err.code === 'totp_required') setNeedCode(true);
       else setError(err instanceof ApiError ? err.message : String(err));

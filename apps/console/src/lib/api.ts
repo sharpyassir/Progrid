@@ -76,6 +76,8 @@ export interface Price { resourceType: string; sku: string; monthlyMinor: number
 export interface BillingEntityInfo { id: 'progrid_arabia' | 'progrid_llc'; legalName: string; country: string; currency: 'USD' | 'SAR'; taxRate: number; taxLabel: string; supportEmail: string; termsUrl: string; domain: string | null; consoleUrl: string }
 export interface Balance {
   currency: 'USD' | 'SAR'; creditMinor: number; monthToDateMinor: number; status: string;
+  /** Spent today, the month to date plus running resources until month end, and last month's total. */
+  todayMinor?: number; projectedMonthMinor?: number; lastMonthMinor?: number;
   /** The company that bills the team (Progrid Arabia or Progrid Technologies LLC). */
   billingCountry?: string; billingEntity?: BillingEntityInfo;
   pendingChange?: { country: string; billingEntity: BillingEntityInfo; effectiveAt: string } | null;
