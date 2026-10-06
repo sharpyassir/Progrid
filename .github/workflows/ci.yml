@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# Read only: pull requests from forks run here too.
+permissions:
+  contents: read
+
 jobs:
   control-plane:
     runs-on: ubuntu-latest

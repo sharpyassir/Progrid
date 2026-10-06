@@ -1,0 +1,22 @@
+# Dependency updates (checklist 81/91). Security updates are opened whenever an advisory appears;
+# version updates weekly, grouped so they arrive as a few pull requests.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 10
+    groups:
+      minor-and-patch: { update-types: [minor, patch] }
+  - package-ecosystem: gomod
+    directories: [/agents/host-agent, /cli, /terraform/provider]
+    schedule: { interval: weekly }
+  - package-ecosystem: docker
+    directories: [/apps/api, /apps/console, /apps/www, /apps/ops, /services/prgd-gateway]
+    schedule: { interval: weekly }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: pip
+    directory: /packages/sdk-py
+    schedule: { interval: monthly }

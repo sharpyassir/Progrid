@@ -5,8 +5,11 @@ name: deploy
 # management host over SSH, which pulls the images, runs migrations and restarts.
 #
 # Secrets (repository settings):
-#   DEPLOY_HOST   management host address        DEPLOY_USER  ssh user (the Ansible user)
-#   DEPLOY_SSH_KEY  private key for that user
+#   DEPLOY_HOST   management host address        DEPLOY_USER  ssh user (the `deploy` user, not root)
+#   DEPLOY_SSH_KEY  private key for that user      DEPLOY_KNOWN_HOSTS  `ssh-keyscan -t ed25519 <host>`
+#                                                   output, checked before the key is ever used
+# The deploy user's authorized_keys line is restricted to the deploy script (infra/prod/deploy.sh,
+# docs/security/deploy-pipeline.md), so the key cannot open a shell even if it leaks.
 # The website, the console and the ops console derive their addresses at runtime from the host
 # they are served on (console.X talks to api.X), so one build serves progrid.co and progrid.sa.
 # The build time addresses below are only the fallback for other hosts and default to progrid.co,
@@ -25,17 +28,28 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  packages: write
+# Nothing by default; each job asks for what it needs.
+permissions: {}
 
 env:
   REGISTRY: ghcr.io/${{ github.repository_owner }}
 
 jobs:
   images:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    # A workflow_run only counts when ci ran for a push to main of this repository. A pull request
+    # from a fork whose branch is also called main must never be built or deployed.
+    if: >-
+      ${{ github.event_name != 'workflow_run' || (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository) }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     strategy:
       matrix:
         # app names the image (prgd-<app>); dockerfile is relative to the workspace root.
@@ -63,7 +77,8 @@ jobs:
             type=sha,prefix=,format=short
             type=ref,event=tag
             type=raw,value=latest,enable={{is_default_branch}}
-      - uses: docker/build-push-action@v6
+      - id: build
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -79,21 +94,44 @@ jobs:
             GEOIP_MONTH=${{ steps.month.outputs.geoip }}
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,mode=max,scope=${{ matrix.app }}
+          provenance: mode=max
+          sbom: true
+      # Known critical vulnerabilities with a fix available stop the release (control 74/84).
+      - name: Scan the image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/prgd-${{ matrix.app }}@${{ steps.build.outputs.digest }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ env.REGISTRY }}/prgd-${{ matrix.app }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
 
   deploy:
     needs: images
     runs-on: ubuntu-latest
     environment: production
-    # The secrets context is not allowed in a job condition, so the check happens in a step.
+    permissions:
+      contents: read
+    env:
+      # Passed through the environment, never pasted into a shell line (no expression injection).
+      TAG: ${{ github.ref_type == 'tag' && github.ref_name || github.event.workflow_run.head_sha || github.sha }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
     steps:
-      - id: gate
-        run: |
-          if [ -n "${{ secrets.DEPLOY_HOST }}" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "DEPLOY_HOST is not set; skipping the roll"; fi
       - name: Roll the management host
-        if: steps.gate.outputs.ok == 'true'
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: sudo /opt/prgd/deploy.sh ${{ github.ref_type == 'tag' && github.ref_name || format('{0}', github.event.workflow_run.head_sha || github.sha) }}
+        run: |
+          if [ -z "$DEPLOY_HOST" ]; then echo "DEPLOY_HOST is not set; skipping the roll"; exit 0; fi
+          if [ -z "$DEPLOY_KNOWN_HOSTS" ]; then echo "DEPLOY_KNOWN_HOSTS is not set; refusing to connect to an unverified host"; exit 1; fi
+          case "$TAG" in *[!A-Za-z0-9._-]*|"") echo "refusing tag: $TAG"; exit 1 ;; esac
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" "$TAG"
+          rm -f ~/.ssh/deploy

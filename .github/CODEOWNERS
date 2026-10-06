@@ -1,0 +1,10 @@
+# Changes to these paths need a review from the owner (enable "Require review from Code Owners"
+# in the branch protection of main; docs/security/secure-development-lifecycle.md).
+*                                   @sharpyassir
+/.github/                           @sharpyassir
+/infra/                             @sharpyassir
+/agents/                            @sharpyassir
+/apps/api/src/common/auth/          @sharpyassir
+/apps/api/src/common/crypto/        @sharpyassir
+/apps/api/prisma/                   @sharpyassir
+/docs/security/                     @sharpyassir

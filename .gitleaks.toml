@@ -1,0 +1,20 @@
+# Secret scanning (docs/security/secure-development-lifecycle.md). Default rules plus allowlisted
+# test and example values that are not secrets.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known non-secrets: CI database password, examples, test fixtures"
+paths = [
+  '''(^|/)node_modules/''',
+  '''\.example$''',
+  '''(^|/)test/''',
+  '''_test\.go$''',
+  '''\.spec\.ts$''',
+  '''pnpm-lock\.yaml$''',
+]
+regexes = [
+  '''change-me''',
+  '''dev-only-secret-change-me''',
+  '''devpassword123''',
+]
