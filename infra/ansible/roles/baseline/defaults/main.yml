@@ -1,0 +1,41 @@
+# Operating system baseline for every host (management and Proxmox nodes).
+# docs/security/infra-hardening.md explains each control and the rollout order.
+
+# Same values as group_vars; repeated here because role defaults are not shared.
+wireguard_cidr: 10.9.0.0/24
+ssh_allow_from: []
+
+# ---- SSH (sshd drop-in /etc/ssh/sshd_config.d/10-prgd.conf) ----
+# prohibit-password keeps root login with a key: Ansible reaches the Proxmox nodes as root and
+# Proxmox clustering (pvecm, migration) uses root key SSH between nodes. Only set "no" on a host
+# where neither applies and another sudo user with a key exists.
+ssh_permit_root_login: prohibit-password
+ssh_max_auth_tries: 3
+ssh_login_grace_time: 30
+
+# ---- kernel (sysctl /etc/sysctl.d/60-prgd-hardening.conf) ----
+# Strict reverse path filtering (1) on the management host. Proxmox nodes route the public blocks
+# and carry bridged and VXLAN traffic, where strict mode drops legitimate packets: loose (2) there.
+baseline_rp_filter: "{{ 2 if inventory_hostname in (groups['pve_nodes'] | default([])) else 1 }}"
+
+# ---- time (chrony) ----
+# Empty keeps the distribution's pool (Ubuntu: ntp.ubuntu.com, Debian: pool.ntp.org).
+chrony_servers: []
+
+# ---- unattended upgrades ----
+unattended_upgrades_enabled: true
+# Off by default: a reboot of the management host restarts the whole control plane, and a Proxmox
+# node reboot stops every customer VM on it. Reboot by hand in a window (docs/hosting.md).
+unattended_upgrades_reboot: false
+unattended_upgrades_reboot_time: "03:30"
+
+# ---- fail2ban (sshd jail) ----
+fail2ban_maxretry: 5
+fail2ban_findtime: 10m
+fail2ban_bantime: 1h
+# Never banned: the management network and the operator's sources (ssh_allow_from).
+fail2ban_ignoreip: "{{ ['127.0.0.1/8', '::1', wireguard_cidr] + (ssh_allow_from | default([])) }}"
+
+# ---- journald ----
+journald_system_max_use: 1G
+journald_max_retention: 3month

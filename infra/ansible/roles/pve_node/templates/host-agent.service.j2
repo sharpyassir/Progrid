@@ -9,11 +9,24 @@ EnvironmentFile=/etc/prgd/agent.env
 Restart=always
 RestartSec=5
 User=root
-NoNewPrivileges=true
+# Sandbox. The agent talks to the Proxmox API (127.0.0.1:8006) and NATS, writes cloud-init
+# snippets to /var/lib/vz/snippets and runs rbd du/resize, pvesm path and lvextend
+# (agents/host-agent/internal/agent/agent.go). Those need /dev (device mapper) and root, so
+# there is no PrivateDevices, DynamicUser or capability bounding set here.
+NoNewPrivileges=yes
+# /usr, /boot and /etc read only; /var (snippets, Ceph and LVM state) and /run stay writable.
 ProtectSystem=full
 # lvextend (storage_type lvmthin) writes its metadata backups here
 ReadWritePaths=-/etc/lvm
-ProtectHome=true
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# HTTPS and NATS (inet), local sockets (unix), udev and device mapper events for LVM (netlink).
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 
 [Install]
 WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+# try-reload-or-restart leaves a socket activated sshd that is not running alone (Ubuntu 24.04),
+# and a reload never drops open sessions.
+- name: reload ssh
+  command: systemctl try-reload-or-restart ssh
+
+# -e skips keys this kernel does not have instead of failing the run.
+- name: apply hardening sysctl
+  command: sysctl -e -p /etc/sysctl.d/60-prgd-hardening.conf
+
+- name: restart chrony
+  systemd: { name: chrony, state: restarted }
+
+- name: restart fail2ban
+  systemd: { name: fail2ban, state: restarted }
+
+- name: load audit rules
+  command: augenrules --load
+
+- name: restart journald
+  systemd: { name: systemd-journald, state: restarted }

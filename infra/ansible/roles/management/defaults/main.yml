@@ -4,3 +4,20 @@ wireguard_interface: wg0
 # Address NATS is published on (MGMT_IP in prgd.env). With WireGuard that is the management
 # host's tunnel address, which only the nodes can reach; without it the old mgmt_ip.
 nats_bind_ip: "{{ wireguard_address | default(mgmt_ip) }}"
+
+# CIDRs allowed to reach SSH (22). Empty keeps 22 open to the world (with a warning) so a first
+# run never locks anyone out; set it to the operators' addresses. The management network
+# (wireguard_cidr) is always allowed too.
+ssh_allow_from: []
+
+# Deploy user for the GitHub workflow (docs/security/infra-hardening.md). Its key only runs
+# /opt/prgd/deploy.sh (authorized_keys command=..., restrict); no shell, no password.
+deploy_user: deploy
+# deploy_authorized_key: "ssh-ed25519 AAAA... github-deploy"   # public key; set it to enable the user's login
+# Legacy: CI logged in as the Ansible user, which may run deploy.sh with sudo. Keep it true until
+# the DEPLOY_USER secret points at the deploy user, then set false.
+legacy_ci_deploy_user: true
+
+# UID and GID of the postgres user in the timescale/timescaledb (Alpine) image: it writes the WAL
+# archive into /var/backups/prgd/wal.
+postgres_container_uid: 70

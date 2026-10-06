@@ -16,4 +16,15 @@ proxmox:
 {% endif %}
   bridge: "{{ proxmox_private_bridge }}"
   public_bridge: "{{ proxmox_public_bridge }}"
+  # TLS to the PVE API (docs/security/infra-hardening.md). With neither pve_agent_tls_ca_file nor
+  # pve_agent_tls_fingerprint set, verification stays off as before (loopback only).
+{% if pve_agent_tls_ca_file | default('') or pve_agent_tls_fingerprint | default('') %}
+{% if pve_agent_tls_ca_file | default('') %}
+  ca_file: "{{ pve_agent_tls_ca_file }}"
+{% endif %}
+{% if pve_agent_tls_fingerprint | default('') %}
+  fingerprint: "{{ pve_agent_tls_fingerprint }}"
+{% endif %}
+{% else %}
   insecure: true
+{% endif %}

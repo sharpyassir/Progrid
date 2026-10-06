@@ -1,0 +1,164 @@
+# Operating system baseline: SSH, kernel, time, patching, brute force protection, audit and logs.
+# Safe to run on a live host: nothing here restarts Docker, Proxmox or the network.
+
+# ---- preflight: never lock the operator out ----
+
+# The SSH settings below turn password login off. A run that itself logs in with a password
+# would be the last one that works.
+- name: Ansible does not log in with a password
+  assert:
+    that:
+      - ansible_password is not defined
+      - ansible_ssh_pass is not defined
+    fail_msg: >-
+      {{ inventory_hostname }} is reached with a password. Install a key for {{ ansible_user | default('the Ansible user') }}
+      first (ssh-copy-id), drop the password from the inventory, then re-run.
+
+# The management host runs Ansible locally, so the check above proves nothing there: look for at
+# least one installed key instead. baseline_skip_key_check: true skips it (console access only).
+- name: Installed SSH keys
+  shell: cat /root/.ssh/authorized_keys /home/*/.ssh/authorized_keys 2>/dev/null | grep -cvE '^[[:space:]]*(#|$)' || true
+  register: baseline_keys
+  changed_when: false
+  check_mode: false
+
+- name: At least one key can still log in
+  assert:
+    that: baseline_keys.stdout | int > 0
+    fail_msg: >-
+      No authorized_keys entry on {{ inventory_hostname }}. Password login is about to be switched off;
+      add your key first (or set baseline_skip_key_check: true if you only use the provider console).
+  when: not (baseline_skip_key_check | default(false) | bool)
+
+- name: Baseline packages
+  apt:
+    name:
+      - openssh-server
+      - chrony
+      - unattended-upgrades
+      - apt-listchanges
+      - fail2ban
+      - python3-systemd      # fail2ban's systemd backend (Debian 13 has no auth.log by default)
+      - auditd
+    update_cache: true
+    cache_valid_time: 3600
+
+# ---- SSH ----
+
+# sshd -t refuses to run without its privilege separation directory, which a socket activated
+# sshd (Ubuntu 24.04) only creates on the first connection.
+- name: sshd privilege separation directory
+  file: { path: /run/sshd, state: directory, mode: "0755" }
+
+# Validated as part of the full configuration: the candidate is included ahead of the real
+# sshd_config, exactly where the drop-in directory is read, so a typo never reaches sshd.
+- name: SSH daemon hardening
+  template:
+    src: sshd-prgd.conf.j2
+    dest: /etc/ssh/sshd_config.d/10-prgd.conf
+    mode: "0644"
+    validate: >-
+      /bin/sh -c '{ echo "Include %s"; cat /etc/ssh/sshd_config; } > /run/sshd-prgd-check.conf
+      && /usr/sbin/sshd -t -f /run/sshd-prgd-check.conf; rc=$?; rm -f /run/sshd-prgd-check.conf; exit $rc'
+  notify: reload ssh
+
+# A drop-in that sorts earlier (or a Match block) could still win; say so instead of failing.
+- name: Effective SSH settings
+  command: /usr/sbin/sshd -T
+  register: baseline_sshd_effective
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Password login is really off
+  debug:
+    msg: "WARNING: sshd on {{ inventory_hostname }} still reports passwordauthentication yes; look for an earlier drop-in in /etc/ssh/sshd_config.d."
+  when: "'passwordauthentication yes' in baseline_sshd_effective.stdout | lower"
+
+# ---- kernel ----
+
+- name: Kernel and network hardening
+  template: { src: sysctl-hardening.conf.j2, dest: /etc/sysctl.d/60-prgd-hardening.conf, mode: "0644" }
+  notify: apply hardening sysctl
+
+# ---- time ----
+
+# Correct time for logs, audit trails, TLS and TOTP. chrony replaces systemd-timesyncd.
+- name: chrony servers
+  copy:
+    dest: /etc/chrony/conf.d/prgd.conf
+    mode: "0644"
+    content: |
+      # Managed by Ansible (role baseline).
+      {% for s in chrony_servers %}
+      server {{ s }} iburst
+      {% endfor %}
+  when: chrony_servers | length > 0
+  notify: restart chrony
+
+- name: chrony running
+  systemd: { name: chrony, enabled: true, state: started }
+
+# ---- patching ----
+
+- name: Daily package lists and unattended security upgrades
+  copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    mode: "0644"
+    content: |
+      // Managed by Ansible (role baseline).
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "{{ '1' if unattended_upgrades_enabled | bool else '0' }}";
+      APT::Periodic::AutocleanInterval "7";
+
+- name: Security origins and reboot policy
+  template: { src: unattended-upgrades.j2, dest: /etc/apt/apt.conf.d/52prgd-unattended-upgrades, mode: "0644" }
+
+# ---- brute force protection ----
+
+- name: fail2ban sshd jail
+  copy:
+    dest: /etc/fail2ban/jail.d/sshd.local
+    mode: "0644"
+    content: |
+      # Managed by Ansible (role baseline).
+      [sshd]
+      enabled  = true
+      port     = ssh
+      backend  = systemd
+      maxretry = {{ fail2ban_maxretry }}
+      findtime = {{ fail2ban_findtime }}
+      bantime  = {{ fail2ban_bantime }}
+      ignoreip = {{ fail2ban_ignoreip | join(' ') }}
+  notify: restart fail2ban
+
+- name: fail2ban running
+  systemd: { name: fail2ban, enabled: true, state: started }
+
+# ---- audit ----
+
+- name: Audit rules
+  template: { src: audit.rules.j2, dest: /etc/audit/rules.d/60-prgd.rules, mode: "0640" }
+  notify: load audit rules
+
+- name: auditd running
+  systemd: { name: auditd, enabled: true, state: started }
+
+# ---- logs ----
+
+# Persistent journal: logs survive a reboot, bounded so they never fill the disk.
+- name: journald drop-in directory
+  file: { path: /etc/systemd/journald.conf.d, state: directory, mode: "0755" }
+
+- name: Persistent, bounded journal
+  copy:
+    dest: /etc/systemd/journald.conf.d/60-prgd.conf
+    mode: "0644"
+    content: |
+      # Managed by Ansible (role baseline).
+      [Journal]
+      Storage=persistent
+      Compress=yes
+      SystemMaxUse={{ journald_system_max_use }}
+      MaxRetentionSec={{ journald_max_retention }}
+  notify: restart journald

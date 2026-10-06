@@ -1,5 +1,7 @@
 # Local development data plane substitutes. Nothing here runs customer workloads;
 # the real data plane is Proxmox VE + Ceph on the Saudi region nodes.
+# Every port is published on 127.0.0.1 only: these services have default passwords or none, and a
+# laptop on a cafe or office network must not offer them to its neighbours.
 name: prgd-dev
 
 services:
@@ -9,7 +11,7 @@ services:
       POSTGRES_USER: prgd
       POSTGRES_PASSWORD: prgd
       POSTGRES_DB: prgd
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:5432:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U prgd"]
@@ -18,12 +20,12 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    ports: ["127.0.0.1:6379:6379"]
 
   nats:
     image: nats:2.10-alpine
     command: ["-js", "-m", "8222"]        # JetStream on, monitoring on :8222
-    ports: ["4222:4222", "8222:8222"]
+    ports: ["127.0.0.1:4222:4222", "127.0.0.1:8222:8222"]
 
   temporal:
     image: temporalio/auto-setup:1.25.2
@@ -36,14 +38,14 @@ services:
       POSTGRES_PWD: prgd
       POSTGRES_SEEDS: postgres
       DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
-    ports: ["7233:7233"]
+    ports: ["127.0.0.1:7233:7233"]
 
   temporal-ui:
     image: temporalio/ui:2.31.2
     depends_on: [temporal]
     environment:
       TEMPORAL_ADDRESS: temporal:7233
-    ports: ["8080:8080"]
+    ports: ["127.0.0.1:8080:8080"]
 
 volumes:
   pgdata:

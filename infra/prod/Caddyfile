@@ -12,13 +12,32 @@
     email {$ACME_EMAIL}
 }
 
+# JSON access log on stdout (docker logs caddy, capped by the json-file driver). Caddy redacts
+# the Cookie and Authorization headers itself.
+(access_log) {
+    log {
+        output stdout
+        format json
+    }
+}
+
 (common) {
+    import access_log
     encode zstd gzip
+    # Default cap on request bodies; a site may set a smaller one (the smaller limit wins).
+    request_body {
+        max_size 10MB
+    }
     header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        # preload: every subdomain of both domains is HTTPS only for two years. Submitting the
+        # domains to hstspreload.org is a separate, deliberate step (docs/security/infra-hardening.md).
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
         X-Content-Type-Options nosniff
         X-Frame-Options DENY
         Referrer-Policy strict-origin-when-cross-origin
+        Cross-Origin-Opener-Policy same-origin
+        # payment and publickey-credentials stay allowed: card forms and passkeys in the console.
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), usb=(), serial=(), bluetooth=(), magnetometer=(), gyroscope=(), accelerometer=()"
         -Server
     }
 }
@@ -49,9 +68,13 @@
     # nonce per request; these are the same static headers it sends, repeated here so they hold
     # even for responses the app does not produce (errors from the proxy).
     ops.{args[0]} {
+        import access_log
         encode zstd gzip
+        request_body {
+            max_size 10MB
+        }
         header {
-            Strict-Transport-Security "max-age=31536000; includeSubDomains"
+            Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
             X-Content-Type-Options nosniff
             X-Frame-Options DENY
             Referrer-Policy no-referrer
@@ -70,6 +93,25 @@
         request_body {
             max_size 2MB
         }
+
+        # /internal/* is for callers on the Docker network (the gateway and the backup container
+        # use http://api:4000). Two endpoints are called from outside on purpose and authenticate
+        # themselves: the Alertmanager webhook and the monitoring agents' heartbeat
+        # (docs/managed-cloud-operations.md). Everything else under /internal is not published.
+        @internal {
+            path /internal /internal/*
+            not path /internal/alerts/alertmanager /internal/agents/heartbeat
+        }
+        respond @internal 404
+
+        # Back office API and the Swagger UI only from ADMIN_ALLOW_CIDRS (prgd.env); the compose
+        # default 0.0.0.0/0 ::/0 allows every source until it is set.
+        @admin_denied {
+            path /admin /admin/* /docs /docs/* /docs-json /docs-yaml
+            not remote_ip {$ADMIN_ALLOW_CIDRS:0.0.0.0/0 ::/0}
+        }
+        respond @admin_denied 403
+
         reverse_proxy api:4000 {
             header_up X-Real-IP {remote_host}
             header_up X-Forwarded-For {remote_host}
@@ -79,8 +121,9 @@
     # Terminal gateway: WebSockets from the ops consoles only (the gateway checks Origin against
     # both ops hosts). Nothing but /v1/terminal is published; no compression on upgraded connections.
     gateway.{args[0]} {
+        import access_log
         header {
-            Strict-Transport-Security "max-age=31536000; includeSubDomains"
+            Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
             X-Content-Type-Options nosniff
             -Server
         }

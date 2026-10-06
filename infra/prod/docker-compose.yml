@@ -6,13 +6,23 @@
 #   docker compose --env-file /etc/prgd/prgd.env -f docker-compose.yml up -d
 name: prgd
 
+# Hardening (docs/security/infra-hardening.md): every service runs with no-new-privileges, capped
+# json-file logs, a memory and a process limit (each overridable from prgd.env, sized for a 4 to 8
+# GB host). First party images also drop every capability and run on a read only root file system
+# with tmpfs for what they write. Two networks: edge (Caddy and what it proxies) and backend
+# (state and workers); Caddy never joins backend.
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "20m", max-file: "5" }
+
 x-api: &api
   image: ${REGISTRY:-ghcr.io/sharpyassir}/prgd-api:${IMAGE_TAG:-latest}
   restart: unless-stopped
   env_file: [/etc/prgd/prgd.env]
   environment:
     DATABASE_URL: postgresql://prgd:${POSTGRES_PASSWORD}@postgres:5432/prgd
-    REDIS_URL: redis://redis:6379
+    # redis://:<REDIS_PASSWORD>@redis:6379 when a password is set, redis://redis:6379 otherwise.
+    REDIS_URL: redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379
     NATS_URL: nats://nats:4222
     NATS_TOKEN: ${NATS_TOKEN}
     TEMPORAL_ADDRESS: temporal:7233
@@ -21,8 +31,14 @@ x-api: &api
     redis: { condition: service_started }
     nats: { condition: service_started }
     temporal: { condition: service_started }
-  networks: [internal]
-  logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
+  networks: [backend]
+  logging: *logging
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  read_only: true
+  tmpfs: ["/tmp:size=64m,mode=1777"]
+  mem_limit: ${API_MEM_LIMIT:-1g}
+  pids_limit: ${API_PIDS_LIMIT:-512}
 
 services:
   caddy:
@@ -33,16 +49,24 @@ services:
       DOMAIN: ${DOMAIN}
       DOMAIN_SA: ${DOMAIN_SA:?set DOMAIN_SA (progrid.sa) in prgd.env}
       ACME_EMAIL: ${ACME_EMAIL}
+      # /admin/* and /docs on the api hosts only from these (space separated); unset allows all.
+      ADMIN_ALLOW_CIDRS: ${ADMIN_ALLOW_CIDRS:-0.0.0.0/0 ::/0}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
-    networks: [internal]
+    networks: [edge]
     depends_on: [api, console, www, ops, gateway]
+    logging: *logging
+    security_opt: [no-new-privileges:true]
+    mem_limit: ${CADDY_MEM_LIMIT:-256m}
+    pids_limit: ${CADDY_PIDS_LIMIT:-256}
 
   api:
     <<: *api
     command: ["node", "dist/main.js"]
+    # edge: Caddy and the gateway reach it; backend: everything it uses.
+    networks: [edge, backend]
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:4000/healthz"]
       interval: 30s
@@ -55,6 +79,8 @@ services:
     # Managed cloud maintenance playbooks (MAINTENANCE_PLAYBOOK_DIR), copied here by Ansible.
     volumes:
       - ./maintenance:/opt/prgd/maintenance:ro
+    mem_limit: ${WORKER_MEM_LIMIT:-1g}
+    pids_limit: ${WORKER_PIDS_LIMIT:-512}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:4001/healthz"]
       interval: 30s
@@ -67,6 +93,9 @@ services:
     command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
     restart: "no"
     profiles: [ops]
+    # The Prisma CLI and ts-node may write caches; one shot jobs keep a writable root file system
+    # so a deploy never fails on it (same for seed and staff).
+    read_only: false
 
   # One shot: region, plans, prices, images and marketplace apps. Safe to rerun; never adds demo data here.
   seed:
@@ -77,6 +106,7 @@ services:
       SEED_DEMO: "false"
     restart: "no"
     profiles: [ops]
+    read_only: false
 
   # One shot: promote a signed up account to full staff.  run --rm staff you@progrid.co
   staff:
@@ -85,13 +115,23 @@ services:
     command: []
     restart: "no"
     profiles: [ops]
+    read_only: false
 
   # The console derives api.X from the console.X host it is served on; no settings needed.
   console:
     image: ${REGISTRY:-ghcr.io/sharpyassir}/prgd-console:${IMAGE_TAG:-latest}
     restart: unless-stopped
-    networks: [internal]
-    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
+    networks: [edge]
+    logging: *logging
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    # Next.js standalone writes only its cache (fetch and image cache) under .next/cache.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /app/apps/console/.next/cache:size=256m,mode=1777
+    mem_limit: ${CONSOLE_MEM_LIMIT:-512m}
+    pids_limit: ${CONSOLE_PIDS_LIMIT:-256}
 
   # The website. The Host picks the storefront (DOMAIN: global, DOMAIN_SA: Saudi Arabia); visitors
   # from Saudi Arabia on DOMAIN are redirected to DOMAIN_SA using the DB-IP database in the image.
@@ -101,8 +141,18 @@ services:
     environment:
       PRGD_DOMAIN: ${DOMAIN}
       PRGD_DOMAIN_SA: ${DOMAIN_SA}
-    networks: [internal]
-    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
+    networks: [edge]
+    logging: *logging
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    # Next.js standalone writes only its cache under .next/cache (the affiliate program fetch is
+    # cached there for 5 minutes).
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /app/apps/www/.next/cache:size=256m,mode=1777
+    mem_limit: ${WWW_MEM_LIMIT:-512m}
+    pids_limit: ${WWW_PIDS_LIMIT:-256}
 
   # Terminal gateway of the DevOps console (services/prgd-gateway). Caddy publishes only its
   # WebSocket endpoint at gateway.$DOMAIN and gateway.$DOMAIN_SA; it calls the API's /internal/gateway on this network.
@@ -137,8 +187,16 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-    networks: [internal]
-    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
+    # edge: Caddy proxies to it and it calls the API; bus: NATS. Nothing on backend.
+    networks: [edge, bus]
+    logging: *logging
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    # Writes only to the spool volume (and /tmp).
+    read_only: true
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    mem_limit: ${GATEWAY_MEM_LIMIT:-512m}
+    pids_limit: ${GATEWAY_PIDS_LIMIT:-256}
 
   # The DevOps console for on call engineers (apps/ops), published by Caddy at ops.$DOMAIN (primary)
   # and ops.$DOMAIN_SA.
@@ -146,8 +204,16 @@ services:
   ops:
     image: ${REGISTRY:-ghcr.io/sharpyassir}/prgd-ops:${IMAGE_TAG:-latest}
     restart: unless-stopped
-    networks: [internal]
-    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
+    networks: [edge]
+    logging: *logging
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /app/apps/ops/.next/cache:size=128m,mode=1777
+    mem_limit: ${OPS_MEM_LIMIT:-384m}
+    pids_limit: ${OPS_PIDS_LIMIT:-256}
 
   postgres:
     image: timescale/timescaledb:2.17.2-pg16
@@ -157,19 +223,39 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: prgd
     command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=512MB", "-c", "wal_level=replica", "-c", "archive_mode=on", "-c", "archive_command=test ! -f /var/backups/prgd/wal/%f && cp %p /var/backups/prgd/wal/%f", "-c", "archive_timeout=300"]
-    volumes: [pgdata:/var/lib/postgresql/data]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # WAL archive (archive_command above). The backup container sees the same host directory as
+      # /backups/wal and copies it off the server. Ansible creates it owned by the container's
+      # postgres user (uid 70); without this mount every archive_command failed and WAL piled up.
+      - /var/backups/prgd/wal:/var/backups/prgd/wal
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U prgd"]
       interval: 10s
       retries: 10
-    networks: [internal]
+    networks: [backend]
+    logging: *logging
+    security_opt: [no-new-privileges:true]
+    mem_limit: ${POSTGRES_MEM_LIMIT:-2g}
+    pids_limit: ${POSTGRES_PIDS_LIMIT:-512}
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    # AUTH only when REDIS_PASSWORD is set, so a prgd.env without it still starts Redis. The image's
+    # entrypoint still drops to the redis user, and redis-server hides its arguments from ps.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - exec docker-entrypoint.sh redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru $${REDIS_PASSWORD:+--requirepass "$$REDIS_PASSWORD"}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     volumes: [redis-data:/data]
-    networks: [internal]
+    networks: [backend]
+    logging: *logging
+    security_opt: [no-new-privileges:true]
+    mem_limit: ${REDIS_MEM_LIMIT:-384m}
+    pids_limit: ${REDIS_PIDS_LIMIT:-128}
 
   nats:
     image: nats:2.10-alpine
@@ -178,7 +264,12 @@ services:
     command: ["-js", "-sd", "/data", "-m", "8222", "--auth", "${NATS_TOKEN}"]
     ports: ["${MGMT_IP}:4222:4222"]
     volumes: [nats-data:/data]
-    networks: [internal]
+    # backend: api and worker; bus: the gateway, which joins nothing else on this side.
+    networks: [backend, bus]
+    logging: *logging
+    security_opt: [no-new-privileges:true]
+    mem_limit: ${NATS_MEM_LIMIT:-512m}
+    pids_limit: ${NATS_PIDS_LIMIT:-256}
 
   temporal:
     image: temporalio/auto-setup:1.25.2
@@ -194,7 +285,11 @@ services:
       DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/progrid.yaml
     volumes:
       - ./temporal-dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/progrid.yaml:ro
-    networks: [internal]
+    networks: [backend]
+    logging: *logging
+    security_opt: [no-new-privileges:true]
+    mem_limit: ${TEMPORAL_MEM_LIMIT:-1g}
+    pids_limit: ${TEMPORAL_PIDS_LIMIT:-512}
 
   # Authoritative nameserver. Runs on the management host in phase 0; in phase 1 run one on
   # each of two hosts (ns1, ns2) against the same schema, both pointed at the API through
@@ -215,11 +310,16 @@ services:
       PDNS_api: "yes"
       PDNS_webserver: "yes"
       PDNS_webserver_address: 0.0.0.0
-      PDNS_webserver_allow_from: 0.0.0.0/0
+      # The API on port 8081: only containers on the backend network (api, worker), never the internet.
+      PDNS_webserver_allow_from: 127.0.0.1,::1,${BACKEND_SUBNET:-172.29.10.0/24}
       PDNS_default_soa_content: "ns1.@ hostmaster.@ 0 10800 3600 604800 3600"
     ports: ["53:53/udp", "53:53/tcp"]
-    networks: [internal]
+    networks: [backend]
     profiles: [dns]
+    logging: *logging
+    security_opt: [no-new-privileges:true]
+    mem_limit: ${PDNS_MEM_LIMIT:-256m}
+    pids_limit: ${PDNS_PIDS_LIMIT:-256}
 
   # Internal only: reach it over an SSH tunnel (ssh -L 8080:127.0.0.1:8080 mgmt), never exposed by Caddy.
   temporal-ui:
@@ -229,7 +329,11 @@ services:
     environment:
       TEMPORAL_ADDRESS: temporal:7233
     ports: ["127.0.0.1:8080:8080"]
-    networks: [internal]
+    networks: [backend]
+    logging: *logging
+    security_opt: [no-new-privileges:true]
+    mem_limit: ${TEMPORAL_UI_MEM_LIMIT:-256m}
+    pids_limit: ${TEMPORAL_UI_PIDS_LIMIT:-128}
 
   # Nightly logical backup of Postgres to /var/backups/prgd (and to S3 compatible storage when configured).
   backup:
@@ -242,15 +346,33 @@ services:
       BACKUP_S3_URL: ${BACKUP_S3_URL:-}
       AWS_ACCESS_KEY_ID: ${BACKUP_S3_KEY:-}
       AWS_SECRET_ACCESS_KEY: ${BACKUP_S3_SECRET:-}
+      # age public key: dumps and WAL copies are encrypted before they are stored or uploaded.
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}
     volumes:
       - ./backup.sh:/backup.sh:ro
       - /var/backups/prgd:/backups
     depends_on:
       postgres: { condition: service_healthy }
-    networks: [internal]
+    # backend: Postgres (and the API's internal endpoints); internet for S3 and apk.
+    networks: [backend]
+    logging: *logging
+    security_opt: [no-new-privileges:true]
+    mem_limit: ${BACKUP_MEM_LIMIT:-512m}
+    pids_limit: ${BACKUP_PIDS_LIMIT:-128}
 
+# None is `internal: true`: api and worker call payment, mail and model providers, the backup
+# goes to S3, and the gateway opens SSH over WireGuard through the host.
 networks:
-  internal:
+  # Caddy and the services it proxies (www, console, ops, api, gateway).
+  edge:
+  # State and workers. Caddy is never on it. The subnet is fixed so PowerDNS can allow exactly it;
+  # change BACKEND_SUBNET only if it collides with a network on the host.
+  backend:
+    ipam:
+      config:
+        - subnet: ${BACKEND_SUBNET:-172.29.10.0/24}
+  # NATS for the gateway, so the gateway needs no backend access.
+  bus:
 
 volumes:
   pgdata:

@@ -43,3 +43,33 @@ pve_agent_privs:
   - SDN.Allocate           # create VNets and apply the SDN config
   - SDN.Use                # put a NIC on a bridge or VNet (Proxmox VE 8 checks it for every bridge)
 pve_agent_acl_paths: ["/vms", "/storage", "/nodes/{{ pve_node_name }}", "/sdn"]
+# The ACLs propagate below each path, so the token can act on every VM and storage of the cluster,
+# not only this node's (residual risk in docs/security/infra-hardening.md).
+
+# ---- Proxmox datacenter firewall (/etc/pve/firewall/cluster.fw) ----
+# Off by default: the file is cluster wide and a wrong rule cuts SSH to every node. Read
+# docs/security/infra-hardening.md, then set true. It replaces the file written by hand in
+# docs/first-proxmox-node.md step 15.
+pve_manage_cluster_firewall: false
+# Same values as group_vars; repeated here because role defaults are not shared.
+wireguard_cidr: 10.9.0.0/24
+wireguard_port: 51820
+ssh_allow_from: []
+# SSH sources besides wireguard_cidr and ssh_allow_from. By default the management host's public
+# address (its wireguard_endpoint): Ansible reaches the nodes from there on ansible_host.
+pve_firewall_ssh_extra_sources: "{{ [hostvars[groups['management'][0]].wireguard_endpoint] if (groups['management'] | default([])) and hostvars[groups['management'][0]].wireguard_endpoint is defined else [] }}"
+# Addresses of the other nodes (corosync, Ceph, VXLAN on UDP 4789, migration). Proxmox already
+# accepts corosync and its management ports from the cluster network (local_network), but not
+# Ceph or VXLAN: list the nodes' cluster or public addresses here on a cluster with more than one node.
+pve_firewall_cluster_sources: []
+# Extra lines for the [RULES] section, in cluster.fw syntax.
+pve_firewall_extra_rules: []
+
+# ---- TLS from the host agent to the local PVE API ----
+# Opt in; both empty keeps `insecure: true` (the agent only talks to 127.0.0.1:8006).
+# ca_file: the cluster CA, which signs every node's default certificate (pve-ssl.pem, whose names
+#   include 127.0.0.1) and survives its renewal: /etc/pve/pve-root-ca.pem. Not with an ACME
+#   (Let's Encrypt) certificate on pveproxy: that one is not signed by the cluster CA.
+# fingerprint: SHA-256 of the API certificate (`pvenode cert info`); breaks at every renewal.
+pve_agent_tls_ca_file: ""
+pve_agent_tls_fingerprint: ""

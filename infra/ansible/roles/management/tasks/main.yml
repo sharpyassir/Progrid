@@ -38,6 +38,16 @@
   file: { path: "{{ item }}", state: directory, mode: "0750" }
   loop: [/opt/prgd, /etc/prgd, /var/backups/prgd]
 
+# Postgres archives WAL here (archive_command in docker-compose.yml) as the container's postgres
+# user; the backup container reads the same directory as /backups/wal and copies it off the server.
+- name: WAL archive directory
+  file:
+    path: /var/backups/prgd/wal
+    state: directory
+    owner: "{{ postgres_container_uid }}"
+    group: "{{ postgres_container_uid }}"
+    mode: "0700"
+
 # NATS is published on the WireGuard address (MGMT_IP). Docker can only bind it once wg0 exists,
 # so Docker must start after the tunnel at boot. The wireguard play brings wg0 up before this role.
 - name: Docker starts after WireGuard
@@ -91,9 +101,9 @@
 - name: Firewall defaults
   community.general.ufw: { state: enabled, policy: deny, direction: incoming }
 
-- name: Firewall allow web and ssh
+- name: Firewall allow web
   community.general.ufw: { rule: allow, port: "{{ item }}", proto: tcp }
-  loop: ["80", "443", "22"]
+  loop: ["80", "443"]
 
 - name: Firewall allow QUIC
   community.general.ufw: { rule: allow, port: "443", proto: udp }
@@ -103,16 +113,79 @@
 - name: Firewall allow NATS from the management network only
   community.general.ufw: { rule: allow, port: "4222", proto: tcp, src: "{{ wireguard_cidr if wireguard_address is defined else (mgmt_cidr | default('10.0.0.0/24')) }}" }
 
-- name: Restrict ssh sources when configured
+# Note on DOCKER-USER: ports published by Docker (Caddy 80/443, PowerDNS 53, NATS on MGMT_IP,
+# Temporal UI on 127.0.0.1) are filtered in iptables' DOCKER-USER chain, never by these ufw rules.
+# Every published port is meant to be reachable or is bound to a private address, so nothing is
+# added there; anything that must be filtered by source goes into DOCKER-USER, not ufw.
+
+# SSH: with ssh_allow_from set, only those sources and the management network. The source rules
+# go in before the open rule is deleted, and ufw keeps established sessions, so a run never cuts
+# the operator's own connection.
+- name: Firewall allow ssh from the allowed sources
   community.general.ufw: { rule: allow, port: "22", proto: tcp, src: "{{ item }}" }
-  loop: "{{ ssh_allow_from }}"
+  loop: "{{ ssh_allow_from + [wireguard_cidr] }}"
   when: ssh_allow_from | length > 0
 
+- name: Firewall no ssh from anywhere else
+  community.general.ufw: { rule: allow, port: "22", proto: tcp, delete: true }
+  when: ssh_allow_from | length > 0
+
+# Without ssh_allow_from 22 stays open to the world rather than lock anyone out.
+- name: Firewall allow ssh from anywhere (ssh_allow_from is empty)
+  community.general.ufw: { rule: allow, port: "22", proto: tcp }
+  when: ssh_allow_from | length == 0
+
+- name: SSH is open to the internet
+  debug:
+    msg: >-
+      WARNING: ssh_allow_from is empty, so port 22 accepts connections from anywhere. Set it to the
+      operators' CIDRs in group_vars (docs/security/infra-hardening.md) and re-run.
+  when: ssh_allow_from | length == 0
+
+# ---- deploy user for the GitHub workflow ----
+
+# No password ("*" can never match, unlike "!" it does not lock key login under UsePAM) and a
+# real shell, which sshd needs to run the forced command.
+- name: Deploy user
+  user:
+    name: "{{ deploy_user }}"
+    shell: /bin/sh
+    password: "*"
+    create_home: true
+    system: false
+
+# Owned by root, so the deploy user cannot change its own keys. The key runs nothing but the deploy
+# script; the image tag the workflow sends arrives in SSH_ORIGINAL_COMMAND (infra/prod/deploy.sh).
+- name: Deploy user's ssh directory
+  file: { path: "/home/{{ deploy_user }}/.ssh", state: directory, owner: root, group: "{{ deploy_user }}", mode: "0755" }
+  when: deploy_authorized_key is defined
+
+- name: Deploy user's key, forced to the deploy script
+  copy:
+    dest: "/home/{{ deploy_user }}/.ssh/authorized_keys"
+    owner: root
+    group: "{{ deploy_user }}"
+    mode: "0644"
+    content: |
+      # Managed by Ansible (role management). Only runs the deploy script; see infra/prod/deploy.sh.
+      command="sudo -n /opt/prgd/deploy.sh",restrict {{ deploy_authorized_key | trim }}
+  when: deploy_authorized_key is defined
+
+# The deploy user may run the deploy script without arguments only ("" in sudoers); the tag comes
+# from SSH_ORIGINAL_COMMAND, which sudo would otherwise strip from the environment.
 - name: Deploy tool for the CI user
   copy:
     dest: /etc/sudoers.d/prgd-deploy
     mode: "0440"
-    content: "{{ ansible_user }} ALL=(root) NOPASSWD: /opt/prgd/deploy.sh\n"
+    content: |
+      # Managed by Ansible (role management).
+      Defaults!/opt/prgd/deploy.sh env_keep += "SSH_ORIGINAL_COMMAND"
+      {{ deploy_user }} ALL=(root) NOPASSWD: /opt/prgd/deploy.sh ""
+      {% if legacy_ci_deploy_user | bool and (legacy_ci_user | default(ansible_user | default(''))) | length > 0 %}
+      # Legacy: CI used to log in as the Ansible user. Remove with legacy_ci_deploy_user: false once
+      # the DEPLOY_USER secret is the deploy user.
+      {{ legacy_ci_user | default(ansible_user) }} ALL=(root) NOPASSWD: /opt/prgd/deploy.sh
+      {% endif %}
     validate: visudo -cf %s
 
 - name: First start

@@ -152,14 +152,34 @@ cloud-init address matches the allocation, so servers still on DHCP are not cut 
 ## Backups and restore
 
 The backup container dumps Postgres every night at 02:15 UTC to `/var/backups/prgd`, keeps
-`BACKUP_KEEP_DAYS` days, and copies to `BACKUP_S3_URL` when set. Restore on a fresh host:
+`BACKUP_KEEP_DAYS` days, and copies to `BACKUP_S3_URL` when set. Postgres also archives WAL to
+`/var/backups/prgd/wal`, which goes off the server with the dumps.
+
+With `BACKUP_AGE_RECIPIENT` set (an age public key, `backup_age_recipient` in group_vars) the dumps
+are encrypted before they are written: only `all-YYYYMMDD-HHMM.sql.gz.age` exists, on the server and
+off it, and the WAL goes off the server as `.age` files. The private key (`key.txt` from
+`age-keygen`) is kept off the server, for example in the password manager and on an offline USB key;
+copy it to the restore host only for the restore and delete it afterwards
+(docs/security/infra-hardening.md).
+
+The dump is a `pg_dumpall --clean` of every database, so it is restored through the `postgres`
+database. Restore on a fresh host:
 
 ```sh
 ansible-playbook -i inventory.ini site.yml --limit management --ask-vault-pass
-cd /opt/prgd && docker compose --env-file /etc/prgd/prgd.env stop api worker
-gunzip -c /var/backups/prgd/prgd-YYYYMMDD-0215.sql.gz | docker compose --env-file /etc/prgd/prgd.env exec -T postgres psql -U prgd prgd
-docker compose --env-file /etc/prgd/prgd.env start api worker
+cd /opt/prgd && docker compose --env-file /etc/prgd/prgd.env stop api worker temporal
+# Encrypted dump (BACKUP_AGE_RECIPIENT set):
+age -d -i key.txt /var/backups/prgd/all-YYYYMMDD-0215.sql.gz.age | gunzip \
+  | docker compose --env-file /etc/prgd/prgd.env exec -T postgres psql -U prgd -d postgres
+# Plain dump:
+gunzip -c /var/backups/prgd/all-YYYYMMDD-0215.sql.gz \
+  | docker compose --env-file /etc/prgd/prgd.env exec -T postgres psql -U prgd -d postgres
+docker compose --env-file /etc/prgd/prgd.env start temporal api worker
+shred -u key.txt
 ```
+
+Encrypted WAL segments decrypt the same way (`age -d -i key.txt 0000...age > 0000...`) before they
+go into the restore's `restore_command` directory.
 
 Redis holds only locks, rate limit counters and idempotency keys; losing it is harmless. NATS JetStream
 holds in flight host agent jobs; the worker retries them. Temporal state lives in Postgres.

@@ -1,0 +1,10 @@
+# Managed by Ansible (role baseline). Edit group_vars and re-run the playbook.
+# Sorted before the distribution's and cloud-init's drop-ins (50-cloud-init.conf), and sshd keeps
+# the first value it reads, so these win. Keys only; root keeps key login (Proxmox clustering).
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin {{ ssh_permit_root_login }}
+MaxAuthTries {{ ssh_max_auth_tries }}
+LoginGraceTime {{ ssh_login_grace_time }}
+X11Forwarding no
+AllowAgentForwarding no

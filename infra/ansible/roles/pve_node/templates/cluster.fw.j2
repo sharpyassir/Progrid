@@ -1,0 +1,33 @@
+# Managed by Ansible (role pve_node, pve_manage_cluster_firewall). Cluster wide: every node reads it.
+# Mirrors docs/first-proxmox-node.md step 15, with SSH limited to the management network and
+# ssh_allow_from when that is set. Edit group_vars and re-run the playbook.
+[OPTIONS]
+enable: 1
+policy_in: DROP
+policy_out: ACCEPT
+
+[RULES]
+{% set ssh_sources = ssh_allow_from + pve_firewall_ssh_extra_sources %}
+{% if ssh_allow_from | length > 0 %}
+IN ACCEPT -source {{ wireguard_cidr }} -p tcp -dport 22 -log nolog
+{% for src in ssh_sources | unique %}
+IN ACCEPT -source {{ src }} -p tcp -dport 22 -log nolog
+{% endfor %}
+{% else %}
+# ssh_allow_from is empty: SSH from anywhere (keys only, fail2ban), as before.
+IN ACCEPT -p tcp -dport 22 -log nolog
+{% endif %}
+# WireGuard: silent to anyone without a peer key.
+IN ACCEPT -p udp -dport {{ wireguard_port }} -log nolog
+# Web interface and API: management network and the operators' sources only.
+IN ACCEPT -source {{ wireguard_cidr }} -p tcp -dport 8006 -log nolog
+{% for src in ssh_allow_from | unique %}
+IN ACCEPT -source {{ src }} -p tcp -dport 8006 -log nolog
+{% endfor %}
+{% for src in pve_firewall_cluster_sources | unique %}
+IN ACCEPT -source {{ src }} -log nolog
+{% endfor %}
+IN ACCEPT -p icmp -log nolog
+{% for rule in pve_firewall_extra_rules %}
+{{ rule }}
+{% endfor %}

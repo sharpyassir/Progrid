@@ -20,6 +20,10 @@ proxmox_ceph_pool: vm-disks         # rbd only
 proxmox_private_bridge: customers   # shared private bridge on every node (PRIVATE_NETWORK_MODE=shared_bridge)
 proxmox_public_bridge: vmbr0        # routed bridge that carries the public IP blocks
 proxmox_vxlan_zone: tenants         # SDN zone for sdn_vnet mode; Proxmox zone ids are at most 8 characters
+# Private networks: sdn_vnet gives each project its own VXLAN VNet (isolation between customers);
+# shared_bridge puts every project on proxmox_private_bridge. New installs use sdn_vnet. A host
+# whose vars.yml has no private_network_mode keeps shared_bridge (prgd.env.j2 default).
+private_network_mode: sdn_vnet
 # Management network (role wireguard); addresses per host in the inventory
 wireguard_cidr: 10.9.0.0/24         # inside control_plane_cidr, clear of the tenant pool and the DO VPC
 wireguard_port: 51820
@@ -30,7 +34,20 @@ require_totp_for_owners: true
 fx_usd_sar: 3.75
 backup_keep_days: 14
 backup_s3_url: ""
-ssh_allow_from: []                  # CIDRs allowed to reach 22; empty means anywhere
+# age public key (age1...) of the backup key pair. Generate it off the server (age-keygen) and keep
+# the private key off the server; empty leaves the dumps unencrypted.
+backup_age_recipient: ""
+# Security baseline (role baseline, docs/security/infra-hardening.md)
+ssh_allow_from: []                  # CIDRs allowed to reach 22 besides wireguard_cidr; empty means anywhere (warns)
+ssh_permit_root_login: prohibit-password   # root by key only; Proxmox clustering needs it
+unattended_upgrades_reboot: false   # security updates install daily; reboots stay manual
+# admin_allow_cidrs: ["198.51.100.7/32"]   # /admin/* and /docs on the api hosts only from these; unset allows all
+# Deploy user for the GitHub workflow (DEPLOY_USER=deploy). Its key can only run deploy.sh.
+deploy_user: deploy
+# deploy_authorized_key: "ssh-ed25519 AAAA... github-deploy"
+legacy_ci_deploy_user: true         # false once DEPLOY_USER is the deploy user
+pve_manage_cluster_firewall: false  # true writes /etc/pve/firewall/cluster.fw (read the doc first)
+# compose_env_overrides: { BACKEND_SUBNET: 172.29.10.0/24, POSTGRES_MEM_LIMIT: 2g }   # docker-compose.yml knobs
 control_plane_cidr: 10.0.0.0/12     # management network that may reach platform agents; must not overlap the tenant pool (10.96.0.0/12)
 company_name: Progrid                # brand on PDFs and mails
 # Billing companies. Leave a value empty until the owner provides it: invoices print a placeholder.
@@ -94,6 +111,9 @@ connect_network_allowlist: ""            # admin only: private CIDRs or hosts ag
 # vault_nats_token: ...
 # vault_jwt_secret: ...
 # vault_secrets_key: ...            # encrypts TOTP seeds and webhook secrets at rest
+# vault_secrets_keys: ...           # optional key ring "kid:key,kid:key", active first (key-management.md)
+# vault_secrets_legacy_key: ...     # only if data was sealed while SECRETS_KEY was empty (= old JWT_SECRET)
+# vault_redis_password: ""           # openssl rand -hex 32; empty runs Redis without AUTH
 # vault_proxmox_token_secret: ""       # unused: the control plane has no Proxmox token (the agent's lives on the node)
 # vault_mail_api_key: ...
 # vault_moyasar_secret_key: ...

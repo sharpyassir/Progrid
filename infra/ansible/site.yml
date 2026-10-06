@@ -8,6 +8,16 @@
     - role: wireguard
       when: wireguard_address is defined
 
+# Operating system baseline (SSH, sysctl, NTP, patching, fail2ban, auditd, journald) on every
+# host; docs/security/infra-hardening.md. After WireGuard, so the tunnel is up before sshd and
+# the kernel settings change. Run it alone with --tags baseline.
+- name: Operating system baseline
+  hosts: management:pve_nodes
+  become: true
+  roles:
+    - role: baseline
+      tags: [baseline]
+
 - name: Control plane host
   hosts: management
   become: true

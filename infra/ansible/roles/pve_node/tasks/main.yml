@@ -174,6 +174,39 @@
   register: pve_token_secret
   no_log: true
 
+# ---- Proxmox datacenter firewall (opt in) ----
+
+# Rendered to a local file first: /etc/pve is the cluster file system (pmxcfs), which refuses the
+# chmod and chown of an atomic Ansible write. The content is the same on every node, so only the
+# first node of a run changes it. pve-firewall picks the file up within seconds, no restart.
+- name: Datacenter firewall
+  when: pve_manage_cluster_firewall | bool
+  block:
+    - name: Datacenter firewall rules (local copy)
+      template: { src: cluster.fw.j2, dest: /etc/prgd/pve-cluster.fw, mode: "0640" }
+
+    - name: Datacenter firewall rules (/etc/pve/firewall/cluster.fw)
+      shell: |
+        set -eu
+        mkdir -p /etc/pve/firewall
+        if cmp -s /etc/prgd/pve-cluster.fw /etc/pve/firewall/cluster.fw; then echo unchanged; exit 0; fi
+        cat /etc/prgd/pve-cluster.fw > /etc/pve/firewall/cluster.fw
+        echo changed
+      register: pve_cluster_fw
+      changed_when: "'changed' in pve_cluster_fw.stdout"
+
+    - name: Firewall compiles
+      command: pve-firewall compile
+      changed_when: false
+      when: pve_cluster_fw is changed
+
+    - name: SSH is open to the internet on the nodes
+      debug:
+        msg: >-
+          WARNING: ssh_allow_from is empty, so cluster.fw accepts SSH from anywhere. Set it to the
+          operators' CIDRs (docs/security/infra-hardening.md) and re-run.
+      when: ssh_allow_from | length == 0
+
 # ---- agent config and service ----
 
 - name: Agent config

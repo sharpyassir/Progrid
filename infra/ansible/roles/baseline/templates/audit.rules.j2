@@ -1,0 +1,22 @@
+## Managed by Ansible (role baseline). Search with: ausearch -k <key>   Report: aureport -k
+## Watches only: execve by root would be too noisy on a host that runs Docker and Proxmox.
+
+## Platform configuration and the deploy bundle
+-w /etc/prgd -p wa -k prgd_config
+-w /opt/prgd -p wa -k prgd_deploy
+-w /etc/wireguard -p wa -k wireguard
+
+## Who may become root
+-w /etc/sudoers -p wa -k sudoers
+-w /etc/sudoers.d -p wa -k sudoers
+-w /usr/bin/sudo -p x -k sudo_use
+
+## SSH daemon configuration
+-w /etc/ssh/sshd_config -p wa -k sshd_config
+-w /etc/ssh/sshd_config.d -p wa -k sshd_config
+
+## Accounts and groups
+-w /etc/passwd -p wa -k identity
+-w /etc/shadow -p wa -k identity
+-w /etc/group -p wa -k identity
+-w /etc/gshadow -p wa -k identity

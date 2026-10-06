@@ -1,0 +1,21 @@
+// Managed by Ansible (role baseline). Security updates only.
+// A separate file instead of an edited 50unattended-upgrades: that file is a package conffile, and
+// unattended-upgrades holds back any package whose conffile was changed. #clear drops the
+// distribution's origin list so only the origins below apply.
+#clear Unattended-Upgrade::Allowed-Origins;
+#clear Unattended-Upgrade::Origins-Pattern;
+Unattended-Upgrade::Origins-Pattern {
+{% if ansible_distribution == 'Ubuntu' %}
+        "origin=Ubuntu,archive=${distro_codename}-security,label=Ubuntu";
+        "origin=UbuntuESMApps,archive=${distro_codename}-apps-security";
+        "origin=UbuntuESM,archive=${distro_codename}-infra-security";
+{% else %}
+        "origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+{% endif %}
+};
+// Docker (download.docker.com) and Proxmox packages are not security origins and are never
+// upgraded here: a Docker or pve-manager upgrade restarts services and is done by hand.
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Automatic-Reboot "{{ 'true' if unattended_upgrades_reboot | bool else 'false' }}";
+Unattended-Upgrade::Automatic-Reboot-Time "{{ unattended_upgrades_reboot_time }}";
