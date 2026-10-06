@@ -9,7 +9,7 @@ import { MailService } from '../../common/mail/mail.service';
 import { ApiError } from '../../common/errors/api-error';
 import { scopesForRole, type Actor } from '../../common/auth/actor';
 import { loadConfig } from '../../config/config';
-import { entityForCountry, entityProfile, publicEntity } from '../../common/entities/entities';
+import { entityProfile, publicEntity } from '../../common/entities/entities';
 import { EventsService } from '../events/events.service';
 import { TokenService } from '../iam/token.service';
 import { ServersService } from '../compute/servers.service';
@@ -82,16 +82,6 @@ export class TeamService {
 
   async updateProfile(actor: Actor, dto: TeamProfileInput) {
     this.human(actor);
-    if (dto.country !== undefined) {
-      // Saudi Arabia and the rest of the world are billed by different companies (tax, invoice
-      // series, currency, gateway). Moving between them is a back office change from the next
-      // billing period; a change within the same company is fine.
-      const current = await this.prisma.team.findUniqueOrThrow({ where: { id: actor.teamId }, select: { billingEntity: true, country: true } });
-      if (dto.country !== current.country && entityForCountry(dto.country) !== current.billingEntity) {
-        const e = entityProfile(current.billingEntity);
-        throw ApiError.conflict('billing_country_locked', `Changing the billing country to or from Saudi Arabia changes the company that invoices you. Ask ${e.supportEmail} and we will move your account from the next billing period.`);
-      }
-    }
     const data = {
       ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
       ...(dto.billingEmail !== undefined ? { billingEmail: dto.billingEmail?.trim().toLowerCase() || null } : {}),

@@ -58,18 +58,19 @@ function GoogleMark() {
 
 /** A drawn console window (not a screenshot): servers list with live status. Illustrative only. */
 function ConsolePreview() {
-  const cur = 'USD';
+  const { currency: cur, domain } = useSite();
+  const sar = cur === 'SAR';
   const rows: [string, string, string, string, string][] = [
-    ['web-1', 'Standard · 2 vCPU · 4 GB', '188.40.211.26', 'active', '17.33'],
-    ['api-1', 'Pro · 4 vCPU · 8 GB', '188.40.211.27', 'active', '33.33'],
-    ['worker-1', 'Starter · 1 vCPU · 2 GB', '188.40.211.28', 'provisioning', '7.73'],
+    ['web-1', 'Standard · 2 vCPU · 4 GB', '188.40.211.26', 'active', sar ? '65' : '17.33'],
+    ['api-1', 'Pro · 4 vCPU · 8 GB', '188.40.211.27', 'active', sar ? '125' : '33.33'],
+    ['worker-1', 'Starter · 1 vCPU · 2 GB', '188.40.211.28', 'provisioning', sar ? '29' : '7.73'],
   ];
   return (
     <div dir="ltr" className="relative">
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-blue-900/10">
         <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2.5">
           <i className="h-2.5 w-2.5 rounded-full bg-slate-300" /><i className="h-2.5 w-2.5 rounded-full bg-slate-300" /><i className="h-2.5 w-2.5 rounded-full bg-slate-300" />
-          <span className="ms-3 rounded-md bg-white px-3 py-0.5 text-[11px] text-slate-400 ring-1 ring-slate-200">console.progrid.co/servers</span>
+          <span className="ms-3 rounded-md bg-white px-3 py-0.5 text-[11px] text-slate-400 ring-1 ring-slate-200">console.{domain ?? 'progrid.co'}/servers</span>
         </div>
         <div className="grid grid-cols-[150px_1fr]">
           <aside className="border-e border-slate-100 bg-white p-3 text-[12px] text-slate-500">

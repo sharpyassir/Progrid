@@ -259,10 +259,10 @@ export function Products() {
 /* ───────────────────────── Agents ───────────────────────── */
 
 export function Agents() {
-  const c = useCopy();
-  // A $15 monthly cap and a $27 server that would pass it, in cents.
-  const cap = 1500;
-  const added = 2700;
+  const c = useCopy(); const { currency } = useSite();
+  // The same story in the domain's currency: a cap of $15 or 50 SAR and a server that would pass it, in minor units.
+  const cap = currency === 'SAR' ? 5000 : 1500;
+  const added = currency === 'SAR' ? 6500 : 2700;
   return (
     <section id="agents" className="bg-slate-950 py-20 text-white">
       <div className="container-x grid items-center gap-12 lg:grid-cols-2">
@@ -319,9 +319,9 @@ const APP_FROM_SAR_MINOR = 1900;
 /** Price tables. `page` renders them as the /pricing page heading (h1) instead of a homepage section. */
 export function Pricing({ page = false }: { page?: boolean } = {}) {
   const c = useCopy(); const lang = useLang(); const site = useSite();
-  // The website shows US dollar prices on every domain (the price book converts at the pegged rate).
+  // The domain's currency: US dollars on progrid.co, riyals with VAT on progrid.sa.
   const currency = site.currency;
-  const showVat = false; // US dollar prices; any tax is added at checkout
+  const showVat = currency === 'SAR'; // riyal prices on progrid.sa carry 15% VAT
   const toCurrency = (sarMinor: number) => (currency === 'SAR' ? sarMinor : Math.round(sarMinor / 3.75));
   const fallback = (): PriceList => ({ currency, baseCurrency: 'SAR', fxRate: currency === 'SAR' ? 1 : 1 / 3.75, data: FALLBACK.map((p) => ({ ...p, monthlyMinor: toCurrency(p.monthlyMinor), hourlyMinor: toCurrency(p.hourlyMinor) })) });
   const [list, setList] = useState<PriceList>(fallback);

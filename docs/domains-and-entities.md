@@ -8,7 +8,7 @@ Two domains and two companies sit on top of it.
 | Role | Primary, global | Local storefront for Saudi Arabia |
 | Hosts | progrid.co, www, console, api, ops, gateway | the same hosts on progrid.sa |
 | Contracting company | Progrid Technologies LLC (United States) | Progrid Arabia (Saudi Arabia) |
-| Who it bills | Every billing country except Saudi Arabia | Billing country Saudi Arabia |
+| Who it bills | Every account created on progrid.co | Every account created on progrid.sa |
 | Currency | USD | SAR |
 | Tax on invoices | None by default (`ENTITY_LLC_TAX_RATE`, 0) | VAT 15% |
 | E-invoicing | None | ZATCA (Fatoora) through the e-invoicing provider |
@@ -95,15 +95,17 @@ official file (`country.iso_code`) and the ip-location-db build (`country_code`)
 
 ## Billing entities
 
-**Rule.** The company follows the team's **billing country**, never the visitor's IP address:
-`SA` is Progrid Arabia, every other country Progrid Technologies LLC. The currency follows the
-company (SAR or USD). TRY does not exist in the schema (only USD and SAR), so there is nothing to
+**Rule.** The company follows the **domain the account was created on**: progrid.sa is Progrid
+Arabia (SAR, 15% VAT, its own invoice series and books), progrid.co is Progrid Technologies LLC
+(USD, the US ledger). The billing country is only the invoice address and never moves an account.
+On hosts that are not a public domain (development, the integration suite) the country decides
+as before (`entityForSignup` in `common/entities/entities.ts`). The currency follows the company. TRY does not exist in the schema (only USD and SAR), so there is nothing to
 keep or hide.
 
 **Signup** asks for the billing country. The console prefills it from `GET /v1/geo`: SA on the
 progrid.sa domain, otherwise the country of the caller's address from the same DB-IP database,
-otherwise US. The person can pick any country and the company follows what they pick. Social
-sign up passes the picked country to the API. A signup without a country (CLI, older clients)
+otherwise US. The person can pick any country; it is the invoice address. Social sign up passes
+the domain it started on, so a Google or Microsoft account gets the company of that domain. A signup without a country (CLI, older clients)
 gets the same default.
 
 **Stored** on the team (`billingEntity`), on every invoice and on every credit note. Migration
@@ -115,13 +117,13 @@ stored currency does not match its new company keeps its currency; find them wit
 and move them with the back office change below.
 
 **Changing company** is staff only (finance role): back office, team page, "Billing country and
-company", or `POST /admin/v1/teams/:id/billing-country { country, reason }`. A country within the
-same company changes at once. A change of company is scheduled for the first day of the next
+company", or `POST /admin/v1/teams/:id/billing-country { country, billingEntity?, reason }`. A
+country change on its own applies at once and keeps the company; `billingEntity` moves the team. A change of company is scheduled for the first day of the next
 month: the current month is rated and invoiced by the old company, usage from that day is rated in
 the new currency, and the monthly invoice run folds the change into the team. Every step is in the
 audit log (`admin.team_billing_entity_scheduled`, `team.billing_entity_changed`). Credit left in the
-old currency is not converted; refund it or reissue it by hand. Customers cannot change their
-billing country across companies (`409 billing_country_locked`).
+old currency is not converted; refund it or reissue it by hand. Customers change their billing
+country freely; it never changes their company.
 
 **Invoices and PDFs** carry the company's legal name, address, registration numbers and tax
 number, its series, currency and tax line, "TAX INVOICE" and the ZATCA note for Progrid Arabia,

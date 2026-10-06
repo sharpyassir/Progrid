@@ -44,9 +44,10 @@ export class AffiliateMailer {
 
   async send(a: Pick<Affiliate, 'userId' | 'name' | 'email' | 'code' | 'country' | 'statusReason'>, kind: AffiliateMail, extra: { amount?: string; reference?: string } = {}) {
     try {
-      const user = await this.prisma.user.findUnique({ where: { id: a.userId }, select: { locale: true } });
+      const user = await this.prisma.user.findUnique({ where: { id: a.userId }, select: { locale: true, memberships: { select: { team: { select: { billingEntity: true } } }, orderBy: { teamId: 'asc' }, take: 1 } } });
       const lang: Lang = user?.locale === 'ar' ? 'ar' : 'en';
-      const entity = entityForCountry(a.country);
+      // The company of the affiliate's own account (the domain they signed up on), else their country.
+      const entity = user?.memberships[0]?.team.billingEntity ?? entityForCountry(a.country);
       const portal = `${entityProfile(entity).consoleUrl}/affiliates/portal`;
       const m = T[lang][kind]({ name: a.name, code: a.code, portal, reason: a.statusReason ?? undefined, ...extra });
       await this.mail.send({ to: a.email, subject: m.subject, text: m.text, entity });

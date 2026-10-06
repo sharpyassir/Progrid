@@ -25,3 +25,6 @@ export type BillingEntityId = 'progrid_arabia' | 'progrid_llc';
 export const ENTITY_NAME: Record<BillingEntityId, string> = { progrid_arabia: 'Progrid Arabia', progrid_llc: 'Progrid Technologies LLC' };
 /** The company a billing country is billed by, as the API decides it. */
 export const entityForCountry = (country: string): BillingEntityId => (country === 'SA' ? 'progrid_arabia' : 'progrid_llc');
+/** The company a new account gets: the domain it is created on (progrid.sa or progrid.co), else the country (development). */
+export const entityForSignup = (domain: string | null | undefined, country: string): BillingEntityId =>
+  domain?.endsWith('.sa') ? 'progrid_arabia' : domain ? 'progrid_llc' : entityForCountry(country);

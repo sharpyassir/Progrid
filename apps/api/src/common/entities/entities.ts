@@ -6,9 +6,11 @@ import { currentRequest } from './request-context';
  * The two contracting companies and the two public domains (docs/domains-and-entities.md).
  *
  * One platform, one database and one account system serve both progrid.co (primary, global) and
- * progrid.sa. Which company contracts with a team follows the team's billing country, never the
- * visitor's IP address: Saudi Arabia is Progrid Arabia (SAR, VAT, ZATCA, Moyasar), every other
- * country is Progrid Technologies LLC (USD, Stripe).
+ * progrid.sa. Which company contracts with a team follows the domain the account was created on:
+ * progrid.sa is Progrid Arabia (SAR, 15% VAT, its own invoice series and books), progrid.co is
+ * Progrid Technologies LLC (USD, the US ledger). The billing country is only the invoice address.
+ * Outside the public domains (development, tests) the country decides, as before. Finance staff
+ * can move a team to the other company from the next billing period.
  *
  * Legal details come from configuration. Unset values print a visible placeholder; nothing here
  * invents a registration or tax number.
@@ -22,6 +24,19 @@ export const ARABIA_COUNTRY = 'SA';
 
 export function entityForCountry(country: string | null | undefined): BillingEntityId {
   return (country ?? '').toUpperCase() === ARABIA_COUNTRY ? 'progrid_arabia' : 'progrid_llc';
+}
+
+/** The company of a public domain: progrid.sa is Progrid Arabia, progrid.co the LLC; undefined for other hosts. */
+export function entityForDomain(domain: string | undefined, c: AppConfig = loadConfig()): BillingEntityId | undefined {
+  if (!domain) return undefined;
+  if (c.ENTITY_ARABIA_DOMAIN && domain === c.ENTITY_ARABIA_DOMAIN) return 'progrid_arabia';
+  if (c.ENTITY_LLC_DOMAIN && domain === c.ENTITY_LLC_DOMAIN) return 'progrid_llc';
+  return undefined;
+}
+
+/** The company of a new account: the domain it was created on, else (no public domain) the billing country. */
+export function entityForSignup(domain: string | undefined, country: string | null | undefined): BillingEntityId {
+  return entityForDomain(domain) ?? entityForCountry(country);
 }
 
 export function currencyForEntity(entity: BillingEntityId): Currency {

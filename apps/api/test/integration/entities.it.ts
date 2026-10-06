@@ -51,7 +51,8 @@ async function staff(roles: string[] = []) {
 }
 
 describe('billing entities', () => {
-  it('assigns the company from the billing country, never from the domain or address alone', async () => {
+  it('assigns the company from the domain the account is created on; the country is only the address', async () => {
+    // Outside the public domains (development and this suite) the country decides.
     const sa = await signup(s, { country: 'SA' });
     const de = await signup(s, { country: 'DE' });
     const saTeam = await s.prisma.team.findUniqueOrThrow({ where: { id: sa.teamId } });
@@ -65,29 +66,27 @@ describe('billing entities', () => {
     const bal = await de.client.ok('GET', '/v1/billing/balance');
     expect(bal.billingEntity).toMatchObject({ id: 'progrid_llc', legalName: 'Progrid Technologies LLC', currency: 'USD', taxRate: 0 });
 
-    // A country picked on the .sa domain still wins: a German signup there is billed by the LLC.
-    const email = `it-${randomBytes(6).toString('hex')}@example.test`;
-    const viaSa = await raw('POST', '/v1/auth/signup', { 'x-forwarded-host': 'api.progrid.sa' }, { email, acceptTerms: true, password: 'pw-long-enough-1', name: 'Via SA', teamName: 'via sa', country: 'DE' });
+    // On progrid.sa every account is Progrid Arabia (SAR, VAT), whatever the country.
+    const viaSa = await raw('POST', '/v1/auth/signup', { 'x-forwarded-host': 'api.progrid.sa' }, { email: `it-${randomBytes(6).toString('hex')}@example.test`, acceptTerms: true, password: 'pw-long-enough-1', name: 'Via SA', teamName: 'via sa', country: 'DE' });
     expect(viaSa.status).toBe(201);
-    expect(viaSa.body.team).toMatchObject({ country: 'DE', billingEntity: 'progrid_llc', currency: 'USD' });
+    expect(viaSa.body.team).toMatchObject({ country: 'DE', billingEntity: 'progrid_arabia', currency: 'SAR' });
+    // On progrid.co every account is the LLC (USD, the US books), a Saudi address included.
+    const viaCo = await raw('POST', '/v1/auth/signup', { 'x-forwarded-host': 'api.progrid.co' }, { email: `it-${randomBytes(6).toString('hex')}@example.test`, acceptTerms: true, password: 'pw-long-enough-1', name: 'Via CO', teamName: 'via co', country: 'SA' });
+    expect(viaCo.body.team).toMatchObject({ country: 'SA', billingEntity: 'progrid_llc', currency: 'USD' });
 
-    // Without a country, the .sa domain defaults to Saudi Arabia and the .co domain to the caller's country (US without a database).
+    // Without a country, the .sa domain defaults the address to Saudi Arabia.
     const noCountrySa = await raw('POST', '/v1/auth/signup', { 'x-forwarded-host': 'api.progrid.sa' }, { email: `it-${randomBytes(6).toString('hex')}@example.test`, acceptTerms: true, password: 'pw-long-enough-1', name: 'Default SA', teamName: 'default sa' });
     expect(noCountrySa.body.team).toMatchObject({ country: 'SA', billingEntity: 'progrid_arabia', currency: 'SAR' });
     const geo = await raw('GET', '/v1/geo', { 'x-forwarded-host': 'api.progrid.sa' });
     expect(geo.body).toMatchObject({ country: 'SA', source: 'domain', billingEntity: 'progrid_arabia', currency: 'SAR' });
     const geoCo = await raw('GET', '/v1/geo', { 'x-forwarded-host': 'api.progrid.co', 'x-real-ip': '2.88.0.1' });
-    if (geoCo.body.database) expect(geoCo.body).toMatchObject({ country: 'SA', source: 'ip', billingEntity: 'progrid_arabia' });
-    else expect(geoCo.body).toMatchObject({ country: 'US', source: 'default', billingEntity: 'progrid_llc' });
+    expect(geoCo.body).toMatchObject({ billingEntity: 'progrid_llc', currency: 'USD' });
 
-    // Customers cannot move themselves between companies; a move within one company is fine.
-    const locked = await sa.client.patch('/v1/team', { country: 'AE' });
-    expect(locked.status).toBe(409);
-    expect(locked.body.error.code).toBe('billing_country_locked');
-    expect(locked.body.error.message).toContain('support@progrid.sa');
-    expect((await de.client.patch('/v1/team', { country: 'FR' })).status).toBe(200);
-    expect((await de.client.patch('/v1/team', { country: 'SA' })).status).toBe(409);
-    expect((await s.prisma.team.findUniqueOrThrow({ where: { id: de.teamId } })).country).toBe('FR');
+    // The billing country is only the address: customers change it freely and stay with their company.
+    expect((await sa.client.patch('/v1/team', { country: 'AE' })).status).toBe(200);
+    expect((await de.client.patch('/v1/team', { country: 'SA' })).status).toBe(200);
+    expect(await s.prisma.team.findUniqueOrThrow({ where: { id: sa.teamId } })).toMatchObject({ country: 'AE', billingEntity: 'progrid_arabia' });
+    expect(await s.prisma.team.findUniqueOrThrow({ where: { id: de.teamId } })).toMatchObject({ country: 'SA', billingEntity: 'progrid_llc' });
   });
 
   it('issues SAR invoices with VAT in the PRGD-SA series and USD invoices without tax in the PRGD-US series', async () => {
@@ -170,7 +169,13 @@ describe('billing entities', () => {
   it('lets staff move a team to the other company from the next billing period, audited', async () => {
     const admin = await staff(['finance', 'support']);
     const t = await signup(s, { country: 'AE' });
-    const r = await admin.client.ok('POST', `/admin/v1/teams/${t.teamId}/billing-country`, { country: 'SA', reason: 'moved to Riyadh office' }, 201);
+    // A country change alone keeps the company and applies now.
+    const addr = await admin.client.ok('POST', `/admin/v1/teams/${t.teamId}/billing-country`, { country: 'SA', reason: 'new office address' }, 201);
+    expect(addr).toMatchObject({ scheduled: false });
+    expect(await s.prisma.team.findUniqueOrThrow({ where: { id: t.teamId } })).toMatchObject({ country: 'SA', billingEntity: 'progrid_llc' });
+    await admin.client.ok('POST', `/admin/v1/teams/${t.teamId}/billing-country`, { country: 'AE', reason: 'back to the old address' }, 201);
+    // Moving to the other company is explicit and scheduled.
+    const r = await admin.client.ok('POST', `/admin/v1/teams/${t.teamId}/billing-country`, { country: 'SA', billingEntity: 'progrid_arabia', reason: 'customer asked to be billed by Progrid Arabia' }, 201);
     expect(r.scheduled).toBe(true);
     const next = new Date(r.effectiveAt);
     expect(next.getUTCDate()).toBe(1);

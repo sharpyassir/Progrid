@@ -4,9 +4,10 @@ import type { Site } from './site-shared';
  * Every sentence on the marketing site, in the three launch languages, for both storefronts.
  * English is the source; Turkish and Arabic keep the same keys so a missing string is a type error.
  *
- * Progrid is one global brand with one global website: the same text and US dollar prices on every
- * domain. Never claim that servers or data are in a particular country, and no country specific
- * offers on the marketing pages (legal documents stay per contracting company).
+ * Progrid is one global brand with one global website: the same text on every domain. Only the
+ * currency follows the domain, because the domain decides the company that bills: progrid.co shows
+ * US dollars, progrid.sa shows riyals with 15% VAT. Never claim that servers or data are in a
+ * particular country, and no country specific offers (legal documents stay per company).
  */
 export type Lang = 'en' | 'tr' | 'ar';
 export const LANGS: { code: Lang; label: string; path: string; dir: 'ltr' | 'rtl' }[] = [
@@ -269,9 +270,52 @@ const ar: Copy = {
 
 const BASE: Record<Lang, Copy> = { en, tr, ar };
 
-/** The site text. Every domain shows the same global site; `site` is kept for callers. */
-export function getCopy(lang: Lang, _site?: Site): Copy {
-  return BASE[lang];
+/** Deep copy that keeps the noteTail function. */
+function cloneCopy(c: Copy): Copy {
+  const out = JSON.parse(JSON.stringify(c)) as Copy;
+  out.pricing.noteTail = c.pricing.noteTail;
+  return out;
+}
+
+/** The same text with riyal prices and VAT, for the domain billed by Progrid Arabia. Currency only. */
+function inRiyals(lang: Lang, base: Copy): Copy {
+  const c = cloneCopy(base);
+  if (lang === 'en') {
+    c.hero.stats[1] = ['29 SAR / mo', 'Starter server, billed hourly'];
+    c.terminal.ready = 'WordPress is ready at https://185.0.113.42 and billing at 0.04 SAR per hour';
+    c.terminal.capNote = '# 50 SAR per month cap, delete needs approval';
+    c.trust[1] = ['﷼', 'Simple pricing in riyals', '15% VAT shown before you pay. Clear monthly invoices'];
+    c.agents.points[0] = ['Spending cap per token', 'A 50 SAR monthly cap means the agent cannot create a 65 SAR server. Ever.'];
+    c.agents.codeCap = '// 50 SAR per month';
+    c.pricing.h2 = 'Simple and predictable. Priced in riyals, with VAT shown before you pay.';
+    c.pricing.note = 'Prices are in riyals and exclude 15% VAT. The total with VAT is shown at checkout. ';
+  } else if (lang === 'tr') {
+    c.hero.stats[1] = ['29 SAR / ay', 'Starter sunucu, saatlik faturalanır'];
+    c.terminal.ready = 'WordPress https://185.0.113.42 adresinde hazır, saatlik ücret 0,04 SAR';
+    c.terminal.capNote = '# aylık 50 SAR limit, silme onay ister';
+    c.trust[1] = ['﷼', 'Riyal ile basit fiyat', '%15 KDV ödemeden önce gösterilir. Anlaşılır aylık faturalar'];
+    c.agents.points[0] = ['Token başına harcama limiti', 'Aylık 50 SAR limit, ajanın 65 SAR’lık sunucu oluşturamayacağı anlamına gelir. Asla.'];
+    c.agents.codeCap = '// aylık 50 SAR';
+    c.pricing.h2 = 'Basit ve öngörülebilir. Riyal fiyatlar, KDV ödemeden önce gösterilir.';
+    c.pricing.note = 'Fiyatlar riyal cinsindendir ve %15 KDV hariçtir. KDV dahil toplam ödeme sırasında gösterilir. ';
+  } else {
+    c.hero.stats[1] = ['29 ريالًا شهريًا', 'خادم Starter بفوترة بالساعة'];
+    c.terminal.ready = 'WordPress جاهز على https://185.0.113.42 بتكلفة 0.04 ريال في الساعة';
+    c.terminal.capNote = '# حد 50 ريالًا شهريًا، والحذف يتطلب موافقة';
+    c.trust[1] = ['﷼', 'أسعار واضحة بالريال', 'تظهر ضريبة القيمة المضافة 15% قبل الدفع، وفواتير شهرية واضحة'];
+    c.agents.points[0] = ['حد إنفاق لكل رمز', 'حد شهري قدره 50 ريالًا يعني أن الوكيل لا يستطيع إنشاء خادم بسعر 65 ريالًا. أبدًا.'];
+    c.agents.codeCap = '// 50 ريالًا شهريًا';
+    c.pricing.h2 = 'أسعار بسيطة ومتوقعة بالريال، وتظهر الضريبة قبل الدفع.';
+    c.pricing.note = 'الأسعار بالريال ولا تشمل ضريبة القيمة المضافة 15%. ويظهر الإجمالي شاملًا الضريبة عند الدفع. ';
+  }
+  return c;
+}
+
+const RIYALS: Record<Lang, Copy> = { en: inRiyals('en', en), tr: inRiyals('tr', tr), ar: inRiyals('ar', ar) };
+
+/** The site text: the same everywhere, with prices in the currency of the domain's company. */
+export function getCopy(lang: Lang, site?: Site): Copy {
+  return site === 'sa' ? RIYALS[lang] : BASE[lang];
 }
 
 /** The global copy, for callers without a storefront. */

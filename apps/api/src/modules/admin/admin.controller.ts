@@ -16,7 +16,7 @@ import { BackupsService } from '../storage/backups.service';
 import { FxService } from '../billing/fx.service';
 import { startOfMonth } from '../billing/pricing';
 import { ApiError } from '../../common/errors/api-error';
-import { BILLING_ENTITIES, currencyForEntity, entityForCountry, entityProfile, publicEntity } from '../../common/entities/entities';
+import { BILLING_ENTITIES, currencyForEntity, entityProfile, publicEntity } from '../../common/entities/entities';
 import { isCountryCode } from '../../common/entities/countries';
 import { billingAt, nextBillingPeriod } from '../billing/entity-change';
 
@@ -76,8 +76,10 @@ class ManualPaymentDto {
 }
 
 class BillingCountryDto {
-  /** ISO 3166-1 alpha-2. SA moves the team to Progrid Arabia, any other country to Progrid Technologies LLC. */
+  /** ISO 3166-1 alpha-2: the invoice address. On its own it never changes the company. */
   @IsString() @Length(2, 2) country: string;
+  /** Move the team to this company from the next billing period (default: keep the current one). */
+  @IsOptional() @IsIn(['progrid_llc', 'progrid_arabia']) billingEntity?: 'progrid_llc' | 'progrid_arabia';
   @IsString() @Length(3, 500) reason: string;
 }
 
@@ -371,10 +373,10 @@ export class AdminController {
   // ---- finance ----
 
   /**
-   * Changes a team's billing country. Customers cannot move themselves between companies, because
-   * the company decides tax, invoice series, currency and payment gateway. A change that keeps the
-   * company applies now. A change of company is scheduled for the start of the next billing
-   * period: this period is still invoiced by the old company, usage from then on is rated in the
+   * Changes a team's billing country (the invoice address, applied now) and, with `billingEntity`,
+   * moves it to the other company. The company comes from the domain the account was created on
+   * and decides tax, invoice series, currency, gateway and books, so customers cannot change it.
+   * A change of company is scheduled for the start of the next billing period: this period is still invoiced by the old company, usage from then on is rated in the
    * new currency. Credit left in the old currency is not converted (refund or reissue it by hand).
    */
   @StaffAreas('finance')
@@ -385,7 +387,7 @@ export class AdminController {
     const team = await this.prisma.team.findUniqueOrThrow({ where: { id } });
     const now = new Date();
     const current = billingAt(team, now);
-    const entity = entityForCountry(country);
+    const entity = dto.billingEntity ?? current.entity;
     if (entity === current.entity) {
       const updated = await this.prisma.team.update({ where: { id }, data: { country, pendingCountry: null, pendingBillingEntity: null, billingChangeAt: null } });
       await this.events.emit('admin.team_billing_country_set', { teamId: id, from: team.country, to: country, billingEntity: entity, reason: dto.reason, effectiveAt: now }, { actor, teamId: id, resource: `team:${id}` });

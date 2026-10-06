@@ -80,7 +80,7 @@ export function resolveSite(host: string | null | undefined, cfg: SiteConfig): S
     other: site === 'sa' ? { site: 'global', www: globalWww } : { site: 'sa', www: saWww },
     globalWww,
     saWww,
-    currency: 'USD', // one global website priced in US dollars on every domain
+    currency: site === 'sa' ? 'SAR' : 'USD', // the domain decides the company, and with it the currency
     entity: ENTITY[site](own),
   };
 }

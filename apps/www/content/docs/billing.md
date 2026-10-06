@@ -13,9 +13,16 @@ The monthly price divided by 672 gives the hourly rate. There is no minimum term
 
 ## Who bills you, and in which currency
 
-Prices are in US dollars. Your team's billing country, set when you sign up, decides which Progrid company you contract with. Most customers are billed by Progrid Technologies LLC in US dollars and pay by card through Stripe. In some countries a local Progrid company bills you in the local currency, adds the local tax and issues invoices that meet local rules. Your invoices and the **Billing** page always show which company bills you.
+The site you sign up on decides which Progrid company you contract with:
 
-Every checkout shows the total, with any tax, before you pay. A change of billing country that changes the company is done by our support team: write to support from the console. It takes effect at the start of the next billing period.
+| Signed up on | Company | Currency | Tax | Cards |
+|---|---|---|---|---|
+| progrid.co | Progrid Technologies LLC | USD | None added by default | Stripe |
+| progrid.sa | Progrid Arabia | SAR | 15% VAT | Moyasar |
+
+Riyal prices are the dollar prices at the pegged rate of 3.75 riyals per dollar. Your billing country is the address printed on your invoices and does not change the company. Your invoices and the **Billing** page always show which company bills you, and every checkout shows the total, with any tax, before you pay.
+
+To move your account to the other company, write to support from the console. The move takes effect at the start of the next billing period.
 
 ## Your first top up
 

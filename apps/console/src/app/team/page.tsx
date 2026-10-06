@@ -4,7 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiError, setToken } from '@/lib/api';
 import { Key, Locale, t, tf } from '@/lib/i18n';
-import { countryOptions, entityForCountry, type BillingEntityId } from '@/lib/countries';
+import { countryOptions, type BillingEntityId } from '@/lib/countries';
 import { useShell } from '@/components/shell';
 
 type Role = 'owner' | 'admin' | 'member' | 'billing' | 'readonly';
@@ -127,7 +127,7 @@ export default function TeamPage() {
           <label className="space-y-1 text-sm"><span>{t(locale, 'teamName')}</span><input className="input" name="name" defaultValue={info.team.name} minLength={2} maxLength={60} required /></label>
           <label className="space-y-1 text-sm"><span>{t(locale, 'billingEmailLabel')}</span><input className="input" name="billingEmail" type="email" defaultValue={info.team.billingEmail ?? ''} /></label>
           <label className="space-y-1 text-sm"><span>{t(locale, 'taxIdLabel')}</span><input className="input" name="taxId" defaultValue={info.team.taxId ?? ''} maxLength={40} dir="ltr" /></label>
-          <label className="space-y-1 text-sm"><span>{t(locale, 'billingCountry')}</span><select className="input" name="country" defaultValue={info.team.country}>{countryOptions(locale).filter((c) => !info.team.billingEntity || entityForCountry(c.code) === info.team.billingEntity).map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select><span className="block text-xs text-neutral-500">{info.team.entity ? `${t(locale, 'billedBy')}: ${info.team.entity.legalName}. ` : ''}{t(locale, 'entityChangeHint')}</span></label>
+          <label className="space-y-1 text-sm"><span>{t(locale, 'billingCountry')}</span><select className="input" name="country" defaultValue={info.team.country}>{countryOptions(locale).map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select><span className="block text-xs text-neutral-500">{info.team.entity ? `${t(locale, 'billedBy')}: ${info.team.entity.legalName}. ` : ''}{t(locale, 'entityChangeHint')}</span></label>
           <label className="space-y-1 text-sm sm:col-span-2"><span>{t(locale, 'billingAddressLabel')}</span><textarea className="input" name="billingAddress" rows={3} maxLength={500} defaultValue={info.team.billingAddress ?? ''} /></label>
         </fieldset>
         {canBilling && <button className="btn-primary">{t(locale, 'save')}</button>}

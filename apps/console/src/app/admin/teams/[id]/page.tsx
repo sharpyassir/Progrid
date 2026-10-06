@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
-import { countryOptions, ENTITY_NAME, entityForCountry, type BillingEntityId } from '@/lib/countries';
+import { countryOptions, ENTITY_NAME, type BillingEntityId } from '@/lib/countries';
 import { AdminShell, Stat, fmtDate, fmtMoney } from '@/components/admin-shell';
 import { StatusBadge } from '@/components/status-badge';
 
@@ -37,12 +37,13 @@ export default function AdminTeam() {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const country = String(f.get('country') ?? '');
-    const moving = entityForCountry(country) !== t!.billingEntity;
+    const target = String(f.get('billingEntity') ?? t!.billingEntity) as BillingEntityId;
+    const moving = target !== t!.billingEntity;
     const question = moving
-      ? `Move ${t!.name} to ${ENTITY_NAME[entityForCountry(country)]} from the next billing period? Tax, currency, invoice series and card gateway change with it. Credit left in ${t!.currency} is not converted.`
+      ? `Move ${t!.name} to ${ENTITY_NAME[target]} from the next billing period? Tax, currency, invoice series, card gateway and books change with it. Credit left in ${t!.currency} is not converted.`
       : `Change the billing country of ${t!.name} to ${country}? The billing company stays ${ENTITY_NAME[t!.billingEntity]}.`;
     if (!confirm(question)) return;
-    await run(() => api(`/admin/v1/teams/${id}/billing-country`, { method: 'POST', body: JSON.stringify({ country, reason: f.get('reason') }) }), moving ? 'Change scheduled for the next billing period.' : 'Billing country changed.');
+    await run(() => api(`/admin/v1/teams/${id}/billing-country`, { method: 'POST', body: JSON.stringify({ country, reason: f.get('reason'), ...(moving ? { billingEntity: target } : {}) }) }), moving ? 'Change scheduled for the next billing period.' : 'Billing country changed.');
   }
   if (!t) return <AdminShell title="Team"><p className="text-sm text-neutral-500">Loading…</p></AdminShell>;
   const credit_ = t.credits.reduce((s, c) => s + (!c.expiresAt || new Date(c.expiresAt) > new Date() ? c.remainingMinor : 0), 0);
@@ -62,8 +63,12 @@ export default function AdminTeam() {
       </div>
       <section className="card space-y-2">
         <h2 className="font-medium">Billing country and company</h2>
-        <p className="text-xs text-neutral-500">Saudi Arabia is billed by Progrid Arabia (SAR, VAT, ZATCA, Moyasar); every other country by Progrid Technologies LLC (USD, Stripe). A change of company starts at the next billing period and is recorded in the audit log. Finance staff only.</p>
+        <p className="text-xs text-neutral-500">The company comes from the domain the account was created on: progrid.sa is Progrid Arabia (SAR, 15% VAT, Moyasar, its own books), progrid.co is Progrid Technologies LLC (USD, Stripe, the US ledger). The billing country is the invoice address and never moves the account on its own. A change of company starts at the next billing period and is recorded in the audit log. Finance staff only.</p>
         <form className="flex flex-wrap items-center gap-2" onSubmit={billingCountry}>
+          <select className="input w-auto" name="billingEntity" defaultValue={t.pendingBillingEntity ?? t.billingEntity} aria-label="Billing company">
+            <option value="progrid_llc">{ENTITY_NAME.progrid_llc} (USD)</option>
+            <option value="progrid_arabia">{ENTITY_NAME.progrid_arabia} (SAR)</option>
+          </select>
           <select className="input w-auto" name="country" defaultValue={t.pendingCountry ?? t.country}>{countryOptions('en').map((c) => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}</select>
           <input className="input w-72" name="reason" placeholder="Reason (kept in the audit log)" required minLength={3} />
           <button className="btn-ghost">Change</button>

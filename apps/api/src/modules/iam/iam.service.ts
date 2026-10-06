@@ -11,7 +11,7 @@ import { AccountSecurityService } from './account-security.service';
 import { EventsService } from '../events/events.service';
 import type { Actor } from '../../common/auth/actor';
 import { passwordNotSet } from '../oauth/password-not-set';
-import { currencyForEntity, entityForCountry } from '../../common/entities/entities';
+import { currencyForEntity, entityForSignup, requestDomain } from '../../common/entities/entities';
 import { defaultSignupCountry } from '../../common/geo/signup-country';
 import { AttributionService } from '../affiliates/attribution.service';
 
@@ -38,15 +38,15 @@ export class IamService {
    * A new user with a new team, the way signup makes them. Social sign up passes no password
    * and `emailVerified` when the provider vouches for the address, so no confirmation mail goes out.
    */
-  async createAccount(dto: Omit<SignupDto, 'password' | 'acceptTerms'> & { password?: string; emailVerified?: boolean; ip?: string; userAgent?: string; legal?: LegalMethod }) {
+  async createAccount(dto: Omit<SignupDto, 'password' | 'acceptTerms'> & { password?: string; emailVerified?: boolean; ip?: string; userAgent?: string; legal?: LegalMethod; domain?: string }) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email.toLowerCase() } });
     if (existing) throw ApiError.conflict('email_taken', 'An account with this email already exists');
     // A mistyped promo code is reported before anything is created.
     await this.attribution.assertPromo(dto.promoCode);
 
     const country = dto.country ?? defaultSignupCountry();
-    // The company follows the billing country, never the IP address (docs/domains-and-entities.md).
-    const billingEntity = entityForCountry(country);
+    // The company follows the domain the account is created on (docs/domains-and-entities.md).
+    const billingEntity = entityForSignup(dto.domain ?? requestDomain(), country);
     const slug = await this.uniqueSlug(dto.teamName);
     const user = await this.prisma.user.create({
       data: {
