@@ -54,7 +54,7 @@ const RUNCMD: Record<DbNodeInit['engine'], string[]> = {
 /** The agent, standard library only (plus PyYAML on Postgres nodes, which Patroni needs anyway). */
 const DBD_PY = String.raw`#!/usr/bin/env python3
 # prgd managed database agent. The control plane is the only writer of configuration.
-import http.server, json, os, shutil, subprocess, threading, time, urllib.request, urllib.parse
+import http.server, json, os, re, shutil, subprocess, threading, time, urllib.request, urllib.parse
 SECRET = open('/opt/prgd/vm.secret').read().strip()
 ENGINE = open('/opt/prgd/engine').read().strip()
 STATE = '/opt/prgd/db.json'
@@ -142,6 +142,9 @@ def patroni_cluster():
 def has_leader():
     cl = patroni_cluster()
     return bool(cl) and any(m.get('role') in ('leader', 'master', 'primary') and m.get('state') == 'running' for m in cl.get('members', []))
+def ident(name):
+    # User and database names come from the API already checked; checked again before they go into SQL.
+    return bool(re.fullmatch(r'[a-z_][a-z0-9_]{0,62}', str(name)))
 def pg(sql, db='postgres'):
     # Local superuser through the socket (peer authentication): no password involved.
     return sh(['runuser', '-u', 'postgres', '--', 'psql', '-d', db, '-v', 'ON_ERROR_STOP=1', '-At', '-c', sql], check=False)
@@ -221,6 +224,14 @@ def apply_postgres(c):
             if pg(f"SELECT 1 FROM pg_database WHERE datname='{d}'").stdout.strip() != '1': pg(f"CREATE DATABASE {d}")
             for u in c.get('users', []): pg(f"GRANT ALL PRIVILEGES ON DATABASE {d} TO {u['name']}")
             pg('CREATE EXTENSION IF NOT EXISTS vector', d)
+        users = {u['name'] for u in c.get('users', [])}
+        for d, owner in (c.get('owners') or {}).items():
+            # A database made for an attached app belongs to the app's user: since Postgres 15 only
+            # the owner may create tables in its public schema, which migrations need.
+            if d in c.get('databases', []) and owner in users and ident(d) and ident(owner): pg(f"ALTER DATABASE {d} OWNER TO {owner}")
+        for name in c.get('retiredUsers', []):
+            # A deleted user's password stops working; the role stays because it may own objects.
+            if name not in users and ident(name): pg(f"DO $$ BEGIN IF EXISTS (SELECT FROM pg_roles WHERE rolname='{name}') THEN ALTER ROLE {name} NOLOGIN PASSWORD NULL; END IF; END $$;")
         archiving(c)
     missing = pg_missing(c)
     if missing: raise NotReady('waiting for ' + ', '.join(missing[:5]) + ' on this node')
@@ -443,6 +454,9 @@ def apply_mysql(c):
         for d in c.get('databases', []):
             my(f"CREATE DATABASE IF NOT EXISTS {BT}{d}{BT}")
             for u in c.get('users', []): my(f"GRANT ALL ON {BT}{d}{BT}.* TO '{u['name']}'@'%'")
+        for name in c.get('retiredUsers', []):
+            # Deleted users are dropped, so a removed password stops working.
+            if name not in {u['name'] for u in c.get('users', [])} and ident(name): my(f"DROP USER IF EXISTS '{name}'@'%'")
     else:
         if first_time: my('SET PERSIST read_only=1; SET PERSIST super_read_only=1')
         if replica_source() != primary: point_to(c, primary)

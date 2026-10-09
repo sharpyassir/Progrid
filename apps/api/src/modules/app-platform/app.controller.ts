@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentActor, RequireScopes, StaffAreas } from '../../common/auth/decorators';
 import type { Actor } from '../../common/auth/actor';
 import { AppPlatformService } from './app.service';
-import { CreateAppDto, DomainDto, LogsQuery, ProvisionHostDto, UpdateAppDto } from './app.dto';
+import { AttachDatabaseDto, CreateAppDto, CreateRunDto, DomainDto, LogsQuery, ProvisionHostDto, UpdateAppDto } from './app.dto';
 
 @ApiTags('app-platform')
 @ApiBearerAuth()
@@ -80,6 +80,48 @@ export class AppPlatformController {
   @Delete('apps/:id/domains/:domain') @RequireScopes('apps:write') @HttpCode(200)
   removeDomain(@CurrentActor() actor: Actor, @Param('id') id: string, @Param('domain') domain: string, @Query('project') project?: string) {
     return this.apps.removeDomain(actor, id, domain, project);
+  }
+
+  /** Console: a one off command in a fresh container from the live image. Agent tokens need an approval first. */
+  @Post('apps/:id/runs') @RequireScopes('apps:write') @HttpCode(202)
+  startRun(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: CreateRunDto, @Query('project') project?: string) {
+    return this.apps.startRun(actor, id, dto, project);
+  }
+
+  @Get('apps/:id/runs') @RequireScopes('apps:read')
+  runs(@CurrentActor() actor: Actor, @Param('id') id: string, @Query('project') project?: string) {
+    return this.apps.listRuns(actor, id, project);
+  }
+
+  @Get('apps/:id/runs/:runId') @RequireScopes('apps:read')
+  run(@CurrentActor() actor: Actor, @Param('id') id: string, @Param('runId') runId: string, @Query('project') project?: string) {
+    return this.apps.getRun(actor, id, runId, project);
+  }
+
+  @Post('apps/:id/runs/:runId/cancel') @RequireScopes('apps:write') @HttpCode(200)
+  cancelRun(@CurrentActor() actor: Actor, @Param('id') id: string, @Param('runId') runId: string, @Query('project') project?: string) {
+    return this.apps.cancelRun(actor, id, runId, project);
+  }
+
+  @Get('apps/:id/databases') @RequireScopes('apps:read')
+  databases(@CurrentActor() actor: Actor, @Param('id') id: string, @Query('project') project?: string) {
+    return this.apps.listDatabases(actor, id, project);
+  }
+
+  @Post('apps/:id/databases') @RequireScopes('apps:write') @HttpCode(201)
+  attachDatabase(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: AttachDatabaseDto, @Query('project') project?: string) {
+    return this.apps.attachDatabase(actor, id, dto, project);
+  }
+
+  /** The connection URL with its password; audited as app.database_credentials_viewed. */
+  @Get('apps/:id/databases/:linkId/credentials') @RequireScopes('apps:write')
+  databaseCredentials(@CurrentActor() actor: Actor, @Param('id') id: string, @Param('linkId') linkId: string, @Query('project') project?: string) {
+    return this.apps.databaseCredentials(actor, id, linkId, project);
+  }
+
+  @Delete('apps/:id/databases/:linkId') @RequireScopes('apps:write') @HttpCode(200)
+  detachDatabase(@CurrentActor() actor: Actor, @Param('id') id: string, @Param('linkId') linkId: string, @Query('project') project?: string) {
+    return this.apps.detachDatabase(actor, id, linkId, project);
   }
 }
 

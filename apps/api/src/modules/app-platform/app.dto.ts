@@ -1,5 +1,5 @@
 import { IsArray, IsIn, IsInt, IsObject, IsOptional, IsString, IsUrl, Length, Matches, Max, Min } from 'class-validator';
-import { IsEnvMap } from '../../common/http/env-map.validator';
+import { ENV_KEY, IsEnvMap } from '../../common/http/env-map.validator';
 
 /** Container sizes. Prices live in the price book as `app-<size>`; memory and CPU are enforced by Docker on the host. */
 export const APP_SIZES = {
@@ -14,6 +14,10 @@ export const MAX_INSTANCES = 5;
 export const MAX_DOMAINS = 5;
 
 const SLUG = /^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$/;
+/** Commands travel as one argument to `sh -c` in the container: anything but a NUL byte. */
+const NO_NUL = /^[^\0]*$/;
+export const MAX_PRE_DEPLOY = 1000;
+export const MAX_RUN_COMMAND = 2000;
 const HOSTNAME = /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/;
 
 export class CreateAppDto {
@@ -30,6 +34,8 @@ export class CreateAppDto {
   @IsOptional() @IsInt() @Min(1) @Max(MAX_INSTANCES) instances?: number;
   @IsOptional() @IsEnvMap() env?: Record<string, string>;
   @IsOptional() @IsString() @Matches(/^\/[\w./-]{0,200}$/) healthPath?: string;
+  /** Runs before every deploy goes live, e.g. `npx prisma migrate deploy`. */
+  @IsOptional() @IsString() @Length(0, MAX_PRE_DEPLOY) @Matches(NO_NUL) preDeployCommand?: string;
   @IsOptional() @IsString() region?: string;
   @IsOptional() @IsString() project?: string;
 }
@@ -43,6 +49,23 @@ export class UpdateAppDto {
   @IsOptional() @IsEnvMap() env?: Record<string, string>;
   @IsOptional() @IsString() @Matches(/^\/[\w./-]{0,200}$/) healthPath?: string;
   @IsOptional() @IsString() gitToken?: string;
+  /** An empty string removes it. */
+  @IsOptional() @IsString() @Length(0, MAX_PRE_DEPLOY) @Matches(NO_NUL) preDeployCommand?: string;
+}
+
+export class CreateRunDto {
+  /** Run with `sh -c` in a fresh container from the app's live image; no TTY, stdin closed. */
+  @IsString() @Length(1, MAX_RUN_COMMAND) @Matches(NO_NUL, { message: 'command must not contain NUL bytes' }) command: string;
+  @IsOptional() @IsInt() @Min(30) @Max(3600) timeoutSeconds?: number;
+}
+
+export class AttachDatabaseDto {
+  /** A managed database (cluster) in the app's project. */
+  @IsString() @Length(1, 64) databaseId: string;
+  /** Variable that receives the connection URL. */
+  @IsOptional() @IsString() @Matches(ENV_KEY, { message: 'envName must be upper case letters, digits and _, not starting with a digit' }) envName?: string;
+  /** An existing database on the cluster to use; by default a new one named after the app. */
+  @IsOptional() @IsString() @Length(1, 63) @Matches(/^[a-z_][a-z0-9_]*$/, { message: 'database must be lowercase letters, digits and underscores, starting with a letter' }) database?: string;
 }
 
 export class DomainDto {

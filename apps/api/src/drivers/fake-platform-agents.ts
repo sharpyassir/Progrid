@@ -40,7 +40,7 @@ interface FakeNode {
 }
 
 /** How long simulated work takes. */
-export const FAKE_AGENT_TIMINGS = { bootMs: 500, backupMs: 1500, restoreMs: 2000, buildMs: 2000, caddyMs: 2500, deployMs: 1500 };
+export const FAKE_AGENT_TIMINGS = { bootMs: 500, backupMs: 1500, restoreMs: 2000, buildMs: 2000, caddyMs: 2500, deployMs: 1500, runMs: 300 };
 
 const PREFIX = 'fake-agents:';
 
@@ -167,6 +167,17 @@ export class FakePlatformAgents {
   async inspect(serverIdOrAddress: string): Promise<FakeNode | null> {
     const address = (await this.get<string>(`server:${serverIdOrAddress}`)) ?? serverIdOrAddress;
     return this.get<FakeNode>(`vm:${address}`);
+  }
+
+  /** App host: every console run still going reaches its timeout now (instead of after 30 seconds or more). */
+  async expireRuns(serverIdOrAddress: string) {
+    const address = (await this.get<string>(`server:${serverIdOrAddress}`)) ?? serverIdOrAddress;
+    await this.locked(address, async () => {
+      const node = await this.get<FakeNode>(`vm:${address}`);
+      if (!node) return;
+      for (const r of Object.values((node.st.runs ?? {}) as Record<string, Json>)) if (r.status === 'running') r.timeoutAt = 0;
+      await this.put(`vm:${address}`, node);
+    });
   }
 
   /** Lets every bootstrap token of a Kubernetes cluster run out, as they do after 24 hours. */
@@ -570,6 +581,12 @@ export class FakePlatformAgents {
     this.settleApps(node);
     if (method === 'GET') {
       if (path === '/status') return send(200, this.appStatus(node));
+      if (path.startsWith('/runs/')) {
+        const rid = path.slice('/runs/'.length);
+        if (!/^[a-z0-9]{1,40}$/.test(rid)) return send(400, { error: 'bad_run' });
+        const r = node.st.runs?.[rid] as Json | undefined;
+        return r ? send(200, { appId: r.appId, status: r.status, exitCode: r.exitCode ?? null, startedAt: r.startedAt, finishedAt: r.finishedAt ?? null, output: r.output }) : send(404, { error: 'unknown_run' });
+      }
       if (path.startsWith('/logs')) {
         const q = new Map(path.includes('?') ? path.split('?', 2)[1].split('&').filter((p) => p.includes('=')).map((p) => [p.slice(0, p.indexOf('=')), p.slice(p.indexOf('=') + 1)] as [string, string]) : []);
         const aid = q.get('app') ?? '';
@@ -590,12 +607,44 @@ export class FakePlatformAgents {
       node.st.version = body.version;
       return send(200, { version: body.version });
     }
+    if (path === '/runs') return this.startRun(node, body);
+    const cancel = /^\/runs\/([a-z0-9]{1,40})\/cancel$/.exec(path);
+    if (cancel) {
+      const r = node.st.runs?.[cancel[1]] as Json | undefined;
+      if (!r) return send(404, { error: 'unknown_run' });
+      if (r.status !== 'running') return send(200, { status: r.status });
+      Object.assign(r, { status: 'canceled', exitCode: 137, finishedAt: secs() });
+      return send(202, { status: 'canceled' });
+    }
     return send(404, {});
+  }
+
+  /**
+   * POST /runs as appd.py answers it. Simulated commands: output "ran: <command>"; a command
+   * containing "exit 3" exits 3; one containing "sleep" runs until canceled or timed out.
+   */
+  private startRun(node: FakeNode, body: Json) {
+    const rid = String(body.runId ?? '');
+    const aid = String(body.appId ?? '');
+    if (!/^[a-z0-9]{1,40}$/.test(rid) || !/^[a-z0-9]{1,40}$/.test(aid)) return send(400, { error: 'bad_id' });
+    if (typeof body.command !== 'string' || !body.command || body.command.length > 2000) return send(400, { error: 'bad_command' });
+    const timeout = Number(body.timeout ?? 600);
+    if (!Number.isInteger(timeout) || timeout < 1 || timeout > 3600) return send(400, { error: 'bad_timeout' });
+    if (!(node.last?.apps as Json[] | undefined)?.some((a) => a.id === aid)) return send(404, { error: 'unknown_app' });
+    if (!node.st.apps[aid]?.image) return send(409, { error: 'no_image', detail: 'the app has no live image on this host' });
+    const runs = (node.st.runs ??= {}) as Record<string, Json>;
+    if (runs[rid]) return send(409, { error: 'duplicate_run' });
+    if (Object.values(runs).filter((r) => r.appId === aid && r.status === 'running').length >= 2) return send(409, { error: 'run_limit' });
+    runs[rid] = { appId: aid, command: body.command, status: 'running', exitCode: null, startedAt: secs(), output: '', image: node.st.apps[aid].image, env: Object.keys(node.last!.apps.find((a: Json) => a.id === aid).env ?? {}), timeoutAt: now() + timeout * 1000 };
+    if (!/sleep/.test(body.command)) (node.due ??= {})[`run:${rid}`] = now() + FAKE_AGENT_TIMINGS.runMs;
+    return send(202, { runId: rid, status: 'running' });
   }
 
   private applyApps(node: FakeNode, c: Json) {
     const wanted = new Set((c.apps as Json[]).map((a) => a.id));
     for (const aid of Object.keys(node.st.apps)) if (!wanted.has(aid)) delete node.st.apps[aid];
+    // A removed app's containers go, console runs included.
+    for (const r of Object.values((node.st.runs ?? {}) as Record<string, Json>)) if (!wanted.has(r.appId) && r.status === 'running') Object.assign(r, { status: 'canceled', exitCode: 137, finishedAt: secs() });
     for (const app of c.apps as Json[]) {
       const st = (node.st.apps[app.id] ?? {}) as Json;
       if (app.stopped) {
@@ -607,18 +656,29 @@ export class FakePlatformAgents {
       if (st.deployId !== app.deployId && st.state !== 'building') {
         node.st.apps[app.id] = { ...st, deployId: app.deployId, state: 'building', error: null, port: app.port, instances: app.instances, buildLog: `=== build ${app.id} ${new Date().toISOString().slice(0, 19)}Z ===\n$ git clone --depth 1 --branch ${app.branch} ${app.repo}\n` };
         (node.due ??= {})[`build:${app.id}`] = now() + FAKE_AGENT_TIMINGS.buildMs;
-        node.st.builds = { ...(node.st.builds ?? {}), [app.id]: { repo: app.repo, branch: app.branch, commit: app.commit } };
+        node.st.builds = { ...(node.st.builds ?? {}), [app.id]: { repo: app.repo, branch: app.branch, commit: app.commit, preDeploy: app.preDeploy ?? null } };
       } else {
         node.st.apps[app.id] = { ...st, port: app.port, instances: app.instances };
       }
     }
     // The Caddyfile: one site per live app, with its verified hostnames only.
-    node.st.caddySites = (c.apps as Json[]).filter((a) => node.st.apps[a.id]?.state === 'live' && !a.stopped).map((a) => ({ app: a.id, hostnames: a.hostnames }));
+    node.st.caddySites = (c.apps as Json[]).filter((a) => (node.st.apps[a.id]?.state === 'live' || !!node.st.apps[a.id]?.image) && !a.stopped).map((a) => ({ app: a.id, hostnames: a.hostnames }));
   }
 
   private settleApps(node: FakeNode) {
     let changed = false;
+    for (const r of Object.values((node.st.runs ?? {}) as Record<string, Json>)) {
+      if (r.status === 'running' && now() >= r.timeoutAt) Object.assign(r, { status: 'timed_out', exitCode: 137, finishedAt: secs() });
+    }
     for (const [key, at] of Object.entries(node.due ?? {})) {
+      if (now() >= at && key.startsWith('run:')) {
+        delete node.due![key];
+        const r = node.st.runs?.[key.slice('run:'.length)] as Json | undefined;
+        if (r?.status !== 'running') continue;
+        const code = /exit 3/.test(r.command) ? 3 : 0;
+        Object.assign(r, { status: code ? 'failed' : 'succeeded', exitCode: code, finishedAt: secs(), output: `ran: ${r.command}\n` });
+        continue;
+      }
       if (now() < at || !key.startsWith('build:')) continue;
       delete node.due![key];
       const aid = key.slice('build:'.length);
@@ -626,17 +686,28 @@ export class FakePlatformAgents {
       const src = node.st.builds?.[aid] as Json | undefined;
       if (!st || !src) continue;
       // A repository named like "...-broken" has nothing the builder can detect, like an empty repository.
+      // A pre-deploy command containing "fail" exits 1; the version running before keeps its image.
       if (/broken/.test(String(src.repo))) {
         Object.assign(st, { state: 'failed', error: 'no Dockerfile and no Node, Python, Go or static project detected at the repository root' });
         st.buildLog += `=== failed: ${st.error} ===\n`;
       } else {
         const commit = src.commit ?? sha(`${src.repo}#${src.branch}`).slice(0, 40);
-        Object.assign(st, { state: 'live', commit, image: `prgd-app-${aid}:${commit.slice(0, 12)}`, error: null });
-        st.buildLog += `$ docker build -t ${st.image} .\nSuccessfully built ${commit.slice(0, 12)}\n=== live ===\n`;
+        const image = `prgd-app-${aid}:${commit.slice(0, 12)}`;
+        st.buildLog += `$ docker build -t ${image} .\nSuccessfully built ${commit.slice(0, 12)}\n`;
+        const pre = src.preDeploy as string | null | undefined;
+        const code = pre && /fail/.test(pre) ? 1 : 0;
+        if (pre) st.buildLog += `=== pre-deploy: ${pre} ===\n${code ? 'Error: P1001: Can\'t reach database server' : `ran: ${pre}`}\n=== pre-deploy exited ${code} ===\n`;
+        if (code) {
+          Object.assign(st, { state: 'failed', error: `pre-deploy command failed (exit ${code})` });
+          st.buildLog += `=== failed: ${st.error} ===\n`;
+        } else {
+          Object.assign(st, { state: 'live', commit, image, error: null });
+          st.buildLog += '=== live ===\n';
+        }
       }
       changed = true;
     }
-    if (changed && node.last) node.st.caddySites = (node.last.apps as Json[]).filter((a) => node.st.apps[a.id]?.state === 'live' && !a.stopped).map((a) => ({ app: a.id, hostnames: a.hostnames }));
+    if (changed && node.last) node.st.caddySites = (node.last.apps as Json[]).filter((a) => (node.st.apps[a.id]?.state === 'live' || !!node.st.apps[a.id]?.image) && !a.stopped).map((a) => ({ app: a.id, hostnames: a.hostnames }));
   }
 
   private appStatus(node: FakeNode) {
@@ -648,7 +719,8 @@ export class FakePlatformAgents {
     const docker = true;
     // Caddy runs as a container that is pulled and started after Docker comes up.
     const caddy = now() >= node.upAt + FAKE_AGENT_TIMINGS.caddyMs;
-    return { version: node.st.version ?? 0, apps, memUsed: Object.keys(apps).length, docker, caddy, ready: docker && caddy };
+    const runs = Object.fromEntries(Object.entries((node.st.runs ?? {}) as Record<string, Json>).map(([rid, r]) => [rid, { appId: r.appId, status: r.status, exitCode: r.exitCode ?? null }]));
+    return { version: node.st.version ?? 0, apps, runs, memUsed: Object.keys(apps).length, docker, caddy, ready: docker && caddy };
   }
 
   // ---- deployd.py ----

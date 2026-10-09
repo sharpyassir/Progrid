@@ -13,10 +13,12 @@ import { EventsService } from '../events/events.service';
 import { SpendService } from '../billing/spend.service';
 import { FirewallsService } from '../network/firewalls.service';
 import { GithubService } from '../github/github.service';
+import { ApprovalsService } from '../approvals/approvals.service';
+import { DatabasesService, connectionUri } from '../databases/db.service';
 import { renderAppHostCloudInit } from './cloud-init';
-import { agentFetch, agentHost } from '../../common/platform-agent';
+import { agentFetch, agentHost, vipNetworkFor } from '../../common/platform-agent';
 import { open, openJson, openOpt, seal, sealJson, sealOpt } from '../../common/crypto/secretbox';
-import { APP_SIZES, AppSizeId, CreateAppDto, DomainDto, MAX_DOMAINS, UpdateAppDto } from './app.dto';
+import { APP_SIZES, AppSizeId, AttachDatabaseDto, CreateAppDto, CreateRunDto, DomainDto, MAX_DOMAINS, UpdateAppDto } from './app.dto';
 
 const HOST_MANAGED = 'apps:host';
 const PLATFORM_TEAM = 'platform';
@@ -43,12 +45,29 @@ type DomainChecks = Record<string, DomainCheck>;
 /** A host that has not reported Docker and Caddy running for this long counts as failed. */
 const HOST_DOWN_MS = 5 * 60_000;
 
+/** Console runs: at most this many at once per app (the host enforces it too). */
+export const MAX_RUNS_PER_APP = 2;
+/** Output kept per run, the tail; the host keeps up to 1 MB on disk for a day. */
+const RUN_OUTPUT_BYTES = 64 * 1024;
+/** A run the host stopped reporting is failed this long after its own timeout. */
+const RUN_GRACE_MS = 5 * 60_000;
+/** Approval kind for console runs started by agent tokens (needs apps:write to approve). */
+export const RUN_APPROVAL = 'apps:run';
+const ACTIVE_RUN: ('queued' | 'running')[] = ['queued', 'running'];
+const RUN_STATES = ['succeeded', 'failed', 'timed_out', 'canceled'] as const;
+type RunReport = { status?: string; exitCode?: number | null; output?: string };
+
+const linkInclude = { cluster: { select: { id: true, name: true, engine: true, port: true, status: true, publicIp: { select: { address: true } }, users: { select: { name: true, password: true } } } } } satisfies Prisma.AppDatabaseLinkInclude;
+type LinkRow = Prisma.AppDatabaseLinkGetPayload<{ include: typeof linkInclude }>;
+
 interface HostStatus {
   version: number;
   docker?: boolean;
   caddy?: boolean;
   ready?: boolean;
   apps: Record<string, { deployId?: string; state?: 'building' | 'live' | 'failed'; commit?: string | null; error?: string | null; running?: number; logTail?: string }>;
+  /** Console runs the host knows about (agents from before the console send none). */
+  runs?: Record<string, { appId: string; status: string; exitCode?: number | null }>;
 }
 
 /**
@@ -71,7 +90,12 @@ export class AppPlatformService {
     private readonly spend: SpendService,
     private readonly firewalls: FirewallsService,
     @Inject(forwardRef(() => GithubService)) private readonly github: GithubService,
-  ) {}
+    private readonly dbs: DatabasesService,
+    private readonly approvals: ApprovalsService,
+  ) {
+    // An approved run starts as the approver, with the agent token's limits (ApprovalsService.approve).
+    this.approvals.registerExecutor(RUN_APPROVAL, (actor, a) => this.startRun(actor, a.resourceId!, a.payload as unknown as CreateRunDto, a.projectId, true));
+  }
 
   sizes() {
     return { data: Object.entries(APP_SIZES).map(([id, s]) => ({ id, memoryMb: s.memoryMb, cpus: s.cpus })) };
@@ -115,7 +139,7 @@ export class AppPlatformService {
         projectId: project.id, regionId: region.id, slug: dto.name, name: dto.name, repoUrl, branch: dto.branch ?? 'main',
         repoFullName: repoUrl.replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/^https:\/\/[^/]+\//, ''),
         installationId: installation?.id, gitToken: sealOpt(dto.gitToken), port: dto.port ?? 3000, envVars: sealJson(dto.env),
-        size, instances, healthPath: dto.healthPath,
+        size, instances, healthPath: dto.healthPath, preDeployCommand: dto.preDeployCommand?.trim() || null,
         deploys: { create: { trigger: 'create', status: 'queued' } },
       },
       include: { deploys: true },
@@ -125,10 +149,15 @@ export class AppPlatformService {
     return this.present(await this.prisma.platformApp.findUniqueOrThrow({ where: { id: app.id }, include: appInclude }));
   }
 
-  /** Branch, port, size, instances, variables or health path. Any change deploys again. */
+  /** Branch, port, size, instances, variables, health path or pre-deploy command. Any change deploys again. */
   async update(actor: Actor, id: string, dto: UpdateAppDto, project?: string) {
     const app = await this.own(actor, id, project);
     this.mustBeSettled(app);
+    if (dto.env) {
+      // An attached database owns its variable; a second value would silently lose to it.
+      const taken = (await this.prisma.appDatabaseLink.findMany({ where: { appId: id }, select: { envName: true } })).map((l) => l.envName).filter((n) => n in dto.env!);
+      if (taken.length) throw ApiError.conflict('env_conflict', `${taken.join(', ')} ${taken.length > 1 ? 'are' : 'is'} set by an attached database; detach it or leave the variable out`);
+    }
     const size = dto.size ?? (app.size as AppSizeId);
     const instances = dto.instances ?? app.instances;
     if (size !== app.size || instances > app.instances) {
@@ -138,7 +167,7 @@ export class AppPlatformService {
       await this.spend.assertCanSpend(actor, app.projectId, Math.max(0, after - before));
       if (app.hostId) await this.checkHostRoom(app.hostId, APP_SIZES[size].memoryMb * instances - APP_SIZES[app.size as AppSizeId].memoryMb * app.instances);
     }
-    await this.prisma.platformApp.update({ where: { id }, data: { branch: dto.branch, port: dto.port, size, instances, envVars: dto.env === undefined ? undefined : sealJson(dto.env), healthPath: dto.healthPath, gitToken: sealOpt(dto.gitToken) } });
+    await this.prisma.platformApp.update({ where: { id }, data: { branch: dto.branch, port: dto.port, size, instances, envVars: dto.env === undefined ? undefined : sealJson(dto.env), healthPath: dto.healthPath, gitToken: sealOpt(dto.gitToken), preDeployCommand: dto.preDeployCommand === undefined ? undefined : dto.preDeployCommand.trim() || null } });
     return this.redeploy(actor, id, 'config', project);
   }
 
@@ -341,12 +370,14 @@ export class AppPlatformService {
     }
     host ??= await this.provisionHost(app.regionId);
     await this.prisma.platformApp.update({ where: { id: appId }, data: { hostId: host.id } });
+    // Attached databases follow the app to its new host's address.
+    await this.syncDbAccess([appId]);
     return host.id;
   }
 
   /** Push the desired state of every app on a host to its agent. */
   async pushHost(hostId: string) {
-    const host = await this.prisma.appHost.findUnique({ where: { id: hostId }, include: { server: { select: { id: true, name: true, status: true, privateIp: true, publicIps: { select: { address: true } } } }, apps: { where: { deletedAt: null, status: { notIn: ['deleted'] } }, include: { deploys: { orderBy: { startedAt: 'desc' }, take: 1 }, installation: true } } } });
+    const host = await this.prisma.appHost.findUnique({ where: { id: hostId }, include: { server: { select: { id: true, name: true, status: true, privateIp: true, publicIps: { select: { address: true } } } }, apps: { where: { deletedAt: null, status: { notIn: ['deleted'] } }, include: { deploys: { orderBy: { startedAt: 'desc' }, take: 1 }, installation: true, databases: { include: linkInclude } } } } });
     if (!host) return { ok: false };
     const ip = agentHost(host.server);
     if (!ip || host.server.status !== 'active') throw ApiError.invalidState('App host is not active yet');
@@ -357,11 +388,18 @@ export class AppPlatformService {
       let token: string | undefined = openOpt(a.gitToken) ?? undefined;
       if (a.installation && !a.installation.suspendedAt) token = await this.github.installationToken(a.installation.installationId).catch(() => undefined);
       const size = APP_SIZES[a.size as AppSizeId];
+      // Attached databases: their URLs are opened here only, never stored with the variables.
+      const dbEnv = Object.fromEntries(a.databases.flatMap((l) => {
+        const url = linkUrl(l);
+        return url ? [[l.envName, url]] : [];
+      }));
       apps.push({
         id: a.id, slug: a.slug, hostnames: [`${a.slug}.${cfg.APPS_DOMAIN}`, ...verifiedDomains(a)], repo: a.repoUrl, branch: a.branch, token, commit: a.deploys[0]?.commit ?? null,
-        port: a.port, env: openJson(a.envVars), memoryMb: size.memoryMb, cpus: size.cpus, instances: a.instances, deployId: a.deploys[0]?.id ?? 'none', healthPath: a.healthPath, stopped: a.status === 'stopped',
+        port: a.port, env: { ...openJson(a.envVars), ...dbEnv }, memoryMb: size.memoryMb, cpus: size.cpus, instances: a.instances, deployId: a.deploys[0]?.id ?? 'none', healthPath: a.healthPath, stopped: a.status === 'stopped',
+        preDeploy: a.preDeployCommand ?? null,
       });
     }
+    await this.syncDbAccess(host.apps.filter((a) => a.databases.length).map((a) => a.id));
     const version = (await this.prisma.appHost.update({ where: { id: hostId }, data: { configVersion: { increment: 1 } } })).configVersion;
     const r = await agentFetch(ip, { method: 'POST', path: '/config', secret: open(host.vmSecret), body: { version, apps }, timeoutMs: 60_000 });
     if (!r.ok) throw ApiError.invalid(`App host rejected the configuration: ${r.status} ${(await r.text().catch(() => '')).slice(0, 300)}`);
@@ -386,6 +424,12 @@ export class AppPlatformService {
       }
       if (!st) continue;
       for (const a of h.apps) await this.applyReport(a, st.apps[a.id]);
+      await this.foldRuns(h, st).catch((e) => this.log.warn(`runs on host ${h.id}: ${(e as Error).message}`));
+    }
+    // Runs nobody heard of again (host failed or unreachable): failed once well past their own timeout.
+    const stale = await this.prisma.appRun.findMany({ where: { status: { in: ACTIVE_RUN }, createdAt: { lt: new Date(Date.now() - RUN_GRACE_MS) } }, select: { id: true, createdAt: true, timeoutSeconds: true } });
+    for (const r of stale) {
+      if (Date.now() - r.createdAt.getTime() > r.timeoutSeconds * 1000 + RUN_GRACE_MS) await this.finishRun(r.id, 'failed', null, '[no result from the app host]');
     }
     // Pending custom domains are looked up again every five minutes for a week after they were added.
     if (new Date().getUTCMinutes() % 5 === 0) {
@@ -401,6 +445,7 @@ export class AppPlatformService {
     const h = await this.prisma.appHost.update({ where: { id: hostId }, data: { status: 'failed' }, include: { server: { select: { name: true } } } });
     const apps = await this.prisma.platformApp.findMany({ where: { hostId, deletedAt: null, status: { notIn: ['deleting', 'deleted'] } }, select: { id: true } });
     this.log.warn(`app host ${h.server.name} failed (${reason}); moving ${apps.length} apps`);
+    for (const r of await this.prisma.appRun.findMany({ where: { hostId, status: { in: ACTIVE_RUN } }, select: { id: true } })) await this.finishRun(r.id, 'failed', null, `[the app host failed: ${reason}]`);
     for (const a of apps) {
       await this.prisma.platformApp.update({ where: { id: a.id }, data: { hostId: null } });
       await this.redeploy(null, a.id, 'host_failed').catch((e) => this.log.warn(`move app ${a.id}: ${(e as Error).message}`));
@@ -430,10 +475,208 @@ export class AppPlatformService {
         if (rep.state === 'failed' && a.status === 'building') data.status = 'failed';
         // A failed first build reads the same whether this report or the create workflow records it first.
         if (rep.state === 'failed' && (a.status === 'creating' || a.status === 'building')) data.statusMessage = 'first build failed; see the build log';
+        // A failed redeploy (a build or the pre-deploy command) leaves the previous version serving.
+        if (rep.state === 'failed' && a.status === 'building' && (await this.prisma.appDeploy.count({ where: { appId: a.id, status: 'live', id: { not: deploy.id } } }))) {
+          data.status = 'live';
+          data.statusMessage = `deploy failed: ${rep.error ?? 'see the build log'}; the previous version keeps running`;
+        }
         await this.prisma.platformApp.update({ where: { id: a.id }, data });
         await this.emit(rep.state === 'live' ? 'app.deployed' : 'app.deploy_failed', a.id, { deployId: deploy.id, commit: rep.commit ?? null, error: rep.error ?? null });
       }
     }
+  }
+
+  // ---- console runs ----
+
+  /**
+   * A one off command (`sh -c`) in a fresh container from the app's live image, with the app's
+   * environment and limits, no TTY and stdin closed. Agent tokens need a person to approve
+   * each run first (ApprovalsService); the approved request comes back with `approved`.
+   */
+  async startRun(actor: Actor, id: string, dto: CreateRunDto, project?: string, approved = false) {
+    const app = await this.own(actor, id, project);
+    if (['creating', 'deleting', 'deleted'].includes(app.status) || !app.host) throw ApiError.invalidState(`App is ${app.status}; commands run once it has been deployed`);
+    // Stopped apps keep their image on the host, so migrations can run before starting again.
+    if (!(await this.prisma.appDeploy.count({ where: { appId: id, status: 'live' } }))) throw ApiError.invalidState('The app has no live image yet; wait for a deploy to succeed');
+    const command = dto.command;
+    const timeoutSeconds = dto.timeoutSeconds ?? 600;
+    if (actor.isAgent && !approved) {
+      await this.approvals.request(actor, { kind: RUN_APPROVAL, resourceType: 'app', resourceId: app.id, resourceName: app.slug, projectId: app.projectId, summary: `Run \`${command.slice(0, 200)}\` in app ${app.slug}`, payload: { command, timeoutSeconds } });
+    }
+    const host = app.host;
+    const ip = agentHost(host.server);
+    if (!ip || host.server.status !== 'active') throw ApiError.invalidState('The app host is not reachable right now');
+    const run = await this.prisma.$transaction(async (tx) => {
+      // One lock per app, so two requests cannot both pass the count.
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`app-run:${id}`}))::text`;
+      if ((await tx.appRun.count({ where: { appId: id, status: { in: ACTIVE_RUN } } })) >= MAX_RUNS_PER_APP) throw ApiError.conflict('run_limit', `At most ${MAX_RUNS_PER_APP} commands run at once per app; wait for one to finish or cancel it`);
+      return tx.appRun.create({ data: { appId: id, hostId: host.id, command, timeoutSeconds, userId: actor.userId === 'system' ? null : actor.userId, tokenId: actor.tokenId ?? null } });
+    });
+    const r = await agentFetch(ip, { method: 'POST', path: '/runs', secret: open(host.vmSecret), body: { runId: run.id, appId: id, command, timeout: timeoutSeconds }, timeoutMs: 15_000 }).catch((e: Error) => e);
+    if (r instanceof Error || !r.ok) {
+      const detail = r instanceof Error ? r.message : `${r.status} ${(await r.text().catch(() => '')).slice(0, 200)}`;
+      if (!(r instanceof Error) && r.status === 409 && detail.includes('run_limit')) {
+        await this.prisma.appRun.delete({ where: { id: run.id } });
+        throw ApiError.conflict('run_limit', `At most ${MAX_RUNS_PER_APP} commands run at once per app; wait for one to finish or cancel it`);
+      }
+      await this.prisma.appRun.update({ where: { id: run.id }, data: { status: 'failed', finishedAt: new Date(), output: `[the app host did not accept the command: ${detail}]` } });
+      throw ApiError.invalidState(`The app host did not accept the command (${detail}); try again in a minute`);
+    }
+    const started = await this.prisma.appRun.update({ where: { id: run.id }, data: { status: 'running', startedAt: new Date() } });
+    await this.events.emit('app.run_started', { appId: id, runId: run.id, command, timeoutSeconds, approved }, { actor, resource: `app:${id}` });
+    return presentRun(started, true);
+  }
+
+  async listRuns(actor: Actor, id: string, project?: string) {
+    await this.own(actor, id, project);
+    const rows = await this.prisma.appRun.findMany({ where: { appId: id }, orderBy: { createdAt: 'desc' }, take: 50, omit: { output: true } });
+    return { data: rows.map((r) => presentRun(r, false)) };
+  }
+
+  /** One run with its output; while it runs, the status and output come live from the host. */
+  async getRun(actor: Actor, id: string, runId: string, project?: string) {
+    await this.own(actor, id, project);
+    let run = await this.prisma.appRun.findFirst({ where: { id: runId, appId: id } });
+    if (!run) throw ApiError.notFound('run', runId);
+    if (ACTIVE_RUN.includes(run.status as 'running')) run = (await this.pollRun(run).catch(() => null)) ?? run;
+    return presentRun(run, true);
+  }
+
+  async cancelRun(actor: Actor, id: string, runId: string, project?: string) {
+    const app = await this.own(actor, id, project);
+    const run = await this.prisma.appRun.findFirst({ where: { id: runId, appId: id } });
+    if (!run) throw ApiError.notFound('run', runId);
+    if (!ACTIVE_RUN.includes(run.status as 'running')) return presentRun(run, true);
+    const host = run.hostId ? await this.prisma.appHost.findUnique({ where: { id: run.hostId }, include: { server: { select: { id: true, name: true, status: true, privateIp: true, publicIps: { select: { address: true } } } } } }) : null;
+    const ip = host && host.server.status === 'active' ? agentHost(host.server) : null;
+    let output = run.output;
+    if (ip && host) {
+      await agentFetch(ip, { method: 'POST', path: `/runs/${run.id}/cancel`, secret: open(host.vmSecret), timeoutMs: 10_000 }).catch(() => undefined);
+      const rep = await agentFetch(ip, { path: `/runs/${run.id}`, secret: open(host.vmSecret), timeoutMs: 6000 }).then((x) => (x.ok ? (x.json() as Promise<RunReport>) : null)).catch(() => null);
+      if (rep?.output) output = rep.output.slice(-RUN_OUTPUT_BYTES);
+    }
+    const done = await this.prisma.appRun.updateMany({ where: { id: run.id, status: { in: ACTIVE_RUN } }, data: { status: 'canceled', finishedAt: new Date(), output } });
+    if (done.count) await this.events.emit('app.run_canceled', { appId: app.id, runId: run.id, command: run.command }, { actor, resource: `app:${id}` });
+    return presentRun(await this.prisma.appRun.findUniqueOrThrow({ where: { id: run.id } }), true);
+  }
+
+  private async pollRun(run: { id: string; hostId: string | null; createdAt: Date; output: string | null }) {
+    if (!run.hostId) return null;
+    const host = await this.prisma.appHost.findUnique({ where: { id: run.hostId }, include: { server: { select: { id: true, name: true, status: true, privateIp: true, publicIps: { select: { address: true } } } } } });
+    const ip = host && host.server.status === 'active' ? agentHost(host.server) : null;
+    if (!ip || !host) return null;
+    const r = await agentFetch(ip, { path: `/runs/${run.id}`, secret: open(host.vmSecret), timeoutMs: 6000 });
+    if (r.status === 404) {
+      // The host lost it (rebuilt, or its state was reset): nothing will ever report back.
+      return Date.now() - run.createdAt.getTime() > RUN_GRACE_MS ? this.finishRun(run.id, 'failed', null, `${run.output ?? ''}
+[the app host has no record of this run]`.trim()) : null;
+    }
+    if (!r.ok) return null;
+    const rep = (await r.json()) as RunReport;
+    if (!RUN_STATES.includes(rep.status as 'failed')) return this.prisma.appRun.update({ where: { id: run.id }, data: { output: rep.output?.slice(-RUN_OUTPUT_BYTES) ?? undefined } });
+    return this.finishRun(run.id, rep.status as (typeof RUN_STATES)[number], rep.exitCode ?? null, rep.output ?? run.output);
+  }
+
+  /** Records the end of a run once (the minute job, a poll and a cancel can race) and emits app.run_finished. */
+  private async finishRun(runId: string, status: (typeof RUN_STATES)[number], exitCode: number | null, output: string | null) {
+    const done = await this.prisma.appRun.updateMany({ where: { id: runId, status: { in: ACTIVE_RUN } }, data: { status, exitCode, output: output?.slice(-RUN_OUTPUT_BYTES) ?? null, finishedAt: new Date() } });
+    const run = await this.prisma.appRun.findUniqueOrThrow({ where: { id: runId } });
+    if (done.count) await this.emit('app.run_finished', run.appId, { runId, status, exitCode, command: run.command });
+    return run;
+  }
+
+  /** Minute job: results of runs nobody polled, from the host's status report. */
+  private async foldRuns(h: { id: string; vmSecret: string; server: { id: string; name: string; status: string; privateIp: string | null; publicIps: { address: string }[] } }, st: HostStatus) {
+    const active = await this.prisma.appRun.findMany({ where: { hostId: h.id, status: { in: ACTIVE_RUN } }, select: { id: true, createdAt: true, output: true, hostId: true } });
+    for (const run of active) {
+      const rep = st.runs?.[run.id];
+      if (rep && RUN_STATES.includes(rep.status as 'failed')) await this.pollRun(run).catch(() => this.finishRun(run.id, rep.status as 'failed', rep.exitCode ?? null, run.output));
+      else if (!rep && Date.now() - run.createdAt.getTime() > RUN_GRACE_MS) await this.finishRun(run.id, 'failed', null, `${run.output ?? ''}
+[the app host has no record of this run]`.trim());
+    }
+  }
+
+  // ---- attached databases ----
+
+  async listDatabases(actor: Actor, id: string, project?: string) {
+    await this.own(actor, id, project);
+    const links = await this.prisma.appDatabaseLink.findMany({ where: { appId: id }, include: linkInclude, orderBy: { createdAt: 'asc' } });
+    return { data: links.map(presentLink) };
+  }
+
+  /**
+   * Attach a managed database of the app's project: a user and a database named after the app
+   * on the cluster, the cluster's trusted sources opened to the app's host, and the URL in
+   * `envName` from the next deploy, which starts now.
+   */
+  async attachDatabase(actor: Actor, id: string, dto: AttachDatabaseDto, project?: string) {
+    const app = await this.own(actor, id, project);
+    this.mustBeSettled(app);
+    const envName = dto.envName ?? 'DATABASE_URL';
+    if (envName === 'PORT') throw ApiError.invalid('PORT is set by the platform; pick another envName');
+    if (envName in openJson(app.envVars)) throw ApiError.conflict('env_conflict', `${envName} is already one of the app's environment variables; remove it there or pick another envName`);
+    if (await this.prisma.appDatabaseLink.findUnique({ where: { appId_envName: { appId: id, envName } } })) throw ApiError.conflict('env_conflict', `${envName} already holds another attached database`);
+    // Same project as the app, which a project scoped token must hold (the databases module's own check).
+    const c = await this.dbs.own(actor, dto.databaseId, app.projectId);
+    const address = c.publicIp?.address;
+    if (!address) throw ApiError.invalidState('The database has no address yet; wait for it to be active');
+    // App containers may not reach private ranges (egress rules on the hosts).
+    if (vipNetworkFor(address) === 'private') throw ApiError.invalidState('This database is reachable on a private network only, which App Platform hosts cannot reach');
+    const access = await this.dbs.createAppAccess(c, `app_${app.slug.replace(/-/g, '_')}`.slice(0, 50), dto.database);
+    let link;
+    try {
+      link = await this.prisma.appDatabaseLink.create({ data: { appId: id, clusterId: c.id, envName, dbName: access.db, dbUser: access.user, createdDb: access.createdDb }, include: linkInclude });
+    } catch (e) {
+      await this.dbs.removeAppUser(c.id, access.user);
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') throw ApiError.conflict('env_conflict', `${envName} already holds another attached database`);
+      throw e;
+    }
+    await this.dbs.refreshAppAccess(c.id, { push: true, actor });
+    await this.events.emit('app.database_attached', { appId: id, databaseId: c.id, engine: c.engine, envName, database: access.db, user: access.user }, { actor, resource: `app:${id}` });
+    await this.redeploy(actor, id, 'config', project);
+    return presentLink(link);
+  }
+
+  /** Detach: the variable goes with the next deploy (starting now), the user loses its login, the database and its data stay. */
+  async detachDatabase(actor: Actor, id: string, linkId: string, project?: string) {
+    const app = await this.own(actor, id, project);
+    const link = await this.prisma.appDatabaseLink.findFirst({ where: { id: linkId, appId: id } });
+    if (!link) throw ApiError.notFound('database_link', linkId);
+    await this.prisma.appDatabaseLink.delete({ where: { id: linkId } });
+    await this.dbs.removeAppUser(link.clusterId, link.dbUser);
+    await this.dbs.refreshAppAccess(link.clusterId, { push: true, actor });
+    await this.events.emit('app.database_detached', { appId: id, databaseId: link.clusterId, envName: link.envName, user: link.dbUser }, { actor, resource: `app:${id}` });
+    if (!['deleting', 'deleted', 'creating'].includes(app.status)) await this.redeploy(actor, id, 'config', project);
+    return { id: linkId, deleted: true };
+  }
+
+  /** The connection URL of one attached database; audited as app.database_credentials_viewed. */
+  async databaseCredentials(actor: Actor, id: string, linkId: string, project?: string) {
+    await this.own(actor, id, project);
+    const link = await this.prisma.appDatabaseLink.findFirst({ where: { id: linkId, appId: id }, include: linkInclude });
+    if (!link) throw ApiError.notFound('database_link', linkId);
+    await this.events.emit('app.database_credentials_viewed', { appId: id, linkId, databaseId: link.clusterId, envName: link.envName }, { actor, resource: `app:${id}` });
+    return { ...presentLink(link), url: linkUrl(link) };
+  }
+
+  /** App deleted: its runs end, its databases are detached (users disabled, databases kept). */
+  async cleanupDeleted(appId: string) {
+    await this.prisma.appRun.updateMany({ where: { appId, status: { in: ACTIVE_RUN } }, data: { status: 'canceled', finishedAt: new Date() } });
+    const links = await this.prisma.appDatabaseLink.findMany({ where: { appId } });
+    for (const l of links) {
+      await this.prisma.appDatabaseLink.delete({ where: { id: l.id } });
+      await this.dbs.removeAppUser(l.clusterId, l.dbUser);
+      await this.emit('app.database_detached', appId, { databaseId: l.clusterId, envName: l.envName, user: l.dbUser });
+    }
+    for (const clusterId of new Set(links.map((l) => l.clusterId))) await this.dbs.refreshAppAccess(clusterId, { push: true }).catch((e) => this.log.warn(`database ${clusterId} after app delete: ${(e as Error).message}`));
+    return links.length;
+  }
+
+  /** Trusted sources of the clusters these apps use, after a placement or move. */
+  private async syncDbAccess(appIds: string[]) {
+    if (!appIds.length) return;
+    const clusters = await this.prisma.appDatabaseLink.findMany({ where: { appId: { in: appIds } }, select: { clusterId: true }, distinct: ['clusterId'] });
+    for (const c of clusters) await this.dbs.refreshAppAccess(c.clusterId).catch((e) => this.log.warn(`trusted sources of ${c.clusterId}: ${(e as Error).message}`));
   }
 
   // ---- DNS ----
@@ -505,7 +748,7 @@ export class AppPlatformService {
         return { domain: d, verified: !!check?.verifiedAt, verifiedAt: check?.verifiedAt ?? null, verification: check && !check.verifiedAt ? { txt: { name: `_progrid-verify.${d}`, value: check.token }, cname: { name: d, value: `${a.slug}.${cfg.APPS_DOMAIN}` } } : null };
       }),
       region: a.region, repoUrl: a.repoUrl, repo: a.repoFullName, source: a.installationId ? 'github_app' : 'url', branch: a.branch, port: a.port,
-      size: { id: a.size, memoryMb: size.memoryMb, cpus: size.cpus }, instances: a.instances, healthPath: a.healthPath, env: openJson(a.envVars),
+      size: { id: a.size, memoryMb: size.memoryMb, cpus: size.cpus }, instances: a.instances, healthPath: a.healthPath, preDeployCommand: a.preDeployCommand, env: openJson(a.envVars),
       hostIp: a.host?.server.publicIps[0]?.address ?? null, lastCommit: a.lastCommit, lastDeployAt: a.lastDeployAt,
       deploys: a.deploys, projectId: a.projectId, createdAt: a.createdAt,
     };
@@ -515,6 +758,27 @@ export class AppPlatformService {
 /** Docker and Caddy both running. Agents from before the readiness report count as ready when they answer. */
 export function hostReady(st: HostStatus | null | undefined): boolean {
   return !!st && (st.ready ?? true);
+}
+
+function presentRun(r: { id: string; appId: string; command: string; status: string; exitCode: number | null; timeoutSeconds: number; userId: string | null; tokenId: string | null; createdAt: Date; startedAt: Date | null; finishedAt: Date | null; output?: string | null }, withOutput: boolean) {
+  return {
+    id: r.id, appId: r.appId, command: r.command, status: r.status, exitCode: r.exitCode, timeoutSeconds: r.timeoutSeconds, userId: r.userId, tokenId: r.tokenId,
+    createdAt: r.createdAt, startedAt: r.startedAt, finishedAt: r.finishedAt, durationMs: r.startedAt && r.finishedAt ? r.finishedAt.getTime() - r.startedAt.getTime() : null,
+    ...(withOutput ? { output: r.output ?? '' } : {}),
+  };
+}
+
+/** An attached database without its password. */
+function presentLink(l: LinkRow) {
+  return { id: l.id, databaseId: l.clusterId, databaseName: l.cluster.name, engine: l.cluster.engine, envName: l.envName, dbName: l.dbName, dbUser: l.dbUser, createdAt: l.createdAt };
+}
+
+/** The URL an app gets for an attached database: the cluster's public address, TLS required. */
+function linkUrl(l: LinkRow): string | null {
+  const user = l.cluster.users.find((u) => u.name === l.dbUser);
+  const host = l.cluster.publicIp?.address;
+  if (!user || !host) return null;
+  return connectionUri(l.cluster.engine, host, l.cluster.port, l.dbUser, open(user.password), l.dbName);
 }
 
 /** Custom domains that passed the ownership check; the only ones written into the Caddyfile. */

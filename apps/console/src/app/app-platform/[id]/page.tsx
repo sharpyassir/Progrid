@@ -7,6 +7,8 @@ import { api, ApiError } from '@/lib/api';
 import { useShell } from '@/components/shell';
 import { StatusBadge } from '@/components/status-badge';
 import { APP_STATUS_BADGE, AppSize, PlatformApp } from '@/lib/app-platform';
+import { RunConsole } from '@/components/app-platform/run-console';
+import { DatabaseLinks } from '@/components/app-platform/database-links';
 import { regionLabel } from '@/lib/i18n';
 
 interface Logs { id: string; type: string; log: string; live: boolean; updatedAt: string }
@@ -46,7 +48,7 @@ export default function PlatformAppPage() {
     const f = new FormData(e.currentTarget);
     const env: Record<string, string> = {};
     String(f.get('env') ?? '').split('\n').forEach((l) => { const [k, ...v] = l.split('='); if (k.trim()) env[k.trim()] = v.join('=').trim(); });
-    run(() => api(`/v1/app-platform/apps/${id}`, { method: 'PATCH', body: JSON.stringify({ branch: f.get('branch') || undefined, port: Number(f.get('port') || a!.port), size: f.get('size'), instances: Number(f.get('instances')), env, healthPath: f.get('healthPath') || undefined }) }));
+    run(() => api(`/v1/app-platform/apps/${id}`, { method: 'PATCH', body: JSON.stringify({ branch: f.get('branch') || undefined, port: Number(f.get('port') || a!.port), size: f.get('size'), instances: Number(f.get('instances')), env, healthPath: f.get('healthPath') || undefined, preDeployCommand: String(f.get('preDeployCommand') ?? '').trim() }) }));
   }
 
   return (
@@ -105,6 +107,11 @@ export default function PlatformAppPage() {
       </section>
 
       <div className="grid gap-4 md:grid-cols-2">
+        <DatabaseLinks appId={a.id} projectId={a.projectId} canChange={settled && !busy} onChanged={load} />
+        <RunConsole appId={a.id} locale={locale} canRun={a.status !== 'deleting' && a.deploys.some((d) => d.status === 'live')} />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
         <form onSubmit={saveConfig} className="card space-y-2 text-sm">
           <h2 className="font-medium">Configuration</h2>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -113,6 +120,8 @@ export default function PlatformAppPage() {
             <label className="block"><span className="text-xs text-neutral-500">Size</span><select className="input" name="size" defaultValue={a.size.id}>{sizes.map((s) => <option key={s.id} value={s.id}>{s.id} · {s.memoryMb} MB · {s.cpus} vCPU</option>)}</select></label>
             <label className="block"><span className="text-xs text-neutral-500">Instances</span><select className="input" name="instances" defaultValue={a.instances}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
             <label className="block sm:col-span-2"><span className="text-xs text-neutral-500">Health path</span><input className="input" name="healthPath" defaultValue={a.healthPath ?? ''} placeholder="/" /></label>
+            <label className="block sm:col-span-2"><span className="text-xs text-neutral-500">Pre-deploy command</span><input className="input font-mono text-xs" dir="ltr" name="preDeployCommand" defaultValue={a.preDeployCommand ?? ''} placeholder="npx prisma migrate deploy" maxLength={1000} />
+              <span className="mt-0.5 block text-xs text-neutral-500">Runs on every deploy in a container from the new image, before it replaces the running version, e.g. <code className="font-mono" dir="ltr">npx prisma migrate deploy</code>. If it fails, the deploy fails and the running version stays.</span></label>
           </div>
           <label className="block"><span className="text-xs text-neutral-500">Environment variables, one per line</span><textarea className="input font-mono text-xs" name="env" rows={5} defaultValue={Object.entries(a.env).map(([k, v]) => `${k}=${v}`).join('\n')} /></label>
           <button className="btn-primary" disabled={busy || !settled}>Save and deploy</button>

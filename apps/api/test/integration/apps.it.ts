@@ -56,7 +56,9 @@ describe('App Platform', () => {
     const host = await s.agents.inspect(row.host!.serverId);
     expect(host!.kind).toBe('app');
     expect(host!.last!.apps.find((x: { id: string }) => x.id === app.id).env).toEqual({ GREETING: 'hi' });
-    expect(host!.st.caddySites).toEqual([{ app: app.id, hostnames: [`${name}.apps.progrid.sa`] }]);
+    // Other test files share the host: look only at this app's site.
+    const mine = (n: { st: any }): { app: string; hostnames: string[] }[] => n.st.caddySites.filter((x: { app: string }) => x.app === app.id);
+    expect(mine(host!)).toEqual([{ app: app.id, hostnames: [`${name}.apps.progrid.sa`] }]);
 
     const logs = await c.ok('GET', `/v1/app-platform/apps/${app.id}/logs?type=build`);
     expect(logs.live).toBe(true);
@@ -71,7 +73,7 @@ describe('App Platform', () => {
     const refused = await c.post(`/v1/app-platform/apps/${app.id}/domains/${domain}/verify`);
     expect(refused.status).toBe(409);
     expect(refused.text).toContain(`_progrid-verify.${domain}`);
-    expect((await s.agents.inspect(row.host!.serverId))!.st.caddySites[0].hostnames).not.toContain(domain);
+    expect(mine((await s.agents.inspect(row.host!.serverId))!)[0].hostnames).not.toContain(domain);
 
     // A wrong token does not count either.
     txt.set(`_progrid-verify.${domain}`, [['progrid-not-the-token']]);
@@ -80,14 +82,14 @@ describe('App Platform', () => {
     txt.set(`_progrid-verify.${domain}`, [[d.verification.txt.value]]);
     const verified = await c.ok('POST', `/v1/app-platform/apps/${app.id}/domains/${domain}/verify`, {}, 200);
     expect(verified.domains.find((x: { domain: string }) => x.domain === domain).verified).toBe(true);
-    const sites = (await s.agents.inspect(row.host!.serverId))!.st.caddySites;
+    const sites = mine((await s.agents.inspect(row.host!.serverId))!);
     expect(sites[0].hostnames).toEqual([`${name}.apps.progrid.sa`, domain]);
 
     // Stop takes the app out of Caddy; start puts it back without a build.
     expect((await c.ok('POST', `/v1/app-platform/apps/${app.id}/stop`, {}, 200)).status).toBe('stopped');
-    expect((await s.agents.inspect(row.host!.serverId))!.st.caddySites).toEqual([]);
+    expect(mine((await s.agents.inspect(row.host!.serverId))!)).toEqual([]);
     expect((await c.ok('POST', `/v1/app-platform/apps/${app.id}/start`, {}, 200)).status).toBe('live');
-    expect((await s.agents.inspect(row.host!.serverId))!.st.caddySites.map((x: { app: string }) => x.app)).toEqual([app.id]);
+    expect(mine((await s.agents.inspect(row.host!.serverId))!).map((x) => x.app)).toEqual([app.id]);
 
     // A redeploy builds again and ends live with a second deploy.
     await c.ok('POST', `/v1/app-platform/apps/${app.id}/deploy`, {}, 202);

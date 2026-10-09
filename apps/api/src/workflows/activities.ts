@@ -724,6 +724,8 @@ export function createActivities(app: INestApplicationContext): Activities {
       await prisma.platformApp.update({ where: { id: appId }, data: { status: 'deleted', deletedAt: new Date(), meteredSince: null, gitToken: null, envVars: {} } });
       if (a.hostId) await apps.pushHost(a.hostId).catch((e) => log.warn(`delete push for ${appId}: ${(e as Error).message}`));
       await apps.removeDns(a.slug).catch(() => undefined);
+      // Attached databases: links, the app's database users and the hosts' trusted sources go.
+      await apps.cleanupDeleted(appId);
     },
 
     async emitApp(name, appId, payload) {

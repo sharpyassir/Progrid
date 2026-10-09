@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -140,6 +141,7 @@ LBS       load-balancers [ls | create NAME --rule http:80:80 [--rule https:443:8
 DATABASES databases [ls | create NAME --size S [--engine postgres] [--nodes 1|3] [--trusted CIDR,...] [--wait] | get ID | users ID [ls | add NAME | rm USER_ID] | dbs ID [ls | add NAME | rm DB_ID]
                      | trusted ID CIDR,... | backups ID [ls | now] | delete ID]
 APPS      app [ls | create NAME REPO_URL [--branch B] [--port P] [--size app-xs] [--instances N] [--env K=V] [--git-token T] [--wait] | get ID | deploy ID | logs ID [--runtime] [--follow] | scale ID N | env ID K=V... | domains ID [add D | rm D] | stop ID | start ID | delete ID]
+          app run APP [--timeout SECONDS] -- COMMAND...   (one off command in a container from the live image; exits with its code)
 KUBERNETES kubernetes [ls | create NAME [--size S] [--count N] [--version V] [--ha] [--wait] | get ID | kubeconfig ID | pools ID [add NAME --size S --count N | scale POOL_ID N | rm POOL_ID] | delete ID]
 STORAGE   buckets [ls | create NAME [--public] | get NAME | ls NAME [--prefix P] | upload NAME FILE [--key K] | download NAME KEY [--out FILE] | rm NAME KEY | public NAME on|off | delete NAME]
           buckets keys [ls | create NAME | revoke ID]
@@ -198,6 +200,9 @@ func parseGlobal(args []string) []string {
 	var rest []string
 	for i := 0; i < len(args); i++ {
 		switch {
+		case args[i] == "--":
+			// Everything after -- belongs to a remote command (ssh, app run), flags included.
+			return append(rest, args[i:]...)
 		case args[i] == "--json":
 			jsonOut = true
 		case args[i] == "--project" && i+1 < len(args):
@@ -2145,9 +2150,11 @@ func cmdApp(args []string) error {
 	if len(args) == 0 || args[0] == "ls" {
 		return cmdList("/v1/app-platform/apps", nil, []string{"name", "status", "url", "branch", "instances", "id"})
 	}
-	usage := errors.New("usage: prgd app [ls | create NAME REPO_URL [--branch B] [--port P] [--size app-xs] [--instances N] [--env K=V] [--git-token T] [--wait] | get ID | deploy ID | logs ID [--runtime] [--follow] | scale ID N | env ID K=V... | domains ID [add D | rm D] | stop ID | start ID | delete ID]")
+	usage := errors.New("usage: prgd app [ls | create NAME REPO_URL [--branch B] [--port P] [--size app-xs] [--instances N] [--env K=V] [--git-token T] [--wait] | get ID | deploy ID | logs ID [--runtime] [--follow] | scale ID N | env ID K=V... | domains ID [add D | rm D] | stop ID | start ID | delete ID | run APP [--timeout S] -- COMMAND...]")
 	var a map[string]any
 	switch args[0] {
+	case "run":
+		return cmdAppRun(args[1:])
 	case "create":
 		if len(args) < 3 {
 			return usage
@@ -2332,6 +2339,126 @@ func cmdApp(args []string) error {
 		return nil
 	}
 	return usage
+}
+
+// cmdAppRun: prgd app run APP [--timeout S] -- COMMAND... starts a console run, prints its
+// output as it comes and exits with the command's exit code (124 on timeout, 130 when
+// canceled). The words after -- are joined with spaces and run with sh -c in the container,
+// so quote what the remote shell should see as one word. Ctrl-C cancels the run.
+func cmdAppRun(args []string) error {
+	sep := indexOf(args, "--")
+	if sep < 1 || sep == len(args)-1 {
+		return errors.New("usage: prgd app run APP [--timeout SECONDS] -- COMMAND...")
+	}
+	command := strings.Join(args[sep+1:], " ")
+	timeout, rest := flag(args[:sep], "--timeout")
+	if len(rest) != 1 {
+		return errors.New("usage: prgd app run APP [--timeout SECONDS] -- COMMAND...")
+	}
+	id, err := resolveApp(rest[0])
+	if err != nil {
+		return err
+	}
+	body := map[string]any{"command": command}
+	if timeout != "" {
+		var n int
+		if _, err := fmt.Sscanf(timeout, "%d", &n); err != nil {
+			return fmt.Errorf("--timeout must be a number of seconds")
+		}
+		body["timeoutSeconds"] = n
+	}
+	base := "/v1/app-platform/apps/" + id + "/runs"
+	q := ""
+	if project != "" {
+		q = "?project=" + url.QueryEscape(project)
+	}
+	var run map[string]any
+	if err := call(http.MethodPost, base+q, body, &run); err != nil {
+		return err
+	}
+	runID := fmt.Sprint(run["id"])
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(interrupt)
+	printed := ""
+	for {
+		if err := call(http.MethodGet, base+"/"+runID, nil, &run); err != nil {
+			return err
+		}
+		out := fmt.Sprint(orEmpty(run["output"]))
+		if !jsonOut {
+			fmt.Fprint(stdout, newOutput(printed, out))
+			stdout.Flush()
+		}
+		printed = out
+		status := fmt.Sprint(run["status"])
+		if status != "queued" && status != "running" {
+			break
+		}
+		select {
+		case <-interrupt:
+			fmt.Fprintln(os.Stderr, "\ncanceling the run…")
+			if err := call(http.MethodPost, base+"/"+runID+"/cancel"+q, map[string]any{}, &run); err != nil {
+				return err
+			}
+		case <-time.After(2 * time.Second):
+		}
+	}
+	if jsonOut {
+		emit(run)
+	}
+	stdout.Flush()
+	code := runExitCode(fmt.Sprint(run["status"]), run["exitCode"])
+	if code != 0 && !jsonOut {
+		fmt.Fprintf(os.Stderr, "run %s %v (exit %d)\n", runID, run["status"], code)
+	}
+	os.Exit(code)
+	return nil
+}
+
+// newOutput is what to print of out after having printed prev; the server keeps only the
+// last 64 KB, so once the window moves on the overlap is found by the last line printed.
+func newOutput(prev, out string) string {
+	if strings.HasPrefix(out, prev) {
+		return out[len(prev):]
+	}
+	if i := strings.LastIndex(strings.TrimRight(prev, "\n"), "\n"); i >= 0 {
+		if j := strings.LastIndex(out, prev[i:]); j >= 0 {
+			return out[j+len(prev)-i:]
+		}
+	}
+	return out
+}
+
+func runExitCode(status string, exit any) int {
+	switch status {
+	case "succeeded":
+		return 0
+	case "timed_out":
+		return 124
+	case "canceled":
+		return 130
+	}
+	if f, ok := exit.(float64); ok && f > 0 && f < 256 {
+		return int(f)
+	}
+	return 1
+}
+
+// resolveApp takes an app id or name.
+func resolveApp(ref string) (string, error) {
+	var list struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := call(http.MethodGet, "/v1/app-platform/apps", nil, &list); err != nil {
+		return "", err
+	}
+	for _, a := range list.Data {
+		if a["id"] == ref || a["name"] == ref {
+			return fmt.Sprint(a["id"]), nil
+		}
+	}
+	return "", fmt.Errorf("no app %q in this project", ref)
 }
 
 func waitApp(id string) error {

@@ -790,17 +790,17 @@ paths:
         and serves them at `https://<name>.<apps domain>` with TLS. Name the repository with `repoUrl` (and `gitToken` for a private one)
         or with `installationId` and `repo` from the GitHub App, which also redeploys on every push. Poll until `live`; on `failed`, read the build log.
       parameters: [{ $ref: "#/components/parameters/idempotencyKey" }]
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string, description: "Hostname label, unique across the platform" }, repoUrl: { type: string, format: uri }, installationId: { type: string }, repo: { type: string, example: acme/app }, gitToken: { type: string }, branch: { type: string, default: main }, port: { type: integer, default: 3000 }, size: { type: string, enum: [app-xs, app-s, app-m, app-l], default: app-xs }, instances: { type: integer, minimum: 1, maximum: 5, default: 1 }, env: { type: object, maxProperties: 200, propertyNames: { pattern: "^[A-Z_][A-Z0-9_]{0,63}$" }, additionalProperties: { type: string, maxLength: 32768 }, description: "Stored encrypted at rest" }, healthPath: { type: string }, region: { type: string }, project: { type: string } } } } } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string, description: "Hostname label, unique across the platform" }, repoUrl: { type: string, format: uri }, installationId: { type: string }, repo: { type: string, example: acme/app }, gitToken: { type: string }, branch: { type: string, default: main }, port: { type: integer, default: 3000 }, size: { type: string, enum: [app-xs, app-s, app-m, app-l], default: app-xs }, instances: { type: integer, minimum: 1, maximum: 5, default: 1 }, env: { type: object, maxProperties: 200, propertyNames: { pattern: "^[A-Z_][A-Z0-9_]{0,63}$" }, additionalProperties: { type: string, maxLength: 32768 }, description: "Stored encrypted at rest" }, healthPath: { type: string }, preDeployCommand: { type: string, maxLength: 1000, description: "Runs before every deploy goes live, e.g. `npx prisma migrate deploy`" }, region: { type: string }, project: { type: string } } } } } }
       responses: { "202": { description: Accepted, content: { application/json: { schema: { $ref: "#/components/schemas/PlatformApp" } } } }, "409": { description: Name taken (`name_taken`) } }
   /app-platform/apps/{id}:
     get: { tags: [app-platform], summary: Get an app, parameters: [{ $ref: "#/components/parameters/id" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PlatformApp" } } } }, "404": { $ref: "#/components/responses/NotFound" } } }
     patch:
       tags: [app-platform]
       summary: Change configuration and deploy again
-      description: "`env` replaces the whole set. A bigger size or more instances checks the spend limit and the host's room."
+      description: "`env` replaces the whole set; a variable set by an attached database is refused (`env_conflict`). An empty `preDeployCommand` removes it. A bigger size or more instances checks the spend limit and the host's room."
       parameters: [{ $ref: "#/components/parameters/id" }]
-      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { branch: { type: string }, port: { type: integer }, size: { type: string, enum: [app-xs, app-s, app-m, app-l] }, instances: { type: integer, minimum: 1, maximum: 5 }, env: { type: object, maxProperties: 200, propertyNames: { pattern: "^[A-Z_][A-Z0-9_]{0,63}$" }, additionalProperties: { type: string, maxLength: 32768 }, description: "Stored encrypted at rest" }, healthPath: { type: string }, gitToken: { type: string } } } } } }
-      responses: { "202": { description: Accepted, content: { application/json: { schema: { $ref: "#/components/schemas/PlatformApp" } } } } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { branch: { type: string }, port: { type: integer }, size: { type: string, enum: [app-xs, app-s, app-m, app-l] }, instances: { type: integer, minimum: 1, maximum: 5 }, env: { type: object, maxProperties: 200, propertyNames: { pattern: "^[A-Z_][A-Z0-9_]{0,63}$" }, additionalProperties: { type: string, maxLength: 32768 }, description: "Stored encrypted at rest" }, healthPath: { type: string }, gitToken: { type: string }, preDeployCommand: { type: string, maxLength: 1000 } } } } } }
+      responses: { "202": { description: Accepted, content: { application/json: { schema: { $ref: "#/components/schemas/PlatformApp" } } } }, "409": { description: "App not settled (`invalid_state`) or a variable set by an attached database (`env_conflict`)" } }
     delete: { tags: [app-platform], summary: Delete an app, parameters: [{ $ref: "#/components/parameters/id" }], responses: { "202": { description: Accepted } } }
   /app-platform/apps/{id}/deploy:
     post: { tags: [app-platform], summary: Build and deploy the branch head now, parameters: [{ $ref: "#/components/parameters/id" }], responses: { "202": { description: Accepted } } }
@@ -816,6 +816,41 @@ paths:
     post: { tags: [app-platform], summary: Attach a custom domain, description: Point a CNAME at the app hostname; the certificate is issued on the first request., parameters: [{ $ref: "#/components/parameters/id" }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [domain], properties: { domain: { type: string } } } } } }, responses: { "200": { description: OK }, "409": { description: Domain attached to another app (`domain_taken`) } } }
   /app-platform/apps/{id}/domains/{domain}:
     delete: { tags: [app-platform], summary: Detach a custom domain, parameters: [{ $ref: "#/components/parameters/id" }, { name: domain, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK } } }
+  /app-platform/apps/{id}/runs:
+    get: { tags: [app-platform], summary: Console runs, latest 50 (without output), parameters: [{ $ref: "#/components/parameters/id" }], responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/AppRun" } } } } } } } } }
+    post:
+      tags: [app-platform]
+      summary: Run a one off command
+      description: |
+        Runs `command` with `sh -c` once, in a fresh container from the app's live image, with the app's environment variables,
+        attached databases, network and limits; no TTY and stdin closed. Stopped apps qualify as long as a deploy went live once.
+        At most 2 run at once per app. The output (combined stdout and stderr, last 64 KB, credentials redacted) is read with
+        GET .../runs/{runId}. Audited as `app.run_started` (with the command), `app.run_finished` and `app.run_canceled`.
+        An agent token gets `403 approval_required` and a pending approval; the command runs once a person approves it.
+      parameters: [{ $ref: "#/components/parameters/id" }, { $ref: "#/components/parameters/idempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [command], properties: { command: { type: string, minLength: 1, maxLength: 2000, example: npx prisma migrate deploy }, timeoutSeconds: { type: integer, minimum: 30, maximum: 3600, default: 600 } } } } } }
+      responses: { "202": { description: Started, content: { application/json: { schema: { $ref: "#/components/schemas/AppRun" } } } }, "403": { description: Agent token (`approval_required`, with the approval id in details) }, "409": { description: "Two runs already going (`run_limit`), or no live image yet (`invalid_state`)" } }
+  /app-platform/apps/{id}/runs/{runId}:
+    get: { tags: [app-platform], summary: A run with its output, description: "While the run is going, status and output come live from the host every call.", parameters: [{ $ref: "#/components/parameters/id" }, { name: runId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/AppRun" } } } }, "404": { $ref: "#/components/responses/NotFound" } } }
+  /app-platform/apps/{id}/runs/{runId}/cancel:
+    post: { tags: [app-platform], summary: Stop a run (docker kill), parameters: [{ $ref: "#/components/parameters/id" }, { name: runId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: "The run, `canceled` (or as it ended when it was already over)", content: { application/json: { schema: { $ref: "#/components/schemas/AppRun" } } } } } }
+  /app-platform/apps/{id}/databases:
+    get: { tags: [app-platform], summary: Attached managed databases (no passwords), parameters: [{ $ref: "#/components/parameters/id" }], responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/AppDatabaseLink" } } } } } } } } }
+    post:
+      tags: [app-platform]
+      summary: Attach a managed database
+      description: |
+        Creates a user and (except on Valkey) a database named after the app (`app_<name>`) on a managed database of the app's project,
+        adds the public address of the app's host to the database's trusted sources (when it has any; a database open to anywhere stays
+        open) and deploys the app again with the connection URL in `envName`: `postgresql://...?sslmode=require`, `mysql://...?ssl-mode=REQUIRED`
+        or `rediss://...:6380`. The URL is never stored with the app's variables.
+      parameters: [{ $ref: "#/components/parameters/id" }, { $ref: "#/components/parameters/idempotencyKey" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [databaseId], properties: { databaseId: { type: string }, envName: { type: string, default: DATABASE_URL, pattern: "^[A-Z_][A-Z0-9_]{0,63}$" }, database: { type: string, pattern: "^[a-z_][a-z0-9_]*$", description: An existing database on the cluster to use instead of a new one } } } } } }
+      responses: { "201": { description: Attached, content: { application/json: { schema: { $ref: "#/components/schemas/AppDatabaseLink" } } } }, "404": { $ref: "#/components/responses/NotFound" }, "409": { description: "`envName` already set (`env_conflict`), or app or database not settled (`invalid_state`)" } }
+  /app-platform/apps/{id}/databases/{linkId}:
+    delete: { tags: [app-platform], summary: Detach a database, description: "The variable goes with a new deploy, the app's user loses its login and the host's address leaves the trusted sources; the database and its data stay.", parameters: [{ $ref: "#/components/parameters/id" }, { name: linkId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: Detached } } }
+  /app-platform/apps/{id}/databases/{linkId}/credentials:
+    get: { tags: [app-platform], summary: The connection URL with its password, description: "Needs apps:write; audited as `app.database_credentials_viewed`.", parameters: [{ $ref: "#/components/parameters/id" }, { name: linkId, in: path, required: true, schema: { type: string } }], responses: { "200": { description: OK, content: { application/json: { schema: { allOf: [{ $ref: "#/components/schemas/AppDatabaseLink" }, { type: object, properties: { url: { type: string } } }] } } } } } }
   /kubernetes/versions:
     get: { tags: [kubernetes], summary: Kubernetes versions on offer, responses: { "200": { description: OK } } }
   /kubernetes/clusters:
@@ -1014,7 +1049,7 @@ paths:
   /databases/{id}:
     get: { tags: [databases], summary: Get a cluster with connection details and secrets, parameters: [{ $ref: "#/components/parameters/id" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DatabaseCluster" } } } }, "404": { $ref: "#/components/responses/NotFound" } } }
     patch: { tags: [databases], summary: Change trusted sources or the backup hour, parameters: [{ $ref: "#/components/parameters/id" }], requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { trustedSources: { type: array, items: { type: string } }, backupHourUtc: { type: integer } } } } } }, responses: { "202": { description: Accepted } } }
-    delete: { tags: [databases], summary: Delete a cluster and its nodes, parameters: [{ $ref: "#/components/parameters/id" }], responses: { "202": { description: Accepted } } }
+    delete: { tags: [databases], summary: Delete a cluster and its nodes, parameters: [{ $ref: "#/components/parameters/id" }], responses: { "202": { description: Accepted }, "409": { description: Attached to an App Platform app (`database_in_use`); detach it first } } }
   /databases/{id}/users:
     post: { tags: [databases], summary: Add a user (password returned once), parameters: [{ $ref: "#/components/parameters/id" }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string } } } } } }, responses: { "201": { description: Created } } }
   /databases/{id}/users/{userId}:
@@ -1782,6 +1817,7 @@ components:
         port: { type: integer }
         poolerPort: { type: [integer, "null"] }
         trustedSources: { type: array, items: { type: string } }
+        appSources: { type: array, items: { type: string }, description: "Entries of trustedSources the platform added for the hosts of attached App Platform apps" }
         backupHourUtc: { type: integer }
         connection: { type: object, description: Secrets only on GET by id, properties: { host: { type: [string, "null"] }, privateHost: { type: [string, "null"] }, port: { type: integer }, database: { type: string }, user: { type: string }, password: { type: string }, ssl: { type: boolean }, uri: { type: [string, "null"] }, privateUri: { type: [string, "null"] }, appUri: { type: [string, "null"] } } }
         users: { type: array, items: { type: object, properties: { id: { type: string }, name: { type: string }, password: { type: string } } } }
@@ -1945,12 +1981,40 @@ components:
         size: { type: object, properties: { id: { type: string }, memoryMb: { type: integer }, cpus: { type: number } } }
         instances: { type: integer }
         healthPath: { type: [string, "null"] }
+        preDeployCommand: { type: [string, "null"] }
         env: { type: object, additionalProperties: { type: string } }
         hostIp: { type: [string, "null"] }
         lastCommit: { type: [string, "null"] }
         lastDeployAt: { type: [string, "null"], format: date-time }
         deploys: { type: array, items: { type: object, properties: { id: { type: string }, status: { type: string, enum: [queued, building, live, failed] }, trigger: { type: string }, commit: { type: [string, "null"] }, startedAt: { type: string, format: date-time }, finishedAt: { type: [string, "null"], format: date-time } } } }
         projectId: { type: string }
+        createdAt: { type: string, format: date-time }
+    AppRun:
+      type: object
+      properties:
+        id: { type: string }
+        appId: { type: string }
+        command: { type: string }
+        status: { type: string, enum: [queued, running, succeeded, failed, timed_out, canceled] }
+        exitCode: { type: [integer, "null"] }
+        timeoutSeconds: { type: integer }
+        userId: { type: [string, "null"] }
+        tokenId: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: [string, "null"], format: date-time }
+        finishedAt: { type: [string, "null"], format: date-time }
+        durationMs: { type: [integer, "null"] }
+        output: { type: string, description: "Last 64 KB, redacted; single run only" }
+    AppDatabaseLink:
+      type: object
+      properties:
+        id: { type: string }
+        databaseId: { type: string }
+        databaseName: { type: string }
+        engine: { type: string, enum: [postgres, mysql, valkey] }
+        envName: { type: string }
+        dbName: { type: [string, "null"], description: null on Valkey }
+        dbUser: { type: string }
         createdAt: { type: string, format: date-time }
     KubePoolInput:
       type: object

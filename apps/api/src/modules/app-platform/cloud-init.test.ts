@@ -52,6 +52,9 @@ describe('app host cloud-init', () => {
     expect(src).toContain("'--security-opt', 'no-new-privileges'");
     expect(src).toContain("'--pids-limit', '512'");
     expect(src).toContain('BUILD_TIMEOUT = 900');
+    expect(src).toContain('PREDEPLOY_TIMEOUT = 600');
+    // One off containers never go through a shell on the host.
+    expect(src).toContain("'sh', '-c', command]");
     expect(src).toContain("DOCKER_BUILDKIT=0");
     expect(src).toContain('secret_ok(self.headers.get(');
     expect(src).not.toContain("!= SECRET");
@@ -111,6 +114,97 @@ assert e[0] == '-m conntrack --ctstate ESTABLISHED,RELATED -j RETURN'
 assert e.index('-d 10.96.0.1 -p udp --dport 53 -j RETURN') < e.index('-d 10.0.0.0/8 -j DROP')
 for c in ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '100.64.0.0/10', '169.254.0.0/16', '203.0.113.7']: assert '-d %s -j DROP' % c in e, c
 assert '-p tcp --dport 25 -j DROP' in e
+print('ok')`);
+    expect(out).toBe('ok');
+  });
+
+  it.skipIf(!hasPython)('runs the pre-deploy command in a one off container and fails the deploy on a non zero exit', () => {
+    const out = py(`import os, tempfile
+m.runtime_flags = lambda: []
+m.ROOT = tempfile.mkdtemp()
+seen = []
+def fake(argv, name, timeout, out_path, cap=m.RUN_LOG_BYTES, job=None):
+    seen.append((argv, name, timeout))
+    open(out_path, 'ab').write(b'Applying migration 0001\\npostgresql://app:hunter2secret@db:5432/x token=s3cr3tvalue\\n')
+    return code[0], False
+m.run_container = fake
+m.subprocess.run = lambda *a, **k: None
+app = {'id': 'abc123', 'memoryMb': 512, 'cpus': 0.5, 'port': 3000, 'instances': 1, 'preDeploy': 'npx prisma migrate deploy', 'env': {'API_TOKEN': 's3cr3tvalue', 'NODE_ENV': 'production'}}
+log = m.ROOT + '/build.log'; open(log, 'w').close()
+code = [0]
+m.pre_deploy(app, 'prgd-app-abc123:1', log)
+argv, name, timeout = seen[0]
+a = ' '.join(argv)
+assert name == 'prgd-abc123-predeploy' and timeout == 600
+assert argv[:5] == ['docker', 'run', '--rm', '--name', 'prgd-abc123-predeploy'], argv
+assert argv[-4:] == ['prgd-app-abc123:1', 'sh', '-c', 'npx prisma migrate deploy'], argv
+assert '--restart' not in argv
+for w in ['--network prgd-app-abc123', '--cap-drop ALL', '--security-opt no-new-privileges', '--pids-limit 512', '--memory 512m', '--label prgd.app=abc123', '--label prgd.job=predeploy', '--env-file ' + m.ROOT + '/abc123/app.env']: assert w in a, w
+envf = m.ROOT + '/abc123/app.env'
+assert oct(os.stat(envf).st_mode & 0o777) == '0o600'
+assert open(envf).read() == 'API_TOKEN=s3cr3tvalue\\nNODE_ENV=production\\nPORT=3000\\n'
+text = open(log).read()
+assert '=== pre-deploy: npx prisma migrate deploy ===' in text and '=== pre-deploy exited 0 ===' in text, text
+assert 'hunter2secret' not in text and 's3cr3tvalue' not in text and 'Applying migration 0001' in text, text
+code[0] = 3
+try:
+    m.pre_deploy(app, 'prgd-app-abc123:1', log); raise SystemExit('no failure')
+except RuntimeError as e:
+    assert str(e) == 'pre-deploy command failed (exit 3)', e
+assert '=== pre-deploy exited 3 ===' in open(log).read()
+print('ok')`);
+    expect(out).toBe('ok');
+  });
+
+  it.skipIf(!hasPython)('captures, caps and times out one off containers', () => {
+    const out = py(`import tempfile, time
+m.KILL_GRACE = 0.2
+d = tempfile.mkdtemp()
+code, timed_out = m.run_container(['sh', '-c', 'echo hello; echo oops >&2; exit 3'], 'x', 30, d + '/a.log')
+assert (code, timed_out) == (3, False) and open(d + '/a.log').read() == 'hello\\noops\\n'
+code, timed_out = m.run_container(['sh', '-c', 'head -c 5000 /dev/zero | tr "\\\\0" a'], 'x', 30, d + '/b.log', cap=1000)
+assert code == 0 and open(d + '/b.log').read().startswith('a' * 1000 + '\\n[output truncated')
+t = time.time()
+code, timed_out = m.run_container(['sleep', '20'], 'prgd-run-none', 0.5, d + '/c.log')
+assert timed_out and time.time() - t < 10, (code, timed_out)
+assert m.run_status(0, False, False) == 'succeeded' and m.run_status(3, False, False) == 'failed'
+assert m.run_status(137, True, False) == 'timed_out' and m.run_status(137, False, True) == 'canceled'
+print('ok')`);
+    expect(out).toBe('ok');
+  });
+
+  it.skipIf(!hasPython)('starts console runs only for apps with a live image, two at a time', () => {
+    const out = py(`import tempfile
+m.STATE = tempfile.mkdtemp() + '/state.json'
+started = []
+m.run_job = lambda *a: started.append(a)
+m.threading.Thread = lambda target, args, daemon: type('T', (), {'start': lambda self: target(*args)})()
+m.apps_cfg['abc123'] = {'id': 'abc123', 'env': {'DATABASE_URL': 'postgresql://u:pw@h/db', 'SESSION_SECRET': 'verysecret1'}}
+ok = {'runId': 'run1', 'appId': 'abc123', 'command': 'npx prisma db seed', 'timeout': 60}
+assert m.start_run({**ok, 'runId': 'Bad-Id'})[0] == 400
+assert m.start_run({**ok, 'appId': '../x'})[0] == 400
+assert m.start_run({**ok, 'command': ''})[0] == 400
+assert m.start_run({**ok, 'command': 'x' * 2001})[0] == 400
+assert m.start_run({**ok, 'timeout': 0})[0] == 400
+assert m.start_run({**ok, 'appId': 'other'})[0] == 404
+assert m.start_run(ok)[1]['error'] == 'no_image'
+m.state['apps']['abc123'] = {'state': 'failed', 'image': 'prgd-app-abc123:1'}
+assert m.start_run(ok)[0] == 202 and started[0][1:] == ('run1', 'npx prisma db seed', 60, 'prgd-app-abc123:1')
+assert m.start_run(ok)[1]['error'] == 'duplicate_run'
+assert m.start_run({**ok, 'runId': 'run2'})[0] == 202
+assert m.start_run({**ok, 'runId': 'run3'}) == (409, {'error': 'run_limit'})
+m.state['runs']['run1'].update(status='succeeded', exitCode=0, finishedAt=m.time.time())
+assert m.start_run({**ok, 'runId': 'run3'})[0] == 202
+# Output is redacted with the app's secrets; finished runs are forgotten after a day.
+import os
+m.ROOT = tempfile.mkdtemp(); os.makedirs(m.ROOT + '/abc123/runs')
+open(m.run_log('abc123', 'run1'), 'w').write('seeded with postgresql://u:pw@h/db and verysecret1\\n')
+r = m.run_report('run1')
+assert r['status'] == 'succeeded' and r['exitCode'] == 0 and 'verysecret1' not in r['output'] and ':pw@' not in r['output'], r
+m.state['runs']['run1']['finishedAt'] = m.time.time() - 2 * 86400
+with m.runs_lock: m.prune_runs()
+assert 'run1' not in m.state['runs'] and not os.path.exists(m.run_log('abc123', 'run1'))
+assert m.cancel_run('nope')[0] == 404
 print('ok')`);
     expect(out).toBe('ok');
   });

@@ -1701,6 +1701,12 @@ model DbCluster {
   adminPassword   String
   /// CIDRs allowed to reach the database port; empty means anywhere (password and TLS still apply).
   trustedSources  String[]        @default([])
+  /// The entries of trustedSources the platform added for App Platform hosts of attached apps
+  /// (AppDatabaseLink); removed again when no link needs them. The rest is the customer's own.
+  systemSources   String[]        @default([])
+  /// Users deleted from the cluster: the agent disables (Postgres) or drops (MySQL) these roles so
+  /// a removed password stops working. A name leaves the list when a user of that name is created again.
+  retiredUsers    String[]        @default([])
   publicIpId      String?         @unique
   firewallId      String?
   vmSecret        String
@@ -1714,14 +1720,15 @@ model DbCluster {
   updatedAt       DateTime        @updatedAt
   deletedAt       DateTime?
 
-  project     Project      @relation(fields: [projectId], references: [id])
-  region      Region       @relation(fields: [regionId], references: [id])
-  size        Size         @relation(fields: [sizeId], references: [id])
-  publicIp    PublicIp?    @relation(fields: [publicIpId], references: [id], onDelete: SetNull)
+  project     Project           @relation(fields: [projectId], references: [id])
+  region      Region            @relation(fields: [regionId], references: [id])
+  size        Size              @relation(fields: [sizeId], references: [id])
+  publicIp    PublicIp?         @relation(fields: [publicIpId], references: [id], onDelete: SetNull)
   nodeServers DbNode[]
   users       DbUser[]
   databases   DbDatabase[]
   backups     DbBackup[]
+  appLinks    AppDatabaseLink[]
 
   @@index([projectId])
   @@map("prgd_db_clusters")
@@ -2044,44 +2051,49 @@ model AppHost {
 }
 
 model PlatformApp {
-  id             String            @id @default(cuid())
-  projectId      String
-  regionId       String
-  hostId         String?
+  id               String            @id @default(cuid())
+  projectId        String
+  regionId         String
+  hostId           String?
   /// Hostname label under APPS_DOMAIN; unique across the platform.
-  slug           String            @unique
-  name           String
-  status         PlatformAppStatus @default(creating)
-  statusMessage  String?
-  repoUrl        String
-  branch         String            @default("main")
-  repoFullName   String?
-  installationId String?
+  slug             String            @unique
+  name             String
+  status           PlatformAppStatus @default(creating)
+  statusMessage    String?
+  repoUrl          String
+  branch           String            @default("main")
+  repoFullName     String?
+  installationId   String?
   /// Customer token for private repositories without the GitHub App.
-  gitToken       String?
-  port           Int               @default(3000)
-  envVars        Json              @default("{}")
+  gitToken         String?
+  port             Int               @default(3000)
+  envVars          Json              @default("{}")
   /// app-xs | app-s | app-m | app-l
-  size           String            @default("app-xs")
-  instances      Int               @default(1)
-  healthPath     String?
-  customDomains  String[]          @default([])
+  size             String            @default("app-xs")
+  instances        Int               @default(1)
+  healthPath       String?
+  /// Runs once per deploy in a container from the new image, before it replaces the running
+  /// version (migrations); a non zero exit fails the deploy.
+  preDeployCommand String?
+  customDomains    String[]          @default([])
   /// Ownership checks per custom domain: { "<domain>": { "token": "...", "verifiedAt": "<ISO time>" | null } }.
   /// Only verified domains are served.
-  domainChecks   Json              @default("{}")
-  lastCommit     String?
-  lastDeployAt   DateTime?
-  buildLog       String?
-  meteredSince   DateTime?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  deletedAt      DateTime?
+  domainChecks     Json              @default("{}")
+  lastCommit       String?
+  lastDeployAt     DateTime?
+  buildLog         String?
+  meteredSince     DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  deletedAt        DateTime?
 
   project      Project             @relation(fields: [projectId], references: [id])
   region       Region              @relation(fields: [regionId], references: [id])
   host         AppHost?            @relation(fields: [hostId], references: [id], onDelete: SetNull)
   installation GithubInstallation? @relation(fields: [installationId], references: [id], onDelete: SetNull)
   deploys      AppDeploy[]
+  runs         AppRun[]
+  databases    AppDatabaseLink[]
 
   @@index([projectId])
   @@index([repoFullName, branch])
@@ -2103,6 +2115,63 @@ model AppDeploy {
 
   @@index([appId, startedAt])
   @@map("prgd_app_deploys")
+}
+
+enum AppRunStatus {
+  queued
+  running
+  succeeded
+  failed
+  timed_out
+  canceled
+
+  @@map("prgd_app_run_status")
+}
+
+/// A one off command in a temporary container from the app's live image (console).
+model AppRun {
+  id             String       @id @default(cuid())
+  appId          String
+  hostId         String?
+  command        String
+  status         AppRunStatus @default(queued)
+  exitCode       Int?
+  /// Last 64 KB of combined stdout and stderr, redacted by the host agent.
+  output         String?
+  timeoutSeconds Int
+  userId         String?
+  tokenId        String?
+  createdAt      DateTime     @default(now())
+  startedAt      DateTime?
+  finishedAt     DateTime?
+
+  app PlatformApp @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@index([appId, createdAt])
+  @@index([status])
+  @@map("prgd_app_runs")
+}
+
+/// A managed database attached to an app: a dedicated user (DbUser, password sealed there) and
+/// database on the cluster, whose URL is put into the app's environment at push time.
+model AppDatabaseLink {
+  id        String   @id @default(cuid())
+  appId     String
+  clusterId String
+  envName   String   @default("DATABASE_URL")
+  /// null for Valkey, which has no named databases.
+  dbName    String?
+  dbUser    String
+  /// The database was created for this link (the link's user owns it); otherwise it already existed.
+  createdDb Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  app     PlatformApp @relation(fields: [appId], references: [id], onDelete: Cascade)
+  cluster DbCluster   @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+
+  @@unique([appId, envName])
+  @@index([clusterId])
+  @@map("prgd_app_database_links")
 }
 
 /// A console or ops console sign in. The session JWT carries this id; revoking the row ends the session at once.

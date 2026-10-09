@@ -145,8 +145,16 @@ export class DatabasesService {
   async update(actor: Actor, id: string, dto: UpdateDatabaseDto, project?: string) {
     const c = await this.own(actor, id, project);
     if (!['active', 'updating', 'failed'].includes(c.status)) throw ApiError.invalidState(`Database is ${c.status}; wait for it to settle`);
-    const trusted = dto.trustedSources !== undefined ? validateCidrs(dto.trustedSources) : undefined;
-    await this.prisma.dbCluster.update({ where: { id }, data: { trustedSources: trusted, backupHourUtc: dto.backupHourUtc, status: 'updating', statusMessage: null, configVersion: { increment: 1 } } });
+    let trusted: string[] | undefined;
+    let system: string[] | undefined;
+    if (dto.trustedSources !== undefined) {
+      // Addresses the platform added for attached apps stay the platform's even when the list is sent
+      // back whole; a list of nothing but those is taken as the customer's own (never as "anywhere").
+      const listed = validateCidrs(dto.trustedSources);
+      const own = listed.filter((x) => !c.systemSources.includes(x));
+      ({ trusted, system } = await this.withAppSources(id, own.length || !listed.length ? own : listed));
+    }
+    await this.prisma.dbCluster.update({ where: { id }, data: { trustedSources: trusted, systemSources: system, backupHourUtc: dto.backupHourUtc, status: 'updating', statusMessage: null, configVersion: { increment: 1 } } });
     if (trusted && c.firewallId) await this.firewalls.replaceRules(actor, c.projectId, c.firewallId, firewallRules(c.engine, c.port, trusted, c.nodes, await this.projectNet(c.projectId, c.regionId))).catch((err) => this.log.warn(`firewall update for ${id}: ${(err as Error).message}`));
     await this.pushLater(id, actor);
     return this.get(actor, id, project);
@@ -155,6 +163,9 @@ export class DatabasesService {
   async remove(actor: Actor, id: string, project?: string) {
     const c = await this.own(actor, id, project);
     if (c.status === 'deleting') return { id, status: 'deleting' };
+    // Apps would lose their database at their next deploy: they are detached first, on purpose.
+    const links = await this.prisma.appDatabaseLink.findMany({ where: { clusterId: id }, include: { app: { select: { slug: true } } } });
+    if (links.length) throw ApiError.conflict('database_in_use', `This database is attached to App Platform app${links.length > 1 ? 's' : ''} ${[...new Set(links.map((l) => l.app.slug))].join(', ')}; detach it from the app first`);
     await this.prisma.dbCluster.update({ where: { id }, data: { status: 'deleting', statusMessage: null } });
     await this.temporal.start('deleteDatabase', [{ clusterId: id }], `deleteDatabase-${id}`);
     await this.events.emit('database.delete_requested', { databaseId: id }, { actor, resource: `database:${id}` });
@@ -165,11 +176,12 @@ export class DatabasesService {
 
   async addUser(actor: Actor, id: string, dto: DbNameDto, project?: string) {
     const c = await this.own(actor, id, project);
-    if (['postgres', 'prgd_admin', 'replicator', 'root', 'mysql', 'default'].includes(dto.name)) throw ApiError.invalid('That user name is reserved');
+    if (RESERVED_USERS.includes(dto.name)) throw ApiError.invalid('That user name is reserved');
     if (c.users.some((u) => u.name === dto.name)) throw ApiError.conflict('name_taken', `User ${dto.name} already exists`);
     if (c.users.length >= 50) throw ApiError.quota('User limit (50) reached');
     const pw = password();
     const u = await this.prisma.dbUser.create({ data: { clusterId: id, name: dto.name, password: seal(pw) } });
+    if (c.retiredUsers.includes(dto.name)) await this.prisma.dbCluster.update({ where: { id }, data: { retiredUsers: c.retiredUsers.filter((n) => n !== dto.name) } });
     await this.bump(id, actor);
     return { id: u.id, name: u.name, password: pw, createdAt: u.createdAt };
   }
@@ -186,8 +198,11 @@ export class DatabasesService {
 
   async deleteUser(actor: Actor, id: string, userId: string, project?: string) {
     const c = await this.own(actor, id, project);
-    if (!c.users.some((x) => x.id === userId)) throw ApiError.notFound('user', userId);
-    await this.prisma.dbUser.delete({ where: { id: userId } });
+    const u = c.users.find((x) => x.id === userId);
+    if (!u) throw ApiError.notFound('user', userId);
+    const link = await this.prisma.appDatabaseLink.findFirst({ where: { clusterId: id, dbUser: u.name }, include: { app: { select: { slug: true } } } });
+    if (link) throw ApiError.conflict('database_in_use', `User ${u.name} belongs to App Platform app ${link.app.slug}; detach the database from the app instead`);
+    await this.prisma.$transaction([this.prisma.dbUser.delete({ where: { id: userId } }), this.prisma.dbCluster.update({ where: { id }, data: { retiredUsers: [...new Set([...c.retiredUsers, u.name])] } })]);
     await this.bump(id, actor);
     return { id: userId, deleted: true };
   }
@@ -195,7 +210,7 @@ export class DatabasesService {
   async addDatabase(actor: Actor, id: string, dto: DbNameDto, project?: string) {
     const c = await this.own(actor, id, project);
     if (c.engine === 'valkey') throw ApiError.invalid('Valkey has no named databases; use key prefixes or ACL selectors');
-    if (['postgres', 'template0', 'template1', 'mysql', 'sys', 'information_schema', 'performance_schema'].includes(dto.name)) throw ApiError.invalid('That database name is reserved');
+    if (RESERVED_DBS.includes(dto.name)) throw ApiError.invalid('That database name is reserved');
     if (c.databases.some((d) => d.name === dto.name)) throw ApiError.conflict('name_taken', `Database ${dto.name} already exists`);
     if (c.databases.length >= 100) throw ApiError.quota('Database limit (100) reached');
     const d = await this.prisma.dbDatabase.create({ data: { clusterId: id, name: dto.name } });
@@ -205,7 +220,10 @@ export class DatabasesService {
 
   async deleteDatabase(actor: Actor, id: string, dbId: string, project?: string) {
     const c = await this.own(actor, id, project);
-    if (!c.databases.some((x) => x.id === dbId)) throw ApiError.notFound('database', dbId);
+    const d = c.databases.find((x) => x.id === dbId);
+    if (!d) throw ApiError.notFound('database', dbId);
+    const link = await this.prisma.appDatabaseLink.findFirst({ where: { clusterId: id, dbName: d.name }, include: { app: { select: { slug: true } } } });
+    if (link) throw ApiError.conflict('database_in_use', `Database ${d.name} is attached to App Platform app ${link.app.slug}; detach it from the app first`);
     // The record goes; the data stays on the cluster until the customer drops it, so a slip is recoverable.
     await this.prisma.dbDatabase.delete({ where: { id: dbId } });
     await this.bump(id, actor);
@@ -329,7 +347,7 @@ export class DatabasesService {
    * for replication), `errors` nodes that failed to apply.
    */
   async pushConfig(id: string): Promise<{ applied: number; nodes: number; waiting: string[]; errors: string[] }> {
-    const c = await this.prisma.dbCluster.findUnique({ where: { id }, include: { ...dbInclude, publicIp: { include: { block: true } } } });
+    const c = await this.prisma.dbCluster.findUnique({ where: { id }, include: { ...dbInclude, publicIp: { include: { block: true } }, appLinks: true } });
     if (!c || c.deletedAt) return { applied: 0, nodes: 0, waiting: [], errors: [] };
     const cfg = loadConfig();
     const nodes = nodeList(c);
@@ -351,6 +369,9 @@ export class DatabasesService {
         replicationPassword: open(c.vmSecret),
         users: c.users.map((u) => ({ name: u.name, password: open(u.password) })),
         databases: c.databases.map((d) => d.name),
+        // Databases made for attached apps belong to the app's user; deleted users lose their login.
+        owners: Object.fromEntries(c.appLinks.filter((l) => l.createdDb && l.dbName).map((l) => [l.dbName, l.dbUser])),
+        retiredUsers: c.retiredUsers.length ? c.retiredUsers : undefined,
         trustedSources: c.trustedSources.length ? c.trustedSources : undefined,
         backup: c.backupBucket ? { endpoint: cfg.S3_ENDPOINT, region: cfg.S3_REGION, bucket: c.backupBucket, accessKey: c.backupAccessKey, secretKey: openOpt(c.backupSecretKey) } : null,
         params: {},
@@ -452,9 +473,87 @@ export class DatabasesService {
     return started;
   }
 
+  // ---- App Platform: attached databases ----
+
+  /**
+   * A dedicated user, and except on Valkey a database, for an App Platform app: `base` or the
+   * first free `base_N`. `database` names an existing database to use instead of a new one.
+   * The rows are written here; refreshAppAccess pushes them once the link exists.
+   */
+  async createAppAccess(c: DbRow, base: string, database?: string): Promise<{ user: string; db: string | null; createdDb: boolean }> {
+    if (!['active', 'updating'].includes(c.status)) throw ApiError.invalidState(`Database is ${c.status}; wait for it to be active`);
+    if (c.users.length >= 50) throw ApiError.quota('User limit (50) reached on this database');
+    const free = (taken: Set<string>) => {
+      let name = base;
+      for (let i = 2; taken.has(name); i++) name = `${base.slice(0, 56)}_${i}`;
+      return name;
+    };
+    const user = free(new Set([...c.users.map((u) => u.name), ...RESERVED_USERS]));
+    let db: string | null = null;
+    let createdDb = false;
+    if (c.engine === 'valkey') {
+      if (database) throw ApiError.invalid('Valkey has no named databases; leave database out');
+    } else if (database) {
+      if (RESERVED_DBS.includes(database)) throw ApiError.invalid('That database name is reserved');
+      db = database;
+      createdDb = !c.databases.some((d) => d.name === database);
+    } else {
+      db = free(new Set([...c.databases.map((d) => d.name), ...RESERVED_DBS]));
+      createdDb = true;
+    }
+    if (createdDb && c.databases.length >= 100) throw ApiError.quota('Database limit (100) reached on this database');
+    await this.prisma.$transaction([
+      this.prisma.dbUser.create({ data: { clusterId: c.id, name: user, password: seal(password()) } }),
+      ...(createdDb && db ? [this.prisma.dbDatabase.create({ data: { clusterId: c.id, name: db } })] : []),
+      this.prisma.dbCluster.update({ where: { id: c.id }, data: { retiredUsers: c.retiredUsers.filter((n) => n !== user) } }),
+    ]);
+    return { user, db, createdDb };
+  }
+
+  /** Deletes an app's user; its login is disabled on the cluster with the next push. The database and its data stay. */
+  async removeAppUser(clusterId: string, user: string) {
+    const c = await this.prisma.dbCluster.findUnique({ where: { id: clusterId }, select: { retiredUsers: true } });
+    if (!c) return;
+    await this.prisma.$transaction([
+      this.prisma.dbUser.deleteMany({ where: { clusterId, name: user } }),
+      this.prisma.dbCluster.update({ where: { id: clusterId }, data: { retiredUsers: [...new Set([...c.retiredUsers, user])] } }),
+    ]);
+  }
+
+  /**
+   * Brings the cluster's trusted sources in line with where its attached apps run (the public
+   * address of each app's host, as /32) and, when anything changed or `push` is set, applies
+   * the cluster config and firewall the same way a PATCH does. A cluster open to anywhere (no
+   * trusted sources of the customer's own) stays open; nothing is added to it.
+   */
+  async refreshAppAccess(clusterId: string, opts: { push?: boolean; actor?: Actor } = {}) {
+    const c = await this.prisma.dbCluster.findUnique({ where: { id: clusterId }, include: { project: { select: { teamId: true } } } });
+    if (!c || c.deletedAt || ['deleting', 'deleted'].includes(c.status)) return false;
+    const { trusted, system } = await this.withAppSources(clusterId, c.trustedSources.filter((x) => !c.systemSources.includes(x)));
+    const sourcesChanged = !sameList(trusted, c.trustedSources) || !sameList(system, c.systemSources);
+    if (!sourcesChanged && !opts.push) return false;
+    // A cluster still being created gets the current version from its create workflow.
+    const settled = ['active', 'updating', 'failed'].includes(c.status);
+    await this.prisma.dbCluster.update({ where: { id: clusterId }, data: { trustedSources: trusted, systemSources: system, configVersion: { increment: 1 }, ...(settled ? { status: 'updating', statusMessage: null } : {}) } });
+    const actor: Actor = opts.actor ?? { userId: 'system', teamId: c.project.teamId, projectId: c.projectId, role: 'owner', scopes: new Set(['*']), isAgent: false, requireApprovalFor: new Set(), locale: 'en' };
+    if (sourcesChanged && c.firewallId) await this.firewalls.replaceRules(actor, c.projectId, c.firewallId, firewallRules(c.engine, c.port, trusted, c.nodes, await this.projectNet(c.projectId, c.regionId))).catch((err) => this.log.warn(`firewall update for ${clusterId}: ${(err as Error).message}`));
+    if (settled) await this.pushLater(clusterId, actor);
+    return true;
+  }
+
+  /** The customer's own CIDRs plus a /32 for the host of every attached app; nothing added to a cluster open to anywhere. */
+  private async withAppSources(clusterId: string, customer: string[]) {
+    if (!customer.length) return { trusted: [] as string[], system: [] as string[] };
+    const links = await this.prisma.appDatabaseLink.findMany({ where: { clusterId, app: { deletedAt: null } }, select: { app: { select: { host: { select: { server: { select: { publicIps: { select: { address: true } } } } } } } } } });
+    const hosts = [...new Set(links.map((l) => l.app.host?.server.publicIps[0]?.address).filter((a): a is string => !!a && isIP(a) === 4).map((a) => `${a}/32`))];
+    const system = hosts.filter((x) => !customer.includes(x));
+    return { trusted: [...customer, ...system], system };
+  }
+
   // ---- helpers ----
 
-  private async own(actor: Actor, id: string, project?: string) {
+  /** The cluster when the actor may use it: in the given (or default) project, which a project scoped token must hold. */
+  async own(actor: Actor, id: string, project?: string) {
     const p = await this.iam.resolveProject(actor, project);
     const c = await this.prisma.dbCluster.findFirst({ where: { id, projectId: p.id, deletedAt: null }, include: dbInclude });
     if (!c) throw ApiError.notFound('database', id);
@@ -483,16 +582,11 @@ export class DatabasesService {
     const app = c.users[0];
     const db = c.databases[0]?.name ?? 'defaultdb';
     const adminPw = withSecrets ? open(c.adminPassword) : '';
-    const uri = (h: string | null, user: string, pw: string) => {
-      if (!h) return null;
-      if (c.engine === 'valkey') return `rediss://${user}:${pw}@${h}:6380`;
-      if (c.engine === 'mysql') return `mysql://${user}:${pw}@${h}:${c.port}/${db}?ssl-mode=REQUIRED`;
-      return `postgresql://${user}:${pw}@${h}:${c.port}/${db}?sslmode=require`;
-    };
+    const uri = (h: string | null, user: string, pw: string) => (h ? connectionUri(c.engine, h, c.port, user, pw, db) : null);
     return {
       id: c.id, name: c.name, engine: c.engine, version: c.version, status: c.status, statusMessage: c.statusMessage, regionId: c.regionId, projectId: c.projectId,
       nodes: c.nodes, size: { id: c.size.id, vcpu: c.size.vcpu, memoryMb: c.size.memoryMb, diskGb: c.size.diskGb }, port: c.port, poolerPort: c.engine === 'postgres' ? 6432 : null, tlsPort: c.engine === 'valkey' ? 6380 : null,
-      trustedSources: c.trustedSources, backupHourUtc: c.backupHourUtc, configVersion: c.configVersion,
+      trustedSources: c.trustedSources, appSources: c.systemSources, backupHourUtc: c.backupHourUtc, configVersion: c.configVersion,
       connection: withSecrets ? { host, privateHost, port: c.port, database: c.engine === 'valkey' ? null : db, user: c.engine === 'valkey' ? 'default' : c.adminUser, password: adminPw, ssl: true, uri: uri(host, c.engine === 'valkey' ? 'default' : c.adminUser, adminPw), privateUri: uri(privateHost, c.engine === 'valkey' ? 'default' : c.adminUser, adminPw), appUri: app ? uri(host, app.name, open(app.password)) : null } : { host, privateHost, port: c.port, database: db },
       users: c.users.map((u) => ({ id: u.id, name: u.name, ...(withSecrets ? { password: open(u.password) } : {}), createdAt: u.createdAt })),
       databases: c.databases.map((d) => ({ id: d.id, name: d.name, createdAt: d.createdAt })),
@@ -500,6 +594,24 @@ export class DatabasesService {
       createdAt: c.createdAt,
     };
   }
+}
+
+/**
+ * How clients reach a cluster: always over TLS (every engine has a self signed certificate, see
+ * cloud-init), Valkey on its TLS port. Credentials are URL encoded.
+ */
+export function connectionUri(engine: 'postgres' | 'valkey' | 'mysql', host: string, port: number, user: string, pw: string, db: string | null) {
+  const cred = `${encodeURIComponent(user)}:${encodeURIComponent(pw)}`;
+  if (engine === 'valkey') return `rediss://${cred}@${host}:6380`;
+  if (engine === 'mysql') return `mysql://${cred}@${host}:${port}/${db ?? ''}?ssl-mode=REQUIRED`;
+  return `postgresql://${cred}@${host}:${port}/${db ?? ''}?sslmode=require`;
+}
+
+const RESERVED_USERS = ['postgres', 'prgd_admin', 'replicator', 'root', 'mysql', 'default'];
+const RESERVED_DBS = ['postgres', 'template0', 'template1', 'mysql', 'sys', 'information_schema', 'performance_schema'];
+
+function sameList(a: string[], b: string[]) {
+  return a.length === b.length && a.every((x, i) => x === b[i]);
 }
 
 function firewallRules(engine: 'postgres' | 'valkey' | 'mysql', port: number, trusted: string[], nodes: number, privateNet: string) {

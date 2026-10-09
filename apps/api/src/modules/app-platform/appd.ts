@@ -19,6 +19,13 @@
  *   an http.extraHeader through GIT_CONFIG_* environment variables, and every logged line is
  *   redacted. .git never reaches the build context.
  *
+ * One off containers (the pre-deploy command, console runs from POST /runs) use the instance
+ * flags without the restart policy: same network, limits, capabilities, runtime and env file.
+ * They get no TTY and a closed stdin, the command reaches `sh -c` in the container as one
+ * argument (no shell on the host), they are killed at their timeout, and their output is
+ * redacted (credentials in URLs, values of variables named like secrets) before it leaves the
+ * host. They carry prgd.job or prgd.run labels so instance bookkeeping leaves them alone.
+ *
  * Written with String.raw: backslashes are Python's own. Never put a dollar sign directly
  * followed by an opening brace in here (template interpolation).
  */
@@ -28,22 +35,38 @@ import base64, http.server, ipaddress, json, os, re, shlex, shutil, subprocess, 
 SECRET = open('/opt/prgd/vm.secret').read().strip() if os.path.exists('/opt/prgd/vm.secret') else ''
 ROOT = '/var/lib/prgd/apps'
 LAST = '/opt/prgd/last-config.json'
+STATE = '/opt/prgd/state.json'
 lock = threading.Lock()
 net_lock = threading.Lock()
+state_lock = threading.Lock()
+runs_lock = threading.Lock()
 # Builds share the host: at most two at a time, each with its own memory and CPU limit.
 build_slots = threading.BoundedSemaphore(2)
-state = {'version': 0, 'apps': {}}
+state = {'version': 0, 'apps': {}, 'runs': {}}
 building = set()
+# The apps of the last config push by id (console runs need their env and limits).
+apps_cfg = {}
+# Console runs in progress: runId -> {'proc', 'canceled'}.
+procs = {}
 CADDY_IMAGE = 'caddy:2'
 # App networks are /24s carved from this range; the egress rules match it as "app traffic".
 APPS_RANGE = '172.20.0.0/14'
 BUILD_TIMEOUT = 900
+PREDEPLOY_TIMEOUT = 600
+# Console runs: per app at once, output kept on disk (and for how long), output served.
+MAX_RUNS_PER_APP = 2
+RUN_LOG_BYTES = 1 << 20
+RUN_KEEP = 86400
+RUN_OUTPUT_BYTES = 65536
+# After docker kill, how long the docker client may take to return before it is killed itself.
+KILL_GRACE = 10
 # Capabilities kept for app containers (everything else is dropped): file ownership and user
 # switching in entrypoints (chown, gosu, su-exec), signalling child processes and binding ports
 # below 1024. NET_RAW, MKNOD, SYS_CHROOT, SETPCAP, SETFCAP, AUDIT_WRITE and FSETID are gone.
 RUN_CAPS = ['CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'SETUID', 'SETGID', 'KILL', 'NET_BIND_SERVICE']
 BLOCKED_DESTS = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '100.64.0.0/10', '169.254.0.0/16']
 APP_ID = re.compile(r'^[a-z0-9]{1,40}$')
+RUN_ID = re.compile(r'^[a-z0-9]{1,40}$')
 
 @@NET@@
 
@@ -55,8 +78,19 @@ def redact(text, secrets=()):
         if s and len(s) >= 6: text = text.replace(s, '***')
     return CRED_URL.sub('://***@', text)
 
+# Variables whose values are masked in the output of the pre-deploy command and console runs.
+SECRET_NAME = re.compile(r'SECRET|TOKEN|PASSW|PASS$|PRIVATE|CREDENTIAL|API_?KEY|(^|_)KEY$|_DSN$|DATABASE_URL', re.I)
+def env_secrets(env):
+    return [str(v) for k, v in (env or {}).items() if SECRET_NAME.search(str(k)) and len(str(v)) >= 6]
+
 def append_log(log, text):
     with open(log, 'a') as f: f.write(text)
+
+def tail(path, n):
+    try:
+        with open(path, 'rb') as f:
+            f.seek(0, 2); size = f.tell(); f.seek(max(0, size - n)); return f.read().decode('utf-8', 'replace')
+    except OSError: return ''
 
 def sh(cmd, check=True, timeout=600, cwd=None, log=None, env=None, secrets=()):
     full_env = None
@@ -86,9 +120,16 @@ def scrub_logs():
 
 def load_state():
     global state
-    try: state = json.load(open('/opt/prgd/state.json'))
+    try: state = json.load(open(STATE))
     except Exception: pass
-def save_state(): json.dump(state, open('/opt/prgd/state.json', 'w'))
+    state.setdefault('apps', {}); state.setdefault('runs', {})
+def save_state():
+    # Builds and runs save from their own threads: one writer at a time, replaced atomically.
+    with state_lock:
+        try: text = json.dumps(state)
+        except RuntimeError: return  # changed while serialising; the next save writes it
+        with open(STATE + '.tmp', 'w') as f: f.write(text)
+        os.replace(STATE + '.tmp', STATE)
 
 # ---- repository files: never follow a symlink out of the checkout ----
 def regular(p): return os.path.isfile(p) and not os.path.islink(p)
@@ -242,6 +283,12 @@ def connect_caddy_all():
 
 def remove_app(aid):
     net = app_net(aid)
+    # Every container of the app goes, console runs and a pre-deploy job included.
+    with runs_lock:
+        for rid, r in state.get('runs', {}).items():
+            if r.get('appId') == aid and r.get('status') == 'running':
+                if rid in procs: procs[rid]['canceled'] = True
+                else: r.update(status='canceled', finishedAt=time.time())
     sh("docker ps -aq --filter label=prgd.app=%s | xargs -r docker rm -f" % aid, check=False)
     imgs = set(sh("docker images -q --filter label=prgd.app=%s" % aid, check=False).split())
     imgs |= set(sh("docker images -q %s" % shlex.quote('prgd-app-' + aid), check=False).split())
@@ -275,6 +322,11 @@ def runtime_flags():
 def userns_enabled():
     return 'userns' in docker_info('{{json .SecurityOptions}}')
 
+def instances(aid, flags=''):
+    # The app's instance containers: one off containers (pre-deploy, console runs) carry prgd.job or prgd.run.
+    out = sh("docker ps %s --filter label=prgd.app=%s --format '{{.Names}}|{{.Label \"prgd.job\"}}{{.Label \"prgd.run\"}}'" % (flags, aid), check=False)
+    return [l.split('|')[0] for l in out.split() if l.endswith('|')]
+
 def run_flags(app):
     # The docker run options of one instance, minus name, env file and image.
     mem = int(app['memoryMb']); cpus = float(app['cpus'])
@@ -283,6 +335,11 @@ def run_flags(app):
     for c in RUN_CAPS: f += ['--cap-add', c]
     f += ['--security-opt', 'no-new-privileges', '--log-driver', 'json-file', '--log-opt', 'max-size=10m', '--log-opt', 'max-file=3']
     return f + runtime_flags() + ['--label', 'prgd.app=' + app['id']]
+
+def job_flags(app, label):
+    # A one off container: the instance flags without the restart policy, marked with label.
+    f = run_flags(app); i = f.index('--restart'); del f[i:i + 2]
+    return f + ['--label', label]
 
 def build_flags(app, image, dockerfile, src):
     # Classic builder: BuildKit ignores --memory and --cpu-quota. Steps run on the app's own
@@ -325,6 +382,8 @@ def build(app):
         ensure_app_network(aid)
         with build_slots:
             sh('DOCKER_BUILDKIT=0 ' + ' '.join(shlex.quote(a) for a in build_flags(app, image, 'Dockerfile.prgd' if gen else 'Dockerfile', src)), cwd=src, log=log, timeout=BUILD_TIMEOUT, secrets=secrets)
+        # Migrations and the like: the running version stays untouched when this fails.
+        if app.get('preDeploy'): pre_deploy(app, image, log)
         run(app, image, log)
         state['apps'][aid] = {'deployId': app['deployId'], 'state': 'live', 'commit': commit, 'image': image, 'error': None}
         append_log(log, '=== live ===\n')
@@ -333,14 +392,81 @@ def build(app):
             if old != image: sh('docker rmi %s 2>/dev/null || true' % q(old), check=False)
     except Exception as e:
         err = redact(str(e), secrets)[-600:]
-        state['apps'][aid] = {'deployId': app['deployId'], 'state': 'failed', 'commit': state['apps'].get(aid, {}).get('commit'), 'error': err}
+        prev = state['apps'].get(aid, {})
+        # The image of the version still running stays: Caddy keeps serving it and console runs use it.
+        state['apps'][aid] = {'deployId': app['deployId'], 'state': 'failed', 'commit': prev.get('commit'), 'image': prev.get('image'), 'error': err}
         append_log(log, '=== failed: %s ===\n' % err)
     finally:
         save_state(); building.discard(aid)
 
+def env_text(app):
+    return ''.join('%s=%s\n' % (k, str(v).replace('\n', '')) for k, v in (app.get('env') or {}).items()) + 'PORT=%d\n' % int(app['port'])
+
+def write_env(app):
+    # The env file of every container of the app (instances, pre-deploy, console runs); created 0600.
+    d = ROOT + '/' + app['id']; os.makedirs(d, exist_ok=True); env = d + '/app.env'; tmp = env + '.tmp'
+    if os.path.lexists(tmp): os.unlink(tmp)
+    with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as f: f.write(env_text(app))
+    os.replace(tmp, env)
+    return env
+
+def kill_container(name, proc=None):
+    try: subprocess.run(['docker', 'kill', name], capture_output=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired): pass
+    # The docker client normally returns once the container is gone; if not, it goes too.
+    if proc is not None:
+        try: proc.wait(KILL_GRACE)
+        except subprocess.TimeoutExpired: proc.kill()
+
+def run_container(argv, name, timeout, out_path, cap=RUN_LOG_BYTES, job=None):
+    # docker run attached, no TTY and stdin closed; combined output appended to out_path up to cap
+    # bytes (the rest is read and dropped). Killed at the timeout. Returns (exit code, timed out).
+    p = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if job is not None: job['proc'] = p
+    expired = []
+    def expire():
+        expired.append(True); kill_container(name, p)
+    timer = threading.Timer(timeout, expire); timer.daemon = True; timer.start()
+    written = 0
+    try:
+        with open(out_path, 'ab') as f:
+            while True:
+                chunk = p.stdout.read1(65536)
+                if not chunk: break
+                if written < cap:
+                    part = chunk[:cap - written]; f.write(part); f.flush(); written += len(part)
+                    if written >= cap: f.write(b'\n[output truncated at %d bytes]\n' % cap)
+        code = p.wait()
+    finally:
+        timer.cancel()
+    return code, bool(expired)
+
+def job_argv(app, name, label, env, image, command):
+    return ['docker', 'run', '--rm', '--name', name] + job_flags(app, label) + ['--env-file', env, image, 'sh', '-c', command]
+
+def pre_deploy(app, image, log):
+    # Once per deploy, from the new image with the app's environment, network and limits, before
+    # any instance is replaced. A non zero exit or the timeout fails the deploy.
+    aid = app['id']; command = app['preDeploy']; name = 'prgd-%s-predeploy' % aid
+    sec = env_secrets(app.get('env')); out = ROOT + '/' + aid + '/predeploy.out'
+    env = write_env(app)
+    subprocess.run(['docker', 'rm', '-f', name], capture_output=True)
+    if os.path.lexists(out): os.unlink(out)
+    append_log(log, redact('=== pre-deploy: %s ===\n' % command, sec))
+    try:
+        code, timed_out = run_container(job_argv(app, name, 'prgd.job=predeploy', env, image, command), name, PREDEPLOY_TIMEOUT, out)
+        text = redact(tail(out, RUN_OUTPUT_BYTES), sec)
+    finally:
+        if os.path.lexists(out): os.unlink(out)
+    append_log(log, text + ('' if not text or text.endswith('\n') else '\n'))
+    if timed_out:
+        append_log(log, '=== pre-deploy timed out after %d seconds ===\n' % PREDEPLOY_TIMEOUT)
+        raise RuntimeError('pre-deploy command failed (timed out after %d seconds)' % PREDEPLOY_TIMEOUT)
+    append_log(log, '=== pre-deploy exited %d ===\n' % code)
+    if code != 0: raise RuntimeError('pre-deploy command failed (exit %d)' % code)
+
 def run(app, image, log):
-    aid = app['id']; env = ROOT + '/' + aid + '/app.env'
-    open(env, 'w').write(''.join('%s=%s\n' % (k, str(v).replace('\n', '')) for k, v in (app.get('env') or {}).items()) + 'PORT=%d\n' % int(app['port'])); os.chmod(env, 0o600)
+    aid = app['id']; env = write_env(app)
     names = ['prgd-%s-%d' % (aid, i) for i in range(int(app['instances']))]
     flags = ' '.join(shlex.quote(f) for f in run_flags(app))
     # Start new instances beside the old ones, check health, then retire the old ones.
@@ -351,7 +477,7 @@ def run(app, image, log):
     for name in names:
         sh('docker rm -f %s 2>/dev/null || true' % name, check=False)
         sh('docker rename %s-next %s' % (name, name), check=False)
-    for c in sh("docker ps -a --filter label=prgd.app=%s --format '{{.Names}}'" % aid, check=False).split():
+    for c in instances(aid, '-a'):
         if c not in names: sh('docker rm -f %s' % c, check=False)
     sh('docker image prune -f >/dev/null 2>&1', check=False)
 
@@ -441,7 +567,8 @@ def caddy(apps):
     out = ['{', '  email ' + open('/opt/prgd/acme.email').read().strip() if os.path.exists('/opt/prgd/acme.email') else '', '}', ':80 {', '  respond "prgd app platform" 200', '}']
     for app in apps:
         st = state['apps'].get(app['id']) or {}
-        if st.get('state') != 'live' or app.get('stopped'): continue
+        # Served while a version runs: live, or a redeploy building or failed over a live image.
+        if not (st.get('state') == 'live' or st.get('image')) or app.get('stopped'): continue
         ups = ' '.join('prgd-%s-%d:%d' % (app['id'], i, int(app['port'])) for i in range(int(app['instances'])))
         out.append('%s {\n  encode zstd gzip\n  reverse_proxy %s {\n    lb_policy round_robin\n    health_uri %s\n    health_interval 10s\n  }\n}' % (', '.join(app['hostnames']), ups, app.get('healthPath') or '/'))
     open('/etc/caddy/Caddyfile', 'w').write('\n'.join(out) + '\n')
@@ -456,6 +583,7 @@ def apply(c):
         if APP_ID.match(str(a.get('id', ''))): apps.append(a)
         else: open('/var/log/prgd-agent.log', 'a').write('ignoring app with an invalid id %r\n' % (a.get('id'),))
     wanted = {a['id'] for a in apps}
+    apps_cfg.clear(); apps_cfg.update({a['id']: a for a in apps})
     for aid in list(state['apps']):
         if aid not in wanted:
             if APP_ID.match(aid): remove_app(aid)
@@ -463,20 +591,106 @@ def apply(c):
     for app in apps:
         st = state['apps'].get(app['id']) or {}
         if app.get('stopped'):
-            sh("docker ps -q --filter label=prgd.app=%s | xargs -r docker stop" % app['id'], check=False)
+            for n in instances(app['id']): sh('docker stop %s' % n, check=False)
             continue
         if st.get('deployId') != app['deployId'] and app['id'] not in building:
             ensure_app_network(app['id'])
             building.add(app['id']); state['apps'][app['id']] = {**st, 'deployId': app['deployId'], 'state': 'building', 'error': None}
             threading.Thread(target=build, args=(app,), daemon=True).start()
         elif st.get('state') == 'live':
-            sh("docker ps -aq --filter label=prgd.app=%s --filter status=exited | xargs -r docker start" % app['id'], check=False)
+            for n in instances(app['id'], '-a --filter status=exited'): sh('docker start %s' % n, check=False)
     save_state(); caddy(apps)
+
+# ---- console runs ----
+def run_log(aid, rid): return ROOT + '/' + aid + '/runs/' + rid + '.log'
+
+def prune_runs():
+    # Finished runs are forgotten, with their output, after a day. Called with runs_lock held.
+    now = time.time()
+    for rid, r in list(state['runs'].items()):
+        if r.get('status') != 'running' and now - (r.get('finishedAt') or r.get('startedAt') or 0) > RUN_KEEP:
+            state['runs'].pop(rid, None)
+            if APP_ID.match(str(r.get('appId', ''))) and os.path.lexists(run_log(r['appId'], rid)): os.unlink(run_log(r['appId'], rid))
+
+def recover_runs():
+    # Runs whose agent restarted: the attached docker client is gone, so the result is too.
+    for rid, r in state['runs'].items():
+        if r.get('status') == 'running':
+            subprocess.run(['docker', 'rm', '-f', 'prgd-run-' + rid], capture_output=True)
+            r.update(status='failed', finishedAt=time.time())
+            if APP_ID.match(str(r.get('appId', ''))) and os.path.isdir(ROOT + '/' + r['appId'] + '/runs'): append_log(run_log(r['appId'], rid), '\n[the host agent restarted; the command was stopped]\n')
+
+def start_run(body):
+    rid = str(body.get('runId', '')); aid = str(body.get('appId', '')); command = body.get('command')
+    if not RUN_ID.match(rid) or not APP_ID.match(aid): return 400, {'error': 'bad_id'}
+    if not isinstance(command, str) or not command or len(command) > 2000 or '\0' in command: return 400, {'error': 'bad_command'}
+    try: timeout = int(600 if body.get('timeout') is None else body['timeout'])
+    except (TypeError, ValueError): return 400, {'error': 'bad_timeout'}
+    if timeout < 1 or timeout > 3600: return 400, {'error': 'bad_timeout'}
+    app = apps_cfg.get(aid); image = (state['apps'].get(aid) or {}).get('image')
+    if not app: return 404, {'error': 'unknown_app'}
+    if not image: return 409, {'error': 'no_image', 'detail': 'the app has no live image on this host'}
+    with runs_lock:
+        prune_runs()
+        if rid in state['runs']: return 409, {'error': 'duplicate_run'}
+        if sum(1 for r in state['runs'].values() if r.get('appId') == aid and r.get('status') == 'running') >= MAX_RUNS_PER_APP: return 409, {'error': 'run_limit'}
+        state['runs'][rid] = {'appId': aid, 'status': 'running', 'exitCode': None, 'startedAt': time.time(), 'finishedAt': None}
+        procs[rid] = {'canceled': False}
+    save_state()
+    threading.Thread(target=run_job, args=(app, rid, command, timeout, image), daemon=True).start()
+    return 202, {'runId': rid, 'status': 'running'}
+
+def run_job(app, rid, command, timeout, image):
+    aid = app['id']; job = procs.get(rid) or {'canceled': False}; log = run_log(aid, rid)
+    code, timed_out = None, False
+    try:
+        os.makedirs(ROOT + '/' + aid + '/runs', exist_ok=True)
+        env = ROOT + '/' + aid + '/app.env'
+        if not os.path.exists(env): env = write_env(app)
+        name = 'prgd-run-' + rid
+        code, timed_out = run_container(job_argv(app, name, 'prgd.run=' + rid, env, image, command), name, timeout, log, RUN_LOG_BYTES, job)
+    except Exception as e:
+        try: append_log(log, '\n[the command could not start: %s]\n' % e)
+        except OSError: pass
+    with runs_lock:
+        r = state['runs'].get(rid)
+        if r is not None and r.get('status') == 'running':
+            r.update(exitCode=code, finishedAt=time.time(), status=run_status(code, timed_out, job.get('canceled')))
+        procs.pop(rid, None)
+    save_state()
+
+def run_status(code, timed_out, canceled):
+    if canceled: return 'canceled'
+    if timed_out: return 'timed_out'
+    return 'succeeded' if code == 0 else 'failed'
+
+def run_report(rid):
+    r = state['runs'].get(rid)
+    if not r: return None
+    app = apps_cfg.get(r.get('appId')) or {}
+    out = tail(run_log(r['appId'], rid), RUN_OUTPUT_BYTES) if APP_ID.match(str(r.get('appId', ''))) else ''
+    return {'appId': r.get('appId'), 'status': r.get('status'), 'exitCode': r.get('exitCode'), 'startedAt': r.get('startedAt'), 'finishedAt': r.get('finishedAt'), 'output': redact(out, env_secrets(app.get('env')))}
+
+def cancel_run(rid):
+    with runs_lock:
+        r = state['runs'].get(rid)
+        if not r: return 404, {'error': 'unknown_run'}
+        if r.get('status') != 'running': return 200, {'status': r.get('status')}
+        job = procs.get(rid)
+        if job is not None: job['canceled'] = True
+        else: r.update(status='canceled', finishedAt=time.time())
+    kill_container('prgd-run-' + rid)
+    save_state()
+    return 202, {'status': 'canceled'}
 
 def status():
     out = {'version': state.get('version', 0), 'apps': {}}
+    with runs_lock:
+        prune_runs()
+        # Results nobody polled reach the control plane through here.
+        out['runs'] = {rid: {'appId': r.get('appId'), 'status': r.get('status'), 'exitCode': r.get('exitCode')} for rid, r in state['runs'].items()}
     for aid, st in state['apps'].items():
-        running = len(sh("docker ps -q --filter label=prgd.app=%s" % aid, check=False).split())
+        running = len(instances(aid))
         tail = ''
         try:
             with open(ROOT + '/' + aid + '/build.log', 'rb') as f:
@@ -496,13 +710,18 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if not secret_ok(self.headers.get('X-Prgd-Secret')): return self._send(401, {'error': 'unauthorized'})
         if self.path == '/status': return self._send(200, status())
+        if self.path.startswith('/runs/'):
+            rid = self.path[len('/runs/'):]
+            if not RUN_ID.match(rid): return self._send(400, {'error': 'bad_run'})
+            rep = run_report(rid)
+            return self._send(200, rep) if rep else self._send(404, {'error': 'unknown_run'})
         if self.path.startswith('/logs'):
             q = dict(p.split('=', 1) for p in self.path.split('?', 1)[1].split('&') if '=' in p) if '?' in self.path else {}
             aid = q.get('app', ''); kind = q.get('type', 'build')
             if not aid.isalnum(): return self._send(400, {'error': 'bad_app'})
             if kind == 'runtime':
                 # Every instance, each under its own heading.
-                names = sorted(sh("docker ps -a --filter label=prgd.app=%s --format '{{.Names}}'" % aid, check=False).split())
+                names = sorted(instances(aid, '-a'))
                 log = ''.join('=== %s ===\n%s' % (n, sh('docker logs --tail 300 --timestamps %s 2>&1' % n, check=False)) for n in names if not n.endswith('-next'))
             else:
                 try:
@@ -514,6 +733,10 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         if not secret_ok(self.headers.get('X-Prgd-Secret')): return self._send(401, {'error': 'unauthorized'})
         n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
+        if not isinstance(body, dict): return self._send(400, {'error': 'bad_body'})
+        if self.path == '/runs': return self._send(*start_run(body))
+        m = re.match(r'^/runs/([a-z0-9]{1,40})/cancel$', self.path)
+        if m: return self._send(*cancel_run(m.group(1)))
         if self.path == '/config':
             with lock:
                 try:
@@ -530,6 +753,9 @@ def main():
     if '--egress-only' in sys.argv:
         apply_egress(); return
     load_state()
+    try: apps_cfg.update({a['id']: a for a in json.load(open(LAST)).get('apps', []) if APP_ID.match(str(a.get('id', '')))})
+    except Exception: pass
+    recover_runs(); save_state()
     try: apply_egress()
     except Exception as e: open('/var/log/prgd-agent.log', 'a').write('egress rules failed: %s\n' % e)
     try: ensure_caddy()

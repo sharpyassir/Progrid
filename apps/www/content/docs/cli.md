@@ -44,6 +44,7 @@ prgd ssh web-1
 | Take a snapshot | `prgd servers snapshot web-1` |
 | Delete | `prgd servers delete web-1` |
 | Deploy a repository | `prgd deploy https://github.com/you/app --branch main` |
+| Run a command in an App Platform app | `prgd app run shop -- npx prisma db seed` (exits with the command's code) |
 | See spend | `prgd billing` |
 | Create an agent token | `prgd tokens create claude --agent --cap 15` |
 | Review agent requests | `prgd approvals ls`, `approve ID`, `deny ID --reason TEXT` |
