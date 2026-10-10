@@ -31,7 +31,8 @@ enum Currency {
 }
 
 /// The company that contracts with, invoices and collects from a team (docs/domains-and-entities.md).
-/// Assigned from the team's billing country: SA is Progrid Arabia, every other country Progrid Technologies LLC.
+/// Progrid Arabia is the only one. progrid_llc (Progrid Technologies LLC) stays only for the history:
+/// invoices and credit notes it issued (PRGD-US, CN-US) remain readable; nothing assigns it any more.
 enum BillingEntity {
   progrid_arabia
   progrid_llc
@@ -134,12 +135,13 @@ model Team {
   slug                 String         @unique
   name                 String
   currency             Currency       @default(USD)
-  country              String         @default("US") // ISO 3166-1 billing country; picks the billing entity (SA: Progrid Arabia, else Progrid Technologies LLC)
-  /// Contracting and invoicing company. Changes only through the back office, from the next billing period.
-  billingEntity        BillingEntity  @default(progrid_llc)
-  /// A staff approved change of billing country and entity that takes effect at billingChangeAt (start of a month).
+  country              String         @default("US") // ISO 3166-1 billing country; decides currency and VAT (SA: SAR with 15% VAT, else USD at 0%)
+  /// Contracting and invoicing company: always Progrid Arabia (the field stays for compatibility).
+  billingEntity        BillingEntity  @default(progrid_arabia)
+  /// A change of billing country that moves the team into or out of Saudi Arabia changes its
+  /// currency, so it waits until billingChangeAt (the first day of the next month).
   pendingCountry       String?
-  pendingBillingEntity BillingEntity?
+  pendingCurrency      Currency?
   billingChangeAt      DateTime?
   status               AccountStatus  @default(pending_verification)
   /// Why the team is suspended. "billing: ..." is lifted automatically once the overdue invoices are settled.
@@ -911,7 +913,7 @@ enum InvoiceStatus {
 model Invoice {
   id                 String        @id @default(cuid())
   teamId             String
-  number             String        @unique // "PRGD-SA-2026-00001" or "PRGD-US-2026-00001"; older invoices "PRGD-2026-000123"
+  number             String        @unique // "PRGD-SA-2026-00001"; history: "PRGD-US-2026-00001" (LLC), "PRGD-2026-000123" (before entities)
   /// The company that issued it. Fixed at issue time; later entity changes never touch it.
   billingEntity      BillingEntity @default(progrid_arabia)
   currency           Currency
@@ -921,14 +923,23 @@ model Invoice {
   subtotalMinor      Int
   /// Partner promo code discount taken off the usage before tax (docs/affiliates.md). Usage = subtotal + discount.
   discountMinor      Int           @default(0)
-  taxMinor           Int           @default(0) // VAT 15% for SA
+  taxMinor           Int           @default(0) // VAT: 15% for a Saudi billing country, 0% otherwise
   creditMinor        Int           @default(0)
   totalMinor         Int
   /// Credit notes applied against what is still due (open invoices only). Due = totalMinor - creditedMinor.
   creditedMinor      Int           @default(0)
   status             InvoiceStatus @default(draft)
   eInvoiceId         String? // ZATCA e-invoicing provider reference
-  eInvoiceType       String? // "zatca" for Saudi teams (Fatoora), null otherwise
+  eInvoiceType       String? // "zatca" on every invoice of Progrid Arabia (Fatoora); null on LLC history
+  /// VAT treatment: "standard" (15%) or "zero_rated_export" (0%, customer outside Saudi Arabia).
+  vatCategory        String?
+  /// Printed on the invoice, e.g. "Zero-rated export of services".
+  taxNote            String?
+  /// SAR per one unit of the invoice currency at issue (1 for SAR), from FxService; with the SAR figures below.
+  fxRateSar          Decimal?      @db.Decimal(18, 6)
+  subtotalSarMinor   Int?
+  taxSarMinor        Int?
+  totalSarMinor      Int?
   dueAt              DateTime?
   paidAt             DateTime?
   voidedAt           DateTime?
@@ -999,7 +1010,7 @@ model CreditApplication {
 
 enum PaymentProvider {
   moyasar
-  /// Card payments for Progrid Technologies LLC (Stripe Checkout).
+  /// Stripe Checkout: payments of Progrid Technologies LLC (history); usable again only with PAYMENT_PROVIDER=stripe.
   stripe
   bank_transfer
   manual
@@ -1065,6 +1076,14 @@ model CreditNote {
   invoiceId         String
   currency          Currency
   amountMinor       Int
+  /// VAT included in amountMinor, in proportion to the invoice.
+  taxMinor          Int           @default(0)
+  vatCategory       String?
+  taxNote           String?
+  /// The invoice's rate, and the amount and VAT in SAR.
+  fxRateSar         Decimal?      @db.Decimal(18, 6)
+  amountSarMinor    Int?
+  taxSarMinor       Int?
   /// Part applied against what was still due on an open invoice; the rest became refund credit.
   appliedToDueMinor Int           @default(0)
   creditId          String?

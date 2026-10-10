@@ -9,7 +9,7 @@ Progrid is a developer cloud for people and AI agents. You get servers by the ho
 
 ## 1. Create an account
 
-Open the [console](https://console.progrid.co/login), choose **Create account**, and enter your name, a team name, your billing country, your email, and a password of ten characters or more. The site you sign up on decides which Progrid company invoices you and in which currency (see [billing](/docs/billing)).
+Open the [console](https://console.progrid.co/login), choose **Create account**, and enter your name, a team name, your billing country, your email, and a password of ten characters or more. Your billing country decides your currency: customers in Saudi Arabia are billed in SAR including 15% VAT, customers elsewhere in USD (see [billing](/docs/billing)).
 
 You can also choose **Continue with Google** or **Continue with Microsoft** and skip the password. See [Account security](/docs/security) for how linking works.
 

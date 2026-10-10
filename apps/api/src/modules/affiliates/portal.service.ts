@@ -10,9 +10,6 @@ import { AffiliateSettingsService } from './settings';
 import { AffiliateMailer, referralLinks } from './mailer';
 import { normalizeCode, suggestCode } from './rules';
 import type { ApplyDto, PayoutDetailsDto } from './portal.dto';
-import { TaxService } from './tax.service';
-import { CERTIFICATIONS, FORM_REVISIONS } from './tax-rules';
-import type { TaxFormDto } from './tax.dto';
 
 /** An application sent faster than a person can fill the form is treated as a bot. */
 const MIN_FORM_SECONDS = 3;
@@ -32,7 +29,6 @@ export class PortalService {
     private readonly settings: AffiliateSettingsService,
     private readonly events: EventsService,
     private readonly mailer: AffiliateMailer,
-    private readonly tax: TaxService,
   ) {}
 
   /** The portal home: the user's application or affiliate account and the program terms. */
@@ -220,9 +216,9 @@ export class PortalService {
       const rows = await tx.affiliateCommission.findMany({ where: { affiliateId: a.id, currency, status: 'approved', payoutId: null }, select: { id: true, amountMinor: true, reversedMinor: true } });
       const amount = rows.reduce((t, r) => t + r.amountMinor - r.reversedMinor, 0);
       if (amount < min || amount <= 0) throw new ApiError(409, 'below_minimum', `The payable balance must reach ${formatMoney(min, currency)} before a payout.`);
-      // US dollars are paid by Progrid Technologies LLC: a W-9 or W-8 must be on file (docs/affiliates-tax.md).
-      const tax = currency === 'USD' ? await this.tax.forUsdPayout(a.id, amount) : null;
-      const p = await tx.affiliatePayout.create({ data: { affiliateId: a.id, currency, amountMinor: amount, details: a.payoutDetails, taxFormId: tax?.form.id ?? null, withheldMinor: tax?.withheldMinor ?? 0 } });
+      // Progrid Arabia pays out in SAR and USD. Nothing is withheld: whether Saudi withholding tax
+      // applies to partners outside Saudi Arabia is for the tax advisor (docs/affiliates-tax.md).
+      const p = await tx.affiliatePayout.create({ data: { affiliateId: a.id, currency, amountMinor: amount, details: a.payoutDetails } });
       const linked = await tx.affiliateCommission.updateMany({ where: { id: { in: rows.map((r) => r.id) }, payoutId: null, status: 'approved' }, data: { payoutId: p.id } });
       if (linked.count !== rows.length) throw new ApiError(409, 'balance_changed', 'Your balance changed. Try again.');
       return p;
@@ -230,20 +226,6 @@ export class PortalService {
     await this.events.emit('affiliate.payout_requested', { affiliateId: a.id, payoutId: payout.id, currency, amountMinor: payout.amountMinor }, { actor, resource: `affiliate_payout:${payout.id}` });
     await this.mailer.send(a, 'payout_requested', { amount: formatMoney(payout.amountMinor, currency) });
     return { id: payout.id, currency: payout.currency, amountMinor: payout.amountMinor, withheldMinor: payout.withheldMinor, status: payout.status, requestedAt: payout.requestedAt, paidAt: null, reference: null };
-  }
-
-  /** The affiliate's tax information (TIN masked). */
-  async taxForm(actor: Actor) {
-    const a = await this.approved(actor);
-    // The certification texts the portal shows before signing (English, as on the IRS forms).
-    const certifications = { W9: CERTIFICATIONS.W9(false), W9Backup: CERTIFICATIONS.W9(true), W8BEN: CERTIFICATIONS.W8BEN(), W8BENE: CERTIFICATIONS.W8BENE(), servicesOutsideUs: CERTIFICATIONS.servicesOutsideUs, revisions: FORM_REVISIONS };
-    return { ...(await this.tax.presentCurrent(a.id)), certifications };
-  }
-
-  async submitTaxForm(actor: Actor, dto: TaxFormDto, ip?: string | null) {
-    const a = await this.approved(actor);
-    await this.tax.submit(actor, a.id, dto, ip);
-    return this.tax.presentCurrent(a.id);
   }
 }
 

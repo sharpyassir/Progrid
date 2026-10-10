@@ -1,7 +1,7 @@
 ---
 title: Export controls and sanctions policy
 description: Who may not use Progrid services under sanctions and export control rules, and what we do to comply.
-updated: 3 October 2026
+updated: 10 October 2026
 ---
 
 > **Draft for legal review.** This document is a draft. Counsel will review it against the laws of the Kingdom of Saudi Arabia and the sanctions regimes that apply to us before launch, and the reviewed version will replace it.

@@ -12,7 +12,9 @@ interface StripeEvent { type?: string; data?: { object?: { id?: string; object?:
 const SIGNATURE_TOLERANCE_S = 300;
 
 /**
- * Stripe Checkout for Progrid Technologies LLC (USD). One Checkout Session per payment; the
+ * Stripe Checkout, a generic adapter selected only by PAYMENT_PROVIDER=stripe. Not used: Progrid
+ * Arabia collects through Moyasar, and the US Stripe account belonged to Progrid Technologies LLC
+ * (its old payments stay on record). One Checkout Session per payment; the
  * person pays on Stripe's page and comes back through our callback, and Stripe also sends a
  * signed webhook. Neither is trusted on its own: both lead to a server side fetch of the session,
  * which is the source of truth. Amounts are in cents. Plain HTTPS calls, no SDK.

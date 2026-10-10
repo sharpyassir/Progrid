@@ -55,7 +55,7 @@ first action.
 | 8 | Backup and restore test records | `15-backup-dr/restore-tests/` | Configure off-site storage; first restore test |
 | 9 | Incident tickets and exercise records | `14-incident-response/` | Create the incident register; schedule the first tabletop |
 | 10 | Security awareness/training records | `19-people/training.csv` | Run onboarding training for everyone with access |
-| 11 | Supplier security assessments and contracts | `16-suppliers/<supplier>/`; [supplier-register.csv](../supplier-register.csv) | File DPAs and certificates for DigitalOcean, Hetzner, GitHub, Stripe, Moyasar |
+| 11 | Supplier security assessments and contracts | `16-suppliers/<supplier>/`; [supplier-register.csv](../supplier-register.csv) | File DPAs and certificates for DigitalOcean, Hetzner, GitHub, Moyasar (and the LLC's Stripe DPA for the history) |
 | 12 | Change approvals and deployment records | GitHub pull requests and Actions runs; `11-devsecops/change-reviews/` | Enable branch protection; start weekly change reviews |
 | 13 | SIEM/security-monitoring records | Audit log; `13-logging/` | Weekly manual review until central logging exists |
 | 14 | Key-management and secrets-management evidence | [key-management.md](../key-management.md) inventory; `08-data-protection/`, `09-secrets/` | Record key owners and last rotation dates |

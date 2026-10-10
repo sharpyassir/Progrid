@@ -3,13 +3,13 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
-import { countryOptions, ENTITY_NAME, type BillingEntityId } from '@/lib/countries';
+import { billingForCountry, countryOptions, ENTITY_NAME, type BillingEntityId } from '@/lib/countries';
 import { AdminShell, Stat, fmtDate, fmtMoney } from '@/components/admin-shell';
 import { StatusBadge } from '@/components/status-badge';
 
 interface Team {
   id: string; name: string; slug: string; country: string; currency: string; status: string; kycLevel: number; taxId: string | null; createdAt: string;
-  billingEntity: BillingEntityId; pendingCountry: string | null; pendingBillingEntity: BillingEntityId | null; billingChangeAt: string | null;
+  billingEntity: BillingEntityId; pendingCountry: string | null; pendingCurrency: string | null; billingChangeAt: string | null;
   members: { role: string; user: { id: string; email: string; name: string } }[];
   projects: { id: string; name: string; slug: string; spendLimitMinor: number | null; _count: { servers: number } }[];
   abuseFlags: { id: string; kind: string; score: number; source: string; createdAt: string }[];
@@ -37,13 +37,15 @@ export default function AdminTeam() {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const country = String(f.get('country') ?? '');
-    const target = String(f.get('billingEntity') ?? t!.billingEntity) as BillingEntityId;
-    const moving = target !== t!.billingEntity;
-    const question = moving
-      ? `Move ${t!.name} to ${ENTITY_NAME[target]} from the next billing period? Tax, currency, invoice series, card gateway and books change with it. Credit left in ${t!.currency} is not converted.`
-      : `Change the billing country of ${t!.name} to ${country}? The billing company stays ${ENTITY_NAME[t!.billingEntity]}.`;
+    // Currency: the country's (SA: SAR, else USD) unless staff keep another one (credit left in it).
+    const picked = String(f.get('currency') ?? '');
+    const currency = picked || billingForCountry(country).currency;
+    const scheduled = currency !== t!.currency;
+    const question = scheduled
+      ? `Change ${t!.name} to ${country} and ${currency} from the first day of next month? VAT follows the country (SA 15%, else 0%). Credit left in ${t!.currency} is not converted.`
+      : `Change the billing country of ${t!.name} to ${country} now? The currency stays ${t!.currency}; VAT follows the country (SA 15%, else 0%).`;
     if (!confirm(question)) return;
-    await run(() => api(`/admin/v1/teams/${id}/billing-country`, { method: 'POST', body: JSON.stringify({ country, reason: f.get('reason'), ...(moving ? { billingEntity: target } : {}) }) }), moving ? 'Change scheduled for the next billing period.' : 'Billing country changed.');
+    await run(() => api(`/admin/v1/teams/${id}/billing-country`, { method: 'POST', body: JSON.stringify({ country, reason: f.get('reason'), ...(picked ? { currency: picked } : {}) }) }), scheduled ? 'Currency change scheduled for the next month.' : 'Billing country changed.');
   }
   if (!t) return <AdminShell title="Team"><p className="text-sm text-neutral-500">Loading…</p></AdminShell>;
   const credit_ = t.credits.reduce((s, c) => s + (!c.expiresAt || new Date(c.expiresAt) > new Date() ? c.remainingMinor : 0), 0);
@@ -57,22 +59,23 @@ export default function AdminTeam() {
       {msg && <p className="rounded border border-neutral-200 bg-neutral-50 p-2 text-sm dark:border-neutral-800 dark:bg-neutral-900">{msg}</p>}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Status" value={t.status} sub={`KYC level ${t.kycLevel} · ${t.country} · ${t.currency}${t.taxId ? ` · tax id ${t.taxId}` : ''}`} tone={t.status === 'suspended' ? 'bad' : undefined} />
-        <Stat label="Credit balance" value={fmtMoney(credit_, t.currency)} sub={`Billed by ${ENTITY_NAME[t.billingEntity]}${t.pendingBillingEntity && t.billingChangeAt ? ` · moves to ${ENTITY_NAME[t.pendingBillingEntity]} (${t.pendingCountry}) on ${fmtDate(t.billingChangeAt)}` : ''}`} />
+        <Stat label="Credit balance" value={fmtMoney(credit_, t.currency)} sub={`Billed by ${ENTITY_NAME[t.billingEntity]}${t.billingChangeAt && (t.pendingCurrency || t.pendingCountry) ? ` · ${t.pendingCountry ?? t.country}, ${t.pendingCurrency ?? t.currency} from ${fmtDate(t.billingChangeAt)}` : ''}`} />
         <Stat label="Servers" value={t.projects.reduce((s, p) => s + p._count.servers, 0)} sub={`${t.projects.length} projects`} />
         <Stat label="Open flags" value={t.abuseFlags.length} tone={t.abuseFlags.length ? 'bad' : undefined} />
       </div>
       <section className="card space-y-2">
-        <h2 className="font-medium">Billing country and company</h2>
-        <p className="text-xs text-neutral-500">The company comes from the domain the account was created on: progrid.sa is Progrid Arabia (SAR, 15% VAT, Moyasar, its own books), progrid.co is Progrid Technologies LLC (USD, Stripe, the US ledger). The billing country is the invoice address and never moves the account on its own. A change of company starts at the next billing period and is recorded in the audit log. Finance staff only.</p>
+        <h2 className="font-medium">Billing country and currency</h2>
+        <p className="text-xs text-neutral-500">Progrid Arabia bills every team. The billing country decides VAT (Saudi Arabia 15%, elsewhere 0% as a zero-rated export of services) and the currency (SAR in Saudi Arabia, USD elsewhere). A change that keeps the currency applies now; a change of currency starts on the first day of next month. Keep the current currency only while the team still holds credit in it. Recorded in the audit log. Finance staff only.</p>
         <form className="flex flex-wrap items-center gap-2" onSubmit={billingCountry}>
-          <select className="input w-auto" name="billingEntity" defaultValue={t.pendingBillingEntity ?? t.billingEntity} aria-label="Billing company">
-            <option value="progrid_llc">{ENTITY_NAME.progrid_llc} (USD)</option>
-            <option value="progrid_arabia">{ENTITY_NAME.progrid_arabia} (SAR)</option>
-          </select>
           <select className="input w-auto" name="country" defaultValue={t.pendingCountry ?? t.country}>{countryOptions('en').map((c) => <option key={c.code} value={c.code}>{c.name} ({c.code})</option>)}</select>
+          <select className="input w-auto" name="currency" defaultValue="" aria-label="Currency">
+            <option value="">Currency of the country</option>
+            <option value="SAR">SAR</option>
+            <option value="USD">USD</option>
+          </select>
           <input className="input w-72" name="reason" placeholder="Reason (kept in the audit log)" required minLength={3} />
           <button className="btn-ghost">Change</button>
-          {t.pendingBillingEntity && <button type="button" className="btn-ghost" onClick={() => { const reason = prompt('Reason for cancelling the change:'); if (reason) run(() => api(`/admin/v1/teams/${id}/billing-country/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }), 'Scheduled change cancelled.'); }}>Cancel scheduled change</button>}
+          {t.billingChangeAt && (t.pendingCurrency || t.pendingCountry) && <button type="button" className="btn-ghost" onClick={() => { const reason = prompt('Reason for cancelling the change:'); if (reason) run(() => api(`/admin/v1/teams/${id}/billing-country/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }), 'Scheduled change cancelled.'); }}>Cancel scheduled change</button>}
         </form>
       </section>
       <div className="grid gap-4 lg:grid-cols-2">

@@ -133,7 +133,7 @@ Build images locally from a mirror clone, push to an alternative registry, set `
 | Supplier | Fallback |
 |---|---|
 | Resend | Switch `MAIL_PROVIDER=postmark` (code supports it) after signing the DPA and verifying the domains |
-| Stripe / Moyasar | Accept bank transfer (invoice bank details); pause card top-ups |
+| Moyasar | Accept bank transfer (invoice bank details); pause card top-ups |
 | Anthropic | Connect agents fail gracefully; notify customers |
 | Twilio | Paging falls back to email automatically |
 | Google / Microsoft OAuth | Users sign in with password or reset it |

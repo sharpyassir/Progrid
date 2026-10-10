@@ -32,7 +32,7 @@ CI/CD, and the admin logs of suppliers (GitHub, DigitalOcean, Hetzner, payment p
 | Host logs | sshd, sudo, auditd watches on identity, SSH, sudoers, Docker and Progrid config files (*branch*), fail2ban, ufw | journald / `/var/log` on each host |
 | Proxmox | Task log, API access, firewall log | Each node |
 | CI/CD | Workflow runs, deploy job output, attestations | GitHub |
-| Supplier admin logs | GitHub audit log, DigitalOcean and Hetzner account activity, Stripe/Moyasar dashboard logs | Suppliers |
+| Supplier admin logs | GitHub audit log, DigitalOcean and Hetzner account activity, Moyasar dashboard logs | Suppliers |
 
 Never logged: passwords, full tokens, TOTP codes, secret values, card data, customer content
 (redaction in Connect steps and build logs; sudo password redacted from recordings).

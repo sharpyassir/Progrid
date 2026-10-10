@@ -130,7 +130,7 @@ const en: HomeCopy = {
       { name: 'App Platform', desc: 'Per container instance', sarMinor: 1900 },
       { name: 'Object storage', desc: 'S3 compatible buckets', sarMinor: 8, unit: 'gb' },
     ],
-    all: 'See all pricing', vat: 'Prices exclude VAT.',
+    all: 'See all pricing', vat: 'Prices exclude VAT. Customers in Saudi Arabia are billed in SAR including 15% VAT; customers elsewhere are billed in USD.',
   },
   useCases: {
     eyebrow: 'Solutions', h2: 'Built for what you are building', lead: 'Start from a use case and grow into the rest of the platform.',
@@ -260,7 +260,7 @@ const ar: HomeCopy = {
       { name: 'منصة التطبيقات', desc: 'لكل نسخة حاوية', sarMinor: 1900 },
       { name: 'تخزين الكائنات', desc: 'حاويات متوافقة مع S3', sarMinor: 8, unit: 'gb' },
     ],
-    all: 'كل الأسعار', vat: 'الأسعار لا تشمل ضريبة القيمة المضافة.',
+    all: 'كل الأسعار', vat: 'الأسعار لا تشمل ضريبة القيمة المضافة. يُفوتر العملاء في المملكة العربية السعودية بالريال السعودي شاملًا ضريبة القيمة المضافة 15%، ويُفوتر العملاء في الدول الأخرى بالدولار الأمريكي.',
   },
   useCases: {
     eyebrow: 'الحلول', h2: 'مصممة لما تبنيه', lead: 'ابدأ من حالة استخدام وتوسّع في بقية المنصة.',
@@ -390,7 +390,7 @@ const tr: HomeCopy = {
       { name: 'Uygulama Platformu', desc: 'Kapsayıcı örneği başına', sarMinor: 1900 },
       { name: 'Nesne depolama', desc: 'S3 uyumlu kovalar', sarMinor: 8, unit: 'gb' },
     ],
-    all: 'Tüm fiyatlar', vat: 'Fiyatlara KDV dahil değildir.',
+    all: 'Tüm fiyatlar', vat: "Fiyatlara KDV dahil değildir. Suudi Arabistan'daki müşteriler %15 KDV dahil SAR ile, diğer ülkelerdeki müşteriler USD ile faturalandırılır.",
   },
   useCases: {
     eyebrow: 'Çözümler', h2: 'Ne geliştiriyorsanız onun için', lead: 'Bir kullanım senaryosundan başlayın, platformun geri kalanına büyüyün.',

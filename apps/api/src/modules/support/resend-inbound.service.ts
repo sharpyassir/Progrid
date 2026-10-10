@@ -35,8 +35,8 @@ export class ResendInboundService {
     }
     if (event.type !== 'email.received' || !event.data?.email_id) return { ignored: true, reason: 'event_type' };
 
-    // Support mail is accepted for both companies (support@progrid.co and support@progrid.sa) and the staff inbox.
-    const inboxes = new Set([cfg.SUPPORT_INBOX, cfg.ENTITY_LLC_SUPPORT_EMAIL, cfg.ENTITY_ARABIA_SUPPORT_EMAIL].map((a) => addressOf(a || '')).filter(Boolean));
+    // Support mail is accepted on both domains: the staff inbox (SUPPORT_INBOX, support@progrid.co) and Progrid Arabia's (support@progrid.sa).
+    const inboxes = new Set([cfg.SUPPORT_INBOX, cfg.ENTITY_ARABIA_SUPPORT_EMAIL].map((a) => addressOf(a || '')).filter(Boolean));
     const to = (Array.isArray(event.data.to) ? event.data.to : [event.data.to ?? '']).map(addressOf);
     if (!to.some((a) => inboxes.has(a))) return { ignored: true, reason: 'not_support_inbox' };
 

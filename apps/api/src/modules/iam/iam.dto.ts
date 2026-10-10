@@ -8,9 +8,10 @@ export class SignupDto {
   @IsString() @Length(1, 80) name: string;
   @IsString() @Length(2, 60) teamName: string;
   /**
-   * Billing country (ISO 3166-1 alpha-2). It decides the contracting company: SA is Progrid Arabia
-   * (SAR), every other country Progrid Technologies LLC (USD). Omitted: SA on the progrid.sa
-   * domain, otherwise the country of the caller's IP address, otherwise US.
+   * Billing country (ISO 3166-1 alpha-2). Progrid Arabia bills every account; the country decides
+   * the currency and VAT: SA pays SAR with 15% VAT, every other country USD at 0% (zero-rated
+   * export of services). Omitted: SA on the progrid.sa domain, otherwise the country of the
+   * caller's IP address, otherwise US (a guess of the address, nothing more).
    */
   @IsOptional() @IsIn(COUNTRY_CODES as unknown as string[]) country?: string;
   @IsOptional() @IsIn(['en', 'tr', 'ar']) locale?: string;

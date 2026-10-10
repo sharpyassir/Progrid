@@ -14,19 +14,20 @@
 Progrid is a developer cloud: virtual servers, volumes, object storage, networking, DNS, managed
 databases, Kubernetes, an App Platform with Git Deploy, the Progrid Connect AI agent builder, a
 marketplace, and managed cloud operations. One platform, one account system and one database
-serve two legal entities (see `docs/domains-and-entities.md`):
+serve one legal entity on two domains (see `docs/domains-and-entities.md`):
 
-| Entity | Domain | Customers | Role for account data |
+| Entity | Domains | Customers | Role for account data |
 |---|---|---|---|
-| Progrid Technologies LLC (United States) | progrid.co | Accounts created on progrid.co | Controller |
-| Progrid Arabia (Saudi Arabia) | progrid.sa | Accounts created on progrid.sa | Controller |
+| Progrid Arabia (Saudi Arabia) | progrid.co (primary) and progrid.sa | Every account | Controller |
 
-For customer content (what customers store or run on the platform) the contracting entity is
-the customer's processor under its Data processing addendum.
+For customer content (what customers store or run on the platform) Progrid Arabia is the
+customer's processor under its Data processing addendum. Progrid Technologies LLC (United States)
+contracted with accounts created on progrid.co until October 2026; it no longer contracts, and only
+the invoices and records it issued remain in the platform as history.
 
 ## 2. Scope statement
 
-> The information security management system of Progrid Technologies LLC and Progrid Arabia
+> The information security management system of Progrid Arabia
 > covering the design, development, operation and support of the Progrid developer cloud
 > platform — the control plane (website, console, public API, back office, ops console,
 > terminal gateway, workflow engine and their data stores) hosted on DigitalOcean in Frankfurt,
@@ -58,7 +59,7 @@ the customer's processor under its Data processing addendum.
 | Physical data centre operations | Run by DigitalOcean and Hetzner | Supplier management, shared responsibility (physical-and-shared-responsibility.md) |
 | Operating systems and applications inside customer VMs, customer Kubernetes workloads, customer apps | Customer responsibility under the terms and DPA | Isolation between tenants, the hypervisor and the platform agents stay in scope |
 | Customer servers outside Progrid that are covered by a managed cloud contract | Customer owns them | Progrid's access to them (grants, gateway, recordings) and the engineers' conduct are in scope |
-| Internal systems of SaaS suppliers (Resend, Stripe, Moyasar, Anthropic, Twilio, Google, Microsoft, GitHub, Infisical) | Supplier responsibility | Their configuration, our accounts on them and the data we send |
+| Internal systems of SaaS suppliers (Resend, Moyasar, Anthropic, Twilio, Google, Microsoft, GitHub, Infisical) | Supplier responsibility | Their configuration, our accounts on them and the data we send |
 | Corporate IT beyond the platform (accounting software, office productivity) | [Owner to confirm whether to include] | Accounts with access to platform data are in scope through access control |
 
 Future Saudi hosting (region `sa1` currently runs in Germany, see `docs/readiness-review.md`) will
@@ -73,7 +74,7 @@ enter scope by a scope change when the first Saudi host is ordered.
 | Saudi regulators: NCA, SDAIA, ZATCA, CST | NCA control sets where applicable (formal applicability assessment needed); PDPL and its implementing regulations, including breach notification and cross-border transfer rules; ZATCA e-invoicing for Progrid Arabia; CST rules for cloud service providers [legal review needed] |
 | EU and UK supervisory authorities | GDPR as processor and controller; transfer safeguards |
 | US authorities | State privacy laws, sanctions and export controls (`pages/*/export-sanctions.md`) |
-| Payment providers (Stripe, Moyasar) and card schemes | Card data never touches Progrid; fraud controls; their acceptable use terms |
+| Payment provider (Moyasar; Stripe no longer used) and card schemes | Card data never touches Progrid; fraud controls; their acceptable use terms |
 | Hosting providers (DigitalOcean, Hetzner) | Their acceptable use policies; abuse report handling within their deadlines |
 | Staff and contractors | Clear rules, safe tooling, privacy of their own data, fair contractor pay records |
 | Investors and owners | Protection of the business, readiness for ISO 27001 certification in year 2 (`docs/architecture.md`) |
@@ -97,7 +98,7 @@ enter scope by a scope change when the first Saudi host is ordered.
 | Management host to Proxmox nodes | Both | WireGuard, NATS token, Proxmox API token |
 | Gateway to managed customer servers | Outbound | WireGuard, short-lived SSH certificates, recordings |
 | API to SaaS suppliers (mail, payments, AI model, SMS, OAuth, GitHub) | Outbound | TLS, API keys in the settings file |
-| Supplier webhooks to API (Stripe, Moyasar, Resend, GitHub, Alertmanager) | Inbound | Signature or shared-secret verification |
+| Supplier webhooks to API (Moyasar, Resend, GitHub, Alertmanager; the Stripe webhook only with `PAYMENT_PROVIDER=stripe`) | Inbound | Signature or shared-secret verification |
 | GitHub Actions to management host (deploy) | Inbound SSH | Deploy key, forced command, pinned host key |
 | Engineers' and staff browsers to console/ops/back office | Inbound | MFA, sessions, IP allowlists |
 

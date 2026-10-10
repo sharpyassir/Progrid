@@ -73,14 +73,15 @@ export interface Firewall { id: string; name: string; rules: { id: string; direc
 export interface App { id: string; slug: string; name: string; category: string; summary: string; version: string; minSizeId: string; variables: AppVariable[]; priceMonthlyMinor: number }
 export interface AppVariable { name: string; label: string; type: string; required?: boolean; default?: string; generate?: string }
 export interface Price { resourceType: string; sku: string; monthlyMinor: number; hourlyMinor: number }
-export interface BillingEntityInfo { id: 'progrid_arabia' | 'progrid_llc'; legalName: string; country: string; currency: 'USD' | 'SAR'; taxRate: number; taxLabel: string; supportEmail: string; termsUrl: string; domain: string | null; consoleUrl: string }
+export interface BillingEntityInfo { id: 'progrid_arabia' | 'progrid_llc'; legalName: string; country: string; currency: 'USD' | 'SAR'; taxRate: number; taxLabel: string; vatCategory?: 'standard' | 'zero_rated_export'; taxNote?: string | null; supportEmail: string; termsUrl: string; domain: string | null; consoleUrl: string }
 export interface Balance {
   currency: 'USD' | 'SAR'; creditMinor: number; monthToDateMinor: number; status: string;
   /** Spent today, the month to date plus running resources until month end, and last month's total. */
   todayMinor?: number; projectedMonthMinor?: number; lastMonthMinor?: number;
-  /** The company that bills the team (Progrid Arabia or Progrid Technologies LLC). */
+  /** The company that bills the team (always Progrid Arabia), with the team's currency and VAT treatment. */
   billingCountry?: string; billingEntity?: BillingEntityInfo;
-  pendingChange?: { country: string; billingEntity: BillingEntityInfo; effectiveAt: string } | null;
+  /** A move into or out of Saudi Arabia: the new currency applies from effectiveAt (first day of next month). */
+  pendingChange?: { country: string; currency: 'USD' | 'SAR'; billingEntity: BillingEntityInfo; effectiveAt: string } | null;
 }
 
 export function money(minor: number, currency: string, locale = 'en') {

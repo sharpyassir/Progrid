@@ -10,7 +10,7 @@ import { SpendService } from './spend.service';
 import { FxService } from './fx.service';
 import { BOOK_CURRENCY, VAT_RATE, displayPrice, startOfMonth, taxRateFor } from './pricing';
 import { loadConfig } from '../../config/config';
-import { publicEntity } from '../../common/entities/entities';
+import { publicEntity, vatFor, ZERO_RATED_NOTE } from '../../common/entities/entities';
 
 const HOUR = 3_600_000;
 
@@ -48,9 +48,13 @@ export class BillingController {
       lastMonthMinor: lastMonth,
       status: team.status,
       billingCountry: team.country,
-      // The company that invoices this team, shown on the billing page and in the console footer.
-      billingEntity: publicEntity(team.billingEntity),
-      pendingChange: team.pendingBillingEntity && team.billingChangeAt ? { country: team.pendingCountry, billingEntity: publicEntity(team.pendingBillingEntity), effectiveAt: team.billingChangeAt } : null,
+      // The company that invoices this team (always Progrid Arabia), with the team's currency and
+      // VAT treatment, shown on the billing page and in the console footer.
+      billingEntity: publicEntity(team.billingEntity, team),
+      // A country change into or out of Saudi Arabia changes the currency from the first day of next month.
+      pendingChange: team.billingChangeAt && (team.pendingCurrency || team.pendingCountry)
+        ? { country: team.pendingCountry ?? team.country, currency: team.pendingCurrency ?? team.currency, vat: vatFor(team.pendingCountry ?? team.country), billingEntity: publicEntity(team.billingEntity, { country: team.pendingCountry ?? team.country, currency: team.pendingCurrency ?? team.currency }), effectiveAt: team.billingChangeAt }
+        : null,
     };
   }
 
@@ -80,8 +84,8 @@ export class BillingController {
 
 /**
  * Public price list (no auth). The book is kept in SAR (BOOK_CURRENCY); asking for USD returns the
- * same list converted at the current exchange rate (the pegged 3.75), plus the rate used. Customers
- * of Progrid Technologies LLC are billed in USD, customers of Progrid Arabia in SAR.
+ * same list converted at the current exchange rate (the pegged 3.75), plus the rate used. Progrid
+ * Arabia bills customers in Saudi Arabia in SAR with 15% VAT, everyone else in USD at 0%.
  */
 @ApiTags('pricing')
 @Controller('v1/pricing')
@@ -99,9 +103,9 @@ export class PricingController {
       fxRate: rate,
       usdToSar: await this.fx.rate('SAR'),
       vatRate: VAT_RATE,
-      // Tax follows the contracting company: Progrid Arabia (SAR) adds 15% VAT; Progrid Technologies LLC (USD) adds none by default.
-      taxRate: currency === 'SAR' ? taxRateFor('progrid_arabia') : taxRateFor('progrid_llc'),
-      vatNote: currency === 'SAR' ? 'Prices exclude VAT. Customers billed by Progrid Arabia pay 15% VAT, shown at checkout.' : 'Prices exclude any tax. Customers billed by Progrid Technologies LLC see any tax at checkout.',
+      // VAT follows the billing country, and so does the currency: SAR with 15% VAT in Saudi Arabia, USD at 0% elsewhere.
+      taxRate: currency === 'SAR' ? taxRateFor('SA') : 0,
+      vatNote: currency === 'SAR' ? 'Prices exclude VAT. Customers in Saudi Arabia pay 15% VAT, shown at checkout.' : `Prices in USD for customers outside Saudi Arabia, invoiced by Progrid Arabia at 0% VAT (${ZERO_RATED_NOTE.toLowerCase()}).`,
       hoursPerMonth: h,
       data: prices.map((p) => {
         const monthly = p.unit === 'percent' ? p.monthlyMinor : Math.round(p.monthlyMinor * rate);

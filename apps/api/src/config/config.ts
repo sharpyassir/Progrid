@@ -93,10 +93,13 @@ const schema = z.object({
   GITHUB_APP_SLUG: z.string().optional(),
   GITHUB_APP_PRIVATE_KEY: z.string().optional(),
   GITHUB_APP_WEBHOOK_SECRET: z.string().optional(),
-  /** Card payments of Progrid Arabia (SAR): Moyasar (mada, Visa, Mastercard, Apple Pay) or the built in test page. */
-  PAYMENT_PROVIDER: z.enum(['moyasar', 'fake']).default('fake'),
-  /** Card payments of Progrid Technologies LLC (USD): Stripe Checkout or the built in test page. */
-  PAYMENT_PROVIDER_LLC: z.enum(['stripe', 'fake']).default('fake'),
+  /**
+   * Card payments of Progrid Arabia, in SAR and USD: Moyasar (mada, Visa, Mastercard, Apple Pay)
+   * in production, or the built in test page. "stripe" is a generic Stripe Checkout adapter kept
+   * for a Stripe account of Progrid Arabia; it is not used (the US Stripe account belonged to the LLC).
+   */
+  PAYMENT_PROVIDER: z.enum(['moyasar', 'stripe', 'fake']).default('fake'),
+  /** Only with PAYMENT_PROVIDER=stripe, or to refund old Stripe payments by hand. */
   STRIPE_SECRET_KEY: optionalString(),
   /** Signing secret (whsec_...) of the Stripe webhook endpoint POST /v1/billing/payments/stripe/webhook. */
   STRIPE_WEBHOOK_SECRET: optionalString(),
@@ -121,13 +124,16 @@ const schema = z.object({
   /** Primary marketing site. */
   WWW_URL: z.string().url().default('http://localhost:3001'),
 
-  // ---- domains and billing entities (docs/domains-and-entities.md) ----
+  // ---- domains and the billing entity (docs/domains-and-entities.md) ----
   /**
-   * Domain of Progrid Technologies LLC, the primary one (progrid.co). Links for its customers go to
-   * console.<domain>, api.<domain> and <domain>. Empty uses CONSOLE_URL, PUBLIC_API_URL and WWW_URL.
+   * The primary, global domain (progrid.co). Both domains belong to Progrid Arabia and serve every
+   * customer; the domain decides nothing about billing. Empty in development.
    */
-  ENTITY_LLC_DOMAIN: optionalDomain(),
-  /** Domain of Progrid Arabia (progrid.sa). Empty uses CONSOLE_URL, PUBLIC_API_URL and WWW_URL. */
+  PRIMARY_DOMAIN: optionalDomain(),
+  /**
+   * The Saudi domain (progrid.sa), Progrid Arabia's own: customer mail and links in it
+   * (console.<domain>, api.<domain>). Empty uses CONSOLE_URL, PUBLIC_API_URL and WWW_URL.
+   */
   ENTITY_ARABIA_DOMAIN: optionalDomain(),
   /**
    * DB-IP "IP to Country Lite" database (mmdb, CC BY 4.0) that prefills the signup country.
@@ -136,20 +142,6 @@ const schema = z.object({
   GEOIP_DB_PATH: z.string().default('/opt/prgd/geoip/dbip-country-lite.mmdb'),
   /** More browser origins allowed to call the API with credentials, comma separated. */
   CORS_EXTRA_ORIGINS: z.string().default(''),
-  ENTITY_LLC_LEGAL_NAME: z.string().default('Progrid Technologies LLC'),
-  /** Registered address, printed on invoices. Empty prints a placeholder until the owner provides it. */
-  ENTITY_LLC_ADDRESS: optionalString(),
-  /** Employer Identification Number from the IRS, printed on invoices once set. */
-  ENTITY_LLC_EIN: optionalString(),
-  /** Tax rate added to LLC invoices, 0 to 1. 0 prints no tax line. */
-  ENTITY_LLC_TAX_RATE: z.coerce.number().min(0).max(1).default(0),
-  ENTITY_LLC_TAX_LABEL: z.string().default('Tax'),
-  /** Bank transfer instructions printed on LLC invoices (one line, or lines separated by |). */
-  ENTITY_LLC_BANK_DETAILS: optionalString(),
-  ENTITY_LLC_SUPPORT_EMAIL: z.string().default('support@progrid.co'),
-  ENTITY_LLC_MAIL_FROM: z.string().default('Progrid <no-reply@progrid.co>'),
-  /** Terms the LLC's invoices refer to. Empty uses <www>/legal/terms of its domain. */
-  ENTITY_LLC_TERMS_URL: optionalUrl(),
   ENTITY_ARABIA_LEGAL_NAME: z.string().default('Progrid Arabia'),
   /** Registered address in Saudi Arabia. Empty uses COMPANY_ADDRESS, then a placeholder. */
   ENTITY_ARABIA_ADDRESS: optionalString(),
@@ -157,6 +149,7 @@ const schema = z.object({
   ENTITY_ARABIA_CR: optionalString(),
   /** VAT registration number (15 digits). Empty uses COMPANY_TAX_ID. */
   ENTITY_ARABIA_VAT_NUMBER: optionalString(),
+  /** VAT on invoices to customers whose billing country is Saudi Arabia. Other countries: 0% (zero-rated export). */
   ENTITY_ARABIA_VAT_RATE: z.coerce.number().min(0).max(1).default(0.15),
   ENTITY_ARABIA_BANK_DETAILS: optionalString(),
   ENTITY_ARABIA_SUPPORT_EMAIL: z.string().default('support@progrid.sa'),

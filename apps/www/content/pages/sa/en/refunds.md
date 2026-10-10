@@ -1,7 +1,7 @@
 ---
 title: Refund and cancellation policy
 description: Cancel any hour. What is refunded, what is not, and how long it takes.
-updated: 27 September 2026
+updated: 10 October 2026
 ---
 
 This policy is part of the [Terms of service](/legal/terms).
@@ -32,8 +32,8 @@ Contact us before disputing a charge with your bank. A chargeback on a charge th
 
 ## How refunds are paid
 
-Refunds go to the original payment method through our payment provider within 10 business days of approval. Refunds of amounts that included VAT are made with the VAT and a credit note is issued.
+Refunds go to the original payment method through our payment provider, Moyasar, within 10 business days of approval, in the currency you paid in: Saudi riyals or US dollars. We issue a credit note for every refund; refunds of amounts that included VAT are made with the VAT. Any difference caused by your bank's currency conversion is outside our control.
 
 ## Consumer rights
 
-Nothing in this policy limits rights you have under the E-commerce Law or other consumer protection rules of the Kingdom of Saudi Arabia.
+Nothing in this policy limits rights you have under the E-commerce Law or other consumer protection rules of the Kingdom of Saudi Arabia, or under the mandatory consumer protection law of the country where you live.

@@ -4,10 +4,11 @@ import type { Site } from './site-shared';
  * Every sentence on the marketing site, in the three launch languages, for both storefronts.
  * English is the source; Turkish and Arabic keep the same keys so a missing string is a type error.
  *
- * Progrid is one global brand with one global website: the same text on every domain. Only the
- * currency follows the domain, because the domain decides the company that bills: progrid.co shows
- * US dollars, progrid.sa shows riyals with 15% VAT. Never claim that servers or data are in a
- * particular country, and no country specific offers (legal documents stay per company).
+ * Progrid is one global brand with one global website, run by one company, Progrid Arabia: the same
+ * text on every domain. Only the display currency follows the domain: progrid.co shows US dollars,
+ * progrid.sa shows riyals with 15% VAT. What a customer is billed follows their billing country
+ * (Saudi Arabia: SAR with 15% VAT; elsewhere: USD). Never claim that servers or data are in Saudi
+ * Arabia (they are in Germany), and no country specific offers.
  */
 export type Lang = 'en' | 'tr' | 'ar';
 export const LANGS: { code: Lang; label: string; path: string; dir: 'ltr' | 'rtl' }[] = [
@@ -31,7 +32,7 @@ export interface Copy {
   marketplace: { eyebrow: string; h2: string; lead: string };
   compare: { eyebrow: string; h2: string; cols: [string, string, string]; rows: [string, string, string, string][] };
   cta: { h2: string; lead: string; create: string; docs: string };
-  footer: { tagline: string; cols: [string, [string, string][]][]; copyright: string; builtOn: string; providedBy: string; geoCredit: string };
+  footer: { tagline: string; cols: [string, [string, string][]][]; copyright: string; builtOn: string; geoCredit: string };
 }
 
 const en: Copy = {
@@ -81,7 +82,7 @@ const en: Copy = {
     lead: 'Billed by the hour and never more than the monthly price. Bandwidth included. No surprise line items. The whole price list is one API call: ', leadCode: 'GET /v1/pricing',
     cols: ['Plan', 'vCPU', 'Memory', 'NVMe storage', 'Monthly'], vatCol: 'With 15% VAT',
     popular: 'Most popular', unmanagedH3: 'Servers', managedH3: 'Managed servers', managedLead: 'The same hardware plus setup, OS updates, security hardening, daily backups and support.',
-    note: 'Prices are in US dollars. Any tax that applies is shown at checkout. ',
+    note: 'Prices are in US dollars. Customers in Saudi Arabia are billed in SAR including 15% VAT; customers elsewhere are billed in USD. ',
     noteTail: (p) => `A public IP is included with every server. Snapshots cost ${p.snapshot} per GB per month. Backups cost 20% of the plan and are included with managed servers. Support plans start at ${p.support} a month. App Platform instances start at ${p.app} a month.`,
   },
   marketplace: { eyebrow: 'Marketplace', h2: 'One click from idea to running app.', lead: 'Every app is a hardened image plus a setup script. Built from Git, scanned for CVEs and test deployed before it ships. Bring your own through the vendor program and keep 70% of the revenue.' },
@@ -106,8 +107,7 @@ const en: Copy = {
       ['Company', [['About us', '/about'], ['Contact', '/contact'], ['Careers', '/careers'], ['Affiliate Program', '/affiliates'], ['Vendor program', '/contact']]],
       ['Legal', [['Terms of service', '/legal/terms'], ['Acceptable use', '/legal/acceptable-use'], ['Privacy', '/legal/privacy'], ['Refunds', '/legal/refunds'], ['SLA', '/legal/sla'], ['Cookies', '/legal/cookies'], ['All legal documents', '/legal']]],
     ],
-    copyright: 'Progrid. All rights reserved.', builtOn: 'Built on open source: Proxmox VE, Ceph, Temporal, NATS',
-    providedBy: 'Services on this site are provided by Progrid Technologies LLC.',
+    copyright: 'Progrid Arabia. All rights reserved.', builtOn: 'Built on open source: Proxmox VE, Ceph, Temporal, NATS',
     geoCredit: 'IP geolocation by DB-IP',
   },
 };
@@ -159,7 +159,7 @@ const tr: Copy = {
     lead: 'Saatlik faturalanır ve aylık fiyatı asla aşmaz. Bant genişliği dahil. Sürpriz kalem yok. Tüm fiyat listesi tek API çağrısı: ', leadCode: 'GET /v1/pricing',
     cols: ['Plan', 'vCPU', 'Bellek', 'NVMe depolama', 'Aylık'], vatCol: '%15 KDV dahil',
     popular: 'En popüler', unmanagedH3: 'Sunucular', managedH3: 'Yönetilen sunucular', managedLead: 'Aynı donanım artı kurulum, işletim sistemi güncellemeleri, güvenlik sıkılaştırma, günlük yedekler ve destek.',
-    note: 'Fiyatlar ABD doları cinsindendir. Uygulanan vergiler ödeme sırasında gösterilir. ',
+    note: "Fiyatlar ABD doları cinsindendir. Suudi Arabistan'daki müşteriler %15 KDV dahil SAR ile, diğer ülkelerdeki müşteriler USD ile faturalandırılır. ",
     noteTail: (p) => `Her sunucuya bir genel IP dahildir. Anlık görüntüler GB başına aylık ${p.snapshot}. Yedekler plan fiyatının %20’sidir ve yönetilen sunucularda dahildir. Destek planları aylık ${p.support} ile başlar. Uygulama Platformu örnekleri aylık ${p.app} ile başlar.`,
   },
   marketplace: { eyebrow: 'Uygulama Mağazası', h2: 'Fikirden çalışan uygulamaya tek tık.', lead: 'Her uygulama sertleştirilmiş bir imaj ve bir kurulum betiğidir. Git’ten derlenir, CVE taramasından geçer ve yayınlanmadan önce deneme kurulumu yapılır. Kendi uygulamanızı satıcı programıyla getirin, gelirin %70’i sizde kalsın.' },
@@ -184,8 +184,7 @@ const tr: Copy = {
       ['Şirket', [['Hakkımızda', '/about'], ['İletişim', '/contact'], ['Kariyer', '/careers'], ['Ortaklık programı', '/affiliates'], ['Satıcı programı', '/contact']]],
       ['Hukuki', [['Hizmet koşulları', '/legal/terms'], ['Kabul edilebilir kullanım', '/legal/acceptable-use'], ['Gizlilik', '/legal/privacy'], ['İadeler', '/legal/refunds'], ['SLA', '/legal/sla'], ['Çerezler', '/legal/cookies'], ['Tüm hukuki belgeler', '/legal']]],
     ],
-    copyright: 'Progrid. Tüm hakları saklıdır.', builtOn: 'Açık kaynak üzerine: Proxmox VE, Ceph, Temporal, NATS',
-    providedBy: 'Bu sitedeki hizmetler Progrid Technologies LLC tarafından sunulur.',
+    copyright: 'Progrid Arabia. Tüm hakları saklıdır.', builtOn: 'Açık kaynak üzerine: Proxmox VE, Ceph, Temporal, NATS',
     geoCredit: 'IP konum verisi: DB-IP',
   },
 };
@@ -237,7 +236,7 @@ const ar: Copy = {
     lead: 'فوترة بالساعة لا تتجاوز السعر الشهري أبدًا. نقل البيانات مشمول. لا بنود مفاجئة. وقائمة الأسعار كاملة في طلب واحد: ', leadCode: 'GET /v1/pricing',
     cols: ['الباقة', 'vCPU', 'الذاكرة', 'تخزين NVMe', 'شهريًا'], vatCol: 'شاملًا ضريبة 15%',
     popular: 'الأكثر طلبًا', unmanagedH3: 'الخوادم', managedH3: 'الخوادم المُدارة', managedLead: 'العتاد نفسه، ومعه الإعداد وتحديثات النظام والتحصين الأمني والنسخ الاحتياطي اليومي والدعم.',
-    note: 'الأسعار بالدولار الأمريكي. وتظهر أي ضريبة مستحقة عند الدفع. ',
+    note: 'الأسعار بالدولار الأمريكي. يُفوتر العملاء في المملكة العربية السعودية بالريال السعودي شاملًا ضريبة القيمة المضافة 15%، ويُفوتر العملاء في الدول الأخرى بالدولار الأمريكي. ',
     noteTail: (p) => `يشمل كل خادم عنوان IP عامًا. تكلفة اللقطات ${p.snapshot} لكل GB شهريًا. النسخ الاحتياطي 20% من سعر الباقة، ومشمول في الخوادم المُدارة. تبدأ باقات الدعم من ${p.support} شهريًا، وتبدأ نسخ منصة التطبيقات من ${p.app} شهريًا.`,
   },
   marketplace: { eyebrow: 'المتجر', h2: 'من الفكرة إلى تطبيق يعمل بنقرة واحدة.', lead: 'كل تطبيق صورة محصّنة مع نص إعداد. يُبنى من Git ويُفحص بحثًا عن الثغرات ويُجرَّب قبل نشره. وأضف تطبيقك عبر برنامج الموردين واحتفظ بـ 70% من الإيرادات.' },
@@ -262,8 +261,7 @@ const ar: Copy = {
       ['الشركة', [['من نحن', '/about'], ['تواصل معنا', '/contact'], ['الوظائف', '/careers'], ['برنامج الشركاء', '/affiliates'], ['برنامج الموردين', '/contact']]],
       ['قانوني', [['شروط الخدمة', '/legal/terms'], ['سياسة الاستخدام المقبول', '/legal/acceptable-use'], ['الخصوصية', '/legal/privacy'], ['الاسترداد والإلغاء', '/legal/refunds'], ['اتفاقية مستوى الخدمة', '/legal/sla'], ['ملفات تعريف الارتباط', '/legal/cookies'], ['جميع المستندات القانونية', '/legal']]],
     ],
-    copyright: 'Progrid. جميع الحقوق محفوظة.', builtOn: 'مبني على مصادر مفتوحة: Proxmox VE وCeph وTemporal وNATS',
-    providedBy: 'تقدّم Progrid Technologies LLC الخدمات على هذا الموقع.',
+    copyright: 'بروجريد العربية (Progrid Arabia). جميع الحقوق محفوظة.', builtOn: 'مبني على مصادر مفتوحة: Proxmox VE وCeph وTemporal وNATS',
     geoCredit: 'تحديد الموقع الجغرافي عبر DB-IP',
   },
 };
@@ -277,7 +275,7 @@ function cloneCopy(c: Copy): Copy {
   return out;
 }
 
-/** The same text with riyal prices and VAT, for the domain billed by Progrid Arabia. Currency only. */
+/** The same text with riyal prices and VAT, for progrid.sa. Currency only. */
 function inRiyals(lang: Lang, base: Copy): Copy {
   const c = cloneCopy(base);
   if (lang === 'en') {
@@ -288,7 +286,7 @@ function inRiyals(lang: Lang, base: Copy): Copy {
     c.agents.points[0] = ['Spending cap per token', 'A 50 SAR monthly cap means the agent cannot create a 65 SAR server. Ever.'];
     c.agents.codeCap = '// 50 SAR per month';
     c.pricing.h2 = 'Simple and predictable. Priced in riyals, with VAT shown before you pay.';
-    c.pricing.note = 'Prices are in riyals and exclude 15% VAT. The total with VAT is shown at checkout. ';
+    c.pricing.note = 'Prices are in riyals and exclude 15% VAT. The total with VAT is shown at checkout. Customers in Saudi Arabia are billed in SAR including 15% VAT; customers elsewhere are billed in USD. ';
   } else if (lang === 'tr') {
     c.hero.stats[1] = ['29 SAR / ay', 'Starter sunucu, saatlik faturalanır'];
     c.terminal.ready = 'WordPress https://185.0.113.42 adresinde hazır, saatlik ücret 0,04 SAR';
@@ -297,7 +295,7 @@ function inRiyals(lang: Lang, base: Copy): Copy {
     c.agents.points[0] = ['Token başına harcama limiti', 'Aylık 50 SAR limit, ajanın 65 SAR’lık sunucu oluşturamayacağı anlamına gelir. Asla.'];
     c.agents.codeCap = '// aylık 50 SAR';
     c.pricing.h2 = 'Basit ve öngörülebilir. Riyal fiyatlar, KDV ödemeden önce gösterilir.';
-    c.pricing.note = 'Fiyatlar riyal cinsindendir ve %15 KDV hariçtir. KDV dahil toplam ödeme sırasında gösterilir. ';
+    c.pricing.note = "Fiyatlar riyal cinsindendir ve %15 KDV hariçtir. KDV dahil toplam ödeme sırasında gösterilir. Suudi Arabistan'daki müşteriler %15 KDV dahil SAR ile, diğer ülkelerdeki müşteriler USD ile faturalandırılır. ";
   } else {
     c.hero.stats[1] = ['29 ريالًا شهريًا', 'خادم Starter بفوترة بالساعة'];
     c.terminal.ready = 'WordPress جاهز على https://185.0.113.42 بتكلفة 0.04 ريال في الساعة';
@@ -306,14 +304,14 @@ function inRiyals(lang: Lang, base: Copy): Copy {
     c.agents.points[0] = ['حد إنفاق لكل رمز', 'حد شهري قدره 50 ريالًا يعني أن الوكيل لا يستطيع إنشاء خادم بسعر 65 ريالًا. أبدًا.'];
     c.agents.codeCap = '// 50 ريالًا شهريًا';
     c.pricing.h2 = 'أسعار بسيطة ومتوقعة بالريال، وتظهر الضريبة قبل الدفع.';
-    c.pricing.note = 'الأسعار بالريال ولا تشمل ضريبة القيمة المضافة 15%. ويظهر الإجمالي شاملًا الضريبة عند الدفع. ';
+    c.pricing.note = 'الأسعار بالريال ولا تشمل ضريبة القيمة المضافة 15%. ويظهر الإجمالي شاملًا الضريبة عند الدفع. يُفوتر العملاء في المملكة العربية السعودية بالريال السعودي شاملًا ضريبة القيمة المضافة 15%، ويُفوتر العملاء في الدول الأخرى بالدولار الأمريكي. ';
   }
   return c;
 }
 
 const RIYALS: Record<Lang, Copy> = { en: inRiyals('en', en), tr: inRiyals('tr', tr), ar: inRiyals('ar', ar) };
 
-/** The site text: the same everywhere, with prices in the currency of the domain's company. */
+/** The site text: the same everywhere, with prices in the display currency of the domain. */
 export function getCopy(lang: Lang, site?: Site): Copy {
   return site === 'sa' ? RIYALS[lang] : BASE[lang];
 }

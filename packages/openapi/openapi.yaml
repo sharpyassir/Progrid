@@ -12,9 +12,13 @@ info:
     **Conventions**
     - Base URL: `https://api.progrid.co/v1` (primary). `https://api.progrid.sa/v1` is the same API
       for customers in Saudi Arabia; accounts and tokens work on both.
-    - Billing: a team's billing country decides the contracting company. Saudi Arabia is billed by
-      Progrid Arabia (SAR, 15% VAT, ZATCA e-invoice, Moyasar); every other country by Progrid
-      Technologies LLC (USD, Stripe). See `GET /billing/balance` and `GET /geo`.
+    - Billing: Progrid Arabia (Saudi Arabia) sells and invoices everything, on both domains, with a
+      ZATCA e-invoice in the PRGD-SA series, collected through Moyasar. The team's billing country
+      decides currency and VAT: Saudi Arabia pays SAR with 15% VAT; every other country pays USD at
+      0% VAT (zero-rated export of services), and those invoices also show the VAT and totals in SAR
+      with the exchange rate used. `billingEntity` is always `progrid_arabia` on new data; old
+      invoices of Progrid Technologies LLC (`progrid_llc`, PRGD-US) stay readable. See
+      `GET /billing/balance` and `GET /geo`.
     - Auth: `Authorization: Bearer prgd_…` (API token) or a console session JWT
     - Lists are cursor-paginated: `?limit=50&cursor=<id>` → `meta.next_cursor`
     - Mutations accept `Idempotency-Key` (replayed for 24h; same key + different body → 409)
@@ -342,7 +346,7 @@ paths:
     post:
       tags: [billing]
       summary: Start a card payment that becomes prepaid credit
-      description: Returns the hosted payment page of the team's billing company to send the person to. Progrid Arabia uses Moyasar (mada, Visa, Mastercard, Apple Pay); Progrid Technologies LLC uses Stripe Checkout. Agents cannot call this.
+      description: Returns the hosted payment page to send the person to, in the team's currency (SAR or USD). Progrid Arabia collects through Moyasar (mada, Visa, Mastercard, Apple Pay). Agents cannot call this.
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [amountMinor], properties: { amountMinor: { type: integer, description: "USD 5 to 5000, SAR 200 to 200000" } } } } } }
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Checkout" } } } }
@@ -350,7 +354,7 @@ paths:
     post:
       tags: [billing]
       summary: Pay an open invoice by card
-      description: The payment goes to the company that issued the invoice, in the invoice's currency.
+      description: The payment goes to Progrid Arabia in the invoice's currency (also for an old open PRGD-US invoice of Progrid Technologies LLC).
       parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Checkout" } } } }
@@ -368,12 +372,12 @@ paths:
   /billing/payments/moyasar/callback:
     get: { tags: [billing], security: [], summary: Moyasar callback after the hosted page (result verified by retrieving the invoice), responses: { "302": { description: Redirect to the console } } }
   /billing/payments/stripe/webhook:
-    post: { tags: [billing], security: [], summary: "Stripe webhook for Progrid Technologies LLC (checkout.session events, verified with the Stripe-Signature header and a session fetch)", responses: { "200": { description: OK }, "401": { description: Bad signature } } }
+    post: { tags: [billing], security: [], summary: "Stripe webhook, only with PAYMENT_PROVIDER=stripe (not used; checkout.session events, verified with the Stripe-Signature header and a session fetch)", responses: { "200": { description: OK }, "401": { description: Bad signature } } }
   /billing/payments/stripe/callback:
     get:
       tags: [billing]
       security: []
-      summary: Stripe Checkout return URL (result verified by retrieving the session)
+      summary: Stripe Checkout return URL, only with PAYMENT_PROVIDER=stripe (not used)
       parameters: [{ name: session_id, in: query, required: true, schema: { type: string } }]
       responses: { "302": { description: Redirect to the console } }
   /geo:
@@ -384,7 +388,7 @@ paths:
       description: |
         SA on the progrid.sa domain, otherwise the country of the caller's address from a local
         DB-IP Lite database, otherwise US. Only a suggestion: the billing country the person picks
-        decides the billing company.
+        decides currency and VAT. The company is always Progrid Arabia, whatever the domain.
       responses:
         "200":
           description: OK
@@ -396,8 +400,10 @@ paths:
                   country: { type: string, example: US }
                   source: { type: string, enum: [domain, ip, default] }
                   billingEntity: { $ref: "#/components/schemas/BillingEntityId" }
-                  legalName: { type: string, example: Progrid Technologies LLC }
-                  currency: { type: string, enum: [USD, SAR] }
+                  legalName: { type: string, example: Progrid Arabia }
+                  currency: { type: string, enum: [USD, SAR], description: "SAR for SA, USD otherwise" }
+                  taxRate: { type: number, description: "0.15 for SA, 0 otherwise" }
+                  vatCategory: { type: string, enum: [standard, zero_rated_export] }
                   database: { type: boolean, description: Whether a country database is loaded }
   /pricing:
     get:
@@ -416,7 +422,9 @@ paths:
                   currency: { type: string }
                   baseCurrency: { type: string, enum: [SAR] }
                   fxRate: { type: number, description: Book (SAR) to currency rate used for this response }
-                  taxRate: { type: number, description: "Tax the billing company of this currency adds: 0.15 for SAR (Progrid Arabia), 0 by default for USD (Progrid Technologies LLC)" }
+                  taxRate: { type: number, description: "VAT for customers billed in this currency: 0.15 for SAR (billing country Saudi Arabia), 0 for USD (zero-rated export of services)" }
+                  vatRate: { type: number, description: Saudi VAT rate (0.15) }
+                  vatNote: { type: string }
                   hoursPerMonth: { type: integer }
                   data: { type: array, items: { type: object, properties: { resourceType: { type: string }, sku: { type: string }, unit: { type: string }, monthlyMinor: { type: integer }, hourlyMinor: { type: integer }, size: { $ref: "#/components/schemas/Size" } } } }
 
@@ -1099,9 +1107,11 @@ paths:
                   billingEntity: { $ref: "#/components/schemas/BillingEntity" }
                   pendingChange:
                     type: [object, "null"]
-                    description: A change of billing company approved by Progrid staff, effective at the start of a billing period
+                    description: A change of billing country into or out of Saudi Arabia (a change of currency), effective on the first day of the next month
                     properties:
                       country: { type: string }
+                      currency: { type: string, enum: [USD, SAR] }
+                      vat: { type: object, properties: { rate: { type: number }, category: { type: string, enum: [standard, zero_rated_export] }, note: { type: [string, "null"] } } }
                       billingEntity: { $ref: "#/components/schemas/BillingEntity" }
                       effectiveAt: { type: string, format: date-time }
   /billing/usage:
@@ -1111,9 +1121,9 @@ paths:
       parameters: [{ $ref: "#/components/parameters/project" }, { name: from, in: query, schema: { type: string, format: date-time } }, { name: to, in: query, schema: { type: string, format: date-time } }]
       responses: { "200": { description: OK } }
   /billing/invoices:
-    get: { tags: [billing], summary: List invoices, responses: { "200": { description: OK } } }
+    get: { tags: [billing], summary: List invoices, responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/Invoice" } } } } } } } } }
   /billing/invoices/{id}:
-    get: { tags: [billing], summary: Get an invoice with its usage lines, parameters: [{ $ref: "#/components/parameters/id" }], responses: { "200": { description: OK } } }
+    get: { tags: [billing], summary: Get an invoice with its usage lines, payments and credit notes, parameters: [{ $ref: "#/components/parameters/id" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Invoice" } } } } } }
 
   /webhooks:
     get: { tags: [webhooks], summary: List webhooks, responses: { "200": { description: OK } } }
@@ -1631,25 +1641,55 @@ components:
     BillingEntityId:
       type: string
       enum: [progrid_arabia, progrid_llc]
-      description: "The contracting and invoicing company: progrid_arabia for billing country SA, progrid_llc for every other country."
+      description: "The contracting and invoicing company: always progrid_arabia on new data. progrid_llc (Progrid Technologies LLC) only appears on old invoices and credit notes (PRGD-US, CN-US). Kept for compatibility."
     BillingEntity:
       type: object
+      description: Progrid Arabia, with the team's currency and VAT treatment.
       properties:
         id: { $ref: "#/components/schemas/BillingEntityId" }
-        legalName: { type: string, example: Progrid Technologies LLC }
-        country: { type: string, example: US }
+        legalName: { type: string, example: Progrid Arabia }
+        country: { type: string, example: SA, description: Country of incorporation }
+        currency: { type: string, enum: [USD, SAR], description: "The team's currency: SAR for billing country SA, USD otherwise" }
+        taxRate: { type: number, example: 0.15, description: "0.15 for billing country SA, 0 otherwise" }
+        taxLabel: { type: string, example: VAT }
+        vatCategory: { type: string, enum: [standard, zero_rated_export] }
+        taxNote: { type: [string, "null"], example: Zero-rated export of services }
+        supportEmail: { type: string, format: email, example: support@progrid.sa }
+        termsUrl: { type: string, format: uri, example: "https://progrid.sa/legal/terms" }
+        domain: { type: [string, "null"], example: progrid.sa }
+        consoleUrl: { type: string, format: uri, example: "https://console.progrid.sa" }
+    Invoice:
+      type: object
+      properties:
+        id: { type: string }
+        number: { type: string, example: PRGD-SA-2026-00042, description: "PRGD-SA-YYYY-NNNNN; history: PRGD-US-YYYY-NNNNN (Progrid Technologies LLC), PRGD-YYYY-NNNNNN (before 2026-10)" }
+        billingEntity: { $ref: "#/components/schemas/BillingEntityId" }
         currency: { type: string, enum: [USD, SAR] }
-        taxRate: { type: number, example: 0 }
-        taxLabel: { type: string, example: Tax }
-        supportEmail: { type: string, format: email, example: support@progrid.co }
-        termsUrl: { type: string, format: uri, example: "https://progrid.co/legal/terms" }
-        domain: { type: [string, "null"], example: progrid.co }
-        consoleUrl: { type: string, format: uri, example: "https://console.progrid.co" }
+        periodStart: { type: string, format: date-time }
+        periodEnd: { type: string, format: date-time }
+        subtotalMinor: { type: integer }
+        discountMinor: { type: integer }
+        taxMinor: { type: integer, description: "VAT: 15% for billing country SA, 0 otherwise" }
+        creditMinor: { type: integer }
+        totalMinor: { type: integer }
+        creditedMinor: { type: integer }
+        status: { type: string, enum: [draft, open, paid, void, uncollectible, credited] }
+        eInvoiceType: { type: [string, "null"], example: zatca }
+        vatCategory: { type: [string, "null"], enum: [standard, zero_rated_export, null] }
+        taxNote: { type: [string, "null"], example: Zero-rated export of services }
+        fxRateSar: { type: [string, "null"], example: "3.750000", description: "SAR per one unit of the invoice currency at issue (1 for SAR). Null on invoices issued before 2026-10-12." }
+        subtotalSarMinor: { type: [integer, "null"] }
+        taxSarMinor: { type: [integer, "null"], description: The VAT amount in SAR (ZATCA) }
+        totalSarMinor: { type: [integer, "null"] }
+        dueAt: { type: [string, "null"], format: date-time }
+        paidAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        creditNotes: { type: array, items: { type: object, properties: { id: { type: string }, number: { type: string, example: CN-SA-2026-00003 }, amountMinor: { type: integer }, reason: { type: string }, createdAt: { type: string, format: date-time } } } }
     Checkout:
       type: object
       properties:
         paymentId: { type: string }
-        provider: { type: string, enum: [moyasar, stripe, fake] }
+        provider: { type: string, enum: [moyasar, stripe, fake], description: "moyasar in production; stripe only with PAYMENT_PROVIDER=stripe (not used)" }
         amountMinor: { type: integer }
         currency: { type: string, enum: [USD, SAR] }
         billingEntity: { $ref: "#/components/schemas/BillingEntityId" }
@@ -1713,9 +1753,9 @@ components:
           type: string
           pattern: "^[A-Z]{2}$"
           description: |
-            Billing country (ISO 3166-1 alpha-2). SA is billed by Progrid Arabia in SAR, every other
-            country by Progrid Technologies LLC in USD. Omitted: SA on the progrid.sa domain, else
-            the country of the caller's address, else US.
+            Billing country (ISO 3166-1 alpha-2). Progrid Arabia bills every account; SA pays SAR with
+            15% VAT, every other country USD at 0% (zero-rated export of services). Omitted: SA on the
+            progrid.sa domain, else the country of the caller's address, else US.
         locale: { type: string, enum: [en, tr, ar] }
         acceptTerms:
           type: boolean

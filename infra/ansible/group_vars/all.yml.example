@@ -51,18 +51,12 @@ pve_manage_cluster_firewall: false  # true writes /etc/pve/firewall/cluster.fw (
 control_plane_cidr: 10.0.0.0/12     # management network that may reach platform agents; must not overlap the tenant pool (10.96.0.0/12)
 company_name: Progrid                # brand on PDFs and mails
 # Billing companies. Leave a value empty until the owner provides it: invoices print a placeholder.
-entity_llc_legal_name: Progrid Technologies LLC
-entity_llc_address: ""              # registered address in the United States
-entity_llc_ein: ""                  # EIN from the IRS
-entity_llc_tax_rate: 0              # 0 prints no tax line; set only on advice
-entity_llc_bank_details: ""         # bank transfer instructions, lines separated by |
 entity_arabia_legal_name: Progrid Arabia
 entity_arabia_address: "Riyadh, Kingdom of Saudi Arabia"
 entity_arabia_cr: ""                # commercial registration number
 entity_arabia_vat_number: ""        # 15 digit VAT registration number
 entity_arabia_bank_details: ""
-payment_provider: moyasar           # Progrid Arabia (SAR); fake only on a demo box, it hands out free credit
-payment_provider_llc: stripe        # Progrid Technologies LLC (USD); fake only on a demo box
+payment_provider: moyasar           # Progrid Arabia, SAR and USD; fake only on a demo box, it hands out free credit
 dns_provider: powerdns              # fake only on a demo box
 dns_nameservers: ns1.progrid.sa,ns2.progrid.sa
 object_storage_provider: rgw        # fake only on a demo box
@@ -118,8 +112,7 @@ connect_network_allowlist: ""            # admin only: private CIDRs or hosts ag
 # vault_mail_api_key: ...
 # vault_moyasar_secret_key: ...
 # vault_moyasar_webhook_secret: ...
-# vault_stripe_secret_key: ...          # Stripe secret key (sk_live_...) of Progrid Technologies LLC
-# vault_stripe_webhook_secret: ...      # signing secret (whsec_...) of the endpoint /v1/billing/payments/stripe/webhook
+# Stripe is not used (the US Stripe account belonged to Progrid Technologies LLC); no vault_stripe_* needed.
 # vault_support_inbound_secret: ...
 # vault_resend_webhook_secret: ""       # Resend webhook signing secret (whsec_...) for inbound support mail
 # vault_alertmanager_webhook_secret: ...  # shared secret for POST /internal/alerts/alertmanager

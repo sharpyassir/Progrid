@@ -5,11 +5,12 @@ import { useSearchParams } from 'next/navigation';
 import { api, ApiError, API_URL, Balance, getToken, money } from '@/lib/api';
 import { t, tf, type Locale } from '@/lib/i18n';
 import { normalizeCode } from '@/lib/referral';
+import { vatNoteKey } from '@/lib/countries';
 import { useShell } from '@/components/shell';
 import { StatusBadge } from '@/components/status-badge';
 
 interface UsageRow { resourceType: string; resourceId: string; unit: string; quantity: number; amountMinor: number; currency: string }
-interface Invoice { id: string; number: string; currency: string; totalMinor: number; status: string; periodStart: string; dueAt: string | null; paidAt: string | null; eInvoiceType: string | null }
+interface Invoice { id: string; number: string; currency: string; totalMinor: number; taxMinor?: number; status: string; periodStart: string; dueAt: string | null; paidAt: string | null; eInvoiceType: string | null; taxNote?: string | null; fxRateSar?: string | null; taxSarMinor?: number | null; totalSarMinor?: number | null }
 interface Payment { id: string; provider: string; currency: string; amountMinor: number; status: string; failureReason: string | null; createdAt: string; invoice: { number: string } | null }
 
 const PRESETS: Record<string, number[]> = { USD: [1000, 2500, 5000, 10000], SAR: [5000, 10000, 25000, 50000] };
@@ -70,10 +71,12 @@ function BillingPage() {
         <section className="card space-y-1 text-sm">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="font-medium">{t(locale, 'billedBy')}: {balance.billingEntity.legalName}</h2>
-            <span className="text-xs text-neutral-500">{t(locale, 'billingCountry')}: {balance.billingCountry} · {balance.billingEntity.currency}</span>
+            <span className="text-xs text-neutral-500">{t(locale, 'billingCountry')}: {balance.billingCountry} · {balance.currency}</span>
           </div>
-          <p className="text-neutral-600 dark:text-neutral-400">{t(locale, balance.billingEntity.id === 'progrid_arabia' ? 'entityNote_progrid_arabia' : 'entityNote_progrid_llc')}</p>
-          {balance.pendingChange && <p className="text-amber-700 dark:text-amber-400">{t(locale, 'entityPending').replace('{date}', new Date(balance.pendingChange.effectiveAt).toLocaleDateString(locale)).replace('{company}', balance.pendingChange.billingEntity.legalName)}</p>}
+          {/* Currency and VAT of the team: SAR with 15% VAT in Saudi Arabia, USD at 0% (zero-rated export) elsewhere. */}
+          <p className="font-medium">{t(locale, vatNoteKey(balance.billingEntity.vatCategory ?? (balance.currency === 'SAR' ? 'standard' : 'zero_rated_export')))}</p>
+          <p className="text-neutral-600 dark:text-neutral-400">{t(locale, 'entityNote')}</p>
+          {balance.pendingChange && <p className="text-amber-700 dark:text-amber-400">{t(locale, 'entityPending').replace('{date}', new Date(balance.pendingChange.effectiveAt).toLocaleDateString(locale)).replace('{country}', balance.pendingChange.country).replace('{currency}', t(locale, vatNoteKey(balance.pendingChange.currency === 'SAR' ? 'standard' : 'zero_rated_export')))}</p>}
           <p className="text-xs text-neutral-500">{t(locale, 'entityChangeHint')} <a className="underline" href={balance.billingEntity.termsUrl} target="_blank" rel="noreferrer">{t(locale, 'termsLink')}</a> · {balance.billingEntity.supportEmail}</p>
         </section>
       )}
@@ -117,7 +120,12 @@ function BillingPage() {
                 <td className="px-4 py-2 font-mono">{i.number}</td>
                 <td className="px-4 py-2 text-neutral-500">{i.periodStart.slice(0, 7)} {i.eInvoiceType && `· ${i.eInvoiceType}`}</td>
                 <td className="px-4 py-2"><StatusBadge status={i.status === 'paid' ? 'active' : i.status === 'open' ? 'pending' : i.status} /> {i.status === 'open' && i.dueAt && <span className="ms-1 text-xs text-neutral-500">due {new Date(i.dueAt).toLocaleDateString(locale)}</span>}</td>
-                <td className="px-4 py-2 text-end font-medium">{money(i.totalMinor, i.currency, locale)}</td>
+                <td className="px-4 py-2 text-end font-medium">
+                  {money(i.totalMinor, i.currency, locale)}
+                  {/* USD invoices also carry the VAT and total in SAR at the rate used (ZATCA). */}
+                  {i.currency !== 'SAR' && i.fxRateSar && i.totalSarMinor !== null && i.totalSarMinor !== undefined && <span className="block text-xs font-normal text-neutral-500">{money(i.totalSarMinor, 'SAR', locale)} · VAT {money(i.taxSarMinor ?? 0, 'SAR', locale)} · 1 {i.currency} = {Number(i.fxRateSar).toFixed(4)} SAR</span>}
+                  {i.taxNote && <span className="block text-xs font-normal text-neutral-500">{i.taxNote}</span>}
+                </td>
                 <td className="px-4 py-2 text-end whitespace-nowrap">
                   <button className="btn-ghost me-1" onClick={() => openPdf(i)}>PDF</button>
                   {i.status === 'open' && <button className="btn-primary" disabled={busy} onClick={() => go(() => api(`/v1/billing/invoices/${i.id}/pay`, { method: 'POST', idempotent: true }))}>Pay</button>}

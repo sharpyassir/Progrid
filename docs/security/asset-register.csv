@@ -52,7 +52,7 @@ AS-50,Provider account: Hetzner (Robot / Cloud console),IaaS account,"Dedicated 
 AS-51,Provider account: GitHub organisation/user,SaaS account,"Repository, Actions, packages, GitHub App",[Engineering lead],Restricted,GitHub,n/a,Critical
 AS-52,Domain registrar and DNS for progrid.co and progrid.sa,Service,"Apex, console, api, ops, gateway, www records; CAA",[Operations lead],Restricted,[Registrar(s) — to be recorded],Zone export [to file],Critical
 AS-53,Mail provider accounts (Resend; Postmark if enabled),SaaS account,Sending and receiving for both domains,[Operations lead],Confidential,Resend / Postmark,n/a,High
-AS-54,"Payment provider accounts (Stripe for the LLC, Moyasar for Progrid Arabia)",SaaS account,Merchant accounts,[Finance lead],Restricted,Stripe / Moyasar,n/a,Critical
+AS-54,"Payment provider account (Moyasar, Progrid Arabia, SAR and USD; the LLC's Stripe account is no longer used)",SaaS account,Merchant accounts,[Finance lead],Restricted,Moyasar,n/a,Critical
 AS-55,"Anthropic, Twilio, Google Cloud (OAuth), Microsoft Entra (OAuth), Infisical (if used) accounts",SaaS account,Supporting services,[Engineering lead],Confidential,Providers,n/a,Medium
 AS-56,Website and legal documents,Information,"apps/www content; privacy, DPA, subprocessors, terms per entity",[Privacy lead],Public,Repository; website,Git,Medium
 AS-57,ISMS documents and evidence,Information,docs/security and evidence locations,[Security owner],Confidential,Repository; evidence stores,Git,High

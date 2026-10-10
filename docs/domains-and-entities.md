@@ -1,22 +1,41 @@
-# Domains and billing entities
+# Domains and the billing entity
 
-Progrid is one global brand on one platform: one database, one account system, one set of apps.
-Two domains and two companies sit on top of it.
+Progrid is one global brand on one platform: one database, one account system, one set of apps,
+two domains and **one contracting company: Progrid Arabia**, a Saudi company. It sells and
+invoices everything, to every customer, on both domains. Progrid Technologies LLC (the US
+company that billed customers outside Saudi Arabia until 2026-10) no longer contracts; its
+invoices stay in the system for the history.
 
 | | progrid.co | progrid.sa |
 |---|---|---|
 | Role | Primary, global | Local storefront for Saudi Arabia |
 | Hosts | progrid.co, www, console, api, ops, gateway | the same hosts on progrid.sa |
-| Contracting company | Progrid Technologies LLC (United States) | Progrid Arabia (Saudi Arabia) |
-| Who it bills | Every account created on progrid.co | Every account created on progrid.sa |
-| Currency | USD | SAR |
-| Tax on invoices | None by default (`ENTITY_LLC_TAX_RATE`, 0) | VAT 15% |
-| E-invoicing | None | ZATCA (Fatoora) through the e-invoicing provider |
-| Card gateway | Stripe | Moyasar (mada, Visa, Mastercard, Apple Pay) |
-| Invoice series | `PRGD-US-YYYY-NNNNN`, credit notes `CN-US-...` | `PRGD-SA-YYYY-NNNNN`, credit notes `CN-SA-...` |
-| Mail sender | `Progrid <no-reply@progrid.co>` | `Progrid <no-reply@progrid.sa>` |
-| Support inbox | support@progrid.co | support@progrid.sa |
-| Legal pages | progrid.co/legal/* (LLC, governing law to be confirmed) | progrid.sa/legal/* (Saudi law) |
+| Contracting company | Progrid Arabia | Progrid Arabia |
+| Decides billing | No | No |
+
+The domain decides nothing about billing. The **billing country** of the team does:
+
+| Billing country | Currency | VAT | Note on the invoice |
+|---|---|---|---|
+| Saudi Arabia (SA) | SAR | 15% (standard rate) | |
+| Any other country | USD | 0% | "Zero-rated export of services"; VAT and totals also shown in SAR with the exchange rate used |
+
+> **To be confirmed by the tax advisor:** the 0% treatment of customers outside Saudi Arabia as a
+> zero-rated export of services (whether every service and every customer qualifies, for example
+> customers that have a place of residence in Saudi Arabia, and what evidence of the customer's
+> location must be kept). The code applies the rule by billing country only
+> (`vatFor` in `apps/api/src/common/entities/entities.ts`); change it there if the advisor says so.
+
+Common to everything:
+
+| | |
+|---|---|
+| E-invoicing | ZATCA (Fatoora) through the e-invoicing provider, every new invoice (`eInvoiceType: zatca`) |
+| Card gateway | Moyasar (mada, Visa, Mastercard, Apple Pay), SAR and USD |
+| Invoice series | `PRGD-SA-YYYY-NNNNN`, credit notes `CN-SA-YYYY-NNNNN` (every new document) |
+| Mail sender | `Progrid <no-reply@progrid.sa>` (`ENTITY_ARABIA_MAIL_FROM`) |
+| Support inbox | support@progrid.sa and support@progrid.co (`SUPPORT_INBOX`) |
+| Legal pages | the same Progrid Arabia documents on both domains (Saudi law) |
 
 Accounts work on both domains. A customer can sign in on console.progrid.co or console.progrid.sa
 with the same email; only the website redirects by country.
@@ -40,12 +59,12 @@ only Caddy reaches them.
 - The build time `NEXT_PUBLIC_*` values are only the fallback for other hosts (local runs, previews).
   They default to progrid.co.
 
-**API.** Customer facing links follow the customer's company (`apps/api/src/common/entities/entities.ts`):
+**API.** Customer facing links follow Progrid Arabia (`apps/api/src/common/entities/entities.ts`):
 
-- Mail: the sender, reply address, logo and console links of the team's company. Links built on
-  the primary console are rewritten to the company's console.
+- Mail: Progrid Arabia's sender, reply address, logo and console links (`console.progrid.sa`).
+  Links built on the primary console are rewritten to it. Accounts work on both consoles.
 - Browser redirects (payment return, OAuth return, verification and reset links) go back to the
-  console the person used, when it is one of ours, else to the company's console. Sessions live in
+  console the person used, when it is one of ours, else to Progrid Arabia's console. Sessions live in
   the browser storage of one origin, so this keeps people signed in.
 - API responses (Connect run endpoints and webhook URLs, deploy hooks, managed install commands,
   terminal gateway URLs) use the API host the request came through.
@@ -93,96 +112,161 @@ official file (`country.iso_code`) and the ip-location-db build (`country_code`)
   by hand (workflow_dispatch), or mount a fresh file at `GEOIP_DB_PATH`. The reader notices a
   changed file without a restart.
 
-## Billing entities
+## Billing
 
-**Rule.** The company follows the **domain the account was created on**: progrid.sa is Progrid
-Arabia (SAR, 15% VAT, its own invoice series and books), progrid.co is Progrid Technologies LLC
-(USD, the US ledger). The billing country is only the invoice address and never moves an account.
-On hosts that are not a public domain (development, the integration suite) the country decides
-as before (`entityForSignup` in `common/entities/entities.ts`). The currency follows the company. TRY does not exist in the schema (only USD and SAR), so there is nothing to
-keep or hide.
+**Company.** Every team is Progrid Arabia's (`billingEntity: progrid_arabia`). The field stays on
+teams, invoices, credit notes and API responses for compatibility. `progrid_llc` stays in the
+database enum only for the history; nothing assigns it any more (`BILLING_ENTITIES` lists Progrid
+Arabia alone, and the PRGD-US / CN-US sequences are not in the list of sequences new documents may
+use, `billing/sequences.ts`).
 
 **Signup** asks for the billing country. The console prefills it from `GET /v1/geo`: SA on the
-progrid.sa domain, otherwise the country of the caller's address from the same DB-IP database,
-otherwise US. The person can pick any country; it is the invoice address. Social sign up passes
-the domain it started on, so a Google or Microsoft account gets the company of that domain. A signup without a country (CLI, older clients)
-gets the same default.
+progrid.sa domain, otherwise the country of the caller's address from the DB-IP database, otherwise
+US. That is only a guess of the address; the person picks the country, and the country sets the
+currency (SA: SAR, else USD). The signup page shows what it means ("SAR · 15% VAT" or "USD · 0%
+VAT, zero-rated export of services"). Social sign up does the same. A signup without a country
+(CLI, older clients) gets the suggested one.
 
-**Stored** on the team (`billingEntity`), on every invoice and on every credit note. Migration
-`20261004100000_billing_entities` sets existing teams by country (SA: Progrid Arabia, others: the
-LLC) and marks every existing invoice and credit note as Progrid Arabia, the only company that
-existed when they were issued. Old invoices keep their numbers (`PRGD-2026-000123`). A team whose
-stored currency does not match its new company keeps its currency; find them with
-`SELECT id, country, currency, "billingEntity" FROM prgd_teams WHERE ("billingEntity" = 'progrid_llc') <> (currency = 'USD');`
-and move them with the back office change below.
+**Changing the billing country.** Customers change it on the Team page; finance staff in the back
+office (team page, "Billing country and currency", or
+`POST /admin/v1/teams/:id/billing-country { country, currency?, reason }`).
 
-**Changing company** is staff only (finance role): back office, team page, "Billing country and
-company", or `POST /admin/v1/teams/:id/billing-country { country, billingEntity?, reason }`. A
-country change on its own applies at once and keeps the company; `billingEntity` moves the team. A change of company is scheduled for the first day of the next
-month: the current month is rated and invoiced by the old company, usage from that day is rated in
-the new currency, and the monthly invoice run folds the change into the team. Every step is in the
-audit log (`admin.team_billing_entity_scheduled`, `team.billing_entity_changed`). Credit left in the
-old currency is not converted; refund it or reissue it by hand. Customers change their billing
-country freely; it never changes their company.
+- A change that keeps the currency (DE to US, or within Saudi Arabia) applies at once.
+- A change into or out of Saudi Arabia changes the currency, so it is **scheduled for the first day
+  of the next month**: the team keeps its country, currency and VAT for the current month, usage
+  from that day is rated in the new currency, and the monthly invoice run folds the change into the
+  team. The pending change is in `pendingCountry`, `pendingCurrency` and `billingChangeAt` (the
+  columns of the old company change, `pendingBillingEntity` is gone), shown on the billing page and
+  in `GET /v1/billing/balance` (`pendingChange`). Changing back before the date cancels it; staff
+  can cancel with `POST /admin/v1/teams/:id/billing-country/cancel`.
+- Staff may pass `currency` to keep a team on a currency that differs from its country's, for
+  example while it still holds credit in that currency.
+- Credit left in the old currency is not converted and is not spent on invoices in the new one
+  (`GET /v1/billing/balance` counts only credit in the team's currency); refund or reissue it by hand.
+  The staff endpoint answers with `creditLeftInOldCurrencyMinor`.
+- Audit log: `team.billing_currency_scheduled` (customer), `admin.team_billing_country_set`,
+  `admin.team_billing_currency_scheduled`, `admin.team_billing_change_cancelled`,
+  `team.billing_currency_changed` (applied).
 
-**Invoices and PDFs** carry the company's legal name, address, registration numbers and tax
-number, its series, currency and tax line, "TAX INVOICE" and the ZATCA note for Progrid Arabia,
-payment instructions (card on the company's console, bank details when set) and its terms. The
-e-invoicing hand off (`eInvoiceType: zatca`) is set only for Progrid Arabia.
+**Invoices** (`billing/invoices.service.ts`, `billing/invoice-pdf.ts`): Progrid Arabia's legal
+name, address, CR and VAT number, "TAX INVOICE", the `PRGD-SA` series and the ZATCA hand off on
+every new invoice. VAT follows the billing country in force for the period: 15% for SA
+(`vatCategory: standard`), 0% otherwise (`vatCategory: zero_rated_export`, `taxNote: "Zero-rated
+export of services"`, printed under the totals and in the footer). Every new invoice stores the
+exchange rate it used, `fxRateSar` (SAR per one unit of the invoice currency, 1 for SAR, else the
+USD to SAR rate from `FxService` at the time of issue), and `subtotalSarMinor`, `taxSarMinor` (the
+VAT amount in SAR, which ZATCA requires on an invoice in another currency) and `totalSarMinor`.
+A USD invoice prints "In SAR at 1 USD = 3.7500 SAR (rate of <issue date>)" with the SAR subtotal,
+VAT and total due. Invoices issued before this change have these fields empty.
 
-**Payments** go to the company of the invoice (or of the team for a top up): Moyasar with
-`MOYASAR_*` for Progrid Arabia, Stripe Checkout with `STRIPE_*` for the LLC. Stripe webhook:
-`https://api.progrid.co/v1/billing/payments/stripe/webhook`, events `checkout.session.completed`,
-`checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`,
-`checkout.session.expired`.
+**Credit notes** follow the same rules: `CN-SA` series, issued by Progrid Arabia, the VAT part of
+the amount in proportion to the invoice (`taxMinor`), the invoice's VAT category and note, and the
+SAR amount and VAT at the invoice's rate.
 
-**Prices.** The price book is in SAR. USD prices are the SAR prices converted at the stored
-USD to SAR rate (`FX_USD_SAR`, 3.75, the peg) at the hour of usage, rounded to the cent per hour.
-This covers every SKU, including the Connect token prices. The website on progrid.co shows USD,
-progrid.sa shows SAR with VAT.
+**Prices.** The price book is in SAR. USD prices are the SAR prices converted at the stored USD to
+SAR rate (`FX_USD_SAR`, 3.75, the peg) at the hour of usage, rounded to the cent per hour. The
+website on progrid.co shows USD, progrid.sa shows SAR with VAT.
 
-**Back office:** teams and invoices filter by company, the finance page shows invoiced, collected
-and open amounts per company and month (`GET /admin/v1/finance/entities?month=YYYY-MM`).
+**Payments** all go to Progrid Arabia through `PAYMENT_PROVIDER` (Moyasar in production), in the
+currency of the team (top up) or the invoice (pay). The Moyasar adapter sends the currency with each
+hosted invoice, so USD is charged in USD; **the Moyasar merchant account must be enabled for USD**
+(confirm with Moyasar before switching it on; until then customers outside Saudi Arabia can pay by
+bank transfer, recorded by finance). Stripe is not used: the US Stripe account belonged to Progrid
+Technologies LLC. The generic Stripe adapter stays behind `PAYMENT_PROVIDER=stripe` for a future
+Stripe account of Progrid Arabia; its webhook and callback routes only matter then. Refunds go back
+through the provider that took the payment: an old Stripe payment of the LLC can only be refunded
+with the LLC's `STRIPE_*` keys, or by hand.
+
+**Back office:** the teams and invoices lists still filter by company (`progrid_llc` finds the
+history), the finance page shows Progrid Arabia per currency and month, and Progrid Technologies LLC
+only for months in which it still has invoices, open amounts or payments
+(`GET /admin/v1/finance/entities?month=YYYY-MM`).
+
+## History: Progrid Technologies LLC
+
+From 2026-10-04 to the single entity migration, teams created on progrid.co were billed by
+Progrid Technologies LLC in USD, in the `PRGD-US-YYYY-NNNNN` series (credit notes `CN-US-...`),
+paid through Stripe. What stays:
+
+- Every invoice and credit note it issued keeps `billingEntity: progrid_llc` and its number, and can
+  be listed and downloaded as before. The PDF is rendered again from the stored figures with the name
+  "Progrid Technologies LLC" and "United States"; its EIN and address are no longer configured, so
+  **the PDF sent at the time is the record**.
+- An LLC invoice cannot get a credit note any more (the request is refused); void an unpaid one, and
+  settle a paid one by hand.
+- An LLC invoice that is still open is paid through Progrid Arabia's gateway (Moyasar) in USD. The
+  accountant settles that money between the two companies (see below).
+- Affiliate payouts paid by the LLC against a US tax form stay on record with their withholding
+  (docs/affiliates-tax.md).
+- Older invoices from before billing entities keep their numbers (`PRGD-2026-000123`).
+
+### Migration `20261012100000_single_entity`
+
+1. Adds `prgd_teams.pendingCurrency`, the VAT and SAR columns on invoices and credit notes, and
+   makes `progrid_arabia` the default company.
+2. Clears every pending change of company (`pendingCountry`, `billingChangeAt`, and drops
+   `pendingBillingEntity`). Scheduled moves between the companies no longer mean anything; if one
+   also carried a new country, staff set the country again. List them **before** deploying:
+   `SELECT id, country, "pendingCountry", "pendingBillingEntity", "billingChangeAt" FROM prgd_teams WHERE "pendingBillingEntity" IS NOT NULL;`
+3. Currency from the country: a team whose currency is not its country's (SA: SAR, else USD) is
+   scheduled to switch on the first day of next month (`pendingCurrency`, `billingChangeAt`), so the
+   current month is invoiced in one currency. **A team that still holds money in its current
+   currency keeps it** and gets no scheduled change: unexpired credit with something left
+   (`prgd_credits.remainingMinor > 0`, the only balance there is), or an unpaid invoice (draft, open
+   or uncollectible with something due). Find them afterwards and move them by hand once the credit
+   is used or refunded:
+   `SELECT id, country, currency FROM prgd_teams WHERE currency <> (CASE WHEN country = 'SA' THEN 'SAR' ELSE 'USD' END)::prgd_currency AND "pendingCurrency" IS NULL;`
+4. Moves every team on `progrid_llc` to `progrid_arabia`.
+
+The data part of the migration is tested in `apps/api/test/integration/entities.it.ts` (run inside a
+transaction that is rolled back).
+
+**Rollout order for the change:** run the monthly invoice run for the last LLC month first if it is
+due (a period not yet invoiced when the migration runs is invoiced by Progrid Arabia in PRGD-SA,
+with the VAT rules above), deploy, run the queries above, settle open PRGD-US invoices with the
+accountant, and remove the `ENTITY_LLC_*`, `PAYMENT_PROVIDER_LLC` and `STRIPE_*` settings (and the
+Stripe webhook endpoint in the Stripe dashboard).
 
 ## Configuration
-
-New settings (all in `.env.example`, `infra/prod/prgd.env.example`, the Ansible template and
-`group_vars/all.yml.example`):
 
 | Setting | Purpose |
 |---|---|
 | `DOMAIN`, `DOMAIN_SA` | Caddy sites and certificates (compose, Ansible `domain`, `domain_sa`) |
 | `PRGD_DOMAIN`, `PRGD_DOMAIN_SA` | Website storefronts (compose passes them from `DOMAIN`, `DOMAIN_SA`) |
 | `WWW_URL` | Primary website |
-| `ENTITY_LLC_DOMAIN`, `ENTITY_ARABIA_DOMAIN` | Domain of each company; customer links use `console.X`, `api.X` |
-| `ENTITY_*_LEGAL_NAME`, `_ADDRESS`, `_EIN` / `_CR`, `_VAT_NUMBER`, `_BANK_DETAILS` | Printed on invoices; empty prints a placeholder |
-| `ENTITY_LLC_TAX_RATE`, `ENTITY_LLC_TAX_LABEL`, `ENTITY_ARABIA_VAT_RATE` | Tax line per company |
-| `ENTITY_*_SUPPORT_EMAIL`, `ENTITY_*_MAIL_FROM`, `ENTITY_*_TERMS_URL` | Mail and invoice footer per company |
-| `PAYMENT_PROVIDER_LLC`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_BASE_URL` | Stripe for the LLC |
+| `PRIMARY_DOMAIN` | progrid.co: the primary domain (CORS, links of requests made through it). Replaces `ENTITY_LLC_DOMAIN` |
+| `ENTITY_ARABIA_DOMAIN` | progrid.sa: Progrid Arabia's domain; customer mail and links use `console.X`, `api.X` |
+| `ENTITY_ARABIA_LEGAL_NAME`, `_ADDRESS`, `_CR`, `_VAT_NUMBER`, `_BANK_DETAILS` | Printed on invoices; empty prints a placeholder |
+| `ENTITY_ARABIA_VAT_RATE` | VAT for a Saudi billing country (0.15); other countries are 0% |
+| `ENTITY_ARABIA_SUPPORT_EMAIL`, `_MAIL_FROM`, `_TERMS_URL` | Mail and invoice footer |
+| `PAYMENT_PROVIDER` | `moyasar` in production (SAR and USD), `fake` in development; `stripe` is possible but not used |
+| `FX_USD_SAR`, `FX_PROVIDER_URL` | USD to SAR rate: prices, rating and the SAR figures on USD invoices |
 | `PRGD_OPS_URL_SA`, `PRGD_OPS_RP_ID_SA` | The ops console on progrid.sa |
 | `CORS_EXTRA_ORIGINS` | More origins allowed with credentials |
 | `GEOIP_DB_PATH` | DB-IP Lite database (api and www) |
 
-Changed defaults: `MAIL_FROM` and `SUPPORT_INBOX` are the progrid.co addresses (staff and system
-mail), `OAUTH_REDIRECT_BASE` is empty in production so the callback follows the domain, the gateway
-allows both ops origins, `COMPANY_NAME` is the brand ("Progrid"). `COMPANY_ADDRESS` and
-`COMPANY_TAX_ID` remain as fallbacks for Progrid Arabia's address and VAT number.
+Removed: every `ENTITY_LLC_*` setting and `PAYMENT_PROVIDER_LLC`. Left in a settings file they are
+ignored. `MAIL_FROM` and `SUPPORT_INBOX` are the progrid.co addresses (staff and system mail),
+`OAUTH_REDIRECT_BASE` is empty in production so the callback follows the domain, the gateway allows
+both ops origins, `COMPANY_NAME` is the brand ("Progrid"). `COMPANY_ADDRESS` and `COMPANY_TAX_ID`
+remain as fallbacks for Progrid Arabia's address and VAT number.
 
-## What the owner must provide
+## What the owner, the accountant and the tax advisor must confirm
 
 Nothing below is invented in the code: unset values print a bracketed placeholder or nothing.
 
-- **Progrid Technologies LLC:** exact legal name, state of organization, registered address, EIN,
-  bank details for transfers (optional), a Stripe account (live secret key and the webhook signing
-  secret), and counsel's choice of governing law and venue for the terms (marked
-  "[to be confirmed]" on progrid.co/legal/terms, acceptable use and privacy). Whether any US sales
-  tax applies; until then `ENTITY_LLC_TAX_RATE=0` and the invoices print no tax line and make no
-  tax claim.
-- **Progrid Arabia:** commercial registration (CR) number, VAT registration number, registered
-  address, bank details (optional), the Moyasar account (already used), and the e-invoicing
-  provider for ZATCA.
-- **Mail:** add progrid.co to Resend (sending and receiving) next to progrid.sa.
-- **OAuth:** add the progrid.co redirect URIs to the Google and Microsoft apps (below).
+- **Tax advisor:** the zero-rated export treatment (0% VAT) for every customer whose billing
+  country is not Saudi Arabia, the evidence of location to keep, and the wording of the invoice note.
+  Also whether Saudi withholding tax applies to affiliate commission paid to partners outside Saudi
+  Arabia (docs/affiliates-tax.md).
+- **Accountant:** open PRGD-US invoices at the cutover (collected by Progrid Arabia, or voided and
+  reissued), LLC credit and refunds of old Stripe payments, and the exchange rate source for the
+  SAR figures (`FX_PROVIDER_URL`, or the rate set by hand in the back office).
+- **Moyasar:** that the merchant account of Progrid Arabia accepts and settles USD.
+- **Progrid Arabia details:** CR number, VAT registration number, registered address, bank details
+  (optional) and the e-invoicing provider for ZATCA.
+- **Mail:** progrid.co in Resend (receiving for support@progrid.co) next to progrid.sa.
+- **OAuth:** the progrid.co redirect URIs in the Google and Microsoft apps (below).
 
 ## DNS records for progrid.co
 
@@ -211,22 +295,21 @@ the root that Resend displays. Keep the existing progrid.sa records.
   add `progrid.co` to the authorized domains.
 - Microsoft: `https://api.progrid.co/v1/auth/oauth/microsoft/callback` next to the progrid.sa one.
 
-## Rollout order
+## Rollout order (domains)
 
 1. **DNS first.** Create the progrid.co records above and wait until every host resolves
    (`dig +short` for each). Caddy cannot get certificates for hosts that do not resolve.
-2. **Provider settings.** Add the OAuth redirect URIs and the Stripe webhook endpoint (it can wait
-   until Stripe is live; until then keep `PAYMENT_PROVIDER_LLC=fake` only on a demo box, never in
-   production, or leave LLC card payments unavailable).
-3. **Configuration.** Set `domain: progrid.co` and `domain_sa: progrid.sa` and the entity details
-   in `group_vars`, put the Stripe secrets in the vault, run the playbook. It renders `prgd.env`
-   and copies the new Caddyfile.
-4. **Deploy.** Push to main (or run the deploy workflow). The migration adds the billing entity
-   columns and sequences.
+2. **Provider settings.** Add the OAuth redirect URIs. No Stripe endpoint: payments go through
+   Moyasar for both currencies.
+3. **Configuration.** Set `domain: progrid.co` and `domain_sa: progrid.sa` and Progrid Arabia's
+   details in `group_vars`, run the playbook. It renders `prgd.env` and copies the new Caddyfile.
+4. **Deploy.** Push to main (or run the deploy workflow). Migrations run before the new version
+   starts (see the single entity migration above).
 5. **Verify certificates and routing.** For each of the twelve hosts: `curl -sI https://HOST` shows
-   a valid certificate. Then check: progrid.co shows US dollars and the LLC footer; progrid.sa shows
-   riyals with VAT; `curl -sI -H 'X-Real-IP: <a Saudi address>' https://progrid.co/` is not
-   possible from outside (Caddy overwrites it), so test the redirect from a Saudi connection or a
-   VPN; `?site=global` stays on progrid.co; `curl https://api.progrid.co/v1/geo` answers.
-6. **Back office.** Run the mismatch query above and move any team whose currency does not match
-   its company. Staff register passkeys on ops.progrid.co.
+   a valid certificate. Then check: both domains name Progrid Arabia in the footer; progrid.co shows
+   US dollars (0% VAT outside Saudi Arabia), progrid.sa riyals with VAT;
+   `curl -sI -H 'X-Real-IP: <a Saudi address>' https://progrid.co/` is not possible from outside
+   (Caddy overwrites it), so test the redirect from a Saudi connection or a VPN; `?site=global`
+   stays on progrid.co; `curl https://api.progrid.co/v1/geo` answers.
+6. **Back office.** Run the queries of the migration section and move teams by hand where needed.
+   Staff register passkeys on ops.progrid.co.

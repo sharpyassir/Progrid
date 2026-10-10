@@ -60,7 +60,7 @@ when available) reviews the list of merged pull requests and deploys:
 | Review | Frequency | Content |
 |---|---|---|
 | Firewall and exposed services (checklist 30) | Quarterly, in the access review | `ufw status numbered` on the management host, Proxmox datacenter and node firewall rules, Caddy allowlists, published Docker ports (`docker ps --format '{{.Ports}}'`), external port scan of public IPs; remove anything not needed |
-| Settings file | Quarterly | `prgd.env` keys against `infra/prod/prgd.env.example`; no development defaults; `PAYMENT_PROVIDER` and `PAYMENT_PROVIDER_LLC` real; `REQUIRE_TOTP_*` on |
+| Settings file | Quarterly | `prgd.env` keys against `infra/prod/prgd.env.example`; no development defaults; `PAYMENT_PROVIDER` real (moyasar), no `ENTITY_LLC_*`, `PAYMENT_PROVIDER_LLC` or `STRIPE_*` left; `REQUIRE_TOTP_*` on |
 | GitHub settings | Quarterly | Branch protection, Actions permissions, secrets, deploy keys, collaborators |
 
 ## 7. Separation of environments

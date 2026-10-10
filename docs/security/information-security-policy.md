@@ -5,7 +5,7 @@
 | Document owner | [Security owner — to be named] |
 | Approved by | [Management — to be named], [Date] |
 | Version | Draft, 6 October 2026 |
-| Applies to | Progrid Technologies LLC, Progrid Arabia, all staff, contractors and anyone with access to Progrid systems |
+| Applies to | Progrid Arabia, all staff, contractors and anyone with access to Progrid systems |
 | Review | Yearly, and after a major incident or change |
 | ISO/IEC 27001:2022 | Clauses 5.1, 5.2, 6.2; Annex A 5.1, 5.4 |
 | NCA | ECC Governance domain (policies and procedures) |
@@ -30,7 +30,7 @@ and operate it, and the suppliers it relies on.
 2. Progrid shall keep each customer's data and workloads isolated from other customers and from
    the management plane. Isolation is the platform's first design principle.
 3. Progrid shall meet its legal, regulatory and contractual obligations, including the privacy
-   policies, DPAs and SLA of both entities, and shall not claim certifications or compliance it
+   policies, DPA and SLA of Progrid Arabia, and shall not claim certifications or compliance it
    has not obtained.
 4. Every person with access shall have a personal, uniquely identified account, use
    multi-factor authentication for any administrative access, and hold only the access their role

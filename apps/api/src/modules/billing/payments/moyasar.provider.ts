@@ -12,7 +12,9 @@ interface MoyasarPayment { id: string; status: string; amount: number; currency:
  * Moyasar hosted invoices (mada, Visa, Mastercard, Apple Pay). One invoice per payment; the
  * person pays on Moyasar's page and comes back through the callback, and Moyasar also posts a
  * webhook. Neither the callback query nor the webhook body is trusted: both trigger a server
- * side fetch of the invoice, which is the source of truth. Amounts are in halalas.
+ * side fetch of the invoice, which is the source of truth. Amounts are in minor units of the
+ * payment's currency: halalas for SAR, cents for USD. Progrid Arabia collects both through it; the
+ * Moyasar merchant account must be enabled for USD (the operator confirms this with Moyasar).
  */
 export class MoyasarProvider implements PaymentProvider {
   readonly name = 'moyasar' as const;

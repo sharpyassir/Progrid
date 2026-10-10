@@ -1,7 +1,7 @@
 ---
 title: Acceptable use policy
 description: What you may not do with Progrid services, how we enforce it, and how to report abuse.
-updated: 3 October 2026
+updated: 10 October 2026
 ---
 
 > **Draft for legal review.** This document is a draft. Counsel will review it against the laws of the Kingdom of Saudi Arabia before launch, and the reviewed version will replace it.

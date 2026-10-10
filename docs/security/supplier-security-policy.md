@@ -28,7 +28,7 @@ SaaS, payment providers, AI model providers, open-source components and registri
 
 | Criticality | Criteria | Examples |
 |---|---|---|
-| Critical | Hosts or can read customer content or the control plane database; or its failure stops the platform or payments | DigitalOcean, Hetzner, GitHub, Stripe, Moyasar, domain registrar |
+| Critical | Hosts or can read customer content or the control plane database; or its failure stops the platform or payments | DigitalOcean, Hetzner, GitHub, Moyasar, domain registrar |
 | High | Processes personal data or customer content in a limited way, or holds credentials | Resend, Postmark (if enabled), Anthropic, Infisical (if enabled), Let's Encrypt, image and package registries, e-invoicing provider |
 | Medium | Limited personal data, easy to replace | Twilio, Google and Microsoft sign in |
 | Low | No personal data, easily replaced | DB-IP database, FX rate feed |
@@ -81,7 +81,7 @@ days before processing starts (DPA section 6), handle objections per the DPA.
 | Hetzner | Proxmox nodes are standard; customer VMs exportable (vzdump); move to another dedicated provider or own hardware (docs/hardware-plan.md) | Not yet |
 | GitHub | Mirror repository; images buildable locally; alternative registry | Not yet |
 | Resend | Postmark adapter exists | Not yet |
-| Stripe / Moyasar | Payment provider interface; bank transfer fallback | Not yet |
+| Moyasar | Payment provider interface; bank transfer fallback | Not yet |
 | Anthropic | Model provider interface (`connect/models`); fake provider for degraded mode | Not yet |
 | Infisical / Vault | `SecretStore` interface supports Vault, Infisical and local | Not yet |
 

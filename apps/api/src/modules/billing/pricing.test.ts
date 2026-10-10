@@ -23,10 +23,12 @@ describe('rateHour', () => {
 });
 
 describe('taxRateFor', () => {
-  it('charges 15% VAT on Progrid Arabia invoices', () => {
-    expect(taxRateFor('progrid_arabia')).toBe(0.15);
+  it('charges 15% VAT to customers in Saudi Arabia', () => {
+    expect(taxRateFor('SA')).toBe(0.15);
+    expect(taxRateFor('sa')).toBe(0.15);
   });
-  it('charges no tax on Progrid Technologies LLC invoices by default', () => {
-    expect(taxRateFor('progrid_llc')).toBe(0);
+  it('charges 0% (zero-rated export) to customers anywhere else', () => {
+    expect(taxRateFor('DE')).toBe(0);
+    expect(taxRateFor('US')).toBe(0);
   });
 });

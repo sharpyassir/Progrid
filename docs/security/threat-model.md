@@ -21,7 +21,7 @@ flowchart LR
   subgraph Internet
     U[Customers and agents<br/>browser, CLI, Terraform, MCP]
     E[Engineers and staff<br/>browser]
-    SaaS[SaaS suppliers<br/>Stripe, Moyasar, Resend, GitHub,<br/>Anthropic, Twilio, Google, Microsoft]
+    SaaS[SaaS suppliers<br/>Moyasar, Resend, GitHub,<br/>Anthropic, Twilio, Google, Microsoft]
     GH[GitHub Actions]
   end
   subgraph DO[DigitalOcean FRA1: management host]
@@ -71,7 +71,7 @@ flowchart LR
 | F2 Console and API use | Session token / API token, resource data | Browser or client → Caddy → API → Postgres, Temporal, NATS | Bearer tokens, scopes, audit of changes |
 | F3 Provisioning | VM spec, cloud-init with SSH keys and user-data | API → Temporal → NATS (WireGuard) → host agent → Proxmox | NATS token, WireGuard, job ids |
 | F4 Platform agents | DB passwords, S3 keys, k8s join tokens | API/worker → platform VM agent :9009 on the private network | Shared header secret, CONTROL_PLANE_CIDR; **no TLS (R-11)** |
-| F5 Payments | Payer data, card data | Browser → Stripe/Moyasar hosted page; webhook → API | Card data never on Progrid; webhook signatures |
+| F5 Payments | Payer data, card data | Browser → Moyasar hosted page; webhook → API | Card data never on Progrid; webhook signatures |
 | F6 Mail | Email address, message content, invoices | API → Resend (or Postmark); inbound mail → Resend → API webhook | TLS, webhook signature |
 | F7 Connect | Prompts, tool inputs and outputs, connection credentials | API → Anthropic; API → customer-configured endpoints | Secrets sealed, never sent to the model, SSRF guard, approvals |
 | F8 Git Deploy | Repository contents, installation tokens | GitHub → API webhook; App Platform host clones the repository | Webhook secret, short-lived installation tokens, token redaction (*branch*) |
@@ -86,7 +86,7 @@ flowchart LR
 
 | STRIDE | Threat | Status |
 |---|---|---|
-| S | Credential stuffing, stolen tokens, forged webhooks | Rate limits (`rate-limit.guard.ts`), fail-closed on auth and lockout (*branch*); webhook signatures (Stripe, Moyasar, Resend Svix, GitHub); MFA for owners and staff |
+| S | Credential stuffing, stolen tokens, forged webhooks | Rate limits (`rate-limit.guard.ts`), fail-closed on auth and lockout (*branch*); webhook signatures (Moyasar, Resend Svix, GitHub; Stripe when enabled); MFA for owners and staff |
 | T | Request smuggling, header spoofing of `X-Forwarded-For` | Caddy overwrites `X-Real-IP` and `X-Forwarded-For`; apps reachable only through Caddy (edge/backend networks, *branch*) |
 | R | Customer denies an action | Audit interceptor for every state-changing call, hash chain (*branch*) |
 | I | Internal errors, Swagger, `/internal/*` exposure | Error filter; Swagger off in production; `/internal/*` blocked at Caddy (*branch*); security headers and HSTS |

@@ -163,7 +163,7 @@ describe('social sign in', () => {
     const landing = await socialRound(b, 'google', googleClaims(newEmail()), { intent: 'signup', country: 'US', legal: '' });
     const res = await b.client.ok('POST', '/v1/auth/oauth/exchange', { code: landing.searchParams.get('code') }, 200);
     b.client.token = res.session;
-    expect((await b.client.ok('GET', '/v1/account')).legal).toMatchObject({ required: true, accepted: null, entity: 'progrid_llc' });
+    expect((await b.client.ok('GET', '/v1/account')).legal).toMatchObject({ required: true, accepted: null, entity: 'progrid_arabia' });
     expect((await b.client.req('GET', '/v1/servers')).status).toBe(428);
     await b.client.ok('POST', '/v1/legal/accept', { accept: true, version: LEGAL_VERSION }, 200);
     await b.client.ok('GET', '/v1/servers');

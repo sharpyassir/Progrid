@@ -69,7 +69,7 @@ export default function AdminInvoices() {
 
   return (
     <AdminShell title={t(locale, 'invoices')} actions={<div className="flex gap-2">
-      <select className="input w-auto py-1" value={entity} onChange={(e) => setEntity(e.target.value)} aria-label="Billing company"><option value="">All companies</option><option value="progrid_llc">Progrid Technologies LLC</option><option value="progrid_arabia">Progrid Arabia</option></select>
+      <select className="input w-auto py-1" value={entity} onChange={(e) => setEntity(e.target.value)} aria-label="Billing company"><option value="">All invoices</option><option value="progrid_arabia">Progrid Arabia</option><option value="progrid_llc">Progrid Technologies LLC (PRGD-US, history)</option></select>
       <select className="input w-auto py-1" value={status} onChange={(e) => setStatus(e.target.value)} aria-label={t(locale, 'status')}>
         <option value="">{t(locale, 'allStatuses')}</option>
         {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}

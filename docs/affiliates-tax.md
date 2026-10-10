@@ -1,102 +1,68 @@
-# Affiliate payouts: US tax and accounting
+# Affiliate payouts: tax and accounting
 
-How Progrid Technologies LLC (USD payouts) stays within IRS rules for affiliate commissions, and how
-the program is booked. Riyal payouts by Progrid Arabia follow Saudi rules and are not covered here.
+How affiliate commissions are paid and booked. **Progrid Arabia** (Saudi Arabia) runs the program
+and pays every payout, in SAR or in USD, by bank transfer (docs/domains-and-entities.md).
 
-> This implements the IRS forms and instructions as published (Form W-9 Rev. March 2024,
-> W-8BEN and W-8BEN-E Rev. October 2021, Form 1099-NEC instructions). It is not tax advice: have a
-> US CPA confirm the setup, the payer EIN and the LLC's own filings before the first filing season,
-> and recheck form revisions and the 1099 threshold every year.
-
-## Who signs what
-
-| Affiliate | Form | Where |
-|---|---|---|
-| US citizen, US resident, or US company or partnership | **Form W-9** (name, federal tax classification, SSN, ITIN or EIN, US address) | Portal, Payouts, Tax information |
-| Individual outside the US | **Form W-8BEN** (name, citizenship, permanent address, foreign TIN, date of birth) | same |
-| Company outside the US | **Form W-8BEN-E** (entity name, country of incorporation, chapter 3 and FATCA status, foreign TIN) | same |
-
-- Forms are signed electronically: the IRS certification text is shown in English exactly as on the
-  form (`apps/api/src/modules/affiliates/tax-rules.ts`), the signer types their name (it must match
-  line 1) and confirms under penalties of perjury. Stored with each form: the text agreed to, the
-  form revision, the signature, time and address (`prgd_affiliate_tax_forms`).
-- The TIN is checked (SSN, ITIN and EIN format rules), sealed with the secrets key, and only the last
-  four digits are ever shown, in the portal and in the back office. Full TINs leave the system only
-  in the 1099 file, and that export is written to the audit log.
-- A W-9 signer who crossed out certification 2 (notified of backup withholding) is put under backup
-  withholding.
-- W-8 signers also certify that **all services for Progrid are performed outside the United States**.
-  That makes the commission foreign source income: no US withholding and no Form 1042-S. An
-  affiliate working from inside the US must contact support (the form cannot be signed without it).
-- A W-8 expires at the end of the third calendar year after signing; the portal asks for a new one.
-- A new form supersedes the old one. Finance can mark a form invalid (name and TIN do not match,
-  IRS notice): USD payouts stop and the affiliate gets an email asking for a new form.
+> Not tax advice. The points marked **to be confirmed** need the tax advisor's answer before
+> payouts to partners outside Saudi Arabia are made at scale. Nothing in the code invents a rate.
 
 ## Payouts
 
-- **USD payouts need an active form.** Requesting one without a form, or with an expired or invalid
-  one, is refused (`tax_form_required`, `tax_form_expired`). The form is checked again when finance
-  marks the payout paid.
-- **Backup withholding (24%)** applies to a W-9 payee who certified it, or after an IRS **B notice
-  (CP2100)**: finance turns it on in the back office (Affiliates, the affiliate, US tax forms, "B
-  notice: start withholding") and off when it is resolved. The payout shows gross, withholding and
-  the net to send; finance sends the net. The withheld amount must be **deposited with the IRS**
-  (EFTPS) and reported on **Form 945** (annual, due January 31) and in box 4 of the payee's 1099-NEC.
-- SAR payouts by Progrid Arabia are not gated by US forms.
+- An approved affiliate with payout details requests a payout of the payable balance in one
+  currency once it reaches the minimum (Settings: 200 SAR, 50 USD). Finance pays it by bank transfer
+  and marks it paid with the reference (Back office, Affiliates, Payouts).
+- No tax form is required and **nothing is withheld**: `withheldMinor` is 0 on every new payout.
+- **Saudi withholding tax on payments to non-resident partners: to be confirmed with the tax
+  advisor.** Commission paid by a Saudi company to a partner outside Saudi Arabia may be subject to
+  withholding tax under Saudi rules, depending on how the payment is classified and on any tax
+  treaty with the partner's country of residence. The rate, the classification, whether treaty
+  relief applies and what forms or certificates to collect must come from the tax advisor. Until
+  then the system withholds nothing and finance should hold payouts to non-resident partners that
+  the advisor says are in scope. When the advisor answers, the payout record already has the
+  fields (`withheldMinor`, net to send) to implement it.
+- Payouts to partners in Saudi Arabia: whether VAT applies to commission invoiced by a VAT
+  registered partner is also for the advisor to confirm.
 
-## Year end: Form 1099-NEC
+## What happened to the US tax setup
 
-Back office, Affiliates, **Tax & accounting**, pick the year:
+Until 2026-10 USD payouts were made by Progrid Technologies LLC, a US company, which required an
+IRS Form W-9 or W-8 in the portal, applied 24% backup withholding after an IRS B notice and produced
+the year end Form 1099-NEC file. With the LLC no longer contracting, all of that is removed from the
+portal, the back office and the API (`/v1/affiliates/me/tax-form`, `/admin/v1/affiliates/tax/1099`,
+`export/1099`, `tax-forms/:id/backup-withholding`, `tax-forms/:id/invalidate`, the US tax settings).
 
-- One row per US payee (W-9) paid in USD in that calendar year (the year the money was sent):
-  box 1 nonemployee compensation (gross payouts), box 4 federal income tax withheld.
-- **File** when the total reaches the threshold (Settings, US tax; **$2,000** for payments made from
-  2026, it was $600 before) or anything was withheld. **Exempt**: payees on a W-9 as C or S
-  corporations (or LLCs taxed as one), which are generally not reported for services.
-- **Download 1099 file**: CSV with payer and recipient name, TIN, address, box 1 and box 4, for the
-  IRS IRIS portal or an e-filing service (Track1099, Tax1099 and similar also mail or email the
-  recipient copies and handle state filing). Due to the IRS and the recipients by **January 31**.
-- Payer details (name, EIN, address, phone) are in Settings, US tax. The EIN is empty until the IRS
-  assigns it; the report warns until it is set.
-- Foreign payees on a W-8 are listed separately with their totals and form validity, for the
-  records: no 1099 and no 1042-S while services are performed outside the US.
-- Payouts made through PayPal or a card network would be reported by them on Form 1099-K instead;
-  the program pays by bank transfer, so Progrid files the 1099-NEC.
+Kept for the records:
+
+- Signed forms stay in `prgd_affiliate_tax_forms` (TINs sealed), linked from the payouts they were
+  used for (`prgd_affiliate_payouts.taxFormId`).
+- Payouts the LLC paid keep their withholding (`withheldMinor`) and show "Progrid Technologies LLC"
+  as the paying company. Any Form 1099-NEC or Form 945 still due for payments the LLC made is the
+  LLC's own filing, handled with its accountant outside this system.
 
 ## Accounting
 
-Commissions are a **sales and marketing expense** (IRC 162; for US GAAP, expensed as earned: they
-accrue month by month on paid usage invoices, not as a cost to obtain a contract under ASC 340-40).
+Commissions are a **sales and marketing expense**, accrued month by month on paid usage invoices.
 The customer promo discount is a **reduction of revenue**, already netted on the invoices.
 
 Every money event is written to the affiliate ledger (`prgd_affiliate_ledger`): commission earned,
 commission reversed (refund, credit note, chargeback, self referral; also after payout, which the
-next payout recovers), and payouts with their withholding. Back office, Tax & accounting, **Monthly
-journal** (per month and currency, CSV for the books):
+next payout recovers), and payouts. Back office, Affiliates, **Accounting**, **Monthly journal**
+(per month and currency, CSV for the books), in the name of Progrid Arabia:
 
 | Event | Debit | Credit |
 |---|---|---|
 | Commission earned | Affiliate commissions (S&M expense) | Affiliate commissions payable |
 | Commission reversed | Affiliate commissions payable | Affiliate commissions (S&M expense) |
-| Payout sent | Affiliate commissions payable (gross) | Cash (net); Backup withholding payable (withheld) |
+| Payout sent | Affiliate commissions payable (gross) | Cash (Progrid Arabia bank, SAR or USD) |
 
-The journal shows the payable balance at the start and end of the month; reconcile it with the
-general ledger monthly. A negative payable means commission was reversed after it was paid and is
-owed back by affiliates (recovered from their next payouts).
-
-Accrual books record the expense when earned; an LLC filing on the cash method deducts it when
-paid. The LLC's own return (for a single member LLC owned by a non US person: pro forma Form 1120
-with Form 5472) is outside this system; ask the CPA.
+Withholding appears only on payouts of the US era (`Withholding payable (US era, Progrid
+Technologies LLC)`). The journal shows the payable balance at the start and end of the month;
+reconcile it with the general ledger monthly. A negative payable means commission was reversed
+after it was paid and is owed back by affiliates (recovered from their next payouts). USD payouts
+are booked in USD; their SAR value for Progrid Arabia's books is for the accountant (the platform's
+USD to SAR rate is in the back office, Finance).
 
 ## Records
 
-Kept in the database for each payout: the tax form in force, the gross, the withholding, the bank
-transfer reference and who marked it paid; for each commission, the invoice and rate it came from.
-Keep the exported 1099 files and filing confirmations for at least four years.
-
-## Not automated
-
-- **TIN matching** against IRS records (IRS e-Services TIN Matching, after registering as a payer)
-  before filing.
-- **State** information returns where a state requires them (usually handled by the e-filing service).
-- **Depositing** backup withholding and filing Form 945 (EFTPS, by finance).
+Kept for each payout: the gross, any withholding, the bank transfer reference and who marked it
+paid; for each commission, the invoice and rate it came from.

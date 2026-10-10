@@ -218,7 +218,7 @@ export class ConnectUsageService {
     if (!groups.length) return 0;
     const projects = await this.prisma.project.findMany({
       where: { id: { in: [...new Set(groups.map((g) => g.projectId))] } },
-      include: { team: { select: { country: true, currency: true, billingEntity: true, pendingCountry: true, pendingBillingEntity: true, billingChangeAt: true } } },
+      include: { team: { select: { country: true, currency: true, billingEntity: true, pendingCountry: true, pendingCurrency: true, billingChangeAt: true } } },
     });
     const currencyOf = new Map(projects.map((p) => [p.id, billingAt(p.team, hourStart).currency]));
     const modelsOf = new Map<string, TokensByModel>();

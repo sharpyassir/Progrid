@@ -1,7 +1,7 @@
 # Affiliate program
 
-US tax forms, backup withholding, Forms 1099-NEC and the accounting journal: see
-[`affiliates-tax.md`](affiliates-tax.md).
+Payouts by Progrid Arabia, tax (including what the tax advisor must confirm) and the accounting
+journal: see [`affiliates-tax.md`](affiliates-tax.md).
 
 Content creators earn a share of what the customers they refer pay. This page covers how
 referrals are tracked and how the program is configured. Built in phases; this page grows with
@@ -36,8 +36,8 @@ default). It never moves to another partner, and a team can use one code only.
 - **Self referral** is recorded as a blocked referral (it earns nothing and gives no discount), and
   the partner is flagged: the customer is the partner's own user, or uses the same mailbox (case,
   `+tags` and Gmail dots ignored). Card fingerprints are stored on payments
-  (`prgd_payments.cardFingerprint`: Stripe's card fingerprint; for Moyasar a keyed hash of the
-  masked number, brand and holder) to also catch the partner's own card when commission is earned
+  (`prgd_payments.cardFingerprint`: for Moyasar a keyed hash of the
+  masked number, brand and holder; Stripe's card fingerprint on old Stripe payments) to also catch the partner's own card when commission is earned
   (see Commission engine). Customers on the same network as the partner are not blocked.
 - **Many signups from one address**: `flagSignupsPerIpPerDay` (3) referred signups from one address
   within a day flag the partner for staff review; the signups still count.
@@ -126,9 +126,8 @@ approved affiliates, if the invoice is still paid. Approved rows are what payout
 - Card refund (back office): the refunded share of the invoice (refund ÷ subtotal plus tax) is
   taken off each commission on it.
 - Credit note: the same, by the note's amount.
-- Chargeback: Stripe's `charge.dispute.created` webhook (add it to the Stripe webhook endpoint),
-  or finance marking a payment as disputed (Moyasar sends no dispute events; back office, phase
-  e), sets `prgd_payments.disputedAt`, reverses all commission on the invoice and flags the
+- Chargeback: finance marking a payment as disputed (Moyasar sends no dispute events; back
+  office, phase e; with `PAYMENT_PROVIDER=stripe`, Stripe's `charge.dispute.created` webhook too) sets `prgd_payments.disputedAt`, reverses all commission on the invoice and flags the
   affiliate.
 - Commission not yet paid out is reduced in place and becomes `reversed` when nothing is left.
   Commission already paid out, or in a payout request, gets a negative `approved` clawback row
@@ -152,8 +151,9 @@ customer and flags the affiliate.
   - **Approve** (optionally with a different code), **Reject** with a reason, **Suspend** with a
     reason, **Reinstate**. Each sends the affiliate an email. A rejected applicant can apply again
     after 30 days; a suspended affiliate's code stops working and pending commission waits.
-- **Payouts**: requested payouts with the bank details to pay and the paying company (SAR:
-  Progrid Arabia, USD: Progrid Technologies LLC), totals waiting per currency. **Mark paid** with
+- **Payouts**: requested payouts with the bank details to pay and the paying company (Progrid
+  Arabia for SAR and USD; old USD payouts paid against a US tax form show Progrid Technologies
+  LLC), totals waiting per currency. **Mark paid** with
   the bank transfer reference (the payout and its commissions become paid, the affiliate is
   emailed) or **Cancel** (the commission becomes payable again). CSV export includes bank details
   for the transfer batch.

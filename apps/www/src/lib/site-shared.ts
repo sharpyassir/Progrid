@@ -1,10 +1,12 @@
 /**
- * One website, two storefronts (docs/domains-and-entities.md).
+ * One website, one company, two domains (docs/domains-and-entities.md).
  *
- *  - global: progrid.co, the primary site. Services are provided by Progrid Technologies LLC and
- *    priced in US dollars.
- *  - sa: progrid.sa, the local storefront for customers in Saudi Arabia. Services there are provided
- *    and invoiced by Progrid Arabia, priced in riyals with VAT.
+ * Every service is provided and invoiced by Progrid Arabia, a Saudi company. The domain only picks
+ * the storefront's display currency:
+ *  - global: progrid.co, the global address. Prices shown in US dollars.
+ *  - sa: progrid.sa, the Saudi address. Prices shown in riyals with VAT.
+ * What a customer is actually billed follows their billing country: Saudi Arabia pays in SAR with
+ * 15% VAT, everyone else pays in USD.
  *
  * Which one a request gets follows the host name. Addresses of the console and the API follow the
  * host too (console.<domain>, api.<domain>), so one build serves both domains. Unknown hosts
@@ -27,7 +29,7 @@ export interface SiteInfo {
   globalWww: string;
   saWww: string;
   currency: 'USD' | 'SAR';
-  /** The company that provides the services on this site. */
+  /** The company that provides the services: Progrid Arabia on both domains. */
   entity: { legalName: string; supportEmail: string };
 }
 
@@ -45,10 +47,9 @@ export interface SiteConfig {
 export const DEFAULT_DOMAIN = 'progrid.co';
 export const DEFAULT_SA_DOMAIN = 'progrid.sa';
 
-const ENTITY: Record<Site, (domain: string) => SiteInfo['entity']> = {
-  global: (d) => ({ legalName: 'Progrid Technologies LLC', supportEmail: `support@${d}` }),
-  sa: (d) => ({ legalName: 'Progrid Arabia', supportEmail: `support@${d}` }),
-};
+/** The one company behind both domains. Each domain keeps its own support mailbox. */
+export const LEGAL_NAME = 'Progrid Arabia';
+const entityFor = (domain: string): SiteInfo['entity'] => ({ legalName: LEGAL_NAME, supportEmail: `support@${domain}` });
 
 /** Lower case host without port and trailing dot. */
 export function normalizeHost(host: string | null | undefined) {
@@ -80,7 +81,7 @@ export function resolveSite(host: string | null | undefined, cfg: SiteConfig): S
     other: site === 'sa' ? { site: 'global', www: globalWww } : { site: 'sa', www: saWww },
     globalWww,
     saWww,
-    currency: site === 'sa' ? 'SAR' : 'USD', // the domain decides the company, and with it the currency
-    entity: ENTITY[site](own),
+    currency: site === 'sa' ? 'SAR' : 'USD', // display currency of the storefront; billing follows the billing country
+    entity: entityFor(own),
   };
 }

@@ -23,7 +23,7 @@ authenticated, recorded, reviewed and removed on time.
 | Staff access | Back office (`/admin`), staff areas and roles |
 | Engineer access | Ops console (`/ops/v1`), terminal gateway, access grants to managed assets |
 | Infrastructure access | SSH and root on the management host and Proxmox nodes, Proxmox web UI/API, databases, Temporal UI |
-| Provider and SaaS access | DigitalOcean, Hetzner Robot/console, GitHub, registrar, Resend/Postmark, Stripe, Moyasar, Anthropic, Twilio, Google Cloud, Microsoft Entra, Infisical, Vault |
+| Provider and SaaS access | DigitalOcean, Hetzner Robot/console, GitHub, registrar, Resend/Postmark, Moyasar, Anthropic, Twilio, Google Cloud, Microsoft Entra, Infisical, Vault |
 | Machine access | CI deploy key, NATS token, Proxmox agent token, platform agent secrets, webhook secrets |
 
 ## 3. Policy statements: identities and authentication
@@ -104,7 +104,7 @@ Run in the first two weeks of each quarter by the Security owner (the owner's ow
    - active API tokens with admin scope, and tokens older than 180 days;
    - members of the GitHub organisation/repository with their permissions, GitHub Actions
      secrets and deploy keys;
-   - users of DigitalOcean, Hetzner Robot, registrar, Resend/Postmark, Stripe, Moyasar, Anthropic,
+   - users of DigitalOcean, Hetzner Robot, registrar, Resend/Postmark, Moyasar, Anthropic,
      Twilio, Google Cloud, Microsoft Entra, Infisical/Vault;
    - Unix accounts and `authorized_keys` on the management host and each Proxmox node;
    - firewall rules: `ufw status numbered`, Proxmox datacenter and node firewall, Caddy allowlists.

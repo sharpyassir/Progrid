@@ -6,7 +6,8 @@ import { ApiError } from '../../common/errors/api-error';
 import type { Actor } from '../../common/auth/actor';
 import { EventsService } from '../events/events.service';
 import { PaymentsService } from './payments/payments.service';
-import { entityCreditNoteNumber, entityProfile } from '../../common/entities/entities';
+import { BILLING_ENTITY, entityCreditNoteNumber, entityProfile } from '../../common/entities/entities';
+import { sarCreditFigures } from './sar';
 import { CommissionService } from '../affiliates/commission.service';
 
 /**
@@ -21,7 +22,7 @@ export class BillingAdminService {
 
   listInvoices(status?: string, billingEntity?: string) {
     return this.prisma.invoice.findMany({
-      where: { ...(status ? { status: status as never } : {}), ...(billingEntity === 'progrid_arabia' || billingEntity === 'progrid_llc' ? { billingEntity } : {}) },
+      where: { ...(status ? { status: status as never } : {}), ...(billingEntity === 'progrid_arabia' || billingEntity === 'progrid_llc' ? { billingEntity } : {}) /* progrid_llc: history */ },
       include: {
         team: { select: { id: true, name: true, slug: true, country: true, billingEntity: true } },
         payments: { select: { id: true, provider: true, providerRef: true, status: true, amountMinor: true, refundedMinor: true, currency: true, paidAt: true, createdAt: true }, orderBy: { createdAt: 'desc' } },
@@ -81,6 +82,9 @@ export class BillingAdminService {
       const inv = await tx.invoice.findUnique({ where: { id: invoiceId }, include: { creditNotes: { select: { amountMinor: true } } } });
       if (!inv) throw ApiError.notFound('invoice', invoiceId);
       if (!['open', 'paid'].includes(inv.status)) throw ApiError.invalidState(`Invoice ${inv.number} is ${inv.status}`);
+      // Progrid Technologies LLC no longer issues anything, so its invoices cannot get a credit note
+      // here: void an unpaid one, or settle a paid one by hand with the accountant.
+      if (entityProfile(inv.billingEntity).legacy) throw ApiError.invalidState(`Invoice ${inv.number} was issued by ${entityProfile(inv.billingEntity).legalName}, which no longer issues credit notes; void it if unpaid, or settle it by hand`);
       const gross = inv.subtotalMinor + inv.taxMinor;
       const already = inv.creditNotes.reduce((s, n) => s + n.amountMinor, 0);
       if (!Number.isInteger(amountMinor) || amountMinor <= 0 || already + amountMinor > gross) throw ApiError.invalid(`Credit notes on ${inv.number} can total at most ${gross}; ${already} is already credited`, { creditableMinor: gross - already });
@@ -91,10 +95,16 @@ export class BillingAdminService {
       const credit = toCredit > 0
         ? await tx.credit.create({ data: { teamId: inv.teamId, kind: 'refund', currency: inv.currency, amountMinor: toCredit, remainingMinor: toCredit, reason: `Credit note on invoice ${inv.number}: ${reason}` } })
         : null;
-      // A credit note is issued by the company that issued the invoice, in its own series.
-      const seq = await nextDocumentNumber(tx, entityProfile(inv.billingEntity).creditNoteSequence);
+      // Issued by Progrid Arabia in the CN-SA series. The VAT in it is in proportion to the
+      // invoice, with the invoice's VAT treatment, note and exchange rate (SAR figures).
+      const seq = await nextDocumentNumber(tx, entityProfile(BILLING_ENTITY).creditNoteSequence);
+      const taxMinor = gross > 0 ? Math.round((amountMinor * inv.taxMinor) / gross) : 0;
       const note = await tx.creditNote.create({
-        data: { number: entityCreditNoteNumber(inv.billingEntity, new Date().getUTCFullYear(), seq), billingEntity: inv.billingEntity, teamId: inv.teamId, invoiceId: inv.id, currency: inv.currency, amountMinor, appliedToDueMinor: toDue, creditId: credit?.id, reason, createdBy: actor.userId },
+        data: {
+          number: entityCreditNoteNumber(BILLING_ENTITY, new Date().getUTCFullYear(), seq), billingEntity: BILLING_ENTITY, teamId: inv.teamId, invoiceId: inv.id, currency: inv.currency, amountMinor, appliedToDueMinor: toDue, creditId: credit?.id, reason, createdBy: actor.userId,
+          taxMinor, vatCategory: inv.vatCategory, taxNote: inv.taxNote,
+          ...sarCreditFigures(inv.fxRateSar ?? (inv.currency === 'SAR' ? 1 : null), { amountMinor, taxMinor }),
+        },
       });
       const fully = already + amountMinor >= gross || (inv.status === 'open' && toDue === due);
       await tx.invoice.update({ where: { id: inv.id }, data: { creditedMinor: { increment: toDue }, ...(fully ? { status: 'credited' } : {}) } });

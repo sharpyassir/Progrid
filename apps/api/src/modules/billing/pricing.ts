@@ -1,4 +1,4 @@
-import { entityProfile, type BillingEntityId } from '../../common/entities/entities';
+import { vatFor } from '../../common/entities/entities';
 
 /**
  * Pure rating math (no I/O) so it can be unit-tested.
@@ -31,15 +31,15 @@ export function displayPrice(monthlyMinor: number, hoursPerMonth: number) {
   return { monthlyMinor, hourlyMinor: Math.round(monthlyMinor / hoursPerMonth) };
 }
 
-/** Saudi VAT (15%), charged by Progrid Arabia. Prices are shown without it; checkout shows the total with it. */
+/** Saudi VAT (15%), charged by Progrid Arabia to customers in Saudi Arabia. Prices are shown without it. */
 export const VAT_RATE = 0.15;
 
 /**
- * Tax rate of an invoice, from the company that issues it: VAT for Progrid Arabia, the configured
- * rate (0 by default) for Progrid Technologies LLC. See common/entities/entities.ts.
+ * VAT rate of an invoice, from the team's billing country: 15% in Saudi Arabia, 0% elsewhere
+ * (zero-rated export of services, to be confirmed by the tax advisor). See common/entities/entities.ts.
  */
-export function taxRateFor(entity: BillingEntityId): number {
-  return entityProfile(entity).taxRate;
+export function taxRateFor(country: string): number {
+  return vatFor(country).rate;
 }
 
 export function startOfHour(d: Date) {

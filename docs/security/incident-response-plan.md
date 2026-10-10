@@ -61,7 +61,7 @@ The IC may act without waiting for approval to contain a Sev 1-2 incident.
   managed module (`PAGING_MODE=live`, Twilio). Primary: [name]; secondary: [name].
 - **Escalation:** IC → Management → counsel.
 - **Provider security contacts:** DigitalOcean [abuse/security contact — to record], Hetzner
-  [abuse contact — to record], GitHub, Stripe, Moyasar, Resend, Anthropic [to record].
+  [abuse contact — to record], GitHub, Moyasar, Resend, Anthropic [to record].
 - **Authorities:** see §8.
 
 A contact list with current names and numbers is kept in
@@ -132,7 +132,7 @@ A contact list with current names and numbers is kept in
 | Saudi PDPL | Processor | Notify the controller customer so it can notify SDAIA (sa DPA 8.1) | Privacy lead |
 | NCA | Only if Progrid is in scope of NCA controls or a contract requires it (formal applicability assessment pending, nca-mapping.md) | Report cybersecurity incidents to NCA through its designated channel within the time the applicable controls or contract set | Security owner with counsel |
 | US state breach laws | Controller for US residents' account data | Notify affected residents and, where thresholds are met, state attorneys general within the state deadlines | Privacy lead with counsel |
-| Payment schemes / providers | Card data never touches Progrid; if payment accounts are compromised | Notify Stripe or Moyasar at once | Finance lead |
+| Payment schemes / providers | Card data never touches Progrid; if payment accounts are compromised | Notify Moyasar at once | Finance lead |
 | Law enforcement | Criminal activity | Optional, decided by Management with counsel | Management |
 
 Every notification decision (including a decision **not** to notify) is recorded with the reason
@@ -167,7 +167,7 @@ Records (scenario, attendees, gaps found, actions) go to `evidence/14-incident-r
 
 ### 12.1 Customer notification (first notice)
 
-> Subject: Security incident notice — [Progrid Technologies LLC / Progrid Arabia]
+> Subject: Security incident notice — Progrid Arabia
 >
 > We are writing to tell you about a security incident that affects [your account / data you
 > store on Progrid]. On [date, time UTC] we became aware that [short description]. Based on what

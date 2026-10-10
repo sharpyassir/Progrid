@@ -16,10 +16,11 @@ import { BackupsService } from '../storage/backups.service';
 import { FxService } from '../billing/fx.service';
 import { startOfMonth } from '../billing/pricing';
 import { ApiError } from '../../common/errors/api-error';
-import { BILLING_ENTITIES, currencyForEntity, entityProfile, publicEntity } from '../../common/entities/entities';
+import { BILLING_ENTITIES, LEGACY_ENTITIES, entityProfile, publicEntity } from '../../common/entities/entities';
 import { isCountryCode } from '../../common/entities/countries';
-import { billingAt, nextBillingPeriod } from '../billing/entity-change';
+import { planCountryChange } from '../billing/entity-change';
 
+/** Team and invoice filters; progrid_llc only finds history. */
 const isEntity = (v?: string): v is 'progrid_arabia' | 'progrid_llc' => v === 'progrid_arabia' || v === 'progrid_llc';
 
 class RegisterHostDto {
@@ -76,10 +77,10 @@ class ManualPaymentDto {
 }
 
 class BillingCountryDto {
-  /** ISO 3166-1 alpha-2: the invoice address. On its own it never changes the company. */
+  /** ISO 3166-1 alpha-2 billing country. It decides VAT (SA: 15%, else 0%) and, by default, the currency. */
   @IsString() @Length(2, 2) country: string;
-  /** Move the team to this company from the next billing period (default: keep the current one). */
-  @IsOptional() @IsIn(['progrid_llc', 'progrid_arabia']) billingEntity?: 'progrid_llc' | 'progrid_arabia';
+  /** Currency from the next billing period. Default: the country's (SA: SAR, else USD). Progrid Arabia is always the company. */
+  @IsOptional() @IsIn(['USD', 'SAR']) currency?: 'USD' | 'SAR';
   @IsString() @Length(3, 500) reason: string;
 }
 
@@ -175,7 +176,9 @@ export class AdminController {
       this.prisma.payment.findMany({ where: { status: { in: ['succeeded', 'refunded'] }, paidAt: { gte: month, lt: end } }, select: { amountMinor: true, refundedMinor: true, currency: true, invoice: { select: { billingEntity: true } }, team: { select: { billingEntity: true } } } }),
       this.prisma.team.groupBy({ by: ['billingEntity'], where: { status: { not: 'closed' } }, _count: true }),
     ]);
-    return BILLING_ENTITIES.map((id) => {
+    // Progrid Arabia, and Progrid Technologies LLC while it still has history in the month (old invoices, open ones, payments).
+    const hasHistory = (id: string) => issued.some((r) => r.billingEntity === id) || open.some((r) => r.billingEntity === id) || payments.some((p) => (p.invoice?.billingEntity ?? p.team.billingEntity) === id);
+    return [...BILLING_ENTITIES, ...LEGACY_ENTITIES.filter(hasHistory)].map((id) => {
       const e = entityProfile(id);
       const collected: Record<string, number> = {};
       for (const p of payments) {
@@ -186,6 +189,7 @@ export class AdminController {
       return {
         billingEntity: id,
         legalName: e.legalName,
+        legacy: e.legacy,
         currency: e.currency,
         teams: teams.find((t) => t.billingEntity === id)?._count ?? 0,
         invoiced: issued.filter((r) => r.billingEntity === id).map((r) => ({ currency: r.currency, count: r._count, subtotalMinor: r._sum.subtotalMinor ?? 0, taxMinor: r._sum.taxMinor ?? 0, totalMinor: r._sum.totalMinor ?? 0 })),
@@ -377,11 +381,11 @@ export class AdminController {
   // ---- finance ----
 
   /**
-   * Changes a team's billing country (the invoice address, applied now) and, with `billingEntity`,
-   * moves it to the other company. The company comes from the domain the account was created on
-   * and decides tax, invoice series, currency, gateway and books, so customers cannot change it.
-   * A change of company is scheduled for the start of the next billing period: this period is still invoiced by the old company, usage from then on is rated in the
-   * new currency. Credit left in the old currency is not converted (refund or reissue it by hand).
+   * Changes a team's billing country and currency (Progrid Arabia always invoices). A change that
+   * keeps the currency applies now. A change of currency (into or out of Saudi Arabia, or the
+   * currency given) is scheduled for the first day of the next month: this month is invoiced in
+   * the old currency, usage from then on is rated in the new one. Credit left in the old currency
+   * is not converted (refund it or reissue it by hand); the response says how much there is.
    */
   @StaffAreas('finance')
   @Post('teams/:id/billing-country')
@@ -390,29 +394,26 @@ export class AdminController {
     if (!isCountryCode(country)) throw ApiError.invalid(`${dto.country} is not an ISO 3166-1 country code`);
     const team = await this.prisma.team.findUniqueOrThrow({ where: { id } });
     const now = new Date();
-    const current = billingAt(team, now);
-    const entity = dto.billingEntity ?? current.entity;
-    if (entity === current.entity) {
-      const updated = await this.prisma.team.update({ where: { id }, data: { country, pendingCountry: null, pendingBillingEntity: null, billingChangeAt: null } });
-      await this.events.emit('admin.team_billing_country_set', { teamId: id, from: team.country, to: country, billingEntity: entity, reason: dto.reason, effectiveAt: now }, { actor, teamId: id, resource: `team:${id}` });
-      return { team: updated, billingEntity: publicEntity(entity), effectiveAt: now, scheduled: false };
+    const plan = planCountryChange(team, country, now, dto.currency);
+    const updated = await this.prisma.team.update({ where: { id }, data: plan.data });
+    if (plan.kind === 'now') {
+      await this.events.emit('admin.team_billing_country_set', { teamId: id, from: team.country, to: country, currency: team.currency, reason: dto.reason, effectiveAt: now }, { actor, teamId: id, resource: `team:${id}` });
+      return { team: updated, billingEntity: publicEntity(updated.billingEntity, updated), effectiveAt: now, scheduled: false };
     }
-    const effectiveAt = nextBillingPeriod(now);
-    const updated = await this.prisma.team.update({ where: { id }, data: { pendingCountry: country, pendingBillingEntity: entity, billingChangeAt: effectiveAt } });
     const leftover = await this.prisma.credit.aggregate({ where: { teamId: id, currency: team.currency, remainingMinor: { gt: 0 } }, _sum: { remainingMinor: true } });
-    await this.events.emit('admin.team_billing_entity_scheduled', { teamId: id, from: { country: team.country, billingEntity: team.billingEntity, currency: team.currency }, to: { country, billingEntity: entity, currency: currencyForEntity(entity) }, reason: dto.reason, effectiveAt }, { actor, teamId: id, resource: `team:${id}` });
-    return { team: updated, billingEntity: publicEntity(entity), effectiveAt, scheduled: true, creditLeftInOldCurrencyMinor: leftover._sum.remainingMinor ?? 0 };
+    await this.events.emit('admin.team_billing_currency_scheduled', { teamId: id, from: { country: team.country, currency: team.currency }, to: { country, currency: plan.currency }, reason: dto.reason, effectiveAt: plan.effectiveAt }, { actor, teamId: id, resource: `team:${id}` });
+    return { team: updated, billingEntity: publicEntity(updated.billingEntity, { country, currency: plan.currency }), effectiveAt: plan.effectiveAt, scheduled: true, creditLeftInOldCurrencyMinor: leftover._sum.remainingMinor ?? 0 };
   }
 
-  /** Cancels a scheduled change of billing company before it takes effect. */
+  /** Cancels a scheduled change of billing country and currency before it takes effect. */
   @StaffAreas('finance')
   @Post('teams/:id/billing-country/cancel') @HttpCode(200)
   async cancelBillingChange(@CurrentActor() actor: Actor, @Param('id') id: string, @Body() dto: ReasonDto) {
     const team = await this.prisma.team.findUniqueOrThrow({ where: { id } });
-    if (!team.pendingBillingEntity) throw ApiError.invalidState('No change of billing company is scheduled');
-    if (team.billingChangeAt && team.billingChangeAt <= new Date()) throw ApiError.invalidState('The change has already taken effect');
-    const updated = await this.prisma.team.update({ where: { id }, data: { pendingCountry: null, pendingBillingEntity: null, billingChangeAt: null } });
-    await this.events.emit('admin.team_billing_entity_cancelled', { teamId: id, pending: { country: team.pendingCountry, billingEntity: team.pendingBillingEntity }, reason: dto.reason }, { actor, teamId: id, resource: `team:${id}` });
+    if (!team.billingChangeAt || (!team.pendingCurrency && !team.pendingCountry)) throw ApiError.invalidState('No change of billing country or currency is scheduled');
+    if (team.billingChangeAt <= new Date()) throw ApiError.invalidState('The change has already taken effect');
+    const updated = await this.prisma.team.update({ where: { id }, data: { pendingCountry: null, pendingCurrency: null, billingChangeAt: null } });
+    await this.events.emit('admin.team_billing_change_cancelled', { teamId: id, pending: { country: team.pendingCountry, currency: team.pendingCurrency }, reason: dto.reason }, { actor, teamId: id, resource: `team:${id}` });
     return updated;
   }
 

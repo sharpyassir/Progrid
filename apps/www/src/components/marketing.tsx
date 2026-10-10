@@ -478,7 +478,7 @@ export function Footer() {
         {cols.map(([h, ls]) => <div key={h}><div className="font-semibold">{h}</div><ul className="mt-3 space-y-2 text-slate-600">{ls.map(([l, href]) => <li key={l}><a href={href.startsWith('/docs') || href.startsWith('http') || href === '#' ? href : `${prefix}${href}`} className="hover:text-slate-900">{l}</a></li>)}</ul></div>)}
       </div>
       <div className="container-x mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-6 text-xs text-slate-500">
-        <span>© {new Date().getFullYear()} {c.footer.copyright} {c.footer.providedBy}</span>
+        <span>© {new Date().getFullYear()} {c.footer.copyright}</span>
       </div>
       <div className="container-x mt-3 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
         <span>{c.footer.builtOn}</span>

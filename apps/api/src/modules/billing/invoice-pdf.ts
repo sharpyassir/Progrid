@@ -28,8 +28,10 @@ function lineLabel(key: string) {
 
 /**
  * Renders an invoice as a one page PDF in the name of the company that issued it (the invoice's
- * billingEntity): its legal name, address, registration and tax numbers, tax line, payment
- * instructions and footer. DejaVu Sans covers Latin letters with accents; Helvetica is the fallback.
+ * billingEntity: Progrid Arabia, or Progrid Technologies LLC on old PRGD-US invoices): its legal
+ * name, address, registration and tax numbers, VAT line and note, the SAR figures and exchange
+ * rate on invoices in another currency, payment instructions and footer. DejaVu Sans covers Latin
+ * letters with accents; Helvetica is the fallback.
  */
 export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageRecord[] }): Promise<Buffer> {
   return new Promise((resolve) => {
@@ -72,7 +74,7 @@ export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageReco
     doc.font(regular).text(inv.team.name, 50, y0 + 14, { width: 260 });
     if (inv.team.billingAddress) doc.text(inv.team.billingAddress, { width: 260 });
     doc.text(`Country: ${inv.team.country}`, { width: 260 });
-    if (inv.team.taxId) doc.text(`${inv.billingEntity === 'progrid_arabia' ? 'VAT number' : 'Tax ID'}: ${inv.team.taxId}`, { width: 260 });
+    if (inv.team.taxId) doc.text(`${e.legacy ? 'Tax ID' : 'VAT number'}: ${inv.team.taxId}`, { width: 260 });
     if (inv.team.billingEmail) doc.text(inv.team.billingEmail, { width: 260 });
     const billToEnd = doc.y;
     doc.font(bold).text('Period', 350, y0, { align: 'right' });
@@ -110,8 +112,9 @@ export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageReco
       total(`Promo code discount (${Math.round((inv.discountMinor / (inv.subtotalMinor + inv.discountMinor)) * 100)}%)`, `-${money(inv.discountMinor)}`);
     }
     total('Subtotal', money(inv.subtotalMinor));
-    // The rate in force when it was issued: tax divided by the subtotal, to the nearest tenth of a percent.
-    if (inv.taxMinor) total(`${e.taxLabel} (${Math.round((inv.taxMinor / Math.max(inv.subtotalMinor, 1)) * 1000) / 10}%)`, money(inv.taxMinor));
+    // The rate in force when it was issued: tax divided by the subtotal, to the nearest tenth of a
+    // percent. A zero-rated invoice shows its 0% VAT line too.
+    if (inv.taxMinor || inv.vatCategory) total(`${e.taxLabel} (${Math.round((inv.taxMinor / Math.max(inv.subtotalMinor, 1)) * 1000) / 10}%)`, money(inv.taxMinor));
     if (inv.creditMinor) total('Credit applied', `-${money(inv.creditMinor)}`);
     if (inv.creditedMinor) {
       total('Total', money(inv.totalMinor));
@@ -119,6 +122,24 @@ export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageReco
       total('Total due', money(inv.totalMinor - inv.creditedMinor), true);
     } else {
       total('Total due', money(inv.totalMinor), true);
+    }
+
+    // SAR figures (ZATCA: the VAT amount in SAR on an invoice in another currency) and the rate used.
+    if (inv.currency !== 'SAR' && inv.fxRateSar !== null && inv.taxSarMinor !== null) {
+      const sar = (m: number | null) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'SAR' }).format((m ?? 0) / 100);
+      y += 6;
+      doc.font(regular).fontSize(8).fillColor('#555').text(`In SAR at 1 ${inv.currency} = ${Number(inv.fxRateSar).toFixed(4)} SAR (rate of ${date(inv.createdAt)})`, 300, y, { width: 245 });
+      y += 14;
+      doc.fontSize(10).fillColor('#000');
+      total('Subtotal (SAR)', sar(inv.subtotalSarMinor));
+      total(`${e.taxLabel} (SAR)`, sar(inv.taxSarMinor));
+      total('Total due (SAR)', sar(inv.totalSarMinor));
+    }
+    if (inv.taxNote) {
+      y += 4;
+      doc.font(bold).fontSize(9).fillColor('#000').text(inv.taxNote, 300, y, { width: 245 });
+      y = doc.y + 4;
+      doc.font(regular).fontSize(10);
     }
 
     // Payment instructions
@@ -133,7 +154,7 @@ export function renderInvoicePdf(inv: Invoice & { team: Team; records: UsageReco
     // Footer
     doc.fontSize(8).fillColor('#555').font(regular);
     const note = inv.eInvoiceType === 'zatca'
-      ? `Prices exclude VAT; VAT is shown as a separate line. This is a tax invoice under the ZATCA e-invoicing regulation; the QR code and clearance are attached by our e-invoicing provider.`
+      ? `Prices exclude VAT; VAT is shown as a separate line${inv.vatCategory === 'zero_rated_export' ? ' (0%, zero-rated export of services)' : ''}. This is a tax invoice under the ZATCA e-invoicing regulation; the QR code and clearance are attached by our e-invoicing provider.`
       : inv.taxMinor
         ? `Prices are in ${inv.currency} and exclude tax; tax is shown as a separate line.`
         : `Prices are in ${inv.currency}. No tax is added to this invoice.`;

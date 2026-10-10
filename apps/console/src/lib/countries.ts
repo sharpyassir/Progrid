@@ -21,10 +21,14 @@ export function countryOptions(locale: string): { code: string; name: string }[]
   return COUNTRY_CODES.map((code) => ({ code, name: names?.of(code) ?? code })).sort((a, b) => a.name.localeCompare(b.name, locale));
 }
 
+/** progrid_llc only appears on old invoices (PRGD-US) of Progrid Technologies LLC; every team is Progrid Arabia's. */
 export type BillingEntityId = 'progrid_arabia' | 'progrid_llc';
-export const ENTITY_NAME: Record<BillingEntityId, string> = { progrid_arabia: 'Progrid Arabia', progrid_llc: 'Progrid Technologies LLC' };
-/** The company a billing country is billed by, as the API decides it. */
-export const entityForCountry = (country: string): BillingEntityId => (country === 'SA' ? 'progrid_arabia' : 'progrid_llc');
-/** The company a new account gets: the domain it is created on (progrid.sa or progrid.co), else the country (development). */
-export const entityForSignup = (domain: string | null | undefined, country: string): BillingEntityId =>
-  domain?.endsWith('.sa') ? 'progrid_arabia' : domain ? 'progrid_llc' : entityForCountry(country);
+export const ENTITY_NAME: Record<BillingEntityId, string> = { progrid_arabia: 'Progrid Arabia', progrid_llc: 'Progrid Technologies LLC (history)' };
+/** The company that bills every account, on progrid.co and progrid.sa. */
+export const BILLING_COMPANY = 'Progrid Arabia';
+export type VatCategory = 'standard' | 'zero_rated_export';
+/** Currency and VAT of a billing country, as the API decides them: SA pays SAR with 15% VAT, every other country USD at 0%. */
+export const billingForCountry = (country: string): { currency: 'SAR' | 'USD'; vatCategory: VatCategory } =>
+  country === 'SA' ? { currency: 'SAR', vatCategory: 'standard' } : { currency: 'USD', vatCategory: 'zero_rated_export' };
+/** The i18n key of the currency and VAT line for a VAT category. */
+export const vatNoteKey = (c: VatCategory | undefined | null): 'vatNote_standard' | 'vatNote_zero_rated_export' => (c === 'standard' ? 'vatNote_standard' : 'vatNote_zero_rated_export');

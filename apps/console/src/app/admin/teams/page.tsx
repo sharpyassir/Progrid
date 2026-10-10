@@ -21,7 +21,7 @@ export default function AdminTeams() {
   }, [entity]);
   useEffect(() => { load(); }, [load]);
   return (
-    <AdminShell title="Teams" actions={<form className="flex gap-2" onSubmit={(e: FormEvent) => { e.preventDefault(); load(q); }}><select className="input w-auto py-1" value={entity} onChange={(e) => setEntity(e.target.value)} aria-label="Billing company"><option value="">All companies</option><option value="progrid_llc">Progrid Technologies LLC</option><option value="progrid_arabia">Progrid Arabia</option></select><input className="input w-64" placeholder="Search name, slug or email" value={q} onChange={(e) => setQ(e.target.value)} /></form>}>
+    <AdminShell title="Teams" actions={<form className="flex gap-2" onSubmit={(e: FormEvent) => { e.preventDefault(); load(q); }}><select className="input w-auto py-1" value={entity} onChange={(e) => setEntity(e.target.value)} aria-label="Billing company"><option value="">All teams</option><option value="progrid_arabia">Progrid Arabia</option></select><input className="input w-64" placeholder="Search name, slug or email" value={q} onChange={(e) => setQ(e.target.value)} /></form>}>
       <section className="card overflow-x-auto p-0">
         <table className="w-full text-sm">
           <thead className="text-xs uppercase text-neutral-500"><tr><th className="px-4 py-2 text-start">Team</th><th className="px-4 py-2 text-start">Status</th><th className="px-4 py-2 text-start">Country</th><th className="px-4 py-2 text-start">Billed by</th><th className="px-4 py-2 text-start">KYC</th><th className="px-4 py-2 text-start">Projects</th><th className="px-4 py-2 text-start">Flags</th><th className="px-4 py-2 text-start">Created</th></tr></thead>

@@ -17,7 +17,7 @@ able to show that the published retention periods are what the systems really do
 
 ## 2. Scope
 
-All data in the asset register, for both entities. The retention periods below are the ones
+All data in the asset register, for Progrid Arabia (and the records Progrid Technologies LLC left in the platform). The retention periods below are the ones
 published in the privacy policies (`apps/www/content/pages/co/en/privacy.md` §9 and
 `apps/www/content/pages/sa/{en,ar}/privacy.md` §7) and the DPAs (section 9 co, section 10 sa).
 

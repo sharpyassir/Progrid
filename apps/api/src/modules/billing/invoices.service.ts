@@ -5,23 +5,26 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { EventsService } from '../events/events.service';
 import { startOfMonth } from './pricing';
 import { MailService } from '../../common/mail/mail.service';
-import { entityInvoiceNumber, entityProfile } from '../../common/entities/entities';
+import { BILLING_ENTITY, entityInvoiceNumber, entityProfile, vatFor } from '../../common/entities/entities';
 import { linkManagedWorkLogs } from '../managed/billing-hooks/link-worklogs';
 import { billingAt, type TeamBilling } from './entity-change';
 import { CommissionService } from '../affiliates/commission.service';
 import { discountFor } from '../affiliates/commission-rules';
+import { FxService } from './fx.service';
+import { sarFigures } from './sar';
 
 /**
- * Monthly invoicing, by the company that contracts with the team (common/entities/entities.ts):
- * Progrid Arabia issues SAR invoices with 15% VAT in the PRGD-SA series and hands them to the
- * ZATCA (Fatoora) e-invoicing provider; Progrid Technologies LLC issues USD invoices in the
- * PRGD-US series with the configured tax rate (none by default).
+ * Monthly invoicing by Progrid Arabia (common/entities/entities.ts), in the PRGD-SA series, every
+ * invoice handed to the ZATCA (Fatoora) e-invoicing provider. The team's billing country decides
+ * currency and VAT: Saudi Arabia pays SAR with 15% VAT; everyone else USD at 0%, a zero-rated
+ * export of services with the note on the invoice (to be confirmed by the tax advisor). Every
+ * invoice also carries its subtotal, VAT and total in SAR with the exchange rate used.
  */
 @Injectable()
 export class InvoicesService {
   private readonly log = new Logger(InvoicesService.name);
 
-  constructor(private readonly prisma: PrismaService, private readonly events: EventsService, private readonly mail: MailService, private readonly commissions: CommissionService) {}
+  constructor(private readonly prisma: PrismaService, private readonly events: EventsService, private readonly mail: MailService, private readonly commissions: CommissionService, private readonly fx: FxService) {}
 
   /**
    * Generates invoices for the month that just ended. Idempotent per team and period: the
@@ -51,36 +54,39 @@ export class InvoicesService {
       }
     }
     this.log.log(`issued ${issued} invoices for ${periodStart.toISOString().slice(0, 7)}${failed ? `, ${failed} failed` : ''}`);
-    // Entity changes approved for the period that starts now: the old period is invoiced above.
+    // Currency changes due for the period that starts now: the old period is invoiced above.
     await this.applyDueEntityChanges(now);
     return issued;
   }
 
   /**
-   * Folds staff approved billing country changes whose date has come into the team row: new
-   * country, company and currency, pending columns cleared. Usage was already rated in the new
-   * currency from that date (billingAt), so this only makes the row say so.
+   * Folds scheduled billing country and currency changes whose date has come into the team row
+   * (the name is kept from the two company era). Usage was already rated in the new currency from
+   * that date (billingAt), so this only makes the row say so.
    */
   async applyDueEntityChanges(now = new Date()) {
-    const due = await this.prisma.team.findMany({ where: { pendingBillingEntity: { not: null }, billingChangeAt: { lte: now } } });
+    const due = await this.prisma.team.findMany({ where: { billingChangeAt: { lte: now }, OR: [{ pendingCurrency: { not: null } }, { pendingCountry: { not: null } }] } });
     for (const t of due) {
       const next = billingAt(t, now);
       const r = await this.prisma.team.updateMany({
         where: { id: t.id, billingChangeAt: t.billingChangeAt },
-        data: { country: next.country, billingEntity: next.entity, currency: next.currency, pendingCountry: null, pendingBillingEntity: null, billingChangeAt: null },
+        data: { country: next.country, billingEntity: next.entity, currency: next.currency, pendingCountry: null, pendingCurrency: null, billingChangeAt: null },
       });
-      if (r.count) await this.events.emit('team.billing_entity_changed', { from: { country: t.country, billingEntity: t.billingEntity, currency: t.currency }, to: next, effectiveAt: t.billingChangeAt }, { teamId: t.id, resource: `team:${t.id}` });
+      if (r.count) await this.events.emit('team.billing_currency_changed', { from: { country: t.country, currency: t.currency }, to: { country: next.country, currency: next.currency }, effectiveAt: t.billingChangeAt }, { teamId: t.id, resource: `team:${t.id}` });
     }
     return due.length;
   }
 
   /** One team's invoice for one period, or null when there is nothing to bill or it already exists. */
   private async issueForTeam(team: TeamBilling & { id: string; projects: { id: string }[] }, periodStart: Date, periodEnd: Date, now: Date) {
-    // The company and currency in force for this period (a change approved later starts after it).
+    // The country and currency in force for this period (a change scheduled later starts after it).
     const billing = billingAt(team, periodStart);
-    const entity = entityProfile(billing.entity);
+    const entity = entityProfile(BILLING_ENTITY);
+    const vat = vatFor(billing.country);
     const existing = await this.prisma.invoice.findUnique({ where: { teamId_periodStart_periodEnd: { teamId: team.id, periodStart, periodEnd } } });
     if (existing) return null;
+    // SAR per unit of the invoice currency at issue (ZATCA: the VAT amount in SAR on foreign currency invoices).
+    const fxRateSar = billing.currency === 'SAR' ? 1 : await this.fx.rate('SAR', now);
     try {
       return await this.prisma.$transaction(async (tx) => {
         const records = await tx.usageRecord.findMany({
@@ -97,7 +103,7 @@ export class InvoicesService {
         const discount = discountFor(usage, await tx.referral.findUnique({ where: { teamId: team.id }, select: { status: true, discountPercent: true, discountUntil: true } }), periodStart);
         const subtotal = usage - discount;
 
-        const tax = Math.round(subtotal * entity.taxRate);
+        const tax = Math.round(subtotal * vat.rate);
         const uses = await this.consumeCredits(tx, team.id, billing.currency, subtotal + tax, now);
         const credit = uses.reduce((s, u) => s + u.amountMinor, 0);
         const total = subtotal + tax - credit;
@@ -107,8 +113,8 @@ export class InvoicesService {
         const invoice = await tx.invoice.create({
           data: {
             teamId: team.id,
-            number: entityInvoiceNumber(billing.entity, now.getUTCFullYear(), seq),
-            billingEntity: billing.entity,
+            number: entityInvoiceNumber(BILLING_ENTITY, now.getUTCFullYear(), seq),
+            billingEntity: BILLING_ENTITY,
             currency: billing.currency,
             periodStart,
             periodEnd,
@@ -118,8 +124,11 @@ export class InvoicesService {
             creditMinor: credit,
             totalMinor: total,
             status: total === 0 ? 'paid' : 'open',
-            // Only Progrid Arabia hands invoices to the ZATCA (Fatoora) e-invoicing provider.
+            // Every invoice goes to the ZATCA (Fatoora) e-invoicing provider.
             eInvoiceType: entity.eInvoicing,
+            vatCategory: vat.category,
+            taxNote: vat.note,
+            ...sarFigures(fxRateSar, { subtotalMinor: subtotal, taxMinor: tax, totalMinor: total }),
             dueAt: new Date(periodEnd.getTime() + 14 * 86_400_000),
             paidAt: total === 0 ? now : null,
           },

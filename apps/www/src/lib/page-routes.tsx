@@ -24,7 +24,7 @@ export async function pageMetadataFor(lang: Lang, slug: string, kind: 'page' | '
   return { title: p?.title, description: p?.description, alternates: alternatesFor(site, lang, kind === 'legal' ? `/legal/${slug}` : `/${slug}`) };
 }
 
-/** The page of this storefront: legal documents name the company of the domain (progrid.co or progrid.sa). */
+/** A company or legal page. Legal documents are Progrid Arabia's on both domains; only the support mailbox follows the domain. */
 export async function renderPage(lang: Lang, kind: 'page' | 'legal', slug: string) {
   const allowed = (kind === 'page' ? PAGE_SLUGS : LEGAL_SLUGS) as readonly string[];
   const site = await getSite();

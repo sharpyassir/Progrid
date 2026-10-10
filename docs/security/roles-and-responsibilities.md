@@ -29,11 +29,11 @@ combinations are not allowed. Record each appointment (name, date, deputy) in
 |---|---|---|
 | Management | [Management — to be named] | Approves policy, scope, risk acceptance criteria and residual risks above the appetite; provides resources; chairs the management review |
 | Security owner (ISMS owner, CISO function) | [Security owner — to be named] | Runs the ISMS; owns the risk register, SoA, control register and evidence; runs access reviews, internal audit programme and CAPA; is the incident commander by default; security contact (security@progrid.co) |
-| Privacy lead (DPO function) | [Privacy lead — to be named] | Privacy policies and DPAs of both entities; retention and deletion; data subject requests; breach notification decisions with legal counsel; subprocessor list; PDPL and GDPR contact. Whether a formally designated DPO is required (GDPR art. 37, PDPL) needs legal review |
+| Privacy lead (DPO function) | [Privacy lead — to be named] | Privacy policy and DPA of Progrid Arabia; retention and deletion; data subject requests; breach notification decisions with legal counsel; subprocessor list; PDPL and GDPR contact. Whether a formally designated DPO is required (GDPR art. 37, PDPL) needs legal review |
 | Engineering lead | [Engineering lead — to be named] | Secure development lifecycle, code review, CI security gates, application security fixes, threat model updates, secrets in code and pipelines |
 | Operations lead | [Operations lead — to be named] | Hosts, networks, hardening, patching, backups and restore tests, monitoring, firewall reviews, supplier accounts at DigitalOcean and Hetzner, DR runbooks |
 | Support lead (`support_lead` staff area) | [Support lead — to be named] | Approves engineer access grants and timesheets, watches and kills terminal sessions, closes postmortems, first triage of customer security reports |
-| Finance lead (`finance` staff role) | [Finance lead — to be named] | Payment provider accounts, refunds and fraud decisions, billing entity changes, invoice records retention |
+| Finance lead (`finance` staff role) | [Finance lead — to be named] | Payment provider accounts, refunds and fraud decisions, billing country and currency changes, invoice records retention (including the PRGD-US history of Progrid Technologies LLC) |
 | People owner | [People owner — to be named] | Screening, contracts and NDAs, onboarding and offboarding checklists, training records, disciplinary process |
 | Internal engineer | Staff with the `engineer` area | Operates managed contracts; follows access, logging and incident procedures |
 | External engineer (contractor) | Users with an `EXTERNAL` engineer profile | Works only on assigned contracts through the ops console and gateway; never staff; no billing data, no export, no self-approval (`docs/devops-console.md`) |
@@ -84,7 +84,7 @@ Rules:
    account; the owner's own accounts are reviewed by [Management or a delegate — to be named].
 4. Contractors shall never hold staff roles, approve grants, see billing data or administer
    hosting provider accounts.
-5. Finance actions (refunds, credit, billing entity changes) shall be done by the finance role and
+5. Finance actions (refunds, credit, billing country and currency changes) shall be done by the finance role and
    are written to the audit log; staff without the finance role cannot do them.
 6. Audit log integrity: no single production role can alter audit rows; the append-only trigger
    and hash chain detect changes (`apps/api/src/modules/events/audit-chain.ts`).

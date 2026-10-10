@@ -11,6 +11,7 @@ import { scopesForRole, type Actor } from '../../common/auth/actor';
 import { loadConfig } from '../../config/config';
 import { entityProfile, publicEntity } from '../../common/entities/entities';
 import { EventsService } from '../events/events.service';
+import { planCountryChange } from '../billing/entity-change';
 import { TokenService } from '../iam/token.service';
 import { ServersService } from '../compute/servers.service';
 import { DatabasesService } from '../databases/db.service';
@@ -62,7 +63,7 @@ export class TeamService {
     if (actor.tokenId && !actor.scopes.has('iam:read')) throw ApiError.forbidden('Token is missing required scope(s): iam:read');
     const team = await this.prisma.team.findUniqueOrThrow({
       where: { id: actor.teamId },
-      select: { id: true, name: true, slug: true, country: true, currency: true, billingEntity: true, pendingCountry: true, pendingBillingEntity: true, billingChangeAt: true, status: true, taxId: true, billingEmail: true, billingAddress: true, createdAt: true },
+      select: { id: true, name: true, slug: true, country: true, currency: true, billingEntity: true, pendingCountry: true, pendingCurrency: true, billingChangeAt: true, status: true, taxId: true, billingEmail: true, billingAddress: true, createdAt: true },
     });
     const [members, invitations] = await Promise.all([
       this.prisma.teamMember.findMany({ where: { teamId: actor.teamId }, include: { user: { select: { id: true, email: true, name: true, totpEnabled: true, createdAt: true } } } }),
@@ -73,7 +74,7 @@ export class TeamService {
       }),
     ]);
     return {
-      team: { ...team, entity: publicEntity(team.billingEntity) },
+      team: { ...team, entity: publicEntity(team.billingEntity, team) },
       role: actor.role,
       members: members.map((m) => ({ userId: m.userId, role: m.role, email: m.user.email, name: m.user.name, totpEnabled: m.user.totpEnabled, you: m.userId === actor.userId })),
       invitations,
@@ -82,15 +83,23 @@ export class TeamService {
 
   async updateProfile(actor: Actor, dto: TeamProfileInput) {
     this.human(actor);
+    const current = await this.prisma.team.findUniqueOrThrow({ where: { id: actor.teamId } });
+    // The billing country decides currency and VAT. A change that keeps the currency applies now;
+    // one into or out of Saudi Arabia (SAR or USD) waits until the first day of next month.
+    const now = new Date();
+    const plan = dto.country !== undefined && (dto.country !== current.country || current.pendingCountry || current.pendingCurrency) ? planCountryChange(current, dto.country, now) : null;
     const data = {
       ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
       ...(dto.billingEmail !== undefined ? { billingEmail: dto.billingEmail?.trim().toLowerCase() || null } : {}),
       ...(dto.taxId !== undefined ? { taxId: dto.taxId?.trim() || null } : {}),
       ...(dto.billingAddress !== undefined ? { billingAddress: dto.billingAddress?.trim() || null } : {}),
-      ...(dto.country !== undefined ? { country: dto.country } : {}),
+      ...(plan ? plan.data : {}),
     };
     const team = await this.prisma.team.update({ where: { id: actor.teamId }, data });
     await this.events.emit('team.updated', { fields: Object.keys(data) }, { actor, resource: `team:${team.id}` });
+    if (plan?.kind === 'scheduled') {
+      await this.events.emit('team.billing_currency_scheduled', { from: { country: current.country, currency: current.currency }, to: { country: dto.country, currency: plan.currency }, effectiveAt: plan.effectiveAt }, { actor, resource: `team:${team.id}` });
+    }
     return this.get(actor);
   }
 

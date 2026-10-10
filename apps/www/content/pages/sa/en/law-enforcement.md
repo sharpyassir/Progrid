@@ -1,7 +1,7 @@
 ---
 title: Law enforcement guidelines
 description: How Progrid Arabia handles requests for customer data from government and law enforcement authorities.
-updated: 3 October 2026
+updated: 10 October 2026
 ---
 
 > **Draft for legal review.** This document is a draft. Counsel will review it against the laws of the Kingdom of Saudi Arabia before launch, and the reviewed version will replace it.
@@ -33,7 +33,7 @@ We review each request for its legal validity and scope. We may refuse or narrow
 
 ## 3. Requests from foreign authorities
 
-Foreign authorities should make their requests through official channels recognized by the laws of the Kingdom, such as mutual legal assistance arrangements or the competent Saudi authorities. We do not respond directly to foreign requests unless the law allows us to.
+Foreign authorities should make their requests through official channels recognized by the laws of the Kingdom, such as mutual legal assistance arrangements or the competent Saudi authorities. We do not respond directly to foreign requests unless the law allows us to. Our servers are hosted by providers in Germany, which may receive orders from authorities there under their own laws.
 
 ## 4. Emergencies
 

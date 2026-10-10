@@ -7,7 +7,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { api, getToken, setToken } from '@/lib/api';
 import { getLocale, Locale, RTL, t } from '@/lib/i18n';
 import { AccountMenu, GroupMenus, LanguageSelect, MobileNav, TopLinks, type Me } from './main-nav';
-import { ENTITY_NAME, type BillingEntityId } from '@/lib/countries';
+import { BILLING_COMPANY } from '@/lib/countries';
 
 interface Ctx {
   locale: Locale;
@@ -29,7 +29,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [isStaff, setIsStaff] = useState(false);
   const [me, setMe] = useState<Me | null>(null);
   // The company that bills the signed in team, named in the footer.
-  const [entity, setEntity] = useState<BillingEntityId | null>(null);
   // The current legal documents, when the person still has to accept them (components/legal).
   const [legal, setLegal] = useState<LegalInfo | null>(null);
   const router = useRouter();
@@ -40,8 +39,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
     setAuthed(!!getToken());
     setReady(true);
     if (getToken()) {
-      api<{ isStaff: boolean; user?: { name: string; email: string }; team?: { name: string; billingEntity?: BillingEntityId }; legal?: LegalInfo }>('/v1/account')
-        .then((m) => { setIsStaff(!!m.isStaff); setMe(m.user ? { name: m.user.name, email: m.user.email, teamName: m.team?.name ?? '' } : null); setEntity(m.team?.billingEntity ?? null); setLegal(m.legal?.required ? m.legal : null); })
+      api<{ isStaff: boolean; user?: { name: string; email: string }; team?: { name: string }; legal?: LegalInfo }>('/v1/account')
+        .then((m) => { setIsStaff(!!m.isStaff); setMe(m.user ? { name: m.user.name, email: m.user.email, teamName: m.team?.name ?? '' } : null); setLegal(m.legal?.required ? m.legal : null); })
         .catch(() => setIsStaff(false));
     }
   }, [pathname]);
@@ -106,9 +105,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <main className="mx-auto max-w-7xl px-4 py-6">{!ready ? null : legal && authed && !PUBLIC_PATHS.includes(pathname)
         ? <LegalGate locale={locale} info={legal} onAccepted={() => { setLegal(null); router.refresh(); }} onSignOut={signOut} />
         : children}</main>
-      {ready && entity && (
+      {ready && (
         <footer className="mx-auto max-w-7xl px-4 pb-6 text-xs text-neutral-500">
-          © {new Date().getFullYear()} Progrid · {t(locale, 'entityFooter').replace('{company}', ENTITY_NAME[entity])}
+          © {new Date().getFullYear()} Progrid · {t(locale, 'entityFooter').replace('{company}', BILLING_COMPANY)}
         </footer>
       )}
     </ShellCtx.Provider>

@@ -94,11 +94,11 @@ export default defineConfig({
       // Connect: the fake model, and "localhost" opened in the outbound guard so a tool can reach the test database.
       CONNECT_MODEL_PROVIDER: 'fake',
       CONNECT_NETWORK_ALLOWLIST: 'localhost',
-      // Two domains and two billing companies, as in production (docs/domains-and-entities.md).
-      ENTITY_LLC_DOMAIN: 'progrid.co',
+      // Two domains, one billing company (Progrid Arabia), as in production (docs/domains-and-entities.md).
+      PRIMARY_DOMAIN: 'progrid.co',
       ENTITY_ARABIA_DOMAIN: 'progrid.sa',
       ENTITY_ARABIA_VAT_NUMBER: '300000000000003',
-      ENTITY_LLC_BANK_DETAILS: 'Example Bank | Account 000000 | Routing 000000000',
+      ENTITY_ARABIA_BANK_DETAILS: 'Example Bank | IBAN SA00 0000 0000 0000 0000 0000',
       CONSOLE_URL: 'https://console.progrid.co',
       // Country lookups: a DB-IP mmdb when IT_GEOIP_DB_PATH points at one, none otherwise.
       GEOIP_DB_PATH: process.env.IT_GEOIP_DB_PATH ?? '/nonexistent/dbip-country-lite.mmdb',

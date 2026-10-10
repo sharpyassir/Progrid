@@ -15,7 +15,7 @@ Authority (NCA) control sets **at domain level**, to prepare a gap assessment.
 
 > **Applicability is not determined.** Whether the NCA Essential Cybersecurity Controls (ECC),
 > Cloud Cybersecurity Controls (CCC) or Data Cybersecurity Controls (DCC) apply to Progrid Arabia
-> or Progrid Technologies LLC depends on the organisation's role and sector, its customers (for
+> (the only contracting entity, serving every customer on progrid.co and progrid.sa) depends on the organisation's role and sector, its customers (for
 > example government entities and critical national infrastructure operators, and the cloud
 > service providers that serve them), any registration or licensing with the Communications,
 > Space and Technology Commission (CST) as a cloud service provider, and contractual

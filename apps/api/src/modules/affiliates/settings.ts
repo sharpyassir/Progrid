@@ -34,16 +34,8 @@ export const affiliateSettingsSchema = z.object({
   flagRefundRatePercent: percent,
   /** Version of /affiliates/terms that applicants accept. */
   termsVersion: z.string().min(1).max(40),
-  /**
-   * Form 1099-NEC reporting threshold per payee per calendar year, in cents. $2,000 for payments
-   * made from 2026 (it was $600 before); check the current IRS instructions every year.
-   */
-  form1099ThresholdMinor: z.number().int().min(0).max(10_000_000),
-  /** Payer on Forms 1099: Progrid Technologies LLC. The EIN and address stay empty until they exist. */
-  taxPayerName: z.string().min(1).max(120),
-  taxPayerEin: z.string().regex(/^(\d{2}-?\d{7})?$/),
-  taxPayerAddress: z.string().max(300),
-  taxPayerPhone: z.string().max(40),
+  // The US tax settings of Progrid Technologies LLC (Form 1099 threshold and payer) are gone;
+  // stored values of them are ignored (merge skips unknown keys).
 });
 
 export type AffiliateSettingsData = z.infer<typeof affiliateSettingsSchema>;
@@ -61,11 +53,6 @@ export function defaultAffiliateSettings(): AffiliateSettingsData {
     flagSignupsPerIpPerDay: 3,
     flagRefundRatePercent: 30,
     termsVersion: '2026-10',
-    form1099ThresholdMinor: 200_000,
-    taxPayerName: 'Progrid Technologies LLC',
-    taxPayerEin: '',
-    taxPayerAddress: '',
-    taxPayerPhone: '',
   };
 }
 

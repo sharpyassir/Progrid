@@ -2,9 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { Affiliate } from '@prisma/client';
 import { MailService } from '../../common/mail/mail.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { entityForCountry, urlsFor, publicDomains, entityProfile } from '../../common/entities/entities';
+import { BILLING_ENTITY, urlsFor, publicDomains, entityProfile } from '../../common/entities/entities';
 
-export type AffiliateMail = 'received' | 'approved' | 'rejected' | 'suspended' | 'reinstated' | 'payout_requested' | 'payout_paid' | 'tax_form_needed';
+export type AffiliateMail = 'received' | 'approved' | 'rejected' | 'suspended' | 'reinstated' | 'payout_requested' | 'payout_paid';
 
 type Lang = 'en' | 'ar';
 interface Vars { name: string; code: string; portal: string; reason?: string; amount?: string; reference?: string }
@@ -18,7 +18,6 @@ const T: Record<Lang, Record<AffiliateMail, (v: Vars) => { subject: string; text
     reinstated: (v) => ({ subject: 'Your affiliate account is active again', text: `Hi ${v.name},\n\nYour Progrid affiliate account is active again. Your code ${v.code} works as before.\n\n${v.portal}` }),
     payout_requested: (v) => ({ subject: `Payout request received: ${v.amount}`, text: `Hi ${v.name},\n\nWe received your payout request for ${v.amount}. We pay by bank transfer to the account in your payout details and will email you when it is sent.\n\n${v.portal}` }),
     payout_paid: (v) => ({ subject: `Payout sent: ${v.amount}`, text: `Hi ${v.name},\n\nYour payout of ${v.amount} was sent.${v.reference ? ` Reference: ${v.reference}.` : ''} It can take a few business days to reach your account.\n\n${v.portal}` }),
-    tax_form_needed: (v) => ({ subject: 'Please update your tax information', text: `Hi ${v.name},\n\nWe need a new tax form from you before we can send payouts in US dollars.${v.reason ? `\n\nReason: ${v.reason}` : ''}\n\nOpen Payouts, Tax information in your affiliate portal and sign the form again:\n${v.portal}` }),
   },
   ar: {
     received: (v) => ({ subject: 'استلمنا طلب انضمامك إلى برنامج الشركاء', text: `مرحبًا ${v.name}،\n\nشكرًا لتقديمك على برنامج شركاء Progrid. نراجع كل طلب ونرد عادة خلال أيام عمل قليلة، وسيصلك بريد عند اتخاذ القرار.\n\nطلبك: ${v.portal}` }),
@@ -28,14 +27,13 @@ const T: Record<Lang, Record<AffiliateMail, (v: Vars) => { subject: string; text
     reinstated: (v) => ({ subject: 'أُعيد تفعيل حساب الشريك الخاص بك', text: `مرحبًا ${v.name}،\n\nأُعيد تفعيل حساب الشريك الخاص بك في Progrid، ويعمل رمزك ${v.code} كما كان.\n\n${v.portal}` }),
     payout_requested: (v) => ({ subject: `استلمنا طلب الصرف: ${v.amount}`, text: `مرحبًا ${v.name}،\n\nاستلمنا طلب صرف بمبلغ ${v.amount}. نحوّل المبلغ بتحويل بنكي إلى الحساب المسجل في بيانات الصرف، وسنرسل لك بريدًا عند التحويل.\n\n${v.portal}` }),
     payout_paid: (v) => ({ subject: `تم تحويل الدفعة: ${v.amount}`, text: `مرحبًا ${v.name}،\n\nتم تحويل دفعتك بمبلغ ${v.amount}.${v.reference ? ` المرجع: ${v.reference}.` : ''} قد يستغرق وصولها إلى حسابك بضعة أيام عمل.\n\n${v.portal}` }),
-    tax_form_needed: (v) => ({ subject: 'يرجى تحديث بياناتك الضريبية', text: `مرحبًا ${v.name}،\n\nنحتاج إلى نموذج ضريبي جديد منك قبل صرف الدفعات بالدولار الأمريكي.${v.reason ? `\n\nالسبب: ${v.reason}` : ''}\n\nافتح الدفعات ثم البيانات الضريبية في بوابة الشركاء ووقّع النموذج مرة أخرى:\n${v.portal}` }),
   },
 };
 
 /**
  * Emails to affiliates on every status change and payout. Arabic for users whose console language
- * is Arabic, English otherwise. Sent by the company of the affiliate's country (Progrid Arabia for
- * Saudi Arabia, Progrid Technologies LLC elsewhere). Never fails the action that triggered it.
+ * is Arabic, English otherwise. Sent by Progrid Arabia, which runs the program and pays every
+ * payout. Never fails the action that triggered it.
  */
 @Injectable()
 export class AffiliateMailer {
@@ -44,10 +42,9 @@ export class AffiliateMailer {
 
   async send(a: Pick<Affiliate, 'userId' | 'name' | 'email' | 'code' | 'country' | 'statusReason'>, kind: AffiliateMail, extra: { amount?: string; reference?: string } = {}) {
     try {
-      const user = await this.prisma.user.findUnique({ where: { id: a.userId }, select: { locale: true, memberships: { select: { team: { select: { billingEntity: true } } }, orderBy: { teamId: 'asc' }, take: 1 } } });
+      const user = await this.prisma.user.findUnique({ where: { id: a.userId }, select: { locale: true } });
       const lang: Lang = user?.locale === 'ar' ? 'ar' : 'en';
-      // The company of the affiliate's own account (the domain they signed up on), else their country.
-      const entity = user?.memberships[0]?.team.billingEntity ?? entityForCountry(a.country);
+      const entity = BILLING_ENTITY;
       const portal = `${entityProfile(entity).consoleUrl}/affiliates/portal`;
       const m = T[lang][kind]({ name: a.name, code: a.code, portal, reason: a.statusReason ?? undefined, ...extra });
       await this.mail.send({ to: a.email, subject: m.subject, text: m.text, entity });

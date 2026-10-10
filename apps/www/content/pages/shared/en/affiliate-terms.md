@@ -1,7 +1,7 @@
 ---
 title: Affiliate program terms
 description: The rules of the Progrid affiliate program for creators and partners.
-updated: 2 October 2026
+updated: 10 October 2026
 ---
 
 > **Draft.** This page summarizes the program rules while the full affiliate agreement is being finalized. The final agreement will replace this page, and approved affiliates will be asked to accept it.
@@ -23,7 +23,7 @@ A customer is referred by you only when they sign up for Progrid with your partn
 
 ## 4. Payouts
 
-- Commission is earned in the currency of the customer invoice. Commission in US dollars is paid by Progrid Technologies LLC; commission in Saudi riyals is paid by Progrid Arabia.
+- Commission is earned in the currency of the customer invoice: US dollars or Saudi riyals. All commission is paid by Progrid Arabia, the company that runs the program.
 - You can request a payout when your payable balance in a currency reaches the minimum (200 SAR or 50 USD). Payouts are made by bank transfer to the account in your payout details.
 - You are responsible for your own taxes. Progrid may ask for tax forms or identity documents before paying.
 

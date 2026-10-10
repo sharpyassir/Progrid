@@ -85,19 +85,18 @@ variables or redeploys. Defaults (`apps/api/src/modules/affiliates/settings.ts`)
 | Commission period | 12 months after the customer uses the code |
 | Hold before payable | 60 days |
 | Referral link window | 60 days (prefills the code on the signup form) |
-| Minimum payout | 200 SAR (paid by Progrid Arabia), 50 USD (paid by Progrid Technologies LLC) |
+| Minimum payout | 200 SAR or 50 USD, both paid by Progrid Arabia |
 | Customer discount | 10% for 3 months |
 | Fraud flags | 3 signups from one address a day; 30% of commission reversed |
 
 Rates are in percent of the net paid amount (no tax, discount or free credit) and are fixed on
-each commission when it is earned. For Stripe chargebacks to reverse commission, add the
-`charge.dispute.created` event to the Stripe webhook endpoint; Moyasar chargebacks are recorded
-by finance (Back office, Invoices, Payments, Chargeback).
+each commission when it is earned. Moyasar chargebacks are recorded by finance (Back office,
+Invoices, Payments, Chargeback) and reverse the commission.
 
-**US tax.** USD payouts by Progrid Technologies LLC require a Form W-9 or W-8 signed in the portal;
-backup withholding, the year end Form 1099-NEC file and the monthly accounting journal are under
-Back office, Affiliates, Tax & accounting. See [`docs/affiliates-tax.md`](docs/affiliates-tax.md).
-Set the payer EIN and address under Settings, US tax once the LLC has them.
+**Tax.** Progrid Arabia pays every payout, in SAR or USD, without withholding; the US tax forms
+and Form 1099 of Progrid Technologies LLC are gone. Whether Saudi withholding tax applies to
+partners outside Saudi Arabia is to be confirmed with the tax advisor. The monthly accounting
+journal is under Back office, Affiliates, Accounting. See [`docs/affiliates-tax.md`](docs/affiliates-tax.md).
 
 ## Design principles (from the architecture doc)
 
@@ -172,4 +171,4 @@ Brand assets (official logo, icons, social image) live in `docs/brand/`, with co
 
 What still has to be built before real hardware and real invoices: `docs/readiness-review.md`.
 
-Two domains and two billing companies (progrid.co with Progrid Technologies LLC, progrid.sa with Progrid Arabia) run on this one platform: see [docs/domains-and-entities.md](docs/domains-and-entities.md).
+Two domains (progrid.co, primary, and progrid.sa) and one billing company, Progrid Arabia, run on this one platform. The billing country decides currency and VAT: Saudi Arabia pays SAR with 15% VAT, every other country USD at 0% (zero-rated export of services, to be confirmed by the tax advisor). Every new invoice is in the PRGD-SA series; old PRGD-US invoices of Progrid Technologies LLC stay readable. See [docs/domains-and-entities.md](docs/domains-and-entities.md).

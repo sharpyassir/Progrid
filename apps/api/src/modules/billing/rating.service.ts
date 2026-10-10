@@ -35,7 +35,7 @@ export class RatingService {
     const projectIds = [...new Set(groups.map((g) => g.projectId))];
     const projects = await this.prisma.project.findMany({
       where: { id: { in: projectIds } },
-      include: { team: { select: { country: true, currency: true, billingEntity: true, pendingCountry: true, pendingBillingEntity: true, billingChangeAt: true } } },
+      include: { team: { select: { country: true, currency: true, billingEntity: true, pendingCountry: true, pendingCurrency: true, billingChangeAt: true } } },
     });
     // The currency of the company billing the team in this hour (a staff approved change applies from its date).
     const currencyOf = new Map(projects.map((p) => [p.id, billingAt(p.team, hourStart).currency]));

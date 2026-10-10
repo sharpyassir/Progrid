@@ -4,10 +4,14 @@ The agreement every customer accepts, and how the platform records it.
 
 ## Documents
 
-Served at `/legal/<slug>` on each storefront, with an index at `/legal`. Each company has its own
-set: `apps/www/content/pages/co/en/` for Progrid Technologies LLC (progrid.co, English) and
-`apps/www/content/pages/sa/{en,ar}/` for Progrid Arabia (progrid.sa, English and Arabic; the
-Arabic version prevails). SLA, cookies and the affiliate terms are shared (`pages/shared/`).
+Served at `/legal/<slug>` on both storefronts, with an index at `/legal`. Progrid Arabia is the
+only contracting company (docs/domains-and-entities.md), so progrid.co and progrid.sa serve the
+same set: `apps/www/content/pages/sa/{en,ar}/` (English and Arabic; the Arabic version prevails),
+then the shared documents in `apps/www/content/pages/shared/` (SLA, cookies, affiliate terms).
+Progrid Technologies LLC no longer contracts; acceptances recorded with it stay in the history.
+
+Current version: **2026-10-10** (single company, material change to the terms and the privacy
+policy). Every user is asked to accept it again through the 428 gate below.
 
 | Slug | Document | Accepted at signup |
 |---|---|---|
@@ -17,13 +21,13 @@ Arabic version prevails). SLA, cookies and the affiliate terms are shared (`page
 | dpa | Data processing addendum | incorporated by the terms |
 | subprocessors | Subprocessor list | referenced |
 | refunds, sla, cookies | Refunds, service levels, cookies | incorporated by the terms |
-| copyright | Copyright and IP complaints (DMCA on progrid.co, Saudi Copyright Law on progrid.sa) | |
+| copyright | Copyright and IP complaints | |
 | law-enforcement | Requests from authorities | |
 | export-sanctions | Export controls and sanctions | incorporated by the terms |
 
-All documents are drafts for legal review. Placeholders in square brackets (state of
-organization, governing law, registered address, EIN, commercial registration, VAT number, DMCA
-agent registration, EU and UK representative) must be completed by counsel before launch.
+All documents are drafts for legal review. Placeholders in square brackets (registered address,
+commercial registration, VAT number, EU and UK representative) must be completed by counsel
+before launch.
 
 ## Acceptance (clickwrap)
 
@@ -31,7 +35,8 @@ agent registration, EU and UK representative) must be completed by counsel befor
 - **Google and Microsoft** sign up: the console sends `legal=<version>` to the start URL once the
   box is ticked; the social buttons on the signup form stay disabled until then.
 - **Invitations**: `POST /v1/invitations/accept-signup` requires `acceptTerms: true`.
-- Every acceptance is a row in `prgd_legal_acceptances`: user, version, documents, company,
+- Every acceptance is a row in `prgd_legal_acceptances`: user, version, documents, company
+  (`progrid_arabia`; `progrid_llc` only on acceptances recorded before 2026-10-10),
   method (signup, oauth_signup, invite, reaccept), IP address, user agent and time. The user row
   keeps the latest version (`legalVersion`, `legalAcceptedAt`). Rows are kept for the life of the
   account plus 5 years (privacy policy).
@@ -43,7 +48,7 @@ agent registration, EU and UK representative) must be completed by counsel befor
 
 ## Changing a document
 
-1. Edit the Markdown in every language of both companies and update `updated:` in the front matter.
+1. Edit the Markdown in every language (`pages/sa/en`, `pages/sa/ar`, or `pages/shared`) and update `updated:` in the front matter.
 2. Material change: tell customers by email and in the console at least 30 days before it takes
    effect (immediately when the law or security requires it), as the terms promise.
 3. On the effective date, bump `LEGAL_VERSION` (a date, `YYYY-MM-DD`) and deploy. Every user is

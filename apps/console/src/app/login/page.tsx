@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
 import { api, ApiError, setToken } from '@/lib/api';
 import { useUrls } from '@/lib/urls';
-import { countryOptions, ENTITY_NAME, entityForSignup } from '@/lib/countries';
+import { billingForCountry, countryOptions, vatNoteKey } from '@/lib/countries';
 import { t, tf } from '@/lib/i18n';
 import { captureRef, currentRef, normalizeCode, promoFromUrl, type PromoInfo } from '@/lib/referral';
 import { useShell } from '@/components/shell';
@@ -97,7 +97,7 @@ export default function LoginPage() {
                 <option value="" disabled>…</option>
                 {countryOptions(locale).map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
               </select>
-              <span className="block text-xs text-neutral-500">{t(locale, 'billingCountryHint')}{country && <> <strong>{t(locale, 'billedBy')}: {ENTITY_NAME[entityForSignup(domain, country)]}</strong></>}</span>
+              <span className="block text-xs text-neutral-500">{t(locale, 'billingCountryHint')}{country && <> <strong>{t(locale, vatNoteKey(billingForCountry(country).vatCategory))}</strong></>}</span>
             </label>
             <label className="block space-y-1 text-sm">
               <span>{t(locale, 'promoCode')}</span>

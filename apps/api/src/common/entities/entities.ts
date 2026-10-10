@@ -3,44 +3,54 @@ import { loadConfig, type AppConfig } from '../../config/config';
 import { currentRequest } from './request-context';
 
 /**
- * The two contracting companies and the two public domains (docs/domains-and-entities.md).
+ * The contracting company and the two public domains (docs/domains-and-entities.md).
  *
- * One platform, one database and one account system serve both progrid.co (primary, global) and
- * progrid.sa. Which company contracts with a team follows the domain the account was created on:
- * progrid.sa is Progrid Arabia (SAR, 15% VAT, its own invoice series and books), progrid.co is
- * Progrid Technologies LLC (USD, the US ledger). The billing country is only the invoice address.
- * Outside the public domains (development, tests) the country decides, as before. Finance staff
- * can move a team to the other company from the next billing period.
+ * Progrid Arabia, a Saudi company, sells and invoices everything. progrid.co (primary, global) and
+ * progrid.sa both belong to it and serve every customer; the domain decides nothing about billing.
+ * The billing country decides the currency and the VAT:
+ *
+ * - Saudi Arabia: SAR, 15% VAT.
+ * - Every other country: USD, 0% VAT as a zero-rated export of services. TO BE CONFIRMED BY THE
+ *   TAX ADVISOR (whether every service and customer qualifies, and what evidence is kept).
+ *
+ * progrid_llc (Progrid Technologies LLC) is kept only to read and print what it issued before
+ * (PRGD-US invoices, CN-US credit notes); nothing assigns it any more.
  *
  * Legal details come from configuration. Unset values print a visible placeholder; nothing here
  * invents a registration or tax number.
  */
 
 export type BillingEntityId = BillingEntity;
-export const BILLING_ENTITIES: BillingEntityId[] = ['progrid_llc', 'progrid_arabia'];
+/** The company every team, invoice and credit note gets from now on. */
+export const BILLING_ENTITY: BillingEntityId = 'progrid_arabia';
+/** Companies that can be assigned. */
+export const BILLING_ENTITIES: BillingEntityId[] = [BILLING_ENTITY];
+/** Companies that only exist in the history (old invoices and credit notes). */
+export const LEGACY_ENTITIES: BillingEntityId[] = ['progrid_llc'];
 
-/** The billing country that belongs to Progrid Arabia. */
+/** The billing country of Progrid Arabia's home market: SAR and VAT. */
 export const ARABIA_COUNTRY = 'SA';
 
-export function entityForCountry(country: string | null | undefined): BillingEntityId {
-  return (country ?? '').toUpperCase() === ARABIA_COUNTRY ? 'progrid_arabia' : 'progrid_llc';
+/** Note printed on invoices to customers outside Saudi Arabia. */
+export const ZERO_RATED_NOTE = 'Zero-rated export of services';
+
+export type VatCategory = 'standard' | 'zero_rated_export';
+
+const isSaudi = (country: string | null | undefined) => (country ?? '').toUpperCase() === ARABIA_COUNTRY;
+
+/** The currency of a billing country: SAR in Saudi Arabia, USD everywhere else. */
+export function currencyForCountry(country: string | null | undefined): Currency {
+  return isSaudi(country) ? 'SAR' : 'USD';
 }
 
-/** The company of a public domain: progrid.sa is Progrid Arabia, progrid.co the LLC; undefined for other hosts. */
-export function entityForDomain(domain: string | undefined, c: AppConfig = loadConfig()): BillingEntityId | undefined {
-  if (!domain) return undefined;
-  if (c.ENTITY_ARABIA_DOMAIN && domain === c.ENTITY_ARABIA_DOMAIN) return 'progrid_arabia';
-  if (c.ENTITY_LLC_DOMAIN && domain === c.ENTITY_LLC_DOMAIN) return 'progrid_llc';
-  return undefined;
-}
-
-/** The company of a new account: the domain it was created on, else (no public domain) the billing country. */
-export function entityForSignup(domain: string | undefined, country: string | null | undefined): BillingEntityId {
-  return entityForDomain(domain) ?? entityForCountry(country);
-}
-
-export function currencyForEntity(entity: BillingEntityId): Currency {
-  return entity === 'progrid_arabia' ? 'SAR' : 'USD';
+/**
+ * VAT of a billing country. Saudi Arabia: the standard rate (15%). Elsewhere: 0%, a zero-rated
+ * export of services, with the note on the invoice (to be confirmed by the tax advisor).
+ */
+export function vatFor(country: string | null | undefined, c: AppConfig = loadConfig()): { rate: number; category: VatCategory; note: string | null } {
+  return isSaudi(country)
+    ? { rate: c.ENTITY_ARABIA_VAT_RATE, category: 'standard', note: null }
+    : { rate: 0, category: 'zero_rated_export', note: ZERO_RATED_NOTE };
 }
 
 export interface EntityProfile {
@@ -55,8 +65,9 @@ export interface EntityProfile {
   registrations: { label: string; value: string }[];
   /** Seller tax id printed on invoices (VAT number for Arabia), when set. */
   taxId?: string;
+  /** Home currency of the company (its books). Customers pay in SAR or USD by billing country. */
   currency: Currency;
-  /** Tax added to invoices: 0.15 VAT for Arabia, configurable (default 0) for the LLC. */
+  /** Standard VAT rate (Saudi billing country). Other countries pay 0% (vatFor). */
   taxRate: number;
   taxLabel: string;
   bankDetails?: string;
@@ -74,8 +85,10 @@ export interface EntityProfile {
   creditNoteSequence: 'prgd_credit_note_number_sa_seq' | 'prgd_credit_note_number_us_seq';
   /** Card payment adapter. */
   paymentProvider: 'moyasar' | 'stripe' | 'fake';
-  /** Electronic invoicing hand off: ZATCA (Fatoora) for Arabia, none for the LLC. */
+  /** Electronic invoicing hand off: ZATCA (Fatoora) for Arabia, none on LLC history. */
   eInvoicing: 'zatca' | null;
+  /** Only in the history: issues nothing new. */
+  legacy: boolean;
 }
 
 const trim = (u: string) => u.replace(/\/+$/, '');
@@ -87,70 +100,84 @@ export function urlsFor(domain: string | undefined, c: AppConfig = loadConfig())
 }
 
 export function entityProfile(id: BillingEntityId, c: AppConfig = loadConfig()): EntityProfile {
-  if (id === 'progrid_arabia') {
-    const domain = c.ENTITY_ARABIA_DOMAIN;
-    const urls = urlsFor(domain, c);
-    const vat = c.ENTITY_ARABIA_VAT_NUMBER ?? c.COMPANY_TAX_ID;
-    return {
-      id,
-      legalName: c.ENTITY_ARABIA_LEGAL_NAME,
-      country: 'SA',
-      countryName: 'Saudi Arabia',
-      address: c.ENTITY_ARABIA_ADDRESS ?? c.COMPANY_ADDRESS ?? '[Registered address to be provided], Saudi Arabia',
-      registrations: c.ENTITY_ARABIA_CR ? [{ label: 'CR', value: c.ENTITY_ARABIA_CR }] : [],
-      taxId: vat,
-      currency: 'SAR',
-      taxRate: c.ENTITY_ARABIA_VAT_RATE,
-      taxLabel: 'VAT',
-      bankDetails: c.ENTITY_ARABIA_BANK_DETAILS,
-      supportEmail: c.ENTITY_ARABIA_SUPPORT_EMAIL,
-      mailFrom: c.ENTITY_ARABIA_MAIL_FROM,
-      domain,
-      ...urls,
-      termsUrl: c.ENTITY_ARABIA_TERMS_URL ?? `${urls.wwwUrl}/legal/terms`,
-      invoicePrefix: 'PRGD-SA',
-      creditNotePrefix: 'CN-SA',
-      invoiceSequence: 'prgd_invoice_number_sa_seq',
-      creditNoteSequence: 'prgd_credit_note_number_sa_seq',
-      paymentProvider: c.PAYMENT_PROVIDER,
-      eInvoicing: 'zatca',
-    };
-  }
-  const domain = c.ENTITY_LLC_DOMAIN;
+  const domain = c.ENTITY_ARABIA_DOMAIN;
   const urls = urlsFor(domain, c);
-  return {
-    id,
-    legalName: c.ENTITY_LLC_LEGAL_NAME,
-    country: 'US',
-    countryName: 'United States',
-    address: c.ENTITY_LLC_ADDRESS ?? '[Registered address to be provided], United States',
-    registrations: c.ENTITY_LLC_EIN ? [{ label: 'EIN', value: c.ENTITY_LLC_EIN }] : [],
-    taxId: undefined,
-    currency: 'USD',
-    taxRate: c.ENTITY_LLC_TAX_RATE,
-    taxLabel: c.ENTITY_LLC_TAX_LABEL,
-    bankDetails: c.ENTITY_LLC_BANK_DETAILS,
-    supportEmail: c.ENTITY_LLC_SUPPORT_EMAIL,
-    mailFrom: c.ENTITY_LLC_MAIL_FROM,
+  const arabia: EntityProfile = {
+    id: 'progrid_arabia',
+    legalName: c.ENTITY_ARABIA_LEGAL_NAME,
+    country: 'SA',
+    countryName: 'Saudi Arabia',
+    address: c.ENTITY_ARABIA_ADDRESS ?? c.COMPANY_ADDRESS ?? '[Registered address to be provided], Saudi Arabia',
+    registrations: c.ENTITY_ARABIA_CR ? [{ label: 'CR', value: c.ENTITY_ARABIA_CR }] : [],
+    taxId: c.ENTITY_ARABIA_VAT_NUMBER ?? c.COMPANY_TAX_ID,
+    currency: 'SAR',
+    taxRate: c.ENTITY_ARABIA_VAT_RATE,
+    taxLabel: 'VAT',
+    bankDetails: c.ENTITY_ARABIA_BANK_DETAILS,
+    supportEmail: c.ENTITY_ARABIA_SUPPORT_EMAIL,
+    mailFrom: c.ENTITY_ARABIA_MAIL_FROM,
     domain,
     ...urls,
-    termsUrl: c.ENTITY_LLC_TERMS_URL ?? `${urls.wwwUrl}/legal/terms`,
+    termsUrl: c.ENTITY_ARABIA_TERMS_URL ?? `${urls.wwwUrl}/legal/terms`,
+    invoicePrefix: 'PRGD-SA',
+    creditNotePrefix: 'CN-SA',
+    invoiceSequence: 'prgd_invoice_number_sa_seq',
+    creditNoteSequence: 'prgd_credit_note_number_sa_seq',
+    paymentProvider: c.PAYMENT_PROVIDER,
+    eInvoicing: 'zatca',
+    legacy: false,
+  };
+  if (id === 'progrid_arabia') return arabia;
+  // Progrid Technologies LLC, history only: enough to show and reprint what it issued. Its
+  // registration details are no longer configured; the PDF sent at the time is the record.
+  // Customer links, mail and any payment still due go through Progrid Arabia.
+  return {
+    ...arabia,
+    id,
+    legalName: 'Progrid Technologies LLC',
+    country: 'US',
+    countryName: 'United States',
+    address: 'United States',
+    registrations: [],
+    taxId: undefined,
+    currency: 'USD',
+    taxRate: 0,
+    taxLabel: 'Tax',
+    bankDetails: undefined,
     invoicePrefix: 'PRGD-US',
     creditNotePrefix: 'CN-US',
     invoiceSequence: 'prgd_invoice_number_us_seq',
     creditNoteSequence: 'prgd_credit_note_number_us_seq',
-    paymentProvider: c.PAYMENT_PROVIDER_LLC,
     eInvoicing: null,
+    legacy: true,
   };
 }
 
-/** What the console and the API show a customer about their contracting company. */
-export function publicEntity(id: BillingEntityId) {
+/**
+ * What the console and the API show a customer about their contracting company. With the team's
+ * billing country and currency, the currency and VAT are the team's own (USD at 0% outside Saudi
+ * Arabia); without, the company's defaults (SAR, 15%).
+ */
+export function publicEntity(id: BillingEntityId, team?: { country: string; currency?: Currency | null }) {
   const e = entityProfile(id);
-  return { id: e.id, legalName: e.legalName, country: e.country, currency: e.currency, taxRate: e.taxRate, taxLabel: e.taxLabel, supportEmail: e.supportEmail, termsUrl: e.termsUrl, domain: e.domain ?? null, consoleUrl: e.consoleUrl };
+  const vat = team ? vatFor(team.country) : { rate: e.taxRate, category: 'standard' as VatCategory, note: null };
+  return {
+    id: e.id,
+    legalName: e.legalName,
+    country: e.country,
+    currency: team ? (team.currency ?? currencyForCountry(team.country)) : e.currency,
+    taxRate: vat.rate,
+    taxLabel: e.taxLabel,
+    vatCategory: vat.category,
+    taxNote: vat.note,
+    supportEmail: e.supportEmail,
+    termsUrl: e.termsUrl,
+    domain: e.domain ?? null,
+    consoleUrl: e.consoleUrl,
+  };
 }
 
-/** Invoice number per company and year, e.g. PRGD-SA-2026-00042. */
+/** Invoice number per company and year, e.g. PRGD-SA-2026-00042 (PRGD-US only in the history). */
 export function entityInvoiceNumber(id: BillingEntityId, year: number, seq: number | bigint) {
   return `${entityProfile(id).invoicePrefix}-${year}-${String(seq).padStart(5, '0')}`;
 }
@@ -161,9 +188,9 @@ export function entityCreditNoteNumber(id: BillingEntityId, year: number, seq: n
 
 // ---- domains ----
 
-/** The configured public domains, primary (LLC) first. Empty in development. */
+/** The configured public domains, primary (progrid.co) first. Empty in development. Both are Progrid Arabia's. */
 export function publicDomains(c: AppConfig = loadConfig()): string[] {
-  return [c.ENTITY_LLC_DOMAIN, c.ENTITY_ARABIA_DOMAIN].filter((d): d is string => !!d);
+  return [...new Set([c.PRIMARY_DOMAIN, c.ENTITY_ARABIA_DOMAIN].filter((d): d is string => !!d))];
 }
 
 /** The configured domain a host name belongs to (api.progrid.sa → progrid.sa), if any. */
@@ -187,7 +214,7 @@ export function requestApiBase(fallback?: string): string {
 
 /**
  * The console a browser redirect should return to: the console the request came from when it is
- * one of ours (sessions live in that origin's storage), else the entity's console.
+ * one of ours (sessions live in that origin's storage), else Progrid Arabia's console.
  */
 export function returnConsoleUrl(entity?: BillingEntityId): string {
   const origin = currentRequest()?.origin;

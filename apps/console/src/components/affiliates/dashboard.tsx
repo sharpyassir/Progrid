@@ -6,7 +6,6 @@ import { useUrls } from '@/lib/urls';
 import { countryOptions } from '@/lib/countries';
 import { CopyButton, CopyField, ErrorBox, Notice, TableCard, Td, Th, useAction, useLoad } from '@/components/connect/ui';
 import { CURRENCIES, date, Stat, useA, type AffiliateInfo, type Cur, type Program } from './common';
-import { TaxCard } from './tax';
 
 interface Sums { pending: number; approved: number; paid: number; reversed: number }
 interface Balance { pending: number; available: number; requested: number; paidOut: number; minPayoutMinor: number }
@@ -165,7 +164,6 @@ export function PayoutsTab({ onDetailsSaved }: { onDetailsSaved: () => void }) {
     <div className="space-y-5">
       {notice && <Notice>{notice}</Notice>}
       <ErrorBox error={req.error ?? dash.error} />
-      <TaxCard />
       <section className="grid gap-3 sm:grid-cols-2">
         {CURRENCIES.map((c) => {
           const b = dash.data?.balances[c];

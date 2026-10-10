@@ -18,7 +18,10 @@ class TeamProfileDto {
   /** Buyer VAT number printed on invoices (15 digits for a Saudi VAT registration). */
   @IsOptional() @IsString() @Length(0, 40) taxId?: string | null;
   @IsOptional() @IsString() @Length(0, 500) billingAddress?: string | null;
-  /** Billing country. A change that would move the team to the other billing company is refused (staff only). */
+  /**
+   * Billing country: decides currency and VAT (SA: SAR with 15% VAT, else USD at 0%). A change into or
+   * out of Saudi Arabia is scheduled for the first day of next month (see GET /v1/billing/balance pendingChange).
+   */
   @IsOptional() @IsIn(COUNTRIES) country?: string;
 }
 

@@ -6,7 +6,7 @@ import { cursorArgs, toPage } from '../../common/pagination';
 import { MailService } from '../../common/mail/mail.service';
 import type { Actor } from '../../common/auth/actor';
 import { loadConfig } from '../../config/config';
-import { entityProfile } from '../../common/entities/entities';
+import { BILLING_ENTITY, entityProfile } from '../../common/entities/entities';
 import { teamEntity } from '../../common/entities/lookup';
 import { EventsService } from '../events/events.service';
 import { SpendService } from '../billing/spend.service';
@@ -162,9 +162,8 @@ export class SupportService {
     const user = await this.prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } }, include: { memberships: { orderBy: { role: 'asc' }, include: { team: { select: { id: true, createdAt: true, billingEntity: true } } } } } });
     const membership = user?.memberships.sort((a, b) => (a.role === 'owner' ? -1 : b.role === 'owner' ? 1 : a.team.createdAt.getTime() - b.team.createdAt.getTime()))[0];
     if (!user || !membership) {
-      // No account: answer from the company whose inbox received it (the .sa address means Progrid Arabia).
-      const viaArabia = (msg.to ?? []).some((a) => a.toLowerCase().includes(loadConfig().ENTITY_ARABIA_SUPPORT_EMAIL.toLowerCase()));
-      await this.mail.send({ to: email, entity: viaArabia ? 'progrid_arabia' : 'progrid_llc', subject: `Re: ${subject}`, text: `Thanks for writing to ${loadConfig().COMPANY_NAME} support. We received your message and a person will answer by email within one business day.\n\nIf you have an account, please write from the email address on it, or open a ticket from Support in the console, so we can attach the conversation to your account.` }).catch((e) => this.log.warn(`support ack failed: ${e}`));
+      // No account: answer from Progrid Arabia, whichever inbox received it.
+      await this.mail.send({ to: email, entity: BILLING_ENTITY, subject: `Re: ${subject}`, text: `Thanks for writing to ${loadConfig().COMPANY_NAME} support. We received your message and a person will answer by email within one business day.\n\nIf you have an account, please write from the email address on it, or open a ticket from Support in the console, so we can attach the conversation to your account.` }).catch((e) => this.log.warn(`support ack failed: ${e}`));
       return { accepted: false, reason: 'unknown_sender' };
     }
     const entity = membership.team.billingEntity;

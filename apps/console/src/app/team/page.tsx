@@ -4,14 +4,14 @@ import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiError, setToken } from '@/lib/api';
 import { Key, Locale, t, tf } from '@/lib/i18n';
-import { countryOptions, type BillingEntityId } from '@/lib/countries';
+import { countryOptions, vatNoteKey, type BillingEntityId, type VatCategory } from '@/lib/countries';
 import { useShell } from '@/components/shell';
 
 type Role = 'owner' | 'admin' | 'member' | 'billing' | 'readonly';
 interface Member { userId: string; role: Role; email: string; name: string; totpEnabled: boolean; you: boolean }
 interface Invitation { id: string; email: string; role: Role; expiresAt: string }
 interface TeamInfo {
-  team: { id: string; name: string; slug: string; country: string; currency: string; status: string; taxId: string | null; billingEmail: string | null; billingAddress: string | null; billingEntity?: BillingEntityId; entity?: { legalName: string; supportEmail: string } };
+  team: { id: string; name: string; slug: string; country: string; currency: string; status: string; taxId: string | null; billingEmail: string | null; billingAddress: string | null; billingEntity?: BillingEntityId; entity?: { legalName: string; supportEmail: string; vatCategory?: VatCategory }; pendingCountry?: string | null; pendingCurrency?: string | null; billingChangeAt?: string | null };
   role: Role; members: Member[]; invitations: Invitation[];
 }
 
@@ -127,7 +127,7 @@ export default function TeamPage() {
           <label className="space-y-1 text-sm"><span>{t(locale, 'teamName')}</span><input className="input" name="name" defaultValue={info.team.name} minLength={2} maxLength={60} required /></label>
           <label className="space-y-1 text-sm"><span>{t(locale, 'billingEmailLabel')}</span><input className="input" name="billingEmail" type="email" defaultValue={info.team.billingEmail ?? ''} /></label>
           <label className="space-y-1 text-sm"><span>{t(locale, 'taxIdLabel')}</span><input className="input" name="taxId" defaultValue={info.team.taxId ?? ''} maxLength={40} dir="ltr" /></label>
-          <label className="space-y-1 text-sm"><span>{t(locale, 'billingCountry')}</span><select className="input" name="country" defaultValue={info.team.country}>{countryOptions(locale).map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select><span className="block text-xs text-neutral-500">{info.team.entity ? `${t(locale, 'billedBy')}: ${info.team.entity.legalName}. ` : ''}{t(locale, 'entityChangeHint')}</span></label>
+          <label className="space-y-1 text-sm"><span>{t(locale, 'billingCountry')}</span><select className="input" name="country" defaultValue={info.team.country}>{countryOptions(locale).map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}</select><span className="block text-xs text-neutral-500">{info.team.entity ? `${t(locale, 'billedBy')}: ${info.team.entity.legalName} · ${t(locale, vatNoteKey(info.team.entity.vatCategory))} ` : ''}{info.team.billingChangeAt && info.team.pendingCurrency ? `${t(locale, 'entityPending').replace('{date}', new Date(info.team.billingChangeAt).toLocaleDateString(locale)).replace('{country}', info.team.pendingCountry ?? info.team.country).replace('{currency}', info.team.pendingCurrency)} ` : ''}{t(locale, 'entityChangeHint')}</span></label>
           <label className="space-y-1 text-sm sm:col-span-2"><span>{t(locale, 'billingAddressLabel')}</span><textarea className="input" name="billingAddress" rows={3} maxLength={500} defaultValue={info.team.billingAddress ?? ''} /></label>
         </fieldset>
         {canBilling && <button className="btn-primary">{t(locale, 'save')}</button>}

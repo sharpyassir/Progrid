@@ -64,7 +64,7 @@ When unsure, use the higher level. A collection takes the level of its most sens
    environments. Use seed data and fake drivers.
 6. **Logs** shall not contain passwords, tokens, secrets, card data or customer content; secrets
    are redacted in Connect steps and build logs.
-7. **Card data** never reaches Progrid systems (Stripe and Moyasar hosted payment pages).
+7. **Card data** never reaches Progrid systems (Moyasar hosted payment pages).
 
 ## 6. Data flows
 

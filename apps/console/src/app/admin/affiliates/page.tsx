@@ -18,20 +18,17 @@ interface Detail extends Omit<Row, 'referrals' | 'openFlags'> {
   payouts: { id: string; currency: Cur; amountMinor: number; status: string; reference: string | null; requestedAt: string; paidAt: string | null }[];
   flags: { id: string; kind: string; detail: Record<string, unknown>; createdAt: string; resolvedAt: string | null }[];
   payoutDetails: Record<string, string> | null;
-  taxForms: TaxForm[];
 }
-interface TaxForm { id: string; formType: string; revision: string; status: string; legalName: string; businessName: string | null; taxClassification: string | null; tinType: string; tinMasked: string | null; country: string; region: string | null; backupWithholding: boolean; backupWithholdingReason: string | null; servicesOutsideUs: boolean; signatureName: string; signedAt: string; signedIp: string | null; expiresAt: string | null; statusReason: string | null }
 interface Payout { id: string; currency: Cur; amountMinor: number; withheldMinor: number; netMinor: number; status: string; reference: string | null; note: string | null; requestedAt: string; paidAt: string | null; payingCompany: string; details: Record<string, string> | null; affiliate: { id: string; code: string; name: string; email: string; country: string }; _count: { commissions: number } }
 interface Commission { id: string; category: string; currency: Cur; baseMinor: number; rateBp: number; amountMinor: number; reversedMinor: number; status: string; holdUntil: string; payoutId: string | null; createdAt: string; reversalReason: string | null; affiliate: { code: string; name: string }; invoice: { number: string; paidAt: string | null } }
 interface Flag { id: string; kind: string; detail: Record<string, unknown>; createdAt: string; resolvedAt: string | null; affiliate: { id: string; code: string; name: string; status: string } }
 interface Settings {
   applicationsOpen: boolean; rates: Record<string, number>; cookieDays: number; holdDays: number; commissionMonths: number; minPayoutMinor: Record<Cur, number>;
   promoDiscountPercent: number; promoDiscountMonths: number; flagSignupsPerIpPerDay: number; flagRefundRatePercent: number; termsVersion: string;
-  form1099ThresholdMinor: number; taxPayerName: string; taxPayerEin: string; taxPayerAddress: string; taxPayerPhone: string;
 }
 
 const SECTIONS: { id: Section; label: string }[] = [
-  { id: 'affiliates', label: 'Affiliates' }, { id: 'payouts', label: 'Payouts' }, { id: 'commissions', label: 'Commissions' }, { id: 'flags', label: 'Flags' }, { id: 'tax', label: 'Tax & accounting' }, { id: 'settings', label: 'Settings' },
+  { id: 'affiliates', label: 'Affiliates' }, { id: 'payouts', label: 'Payouts' }, { id: 'commissions', label: 'Commissions' }, { id: 'flags', label: 'Flags' }, { id: 'tax', label: 'Accounting' }, { id: 'settings', label: 'Settings' },
 ];
 const CATEGORIES = ['web_hosting', 'connect', 'servers', 'managed_cloud', 'ai_usage', 'support'];
 const STATUS_TONE: Record<string, string> = {
@@ -72,7 +69,7 @@ export default function AdminAffiliates() {
       {section === 'payouts' && <Payouts act={act} />}
       {section === 'commissions' && <Commissions act={act} />}
       {section === 'flags' && <Flags act={act} />}
-      {section === 'tax' && <Tax act={act} />}
+      {section === 'tax' && <Accounting act={act} />}
       {section === 'settings' && <SettingsForm act={act} />}
     </AdminShell>
   );
@@ -176,7 +173,6 @@ function AffiliateDetail({ id, act, onClose, onChanged }: { id: string; act: Act
                 <dt className="text-neutral-500">Payout details</dt><dd>{d.payoutDetails ? `${d.payoutDetails.holderName}, ${d.payoutDetails.bankName} (${d.payoutDetails.bankCountry}) ${d.payoutDetails.iban}${d.payoutDetails.swift ? `, ${d.payoutDetails.swift}` : ''}` : 'Not set'}</dd>
               </dl>
             </section>
-            <TaxForms forms={d.taxForms} act={act} onChanged={() => after(true)} />
             <section className="space-y-2">
               <h3 className="font-medium">Referrals</h3>
               <div className="card overflow-x-auto p-0"><table className="w-full text-xs">
@@ -201,7 +197,7 @@ function Payouts({ act }: { act: Act }) {
   useEffect(() => { load(); }, [load]);
   const totals = (cur: Cur) => (rows ?? []).filter((p) => p.status === 'requested' && p.currency === cur).reduce((t, p) => t + p.amountMinor, 0);
   function paid(p: Payout) {
-    const reference = prompt(`Mark ${fmtMoney(p.amountMinor - p.withheldMinor, p.currency)} sent to ${p.affiliate.name} by ${p.payingCompany}${p.withheldMinor ? ` (${fmtMoney(p.withheldMinor, p.currency)} backup withholding kept for the IRS)` : ''}. Bank transfer reference:`, '');
+    const reference = prompt(`Mark ${fmtMoney(p.amountMinor - p.withheldMinor, p.currency)} sent to ${p.affiliate.name} by ${p.payingCompany}. Bank transfer reference:`, '');
     if (reference && reference.trim()) act(() => post(`/admin/v1/affiliates/payouts/${p.id}/paid`, { reference: reference.trim() }), 'Marked paid. The affiliate was emailed.').then((ok) => { if (ok) load(); });
   }
   function cancel(p: Payout) {
@@ -211,7 +207,7 @@ function Payouts({ act }: { act: Act }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Stat label="Waiting, USD (Progrid Technologies LLC)" value={fmtMoney(totals('USD'), 'USD')} />
+        <Stat label="Waiting, USD (Progrid Arabia)" value={fmtMoney(totals('USD'), 'USD')} />
         <Stat label="Waiting, SAR (Progrid Arabia)" value={fmtMoney(totals('SAR'), 'SAR')} />
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -226,7 +222,7 @@ function Payouts({ act }: { act: Act }) {
               <tr key={p.id} className="border-t border-neutral-100 align-top dark:border-neutral-800">
                 <td className="px-4 py-2 text-xs">{fmtDate(p.requestedAt)}</td>
                 <td className="px-4 py-2"><div className="font-medium">{p.affiliate.name}</div><div className="text-xs text-neutral-500">{p.affiliate.code} · {p.affiliate.email}</div></td>
-                <td className="px-4 py-2 font-medium">{fmtMoney(p.amountMinor, p.currency)}{p.withheldMinor > 0 && <div className="text-xs text-amber-700">Send {fmtMoney(p.netMinor, p.currency)}; withhold {fmtMoney(p.withheldMinor, p.currency)} for the IRS</div>}<div className="text-xs text-neutral-500">{p._count.commissions} commissions</div></td>
+                <td className="px-4 py-2 font-medium">{fmtMoney(p.amountMinor, p.currency)}{p.withheldMinor > 0 && <div className="text-xs text-amber-700">Send {fmtMoney(p.netMinor, p.currency)}; withheld {fmtMoney(p.withheldMinor, p.currency)} (US era)</div>}<div className="text-xs text-neutral-500">{p._count.commissions} commissions</div></td>
                 <td className="px-4 py-2 text-xs">{p.payingCompany}</td>
                 <td className="px-4 py-2 text-xs">{p.details ? <>{p.details.holderName}<br />{p.details.bankName} ({p.details.bankCountry})<br /><span className="font-mono">{p.details.iban}</span>{p.details.swift && <> · <span className="font-mono">{p.details.swift}</span></>}{p.details.note && <><br />{p.details.note}</>}</> : '·'}</td>
                 <td className="px-4 py-2"><Badge s={p.status} />{p.reference && <div className="font-mono text-xs">{p.reference}</div>}{p.note && <div className="text-xs text-neutral-500">{p.note}</div>}</td>
@@ -327,8 +323,6 @@ function SettingsForm({ act }: { act: Act }) {
       minPayoutMinor: { USD: Math.round(n('minUSD') * 100), SAR: Math.round(n('minSAR') * 100) },
       promoDiscountPercent: n('promoDiscountPercent'), promoDiscountMonths: n('promoDiscountMonths'),
       flagSignupsPerIpPerDay: n('flagSignupsPerIpPerDay'), flagRefundRatePercent: n('flagRefundRatePercent'), termsVersion: String(f.get('termsVersion')),
-      form1099ThresholdMinor: Math.round(n('form1099Threshold') * 100),
-      taxPayerName: String(f.get('taxPayerName')), taxPayerEin: String(f.get('taxPayerEin') ?? ''), taxPayerAddress: String(f.get('taxPayerAddress') ?? ''), taxPayerPhone: String(f.get('taxPayerPhone') ?? ''),
     };
     act(() => api('/admin/v1/affiliates/settings', { method: 'PATCH', body: JSON.stringify(body) }), 'Saved. The public page shows the change within five minutes.').then((ok) => { if (ok) load(); });
   }
@@ -355,16 +349,6 @@ function SettingsForm({ act }: { act: Act }) {
         {num('flagSignupsPerIpPerDay', 'Flag: signups from one address per day', s.flagSignupsPerIpPerDay)}
         {num('flagRefundRatePercent', 'Flag: reversed share of commission (%)', s.flagRefundRatePercent)}
       </section>
-      <section className="card space-y-3">
-        <h2 className="font-medium">US tax (Forms 1099)</h2>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {num('form1099Threshold', '1099-NEC threshold per payee per year, USD', s.form1099ThresholdMinor / 100, '$2,000 for payments from 2026; check the IRS instructions every year', '0.01')}
-          <label className="block space-y-1 text-sm"><span>Payer name</span><input className="input" name="taxPayerName" defaultValue={s.taxPayerName} required maxLength={120} /></label>
-          <label className="block space-y-1 text-sm"><span>Payer EIN</span><input className="input" name="taxPayerEin" defaultValue={s.taxPayerEin} placeholder="12-3456789" pattern="(\d{2}-?\d{7})?" dir="ltr" /><span className="block text-xs text-neutral-500">Leave empty until the IRS assigns it</span></label>
-          <label className="block space-y-1 text-sm sm:col-span-2"><span>Payer address</span><input className="input" name="taxPayerAddress" defaultValue={s.taxPayerAddress} maxLength={300} /></label>
-          <label className="block space-y-1 text-sm"><span>Payer phone</span><input className="input" name="taxPayerPhone" defaultValue={s.taxPayerPhone} maxLength={40} dir="ltr" /></label>
-        </div>
-      </section>
       <div className="flex items-center gap-3">
         <button className="btn-primary">Save settings</button>
         <span className="text-xs text-neutral-500">Last changed {fmtDate(data.updatedAt)}</span>
@@ -373,107 +357,17 @@ function SettingsForm({ act }: { act: Act }) {
   );
 }
 
-/** The affiliate's tax forms (TIN masked), with the IRS B notice switch and "ask for a new form". */
-function TaxForms({ forms, act, onChanged }: { forms: TaxForm[]; act: Act; onChanged: () => void }) {
-  function backup(f: TaxForm) {
-    const on = !f.backupWithholding;
-    const reason = prompt(on ? 'Start 24% backup withholding (IRS B notice / CP2100). Reason:' : 'Stop backup withholding (the payee resolved the B notice). Reason:', '');
-    if (reason && reason.trim().length >= 3) act(() => post(`/admin/v1/affiliates/tax-forms/${f.id}/backup-withholding`, { on, reason: reason.trim() }), on ? 'Backup withholding on.' : 'Backup withholding off.').then((ok) => { if (ok) onChanged(); });
-  }
-  function invalidate(f: TaxForm) {
-    const reason = prompt('Mark this form invalid. USD payouts stop until the affiliate signs a new one. Reason (sent to them):', '');
-    if (reason && reason.trim().length >= 3) act(() => post(`/admin/v1/affiliates/tax-forms/${f.id}/invalidate`, { reason: reason.trim() }), 'Marked invalid. The affiliate was emailed.').then((ok) => { if (ok) onChanged(); });
-  }
-  return (
-    <section className="space-y-2">
-      <h3 className="font-medium">US tax forms</h3>
-      {!forms.length && <p className="text-neutral-500">None. USD payouts are blocked until the affiliate signs a W-9 or W-8 in the portal.</p>}
-      {forms.map((f) => (
-        <div key={f.id} className={`card space-y-1 ${f.status !== 'active' ? 'opacity-60' : ''}`}>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">{f.revision}</span><Badge s={f.status} />
-            {f.backupWithholding && <span className="badge bg-amber-100 text-amber-800">backup withholding 24%</span>}
-            {f.status === 'active' && <span className="ms-auto flex gap-1">
-              {f.formType === 'W9' && <button className="btn-ghost px-2 py-1 text-xs" onClick={() => backup(f)}>{f.backupWithholding ? 'Stop backup withholding' : 'B notice: start withholding'}</button>}
-              <button className="btn-ghost px-2 py-1 text-xs text-red-700" onClick={() => invalidate(f)}>Ask for a new form</button>
-            </span>}
-          </div>
-          <p>{f.legalName}{f.businessName ? ` (${f.businessName})` : ''} · {f.taxClassification ?? ''} · {f.tinType.toUpperCase()} <span className="font-mono">{f.tinMasked ?? 'none'}</span> · {f.country}{f.region ? `, ${f.region}` : ''}</p>
-          <p className="text-xs text-neutral-500">Signed by {f.signatureName} {fmtDate(f.signedAt)} from {f.signedIp ?? '·'}{f.expiresAt ? ` · valid until ${fmtDate(f.expiresAt)}` : ''}{f.formType !== 'W9' ? ` · services outside the US: ${f.servicesOutsideUs ? 'yes' : 'no'}` : ''}</p>
-          {(f.statusReason || f.backupWithholdingReason) && <p className="text-xs text-neutral-500">{f.statusReason ?? f.backupWithholdingReason}</p>}
-        </div>
-      ))}
-    </section>
-  );
-}
-
-interface Report1099 {
-  year: number; thresholdMinor: number; dueDate: string; backupWithholdingMinor: number;
-  payer: { name: string; ein: string; address: string; issues: string[] };
-  recipients: { affiliateId: string; code: string; name: string; businessName: string; tinType: string; tin: string; state: string; grossMinor: number; withheldMinor: number; required: boolean; exempt: boolean; issues: string[]; payouts: number }[];
-  foreign: { affiliateId: string; code: string; name: string; formType: string; country: string; grossMinor: number; formExpiresAt: string | null; servicesOutsideUs: boolean }[];
-}
 interface Journal { month: string; currency: Cur; company: string; totals: { earnedMinor: number; reversedMinor: number; paidGrossMinor: number; withheldMinor: number; cashMinor: number }; payable: { openingMinor: number; closingMinor: number }; lines: { date: string; account: string; debitMinor: number; creditMinor: number; memo: string }[] }
 
-/** Year end Forms 1099-NEC, foreign payees on a W-8, backup withholding, and the monthly journal. */
-function Tax({ act }: { act: Act }) {
-  const [year, setYear] = useState(new Date().getUTCFullYear() - (new Date().getUTCMonth() < 2 ? 1 : 0));
+/** The monthly journal of the affiliate program, in the books of Progrid Arabia (SAR and USD). */
+function Accounting({ act }: { act: Act }) {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [currency, setCurrency] = useState<Cur>('USD');
-  const [rep, setRep] = useState<Report1099 | null>(null);
   const [j, setJ] = useState<Journal | null>(null);
-  useEffect(() => { api<Report1099>(`/admin/v1/affiliates/tax/1099?year=${year}`).then(setRep).catch(() => setRep(null)); }, [year]);
   useEffect(() => { api<Journal>(`/admin/v1/affiliates/tax/accounting?month=${month}&currency=${currency}`).then(setJ).catch(() => setJ(null)); }, [month, currency]);
-  const mask = (tin: string) => (tin ? `•••-••-${tin.slice(-4)}` : 'missing');
-  const required = rep?.recipients.filter((r) => r.required) ?? [];
   return (
     <div className="space-y-6">
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="font-medium">Forms 1099-NEC</h2>
-          <select className="input max-w-[8rem]" value={year} onChange={(e) => setYear(Number(e.target.value))}>{Array.from({ length: 5 }, (_, i) => new Date().getUTCFullYear() - i).map((y) => <option key={y}>{y}</option>)}</select>
-          <button type="button" className="btn-primary ms-auto text-sm" disabled={!required.length} onClick={() => act(() => download('1099', { year: String(year) }), 'Exported. The file holds full taxpayer numbers: keep it safe and delete it after filing.')}>Download 1099 file ({required.length})</button>
-        </div>
-        {rep && (
-          <>
-            <p className="text-sm text-neutral-500">USD payouts paid in {rep.year} by {rep.payer.name}. File with the IRS (IRIS portal or an e-filing service) and send recipient copies by {rep.dueDate}. Threshold {fmtMoney(rep.thresholdMinor, 'USD')} per payee; any payee with backup withholding is always reported.</p>
-            {rep.payer.issues.length > 0 && <p className="rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">Before filing: {rep.payer.issues.join(', ')} (Settings, US tax).</p>}
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Stat label="1099-NEC forms to file" value={required.length} />
-              <Stat label="Reported (box 1)" value={fmtMoney(required.reduce((t, r) => t + r.grossMinor, 0), 'USD')} />
-              <Stat label="Backup withholding (Form 945)" value={fmtMoney(rep.backupWithholdingMinor, 'USD')} sub="Deposit with the IRS (EFTPS); file Form 945 by January 31" tone={rep.backupWithholdingMinor ? 'warn' : undefined} />
-            </div>
-            <div className="card overflow-x-auto p-0"><table className="w-full text-sm">
-              <thead className="text-xs uppercase text-neutral-500"><tr>{['Payee', 'TIN', 'State', 'Payouts', 'Box 1', 'Box 4', '1099', 'Issues'].map((h) => <th key={h} className="px-4 py-2 text-start">{h}</th>)}</tr></thead>
-              <tbody>
-                {rep.recipients.map((r) => (
-                  <tr key={r.affiliateId} className="border-t border-neutral-100 dark:border-neutral-800">
-                    <td className="px-4 py-2">{r.name || '·'}{r.businessName && <div className="text-xs text-neutral-500">{r.businessName}</div>}<div className="font-mono text-xs text-neutral-500">{r.code}</div></td>
-                    <td className="px-4 py-2 font-mono text-xs">{r.tinType.toUpperCase()} {mask(r.tin)}</td>
-                    <td className="px-4 py-2">{r.state}</td>
-                    <td className="px-4 py-2">{r.payouts}</td>
-                    <td className="px-4 py-2">{fmtMoney(r.grossMinor, 'USD')}</td>
-                    <td className="px-4 py-2">{r.withheldMinor ? fmtMoney(r.withheldMinor, 'USD') : '·'}</td>
-                    <td className="px-4 py-2">{r.exempt ? <span className="badge">exempt (corporation)</span> : r.required ? <span className="badge bg-blue-100 text-blue-800">file</span> : <span className="badge">below threshold</span>}</td>
-                    <td className="px-4 py-2 text-xs text-red-700">{r.issues.join(', ')}</td>
-                  </tr>
-                ))}
-                {!rep.recipients.length && <tr><td colSpan={8} className="px-4 py-6 text-center text-neutral-500">No USD payouts to US persons in {rep.year}.</td></tr>}
-              </tbody>
-            </table></div>
-            <h3 className="font-medium">Foreign payees (Form W-8 on file, no 1099)</h3>
-            <p className="text-sm text-neutral-500">Commission for services performed outside the US is foreign source income: no US withholding and no Form 1042-S. Keep each W-8 on file.</p>
-            <div className="card overflow-x-auto p-0"><table className="w-full text-sm">
-              <thead className="text-xs uppercase text-neutral-500"><tr>{['Payee', 'Form', 'Country', 'Paid', 'Services outside US', 'Form valid until'].map((h) => <th key={h} className="px-4 py-2 text-start">{h}</th>)}</tr></thead>
-              <tbody>
-                {rep.foreign.map((r) => <tr key={r.affiliateId} className="border-t border-neutral-100 dark:border-neutral-800"><td className="px-4 py-2">{r.name}<div className="font-mono text-xs text-neutral-500">{r.code}</div></td><td className="px-4 py-2">{r.formType}</td><td className="px-4 py-2">{r.country}</td><td className="px-4 py-2">{fmtMoney(r.grossMinor, 'USD')}</td><td className="px-4 py-2">{r.servicesOutsideUs ? 'yes' : <span className="text-red-700">no: review</span>}</td><td className="px-4 py-2 text-xs">{fmtDate(r.formExpiresAt)}</td></tr>)}
-                {!rep.foreign.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-neutral-500">None.</td></tr>}
-              </tbody>
-            </table></div>
-          </>
-        )}
-      </section>
-
+      <p className="rounded border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900">Progrid Arabia pays every payout without withholding. Whether Saudi withholding tax applies to partners outside Saudi Arabia is to be confirmed with the tax advisor (docs/affiliates-tax.md).</p>
       <section className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="font-medium">Monthly journal</h2>

@@ -250,11 +250,12 @@ export class OAuthService {
       return { ...base, userId: user.id, returnPath: '/team', session: { token: r.session, teamId: r.team.id } };
     }
     const teamName = a.name.length >= 2 ? a.name.slice(0, 60) : `${a.email!.split('@')[0]} team`.slice(0, 60);
-    // The billing country from the signup form, else the default of the domain the sign in started on.
+    // The billing country from the signup form, else the suggestion for where the sign in started (a
+    // guess of the address only: the country decides currency and VAT, the domain decides nothing).
     const country = p.country ?? suggestedCountry(currentRequest()?.ip, p.domain).country;
     // A promo code that stopped being valid between the form and the provider does not stop the signup.
     const promoCode = p.promoCode && (await this.attribution.describe(p.promoCode)).valid ? p.promoCode : undefined;
-    const { user, team } = await this.iam.createAccount({ email: a.email!, name: a.name, teamName, country, locale: p.locale, emailVerified: a.emailVerified, ip: meta.ip, userAgent: meta.userAgent, promoCode, legal: p.legalAccepted ? 'oauth_signup' : undefined, domain: p.domain });
+    const { user, team } = await this.iam.createAccount({ email: a.email!, name: a.name, teamName, country, locale: p.locale, emailVerified: a.emailVerified, ip: meta.ip, userAgent: meta.userAgent, promoCode, legal: p.legalAccepted ? 'oauth_signup' : undefined });
     await this.linkIdentity(user.id, a, true);
     await this.events.emit('user.oauth_signup', { userId: user.id, provider: a.provider, emailVerified: a.emailVerified }, { teamId: team.id, resource: `user:${user.id}` });
     return { ...base, userId: user.id, returnPath: '/security?welcome=1' };

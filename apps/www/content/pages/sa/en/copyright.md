@@ -1,7 +1,7 @@
 ---
 title: Copyright and intellectual property policy
 description: How to report content on Progrid that infringes copyright or other intellectual property, and how customers can respond.
-updated: 3 October 2026
+updated: 10 October 2026
 ---
 
 > **Draft for legal review.** This document is a draft. Counsel will review it against the laws of the Kingdom of Saudi Arabia, including the Copyright Law, before launch, and the reviewed version will replace it.
@@ -9,6 +9,8 @@ updated: 3 October 2026
 Progrid respects intellectual property rights and expects its customers to do the same. This policy is part of the [Terms of service](/legal/terms) and the [Acceptable use policy](/legal/acceptable-use). It applies to content hosted on Progrid that infringes copyright protected under the Copyright Law of the Kingdom of Saudi Arabia, or trademarks or other intellectual property rights.
 
 Progrid provides infrastructure. Our customers control the content on their servers and buckets, and in most cases the customer is best placed to remove it. This policy does not replace the procedures of the Saudi Authority for Intellectual Property (SAIP) or the competent courts, which remain available to rights holders.
+
+Rights holders in any country can use this procedure. We also accept notices in the form used under the US Digital Millennium Copyright Act or the EU Digital Services Act, and handle them under this policy.
 
 ## 1. How to send a notice
 

@@ -13,30 +13,39 @@ export const LEGAL_SLUGS = ['terms', 'acceptable-use', 'privacy', 'dpa', 'subpro
 
 /**
  * Pages live in content/pages/<dir>/<lang>/<slug>.md:
- *  - sa: Progrid Arabia's legal documents (progrid.sa), governed by Saudi law.
- *  - co: Progrid Technologies LLC's legal documents (progrid.co).
- *  - shared: pages that are the same on both sites, with {{tokens}} for the company details.
- * A storefront reads its own directory first, then the shared one. A language without a version
- * falls back to English of the same directory (flagged), never to the other company's document.
+ *  - sa: the legal documents of Progrid Arabia, the one company behind both domains, governed by
+ *    Saudi law. progrid.co and progrid.sa serve the same documents (the folder name is historical).
+ *  - shared: company pages and documents without a contracting party, with {{tokens}} for the
+ *    company details.
+ * Each page is read from the legal directory first, then the shared one. A language without a
+ * version falls back to English of the same directory (flagged); Turkish always does.
  */
 const DIR = join(process.cwd(), 'content/pages');
-const SITE_DIR: Record<Site, string> = { global: 'co', sa: 'sa' };
+const PAGE_DIRS = ['sa', 'shared'];
+
+/** Progrid Arabia on both domains; only the support mailbox follows the domain. */
+const companyBlock = (email: string): Record<Lang, string> => ({
+  en: `Progrid Arabia (بروجريد العربية)  \nRiyadh, Kingdom of Saudi Arabia  \n**${email}**\n\nProgrid Arabia provides the Services on progrid.co and progrid.sa. Commercial registration and VAT numbers will be published on this page once registration is complete.`,
+  tr: `Progrid Arabia (بروجريد العربية)  \nRiyadh, Kingdom of Saudi Arabia  \n**${email}**`,
+  ar: `بروجريد العربية (Progrid Arabia)  \nالرياض، المملكة العربية السعودية  \n**${email}**\n\nتقدّم بروجريد العربية الخدمات على progrid.co وprogrid.sa. ويُنشر رقم السجل التجاري والرقم الضريبي في هذه الصفحة فور اكتمال التسجيل.`,
+});
+
+function tokensFor(email: string): Record<Lang, Record<string, string>> {
+  const block = companyBlock(email);
+  return {
+    en: { support_email: email, privacy_law: 'the Personal Data Protection Law and other data protection laws that apply', company_block: block.en },
+    tr: { support_email: email, privacy_law: 'the Personal Data Protection Law and other data protection laws that apply', company_block: block.tr },
+    ar: { support_email: email, privacy_law_ar: 'نظام حماية البيانات الشخصية وغيره من قوانين حماية البيانات المعمول بها', company_block: block.ar },
+  };
+}
 
 const TOKENS: Record<Site, Record<Lang, Record<string, string>>> = {
-  global: {
-    en: { support_email: 'support@progrid.co', privacy_law: 'applicable data protection law', company_block: 'Progrid Technologies LLC  \nUnited States  \n**support@progrid.co**\n\nThe registered address and EIN will be published on this page once registration is complete. Customers whose billing country is Saudi Arabia contract with Progrid Arabia at [progrid.sa](https://progrid.sa/contact).' },
-    tr: { support_email: 'support@progrid.co', privacy_law: 'applicable data protection law', company_block: 'Progrid Technologies LLC  \nUnited States  \n**support@progrid.co**' },
-    ar: { support_email: 'support@progrid.co', privacy_law_ar: 'قوانين حماية البيانات المعمول بها', company_block: 'Progrid Technologies LLC  \nالولايات المتحدة  \n**support@progrid.co**\n\nيُنشر العنوان المسجل ورقم التعريف الضريبي (EIN) في هذه الصفحة بعد اكتمال التسجيل. ويتعاقد العملاء الذين بلد الفوترة لديهم هو المملكة العربية السعودية مع Progrid Arabia عبر [progrid.sa](https://progrid.sa/ar/contact).' },
-  },
-  sa: {
-    en: { support_email: 'support@progrid.sa', privacy_law: 'the Personal Data Protection Law', company_block: 'Progrid Arabia (بروجريد العربية)  \nRiyadh, Kingdom of Saudi Arabia  \n**support@progrid.sa**\n\nCommercial registration and VAT numbers will be published on this page once registration is complete.' },
-    tr: { support_email: 'support@progrid.sa', privacy_law: 'the Personal Data Protection Law', company_block: 'Progrid Arabia (بروجريد العربية)  \nRiyadh, Kingdom of Saudi Arabia  \n**support@progrid.sa**' },
-    ar: { support_email: 'support@progrid.sa', privacy_law_ar: 'نظام حماية البيانات الشخصية', company_block: 'بروجريد العربية (Progrid Arabia)  \nالرياض، المملكة العربية السعودية  \n**support@progrid.sa**\n\nيُنشر رقم السجل التجاري والرقم الضريبي في هذه الصفحة فور اكتمال التسجيل.' },
-  },
+  global: tokensFor('support@progrid.co'),
+  sa: tokensFor('support@progrid.sa'),
 };
 
-function find(site: Site, lang: Lang, slug: string): { file: string; fallback: boolean } | undefined {
-  for (const dir of [SITE_DIR[site], 'shared']) {
+function find(lang: Lang, slug: string): { file: string; fallback: boolean } | undefined {
+  for (const dir of PAGE_DIRS) {
     const own = join(DIR, dir, lang, `${slug}.md`);
     if (existsSync(own)) return { file: own, fallback: false };
     const en = join(DIR, dir, 'en', `${slug}.md`);
@@ -46,7 +55,7 @@ function find(site: Site, lang: Lang, slug: string): { file: string; fallback: b
 }
 
 export function getPage(site: Site, lang: Lang, slug: string): SitePageData | undefined {
-  const found = find(site, lang, slug);
+  const found = find(lang, slug);
   if (!found) return undefined;
   const tokens = TOKENS[site][found.fallback ? 'en' : lang];
   const raw = readFileSync(found.file, 'utf8').replace(/\{\{(\w+)\}\}/g, (m, k: string) => tokens[k] ?? TOKENS[site].en[k] ?? m);

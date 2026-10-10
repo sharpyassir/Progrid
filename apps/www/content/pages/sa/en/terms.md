@@ -1,20 +1,20 @@
 ---
 title: Terms of service
 description: The agreement between you and Progrid Arabia for every Progrid service, including subscriptions, billing, acceptable use and what happens in case of fraud or abuse.
-updated: 3 October 2026
+updated: 10 October 2026
 ---
 
-> **Draft for legal review.** This document is a draft. Counsel will review it against the laws of the Kingdom of Saudi Arabia before launch, and the reviewed version will replace it.
+> **Draft for legal review.** This document is a draft. Counsel will review it against the laws of the Kingdom of Saudi Arabia, and against the consumer and data protection laws of the main countries where customers are located, before launch, and the reviewed version will replace it. The VAT treatment of customers outside the Kingdom in section 6 is to be confirmed by our tax advisor.
 
 These terms are a contract between you and Progrid Arabia (بروجريد العربية), a company established in the Kingdom of Saudi Arabia, commercial registration number [to be confirmed], VAT number [to be confirmed], registered address [to be confirmed] ("Progrid", "we", "us"). Section 10 explains what happens in case of illegal activity, fraud or abuse.
 
 ## 1. Scope and who you contract with
 
-1.1 These terms apply to customers whose billing country is Saudi Arabia. Customers whose billing country is any other country contract with Progrid Technologies LLC under the terms published at [progrid.co/legal/terms](https://progrid.co/legal/terms).
+1.1 These terms apply to every customer, wherever you are located. Progrid Arabia is the only company that provides, sells and invoices the Services. The websites progrid.co (our global address) and progrid.sa (our Saudi address) both belong to Progrid Arabia and publish the same Agreement; the domain you sign up on does not change who you contract with.
 
 1.2 These terms apply to the website, the console, the API, the command line tools, the SDKs, Progrid Connect, managed cloud services, support, and every service you create or use through them (the "Services").
 
-1.3 The agreement between you and Progrid is made of these terms and the following documents, which form part of them: the [Acceptable use policy](/legal/acceptable-use), the [Privacy policy](/legal/privacy), the [Refund and cancellation policy](/legal/refunds), the [Service level agreement](/legal/sla), the [Data processing addendum](/legal/dpa), the [Export controls and sanctions policy](/legal/export-sanctions) and the [Copyright and intellectual property policy](/legal/copyright) (together, the "Agreement").
+1.3 The agreement between you and Progrid is made of these terms and the following documents, which form part of them: the [Acceptable use policy](/legal/acceptable-use), the [Privacy policy](/legal/privacy), the [Refund and cancellation policy](/legal/refunds), the [Service level agreement](/legal/sla), the [Data processing addendum](/legal/dpa), the [Export controls and sanctions policy](/legal/export-sanctions), the [Copyright and intellectual property policy](/legal/copyright) and, for affiliates, the [Affiliate program terms](/affiliates/terms) (together, the "Agreement").
 
 1.4 "You" means the person who accepts these terms and, where that person accepts for a company or other organization, that organization.
 
@@ -24,7 +24,7 @@ These terms are a contract between you and Progrid Arabia (بروجريد الع
 
 2.2 When we publish a new version of these terms, the Acceptable use policy or the Privacy policy, existing users must accept the new version before they can continue to use the console or the API.
 
-2.3 For each acceptance we record the document and its version, the date and time, the IP address and the user agent (browser or client) used. This record is an electronic record, and your acceptance is an electronic signature, under the Electronic Transactions Law. Your acceptance has the same legal effect as a handwritten signature, and the record may be used as evidence of it. The record is processed as described in the [Privacy policy](/legal/privacy).
+2.3 For each acceptance we record the document and its version, the date and time, the IP address and the user agent (browser or client) used. This record is an electronic record, and your acceptance is an electronic signature, under the Electronic Transactions Law of the Kingdom. Your acceptance has the same legal effect as a handwritten signature, and the record may be used as evidence of it. The record is processed as described in the [Privacy policy](/legal/privacy).
 
 ## 3. Eligibility
 
@@ -62,27 +62,36 @@ These terms are a contract between you and Progrid Arabia (بروجريد الع
 
 5.5 Features marked as beta or preview may change or be withdrawn without notice and are excluded from the SLA. We may change or discontinue any Service with at least 30 days' notice, or without notice where required for security or by law.
 
-5.6 Our servers and the data stored on them are located outside the Kingdom of Saudi Arabia, as described in the [Privacy policy](/legal/privacy). You are responsible for deciding whether this is suitable for your content and for meeting the rules that apply to you, including rules of the Communications, Space and Technology Commission on cloud services and data classification.
+5.6 Our servers and the data stored on them are located in Germany, outside the Kingdom of Saudi Arabia, as described in the [Privacy policy](/legal/privacy). You are responsible for deciding whether this is suitable for your content and for meeting the rules that apply to you, including, for customers in the Kingdom, the rules of the Communications, Space and Technology Commission on cloud services and data classification.
 
 ## 6. Subscriptions, pricing and billing
 
-6.1 **Prices.** Prices are published in Saudi riyals, excluding value added tax, at [progrid.sa/#pricing](/#pricing) and through the pricing API. VAT at the statutory rate (currently 15 percent) is added and shown before you confirm a purchase.
+6.1 **Prices and currency.** Prices are published excluding value added tax ("VAT") at [progrid.co/pricing](https://progrid.co/pricing) in US dollars, at [progrid.sa/pricing](https://progrid.sa/pricing) in Saudi riyals, and through the pricing API. Your billing country decides the currency you are billed in and the VAT that applies:
+
+- **Billing country Saudi Arabia:** you are billed in Saudi riyals, and VAT at the statutory rate (currently 15 percent) is added and shown before you confirm a purchase.
+- **Any other billing country:** you are billed in US dollars, and no VAT is added, because the Services are treated as an export of services from the Kingdom and zero rated. If the conditions for zero rating are not met, or the law changes, we add the VAT that applies and show it before you confirm a purchase.
+
+You are responsible for any tax that the law of your own country requires you to account for on your purchase, such as under a reverse charge mechanism.
 
 6.2 **Hourly metering with a monthly cap.** Every resource is metered for each hour it exists and charged at one 672nd of its monthly price per hour, so a resource that exists for the whole month never costs more than its monthly price. Stopping a server does not stop the meter; deleting it does. Managed plans, support plans and add ons are metered the same way unless their page says otherwise. Usage based items, such as Progrid Connect tokens, are charged at the published unit price.
 
-6.3 **Credit and invoices.** Usage is drawn from prepaid credit first. On the first day of each month we issue a ZATCA compliant e-invoice for the previous month's usage that was not covered by credit. Invoices are due within 14 days. We may suspend Services on an account with an overdue invoice after notice, and delete resources 30 days after suspension.
+6.3 **Credit and invoices.** Usage is drawn from prepaid credit first. On the first day of each month we issue an e-invoice that meets the e-invoicing requirements of the Zakat, Tax and Customs Authority (ZATCA), in your billing currency, for the previous month's usage that was not covered by credit. Invoices are due within 14 days. We may suspend Services on an account with an overdue invoice after notice, and delete resources 30 days after suspension.
 
 6.4 **Spending controls.** Limits you set on projects and API tokens are enforced by the platform. They protect you against runaway automation; they do not cap what you owe for resources that already exist.
 
 6.5 **Price changes.** We may change prices with at least 30 days' notice by email and on the pricing page. Running hours are charged at the price in force during that hour.
 
-6.6 **Payment methods.** Payments are processed by our payment provider (mada, credit cards and Apple Pay). We never store full card numbers. A failed payment may lead to suspension after notice. You confirm that you are authorized to use every payment method you add.
+6.6 **Payment methods.** Payments are processed by Moyasar, our payment provider (mada, credit and debit cards and Apple Pay, depending on your country). Card data goes directly to the payment provider and we never store full card numbers. You authorize us to charge the payment methods on your account for amounts due. A failed payment may lead to suspension after notice. You confirm that you are authorized to use every payment method you add. Your bank may charge its own fees for payments in a foreign currency.
 
 6.7 **Promotional credit.** Free or promotional credit has no cash value, cannot be transferred, is subject to the conditions of the offer, and may expire. It is forfeited if the account breaches the Agreement.
 
+6.8 **Disputed charges.** If you believe a charge is wrong, write to support@progrid.sa within 60 days of the invoice. Contact us before disputing a charge with your bank. A chargeback on a correct charge is a breach of the Agreement.
+
+6.9 **Change of billing country.** A change of your billing country to or from Saudi Arabia changes your billing currency and the VAT that applies from the next billing period, and is made by our support team on request. Credit already on your account keeps its value.
+
 ## 7. Cancellation and refunds
 
-You can delete any resource at any hour and close your account at any time from the console. Charges stop when the resource is deleted. Refunds are governed by the [Refund and cancellation policy](/legal/refunds). Nothing in the Agreement limits rights you have under the E-Commerce Law or other consumer protection rules of the Kingdom where they apply to you.
+You can delete any resource at any hour and close your account at any time from the console. Charges stop when the resource is deleted. Refunds are governed by the [Refund and cancellation policy](/legal/refunds). Nothing in the Agreement limits rights you have under the E-Commerce Law or other consumer protection rules of the Kingdom, or under the mandatory consumer protection law of the country where you live, where they apply to you.
 
 ## 8. Your content, data and backups
 
@@ -205,7 +214,9 @@ You may not assign or transfer the Agreement without our written consent. We may
 
 24.2 The parties will first try in good faith to resolve any dispute by contacting each other. If a dispute is not resolved within 30 days, it is subject to the exclusive jurisdiction of the competent courts in Riyadh. [Whether disputes are referred to arbitration instead: to be confirmed.]
 
-24.3 Nothing in this section prevents Progrid from seeking urgent measures from a competent court or from reporting conduct to the competent authorities.
+24.3 Nothing in this section prevents Progrid from seeking urgent measures from a competent court, including a court in the country where you are located, or from reporting conduct to the competent authorities.
+
+24.4 If you are a consumer and the law of the country where you live gives you protections that cannot be excluded by contract, including the right to bring proceedings in your local courts, nothing in this section takes those protections away.
 
 ## 25. Language
 

@@ -7,7 +7,7 @@ import { AdminShell, fmtDate, fmtMoney } from '@/components/admin-shell';
 
 interface Invoice { id: string; number: string; status: string; totalMinor: number; creditedMinor?: number; currency: string; periodStart: string; dueAt: string | null; eInvoiceType: string | null; team: { id: string; name: string; slug: string; country: string } }
 interface Fx { rate: number; history: { rate: string; source: string; at: string }[] }
-interface EntityRevenue { billingEntity: string; legalName: string; currency: string; teams: number; invoiced: { currency: string; count: number; subtotalMinor: number; taxMinor: number; totalMinor: number }[]; open: { currency: string; count: number; dueMinor: number }[]; collected: { currency: string; amountMinor: number }[] }
+interface EntityRevenue { billingEntity: string; legalName: string; legacy?: boolean; currency: string; teams: number; invoiced: { currency: string; count: number; subtotalMinor: number; taxMinor: number; totalMinor: number }[]; open: { currency: string; count: number; dueMinor: number }[]; collected: { currency: string; amountMinor: number }[] }
 interface Price { id: string; resourceType: string; sku: string; monthlyMinor: number; unit: string; validFrom: string }
 
 export default function AdminFinance() {
@@ -40,11 +40,11 @@ export default function AdminFinance() {
           <h2 className="font-medium">Revenue per company</h2>
           <input className="input w-auto py-1" type="month" value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Month" />
         </div>
-        <p className="text-xs text-neutral-500">Invoices issued in the month (subtotal, tax, total), money received in the month, and what is open now, for each contracting company. Progrid Arabia bills teams in Saudi Arabia in SAR with VAT; Progrid Technologies LLC bills everyone else in USD.</p>
+        <p className="text-xs text-neutral-500">Invoices issued in the month (subtotal, VAT, total), money received in the month, and what is open now. Progrid Arabia bills every team: SAR with 15% VAT in Saudi Arabia, USD at 0% (zero-rated export) elsewhere, so it shows both currencies. Progrid Technologies LLC appears only while it still has old PRGD-US invoices or payments in the month.</p>
         <div className="grid gap-3 md:grid-cols-2">
           {byEntity.map((e) => (
             <div key={e.billingEntity} className="rounded border border-neutral-200 p-3 text-sm dark:border-neutral-800">
-              <div className="flex items-baseline justify-between"><span className="font-medium">{e.legalName}</span><span className="text-xs text-neutral-500">{e.teams} teams · {e.currency}</span></div>
+              <div className="flex items-baseline justify-between"><span className="font-medium">{e.legalName}{e.legacy ? ' (history)' : ''}</span><span className="text-xs text-neutral-500">{e.teams} teams</span></div>
               <dl className="mt-2 grid grid-cols-2 gap-1">
                 <dt className="text-neutral-500">Invoiced</dt><dd className="text-end">{e.invoiced.length ? e.invoiced.map((r) => <span key={r.currency} className="block">{fmtMoney(r.totalMinor, r.currency)} <span className="text-xs text-neutral-500">({r.count}, tax {fmtMoney(r.taxMinor, r.currency)})</span></span>) : '—'}</dd>
                 <dt className="text-neutral-500">Collected</dt><dd className="text-end">{e.collected.length ? e.collected.map((r) => <span key={r.currency} className="block">{fmtMoney(r.amountMinor, r.currency)}</span>) : '—'}</dd>

@@ -3,7 +3,7 @@ import type { BillingEntity, Currency, PaymentProvider as ProviderName } from '@
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ApiError } from '../../../common/errors/api-error';
 import { EventsService } from '../../events/events.service';
-import { entityProfile, requestApiBase, returnConsoleUrl } from '../../../common/entities/entities';
+import { BILLING_ENTITY, entityProfile, requestApiBase, returnConsoleUrl } from '../../../common/entities/entities';
 import type { Actor } from '../../../common/auth/actor';
 import type { PaymentProvider } from './provider';
 import { MoyasarProvider } from './moyasar.provider';
@@ -18,9 +18,11 @@ const PENDING_REUSE_MS = 30 * 60_000;
 type CardProvider = 'moyasar' | 'stripe' | 'fake';
 
 /**
- * Card payments: prepaid credit top ups and paying open invoices. The money goes to the company
- * that bills the team (or issued the invoice): Progrid Arabia collects riyals through Moyasar,
- * Progrid Technologies LLC collects dollars through Stripe, each with its own credentials.
+ * Card payments: prepaid credit top ups and paying open invoices. Progrid Arabia collects all of
+ * it through one gateway (PAYMENT_PROVIDER: Moyasar in production), in the currency of the team
+ * or the invoice, SAR or USD. Moyasar takes the currency per invoice; the merchant account must be
+ * enabled for USD. Stripe is a generic adapter, unused unless PAYMENT_PROVIDER=stripe; payments
+ * Stripe took for Progrid Technologies LLC stay on record (refunds of them go through STRIPE_*).
  */
 @Injectable()
 export class PaymentsService {
@@ -34,9 +36,9 @@ export class PaymentsService {
     return name === 'moyasar' || name === 'stripe' || name === 'fake' ? this.providers[name] : undefined;
   }
 
-  /** The card gateway of a company: Moyasar for Progrid Arabia, Stripe for the LLC (or the test page). */
-  providerFor(entity: BillingEntity): PaymentProvider {
-    return this.providers[entityProfile(entity).paymentProvider];
+  /** The card gateway of Progrid Arabia (PAYMENT_PROVIDER), whatever the currency. */
+  providerFor(): PaymentProvider {
+    return this.providers[entityProfile(BILLING_ENTITY).paymentProvider];
   }
 
   /** Limits per currency in minor units: keeps typos and card testing out. */
@@ -49,7 +51,7 @@ export class PaymentsService {
     const team = await this.prisma.team.findUniqueOrThrow({ where: { id: actor.teamId } });
     const { min, max } = this.limits(team.currency);
     if (!Number.isInteger(amountMinor) || amountMinor < min || amountMinor > max) throw ApiError.invalid(`Amount must be between ${min / 100} and ${max / 100} ${team.currency}`, { min, max });
-    return this.start(actor, team, { entity: team.billingEntity, currency: team.currency }, amountMinor, `Progrid credit top up for ${team.name}`, undefined);
+    return this.start(actor, team, { entity: BILLING_ENTITY, currency: team.currency }, amountMinor, `Progrid credit top up for ${team.name}`, undefined);
   }
 
   async payInvoice(actor: Actor, invoiceId: string) {
@@ -70,8 +72,10 @@ export class PaymentsService {
     }
     const due = inv.totalMinor - inv.creditedMinor;
     if (due <= 0) throw ApiError.invalidState(`Invoice ${inv.number} has nothing left to pay`);
-    // Paid to the company that issued the invoice, in its currency, even if the team has moved since.
-    return this.start(actor, team, { entity: inv.billingEntity, currency: inv.currency }, due, `Progrid invoice ${inv.number}`, inv.id);
+    // Paid to Progrid Arabia in the invoice's currency, even if the team's currency has changed since.
+    // An old PRGD-US invoice of Progrid Technologies LLC that is still open is collected the same
+    // way (docs/domains-and-entities.md: the accountant settles it between the companies).
+    return this.start(actor, team, { entity: BILLING_ENTITY, currency: inv.currency }, due, `Progrid invoice ${inv.number}`, inv.id);
   }
 
   list(actor: Actor) {
@@ -153,7 +157,7 @@ export class PaymentsService {
 
   private async start(actor: Actor, team: { id: string; name: string }, billing: { entity: BillingEntity; currency: Currency }, amountMinor: number, description: string, invoiceId: string | undefined) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } });
-    const provider = this.providerFor(billing.entity);
+    const provider = this.providerFor();
     const entity = entityProfile(billing.entity);
     // Back to the console the person paid from (their session lives there), else the company's console.
     const consoleUrl = returnConsoleUrl(billing.entity);

@@ -57,7 +57,7 @@ access they need while they need it, and can report problems.
       nodes; key added through Ansible; WireGuard peer if needed
 - [ ] DigitalOcean team member / Hetzner Robot sub-account (only if needed), MFA on
 - [ ] Vault / Infisical / Ansible vault access (only if needed)
-- [ ] SaaS (Resend, Stripe, Moyasar, Anthropic, Twilio, Google Cloud, Microsoft Entra, registrar)
+- [ ] SaaS (Resend, Moyasar, Anthropic, Twilio, Google Cloud, Microsoft Entra, registrar)
       only if needed
 - [ ] On-call contact (phone, channel) set (`PUT /admin/managed/staff/{userId}/contact`)
 - [ ] Added to the security contact list and incident channel

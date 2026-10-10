@@ -1,6 +1,6 @@
 ---
 title: Billing and pricing
-description: Hourly billing, monthly caps, which Progrid company bills you, and what happens when credit runs out.
+description: Hourly billing, monthly caps, your billing currency and VAT, and what happens when credit runs out.
 section: Guides
 order: 11
 ---
@@ -13,16 +13,16 @@ The monthly price divided by 672 gives the hourly rate. There is no minimum term
 
 ## Who bills you, and in which currency
 
-The site you sign up on decides which Progrid company you contract with:
+Every customer contracts with and is invoiced by **Progrid Arabia**, a Saudi company, whichever site you sign up on. progrid.co is our global address and progrid.sa our Saudi one; they show prices in dollars and riyals respectively, but your **billing country** decides how you are billed:
 
-| Signed up on | Company | Currency | Tax | Cards |
-|---|---|---|---|---|
-| progrid.co | Progrid Technologies LLC | USD | None added by default | Stripe |
-| progrid.sa | Progrid Arabia | SAR | 15% VAT | Moyasar |
+| Billing country | Currency | VAT |
+|---|---|---|
+| Saudi Arabia | SAR | 15% VAT added |
+| Any other country | USD | 0%, as a zero rated export of services |
 
-Riyal prices are the dollar prices at the pegged rate of 3.75 riyals per dollar. Your billing country is the address printed on your invoices and does not change the company. Your invoices and the **Billing** page always show which company bills you, and every checkout shows the total, with any tax, before you pay.
+Riyal prices are the dollar prices at the pegged rate of 3.75 riyals per dollar. The zero rate for customers outside Saudi Arabia applies while the conditions for exporting services are met; if they are not, the VAT that applies is added and shown before you pay. You remain responsible for any tax your own country asks you to account for, such as under a reverse charge. Every checkout shows the total, with any VAT, before you pay.
 
-To move your account to the other company, write to support from the console. The move takes effect at the start of the next billing period.
+Your billing country is set on the **Team** page and printed on your invoices. To change it to or from Saudi Arabia, write to support from the console; the new currency and VAT apply from the start of the next billing period.
 
 ## Your first top up
 
@@ -30,13 +30,13 @@ Before a new team can create anything billable, it adds credit once: open **Bill
 
 ## Credit and invoices
 
-Usage is drawn from credit first. On the first of each month an invoice is issued for the previous month by the company that bills you, and the team owners and the billing email get an email from that company. Each company numbers its invoices in its own series, for example `PRGD-US-2026-00042` for Progrid Technologies LLC. Invoices from before October 2026 keep their old numbers (`PRGD-2026-000123`). Invoices are due 14 days after they are issued. The console shows month to date spend, every invoice with a PDF, and every card payment.
+Usage is drawn from credit first. On the first of each month Progrid Arabia issues an e-invoice for the previous month, in your billing currency, and the team owners and the billing email get it by email. New invoices are numbered `PRGD-SA-YYYY-NNNNN` and credit notes `CN-SA-YYYY-NNNNN`. Invoices issued earlier keep their numbers and stay available in the console with their PDFs, including those numbered `PRGD-US-...` and those from before October 2026 (`PRGD-2026-000123`). Invoices are due 14 days after they are issued. The console shows month to date spend, every invoice with a PDF, and every card payment.
 
 The name, tax or VAT number, billing address and country printed on your invoices come from the **Team** page. Enter your tax number there before the invoice is issued if your business has one.
 
 ## Paying
 
-**Add credit** under **Billing**: pick an amount, pay by card on the hosted page, and come back with the credit on your balance. Card payments go through Stripe, or the local payment provider of the company that bills you. Card details never touch our servers.
+**Add credit** under **Billing**: pick an amount, pay by card on the hosted page, and come back with the credit on your balance. Card payments go through Moyasar, our payment provider: mada, credit and debit cards and Apple Pay, depending on your country. Card details never touch our servers.
 
 **Pay an invoice** the same way with the **Pay** button next to any open invoice, or from the terminal:
 
